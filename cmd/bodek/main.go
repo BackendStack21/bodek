@@ -63,7 +63,7 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	defer cl.Close()
+	defer func() { _ = cl.Close() }()
 
 	cwd, err := os.Getwd()
 	if err != nil {
