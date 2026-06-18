@@ -1,0 +1,9 @@
+# Build artifacts
+/bin/
+bodek
+
+# Editor / OS noise
+.DS_Store
+*.swp
+.idea/
+.vscode/

@@ -1,0 +1,202 @@
+# bodek
+
+[![CI](https://github.com/BackendStack21/bodek/actions/workflows/ci.yml/badge.svg)](https://github.com/BackendStack21/bodek/actions/workflows/ci.yml)
+[![Release](https://github.com/BackendStack21/bodek/actions/workflows/release.yml/badge.svg)](https://github.com/BackendStack21/bodek/actions/workflows/release.yml)
+[![Go Reference](https://pkg.go.dev/badge/github.com/BackendStack21/bodek.svg)](https://pkg.go.dev/github.com/BackendStack21/bodek)
+[![Go Report Card](https://goreportcard.com/badge/github.com/BackendStack21/bodek)](https://goreportcard.com/report/github.com/BackendStack21/bodek)
+
+**A beautiful [Bubble Tea](https://github.com/charmbracelet/bubbletea) terminal interface for the [odek](https://github.com/BackendStack21/odek) agent.**
+
+```
+██████   ██████  ██████  ███████ ██   ██
+██   ██ ██    ██ ██   ██ ██      ██  ██
+██████  ██    ██ ██   ██ █████   █████
+██   ██ ██    ██ ██   ██ ██      ██  ██
+██████   ██████  ██████  ███████ ██   ██
+```
+
+bodek is a **pure front-end**. It launches (or attaches to) an `odek serve`
+instance and renders the agent's live stream — reasoning, tokens, tool calls,
+approvals, skills, and memory — as a polished TUI. Every bit of agent
+behaviour (tools, danger gating, sandbox, skills, memory, sessions) comes from
+**odek itself**; bodek never re-implements any of it.
+
+---
+
+## Why a separate front-end?
+
+odek already ships a streaming WebSocket protocol (the one its Web UI speaks).
+bodek reuses that exact protocol from the terminal, which means:
+
+- **Zero duplicated logic** — tools, the `danger` approval engine, the Docker
+  sandbox, skills, and memory all run inside odek, unchanged.
+- **Full fidelity** — token streaming, per-tool activity, and security prompts
+  appear in the TUI exactly as the engine emits them.
+- **One source of truth** — upgrade odek and bodek gets the new behaviour for
+  free.
+
+```
+┌──────────────┐   WebSocket (RFC 6455, JSON)   ┌──────────────────┐
+│    bodek     │ ◄────────────────────────────► │   odek serve      │
+│ (Bubble Tea) │   tokens · tools · approvals    │  (ReAct engine,   │
+│   TUI client │                                 │   tools, sandbox) │
+└──────────────┘                                 └──────────────────┘
+```
+
+---
+
+## Install
+
+```bash
+# Install odek (the engine) and bodek (the TUI)
+go install github.com/BackendStack21/odek/cmd/odek@latest
+go install github.com/BackendStack21/bodek/cmd/bodek@latest
+
+# Provide an LLM key (any OpenAI-compatible provider)
+export ODEK_API_KEY=sk-...
+
+bodek
+```
+
+bodek looks for `odek` on your `PATH`. To point at a specific binary use
+`--odek-bin`, or skip spawning entirely with `--url`.
+
+---
+
+## Usage
+
+```bash
+bodek                                 # launch odek serve and start chatting
+bodek --sandbox                       # run tool calls inside odek's Docker sandbox
+bodek --url http://127.0.0.1:8080     # attach to an already-running odek serve
+bodek --odek-bin ./odek               # use a specific odek binary
+bodek -- --prompt-caching             # pass extra flags through to `odek serve`
+```
+
+Configuration (model, base URL, API key, MCP servers, memory, skills) is read
+by `odek serve` from its usual chain — `~/.odek/config.json` → `./odek.json` →
+`ODEK_*` env vars — so bodek inherits whatever you've already set up.
+
+### Key bindings
+
+| Key | Action |
+|-----|--------|
+| `⏎` | Send the prompt (or run a `/command`) |
+| `/` | Open the command palette (see below) |
+| `@` | Attach a file (see below) |
+| `^R` | Browse & resume saved sessions |
+| `^O` | Switch the model |
+| `^T` | Toggle extended thinking for the next turn |
+| `^J` | Insert a newline in the input |
+| `^L` | Clear the conversation |
+| `Esc` | Cancel the running turn |
+| `PgUp` / `PgDn` / wheel | Scroll the transcript |
+| `^C` | Quit |
+
+### Commands (`/`)
+
+Type `/` at the start of the input for a command palette. `↑`/`↓` to choose,
+`⇥` to complete, `⏎` to run, `esc` to dismiss. You can also just type the full
+command and press `⏎`.
+
+| Command | Action |
+|---------|--------|
+| `/help` | List commands and key bindings |
+| `/clear` | Clear the conversation |
+| `/sessions` | Browse & resume saved sessions |
+| `/model [name]` | Switch model (opens a picker with no argument) |
+| `/thinking [on\|off]` | Toggle extended thinking |
+| `/cancel` | Cancel the running turn |
+| `/quit` | Exit bodek |
+
+### File attachments (`@`)
+
+Type `@` to attach a file. bodek searches the working tree and shows a
+completion popup; `↑`/`↓` to choose, `⏎` or `⇥` to insert, `esc` to dismiss.
+
+```
+> summarize @internal/client/client.go and explain the protocol
+```
+
+odek resolves and inlines the file content **server-side** (wrapped in its
+untrusted-content boundary), so attachments go through the same security model
+as any other external input — bodek doesn't special-case them. (Saved sessions
+are resumed via `/sessions` or `^R`, not `@`.)
+
+When the agent requests approval for a dangerous operation, answer inline:
+
+| Key | Action |
+|-----|--------|
+| `a` | Approve once |
+| `d` | Deny |
+| `t` | Trust this risk class for the session (when offered) |
+
+---
+
+## What you see
+
+- **Streaming answers** rendered as Markdown ([glamour](https://github.com/charmbracelet/glamour)).
+- **Tool activity** — every `tool_call`/`tool_result` shown live with a glyph
+  per tool, a spinner, an argument preview, and a one-line result.
+- **Security approvals** — odek's `danger` engine prompts surface as an inline
+  panel; your answer is sent straight back over the socket.
+- **Live reasoning** — the model's pre-tool thinking streams in dimmed text,
+  with a running elapsed timer and cycling status while it works.
+- **Command palette (`/`)** and **file attachments (`@`)** — live, navigable popups.
+- **Context-aware progress** — while the agent works, the status badge shows
+  what it's actually doing (`🧪 running tests`, `📖 reading client.go`,
+  `🚀 pushing`) with a live elapsed timer.
+- **Session browser** (`^R`) — resume, replay, or delete past conversations.
+- **Model switcher** (`^O`) — change the model for the next turn.
+- **Cancellation** (`Esc`) — abort a running turn via odek's cancel API.
+- **Sandbox aware** — the header shows `🛡 sandboxed` or `⚠ host access`; pass
+  `--sandbox` to run tool calls inside odek's Docker isolation.
+- **Telemetry** — session token totals and last-turn latency in the chrome.
+- **Fluent by default** — gradient wordmark and hairline, smooth braille
+  spinner, smart autoscroll that never yanks you while you read history, and a
+  scroll-position indicator.
+- **Engine notices** — skill loads, memory merges, and agent signals appear as
+  quiet status lines.
+
+---
+
+## Development
+
+```bash
+make build      # → bin/bodek
+make run        # build and launch
+make test       # go test -race ./...
+make cover      # coverage report for internal packages
+make lint       # golangci-lint (if installed)
+make vet
+make tidy
+```
+
+Continuous integration runs build, `go vet`, `golangci-lint`, and the race-
+enabled test suite on every push (see [`.github/workflows`](.github/workflows)).
+Tagged releases (`vX.Y.Z`) are built and published automatically by
+[GoReleaser](https://goreleaser.com).
+
+Project layout:
+
+| Path | Responsibility |
+|------|----------------|
+| `cmd/bodek` | CLI entry point: flags, lifecycle, wiring |
+| `internal/server` | Launch / attach to `odek serve`, resolve the auth token |
+| `internal/client` | odek serve WebSocket protocol (transport + REST + decoding) |
+| `internal/tokens` | Local persistence of per-session auth tokens |
+| `internal/tui` | The Bubble Tea model, update loop, panels, and view |
+
+### Architecture & testing
+
+bodek is a pure client, so it is highly testable: the WebSocket protocol, REST
+endpoints, token store, and the full Bubble Tea update/view loop are exercised
+by unit and integration tests against an in-process `odek serve` stand-in.
+Internal-package statement coverage is **~99%** (client 100%, tui 99%, tokens
+98%, server 95% — the remainder is unreachable OS-error handling).
+
+---
+
+## License
+
+MIT — see [LICENSE](LICENSE).
