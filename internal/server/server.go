@@ -17,6 +17,10 @@ import (
 
 const wsTokenCookie = "odek_ws_token"
 
+// readyTimeout bounds how long Connect waits for the server to come up. It is a
+// variable so tests can shorten it.
+var readyTimeout = 30 * time.Second
+
 // Conn holds everything needed to talk to an odek serve instance.
 type Conn struct {
 	BaseURL string // http://127.0.0.1:port
@@ -71,7 +75,7 @@ func Connect(opts Options) (*Conn, error) {
 		}
 	}
 
-	if err := waitReady(c.BaseURL, 30*time.Second); err != nil {
+	if err := waitReady(c.BaseURL, readyTimeout); err != nil {
 		c.Stop()
 		return nil, fmt.Errorf("odek serve did not become ready: %w", err)
 	}
@@ -135,7 +139,7 @@ func freePort() (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	defer l.Close()
+	defer func() { _ = l.Close() }()
 	return l.Addr().(*net.TCPAddr).Port, nil
 }
 
@@ -149,7 +153,7 @@ func waitReady(baseURL string, timeout time.Duration) error {
 		resp, err := client.Do(req)
 		cancel()
 		if err == nil {
-			resp.Body.Close()
+			_ = resp.Body.Close()
 			if resp.StatusCode < 500 {
 				return nil
 			}
@@ -167,7 +171,7 @@ func fetchToken(baseURL string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	for _, ck := range resp.Cookies() {
 		if ck.Name == wsTokenCookie && ck.Value != "" {
 			return ck.Value, nil

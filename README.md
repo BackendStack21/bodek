@@ -1,5 +1,10 @@
 # bodek
 
+[![CI](https://github.com/BackendStack21/bodek/actions/workflows/ci.yml/badge.svg)](https://github.com/BackendStack21/bodek/actions/workflows/ci.yml)
+[![Release](https://github.com/BackendStack21/bodek/actions/workflows/release.yml/badge.svg)](https://github.com/BackendStack21/bodek/actions/workflows/release.yml)
+[![Go Reference](https://pkg.go.dev/badge/github.com/BackendStack21/bodek.svg)](https://pkg.go.dev/github.com/BackendStack21/bodek)
+[![Go Report Card](https://goreportcard.com/badge/github.com/BackendStack21/bodek)](https://goreportcard.com/report/github.com/BackendStack21/bodek)
+
 **A beautiful [Bubble Tea](https://github.com/charmbracelet/bubbletea) terminal interface for the [odek](https://github.com/BackendStack21/odek) agent.**
 
 ```
@@ -78,9 +83,12 @@ by `odek serve` from its usual chain — `~/.odek/config.json` → `./odek.json`
 |-----|--------|
 | `⏎` | Send the prompt |
 | `@` | Open file/session reference completion (see below) |
-| `^J` | Insert a newline in the input |
+| `^R` | Browse & resume saved sessions |
+| `^O` | Switch the model |
 | `^T` | Toggle extended thinking for the next turn |
+| `^J` | Insert a newline in the input |
 | `^L` | Clear the conversation |
+| `Esc` | Cancel the running turn |
 | `PgUp` / `PgDn` / wheel | Scroll the transcript |
 | `^C` | Quit |
 
@@ -123,6 +131,14 @@ When the agent requests approval for a dangerous operation, answer inline:
 - **Live reasoning** — the model's pre-tool thinking streams in dimmed text,
   with a running elapsed timer and cycling status while it works.
 - **`@` autocomplete** — a live, navigable popup of files and sessions.
+- **Context-aware progress** — while the agent works, the status badge shows
+  what it's actually doing (`🧪 running tests`, `📖 reading client.go`,
+  `🚀 pushing`) with a live elapsed timer.
+- **Session browser** (`^R`) — resume, replay, or delete past conversations.
+- **Model switcher** (`^O`) — change the model for the next turn.
+- **Cancellation** (`Esc`) — abort a running turn via odek's cancel API.
+- **Sandbox aware** — the header shows `🛡 sandboxed` or `⚠ host access`; pass
+  `--sandbox` to run tool calls inside odek's Docker isolation.
 - **Telemetry** — session token totals and last-turn latency in the chrome.
 - **Fluent by default** — gradient wordmark and hairline, smooth braille
   spinner, smart autoscroll that never yanks you while you read history, and a
@@ -137,9 +153,17 @@ When the agent requests approval for a dangerous operation, answer inline:
 ```bash
 make build      # → bin/bodek
 make run        # build and launch
+make test       # go test -race ./...
+make cover      # coverage report for internal packages
+make lint       # golangci-lint (if installed)
 make vet
 make tidy
 ```
+
+Continuous integration runs build, `go vet`, `golangci-lint`, and the race-
+enabled test suite on every push (see [`.github/workflows`](.github/workflows)).
+Tagged releases (`vX.Y.Z`) are built and published automatically by
+[GoReleaser](https://goreleaser.com).
 
 Project layout:
 
@@ -147,8 +171,17 @@ Project layout:
 |------|----------------|
 | `cmd/bodek` | CLI entry point: flags, lifecycle, wiring |
 | `internal/server` | Launch / attach to `odek serve`, resolve the auth token |
-| `internal/client` | odek serve WebSocket protocol (transport + event decoding) |
-| `internal/tui` | The Bubble Tea model, update loop, and view |
+| `internal/client` | odek serve WebSocket protocol (transport + REST + decoding) |
+| `internal/tokens` | Local persistence of per-session auth tokens |
+| `internal/tui` | The Bubble Tea model, update loop, panels, and view |
+
+### Architecture & testing
+
+bodek is a pure client, so it is highly testable: the WebSocket protocol, REST
+endpoints, token store, and the full Bubble Tea update/view loop are exercised
+by unit and integration tests against an in-process `odek serve` stand-in.
+Internal-package statement coverage is **~99%** (client 100%, tui 99%, tokens
+98%, server 95% — the remainder is unreachable OS-error handling).
 
 ---
 

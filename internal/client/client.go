@@ -34,6 +34,7 @@ type Event struct {
 
 	// session
 	SessionID string `json:"session_id"`
+	AuthToken string `json:"auth_token"`
 	Model     string `json:"model"`
 	Sandbox   bool   `json:"sandbox"`
 
@@ -117,7 +118,7 @@ func (c *Client) Resources(query string, limit int) ([]Resource, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("resources: status %s", resp.Status)
 	}
@@ -147,22 +148,32 @@ func (c *Client) readLoop() {
 
 // prompt is the client→server prompt message.
 type prompt struct {
-	Type     string `json:"type"`
-	Content  string `json:"content"`
-	Thinking string `json:"thinking,omitempty"`
-	Model    string `json:"model,omitempty"`
+	Type      string `json:"type"`
+	Content   string `json:"content"`
+	Thinking  string `json:"thinking,omitempty"`
+	Model     string `json:"model,omitempty"`
+	SessionID string `json:"session_id,omitempty"`
+	AuthToken string `json:"auth_token,omitempty"`
 }
 
-// SendPrompt submits a task. thinking is "enabled" to force reasoning for this
-// turn, or "" for the server default. model switches the active model when set.
-// Session continuity is automatic: the server keeps one conversation per
-// connection.
-func (c *Client) SendPrompt(content, thinking, model string) error {
+// PromptOpts are optional parameters for a prompt turn.
+type PromptOpts struct {
+	Thinking  string // "enabled" to force reasoning this turn, "" for default
+	Model     string // switch the active model when set
+	SessionID string // resume/continue a specific session
+	AuthToken string // session-scoped token, required when SessionID is set
+}
+
+// SendPrompt submits a task. Session continuity is automatic on a single
+// connection; SessionID+AuthToken resume a saved conversation.
+func (c *Client) SendPrompt(content string, opts PromptOpts) error {
 	return ws.JSON.Send(c.conn, prompt{
-		Type:     "prompt",
-		Content:  content,
-		Thinking: thinking,
-		Model:    model,
+		Type:      "prompt",
+		Content:   content,
+		Thinking:  opts.Thinking,
+		Model:     opts.Model,
+		SessionID: opts.SessionID,
+		AuthToken: opts.AuthToken,
 	})
 }
 

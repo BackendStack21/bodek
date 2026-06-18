@@ -14,6 +14,7 @@ import (
 	"github.com/charmbracelet/glamour"
 
 	"github.com/BackendStack21/bodek/internal/client"
+	"github.com/BackendStack21/bodek/internal/tokens"
 )
 
 // role identifies who authored a conversation entry.
@@ -55,6 +56,7 @@ type Model struct {
 	events <-chan client.Event
 	opts   Options
 	th     theme
+	tokens *tokens.Store
 
 	width, height int
 	ready         bool
@@ -70,6 +72,7 @@ type Model struct {
 	thinking strings.Builder
 	runStart time.Time
 	lastTool string
+	lastArg  string
 
 	approval *client.Event // pending approval, nil when none
 	ac       autocomplete  // @-reference completion state
@@ -77,7 +80,15 @@ type Model struct {
 	model     string
 	sandbox   bool
 	sessionID string
+	authToken string // session-scoped token (for cancel / resume)
+	pendModel string // model to apply on the next prompt
 	thinkOn   bool
+
+	panel    panelMode
+	sessions []client.Session
+	models   []client.ModelInfo
+	panelSel int
+	panelMsg string // status/error line inside a panel
 
 	sessCtxTok  int
 	sessOutTok  int
@@ -147,6 +158,7 @@ func New(cl *client.Client, opts Options) *Model {
 		events:  cl.Events,
 		opts:    opts,
 		th:      th,
+		tokens:  tokens.Open(),
 		ta:      ta,
 		sp:      sp,
 		curIdx:  -1,
@@ -197,6 +209,30 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.refresh()
 		return m, nil
 
+	case sessionsMsg:
+		m.handleSessionsMsg(msg)
+		m.refresh()
+		return m, nil
+
+	case modelsMsg:
+		m.handleModelsMsg(msg)
+		m.refresh()
+		return m, nil
+
+	case sessionDetailMsg:
+		m.handleSessionDetail(msg)
+		return m, nil
+
+	case sessionDeletedMsg:
+		return m, m.handleSessionDeleted(msg)
+
+	case cancelDoneMsg:
+		if msg.err != nil {
+			m.addNote("cancel failed: " + msg.err.Error())
+			m.refresh()
+		}
+		return m, nil
+
 	case eventMsg:
 		return m.handleEvent(client.Event(msg))
 
@@ -231,6 +267,11 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
+	// A full-area panel (sessions / models) captures the keyboard while open.
+	if m.panel != panelNone {
+		return m.handlePanelKey(msg)
+	}
+
 	// The @-reference popup captures navigation keys while open.
 	if m.ac.open {
 		switch msg.String() {
@@ -259,6 +300,15 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "ctrl+c":
 		m.quitting = true
 		return m, tea.Quit
+	case "esc":
+		if m.busy {
+			return m, m.cancelRun()
+		}
+		return m, nil
+	case "ctrl+r":
+		return m, m.openSessions()
+	case "ctrl+o":
+		return m, m.openModels()
 	case "enter":
 		return m, m.submit()
 	case "ctrl+j":
@@ -291,6 +341,10 @@ func (m *Model) handleEvent(ev client.Event) (tea.Model, tea.Cmd) {
 	switch ev.Type {
 	case "session":
 		m.sessionID = ev.SessionID
+		if ev.AuthToken != "" {
+			m.authToken = ev.AuthToken
+			m.tokens.Set(ev.SessionID, ev.AuthToken)
+		}
 		if ev.Model != "" {
 			m.model = ev.Model
 		}
@@ -308,10 +362,12 @@ func (m *Model) handleEvent(ev client.Event) (tea.Model, tea.Cmd) {
 		m.status = "responding"
 
 	case "tool_call":
+		arg := argPreview(ev.Data)
 		if i := m.cur(); i >= 0 {
-			m.msgs[i].steps = append(m.msgs[i].steps, step{name: ev.Name, arg: argPreview(ev.Data)})
+			m.msgs[i].steps = append(m.msgs[i].steps, step{name: ev.Name, arg: arg})
 		}
 		m.lastTool = ev.Name
+		m.lastArg = arg
 		m.status = "running " + ev.Name
 
 	case "tool_result":
@@ -326,11 +382,13 @@ func (m *Model) handleEvent(ev client.Event) (tea.Model, tea.Cmd) {
 			}
 		}
 		m.lastTool = ""
+		m.lastArg = ""
 
 	case "done":
 		m.finalize()
 		m.busy = false
 		m.lastTool = ""
+		m.lastArg = ""
 		m.status = "ready"
 		m.sessCtxTok = ev.SessionContextTokens
 		m.sessOutTok = ev.SessionOutputTokens
@@ -345,6 +403,7 @@ func (m *Model) handleEvent(ev client.Event) (tea.Model, tea.Cmd) {
 		m.finalize()
 		m.busy = false
 		m.lastTool = ""
+		m.lastArg = ""
 		m.status = "error"
 
 	case "approval_request":
@@ -399,9 +458,16 @@ func (m *Model) submit() tea.Cmd {
 	if m.thinkOn {
 		thinking = "enabled"
 	}
+	opts := client.PromptOpts{
+		Thinking:  thinking,
+		Model:     m.pendModel,
+		SessionID: m.sessionID,
+		AuthToken: m.authToken,
+	}
+	m.pendModel = "" // applied
 	cl := m.cl
 	return func() tea.Msg {
-		if err := cl.SendPrompt(text, thinking, ""); err != nil {
+		if err := cl.SendPrompt(text, opts); err != nil {
 			return errMsg{err}
 		}
 		return nil

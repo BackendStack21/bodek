@@ -14,9 +14,13 @@ func (m *Model) View() string {
 	if !m.ready {
 		return "\n  starting bodek…"
 	}
+	body := m.vp.View()
+	if m.panel != panelNone {
+		body = m.renderPanel(m.width, m.vp.Height)
+	}
 	parts := []string{
 		m.header(),
-		m.vp.View(),
+		body,
 		m.inputArea(),
 		m.footer(),
 	}
@@ -29,10 +33,6 @@ func (m *Model) header() string {
 	th := m.th
 	logo := th.logo.Render(gradient("⬡ bodek", gradFrom, gradTo))
 
-	sandbox := "off"
-	if m.sandbox {
-		sandbox = "on"
-	}
 	think := "off"
 	if m.thinkOn {
 		think = "on"
@@ -41,11 +41,18 @@ func (m *Model) header() string {
 	if modelName == "" {
 		modelName = "default"
 	}
-	meta := th.headerMeta.Render(" · sandbox "+sandbox+" · think ") +
-		th.headerKey.Render(think)
+	// Sandbox status, prominently colored: green shield when isolated, amber
+	// warning when the agent has host access.
+	var sandbox string
+	if m.sandbox {
+		sandbox = lipgloss.NewStyle().Foreground(colGreen).Render("🛡 sandboxed")
+	} else {
+		sandbox = lipgloss.NewStyle().Foreground(colYellow).Render("⚠ host access")
+	}
+	meta := th.headerMeta.Render(" · think ") + th.headerKey.Render(think)
 	model := th.headerKey.Render(modelName)
 
-	left := logo + "   " + model + meta
+	left := logo + "   " + model + th.headerMeta.Render("  ·  ") + sandbox + meta
 
 	status := m.statusBadge()
 	tokens := th.headerMeta.Render(fmt.Sprintf("∑ ⌂ %s · ⎇ %s",
@@ -70,12 +77,6 @@ func (m *Model) rule() string {
 	return m.gradRule
 }
 
-// engagingVerbs cycle while the model is reasoning, so the UI feels alive.
-var engagingVerbs = []string{
-	"thinking", "reasoning it through", "connecting the dots",
-	"consulting the model", "weighing the options", "planning the approach",
-}
-
 func (m *Model) statusBadge() string {
 	th := m.th
 	switch {
@@ -84,23 +85,22 @@ func (m *Model) statusBadge() string {
 	case m.approval != nil:
 		return th.statusBusy.Render("⚠ approval required")
 	case m.busy:
-		label := m.status
+		var label string
 		switch {
 		case m.lastTool != "":
-			label = th.toolIcon.Render(toolGlyph(m.lastTool)) + " " +
-				th.statusBusy.Render(m.lastTool)
-		case label == "thinking", label == "":
-			// Cycle engaging verbs roughly every ~1.8s of the run.
-			idx := int(time.Since(m.runStart)/(1800*time.Millisecond)) % len(engagingVerbs)
-			label = th.statusBusy.Render(engagingVerbs[idx])
-		default:
-			label = th.statusBusy.Render(label)
+			// Context-aware message derived from the running tool + its args.
+			label = toolProgress(m.lastTool, m.lastArg)
+		case m.status == "responding":
+			label = "💬 composing the reply"
+		default: // thinking / pre-tool: cycle phrases so a pause feels alive.
+			idx := int(time.Since(m.runStart)/(1500*time.Millisecond)) % len(thinkingPhrases)
+			label = thinkingPhrases[idx]
 		}
 		el := ""
 		if e := m.elapsed(); e != "" {
 			el = th.headerMeta.Render(" · " + e)
 		}
-		return th.spinner.Render(m.sp.View()) + " " + label + el
+		return th.spinner.Render(m.sp.View()) + " " + th.statusBusy.Render(label) + el
 	default:
 		return th.statusReady.Render("● " + m.status)
 	}
@@ -298,20 +298,31 @@ func (m *Model) approvalPanel() string {
 
 func (m *Model) footer() string {
 	th := m.th
+	sep := th.footerSep.Render("  ·  ")
 	if m.approval != nil {
 		return th.footer.Render("  answer the approval prompt to continue")
 	}
 	if m.disconn {
 		return th.footer.Render("  connection closed · press ^C to quit")
 	}
-	sep := th.footerSep.Render("  ·  ")
-	keys := []string{
-		th.footerKey.Render("⏎") + th.footer.Render(" send"),
-		th.footerKey.Render("^J") + th.footer.Render(" newline"),
-		th.footerKey.Render("^T") + th.footer.Render(" thinking"),
-		th.footerKey.Render("^L") + th.footer.Render(" clear"),
-		th.footerKey.Render("^C") + th.footer.Render(" quit"),
+	if m.panel == panelSessions {
+		return m.panelFooter("↑↓ select", "⏎ resume", "d delete", "esc close")
 	}
+	if m.panel == panelModels {
+		return m.panelFooter("↑↓ select", "⏎ use", "esc close")
+	}
+	var keys []string
+	if m.busy {
+		keys = append(keys, th.footerKey.Render("esc")+th.footer.Render(" cancel"))
+	}
+	keys = append(keys,
+		th.footerKey.Render("⏎")+th.footer.Render(" send"),
+		th.footerKey.Render("@")+th.footer.Render(" attach"),
+		th.footerKey.Render("^R")+th.footer.Render(" sessions"),
+		th.footerKey.Render("^O")+th.footer.Render(" model"),
+		th.footerKey.Render("^T")+th.footer.Render(" thinking"),
+		th.footerKey.Render("^C")+th.footer.Render(" quit"),
+	)
 	left := "  " + strings.Join(keys, sep)
 
 	var segs []string
@@ -330,6 +341,16 @@ func (m *Model) footer() string {
 		gap = 1
 	}
 	return left + strings.Repeat(" ", gap) + right
+}
+
+// panelFooter renders a simple hint line for an open panel.
+func (m *Model) panelFooter(hints ...string) string {
+	th := m.th
+	parts := make([]string, len(hints))
+	for i, h := range hints {
+		parts[i] = th.footer.Render(h)
+	}
+	return "  " + strings.Join(parts, th.footerSep.Render("  ·  "))
 }
 
 // ── small helpers ──────────────────────────────────────────────────────────

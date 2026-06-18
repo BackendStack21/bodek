@@ -1,0 +1,18 @@
+version: "2"
+
+run:
+  timeout: 5m
+
+linters:
+  default: standard # errcheck, govet, ineffassign, staticcheck, unused
+  exclusions:
+    rules:
+      # Test helpers freely ignore errors on HTTP test handlers and Close().
+      - path: _test\.go
+        linters:
+          - errcheck
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
