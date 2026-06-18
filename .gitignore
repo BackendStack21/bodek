@@ -1,6 +1,6 @@
 # Build artifacts
 /bin/
-bodek
+/bodek
 
 # Editor / OS noise
 .DS_Store

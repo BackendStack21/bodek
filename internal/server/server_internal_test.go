@@ -3,6 +3,7 @@ package server
 import (
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"os/exec"
 	"testing"
 	"time"
@@ -47,6 +48,10 @@ func TestStopInterruptsLongProcess(t *testing.T) {
 
 func TestSpawnDefaultBinMissing(t *testing.T) {
 	// Empty Bin defaults to "odek"; absent from PATH here → LookPath error.
+	// Isolate PATH so the test is deterministic even when odek is installed.
+	oldPath := os.Getenv("PATH")
+	defer os.Setenv("PATH", oldPath)
+	os.Setenv("PATH", "")
 	c := &Conn{}
 	if err := c.spawn(Options{Bin: ""}, "127.0.0.1:0"); err == nil {
 		t.Error("expected default-bin lookup to fail")
