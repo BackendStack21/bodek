@@ -228,14 +228,17 @@ func (m *Model) handleSessionDetail(msg sessionDetailMsg) {
 	m.sandbox = msg.sess.Sandbox
 	m.msgs = m.msgs[:0]
 	for _, mm := range msg.sess.Messages {
+		// Persisted transcripts are attacker-influenced (agent output, and the
+		// session file itself); strip terminal control sequences before display.
+		content := sanitize(mm.Content)
 		switch mm.Role {
 		case "user":
-			m.msgs = append(m.msgs, message{role: roleUser, content: mm.Content})
+			m.msgs = append(m.msgs, message{role: roleUser, content: content})
 		case "assistant":
-			if strings.TrimSpace(mm.Content) == "" {
+			if strings.TrimSpace(content) == "" {
 				continue
 			}
-			m.msgs = append(m.msgs, message{role: roleAsst, content: mm.Content, rendered: m.render(mm.Content)})
+			m.msgs = append(m.msgs, message{role: roleAsst, content: content, rendered: m.render(content)})
 		}
 	}
 	m.addNote("resumed session " + shortID(msg.sess.ID))

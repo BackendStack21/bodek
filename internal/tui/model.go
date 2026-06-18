@@ -351,12 +351,12 @@ func (m *Model) handleEvent(ev client.Event) (tea.Model, tea.Cmd) {
 		m.sandbox = ev.Sandbox
 
 	case "thinking":
-		m.thinking.WriteString(ev.Content)
+		m.thinking.WriteString(sanitize(ev.Content))
 		m.status = "thinking"
 
 	case "token":
 		if i := m.cur(); i >= 0 {
-			m.msgs[i].content += ev.Content
+			m.msgs[i].content += sanitize(ev.Content)
 			m.msgs[i].streaming = true
 		}
 		m.status = "responding"
@@ -509,7 +509,7 @@ func (m *Model) finalize() {
 }
 
 func (m *Model) addNote(s string) {
-	m.notices = append(m.notices, s)
+	m.notices = append(m.notices, sanitize(s))
 	if len(m.notices) > 6 {
 		m.notices = m.notices[len(m.notices)-6:]
 	}
@@ -695,7 +695,37 @@ func linePreview(data string) string {
 }
 
 func collapse(s string) string {
-	return strings.Join(strings.Fields(s), " ")
+	return strings.Join(strings.Fields(sanitize(s)), " ")
+}
+
+// sanitize strips terminal control sequences from untrusted content before it
+// is rendered. Agent output — streamed tokens, tool results, file contents,
+// resumed transcripts — is attacker-influenced; raw C0 control bytes (notably
+// ESC, 0x1b) could drive ANSI/OSC escapes that move the cursor, clear the
+// screen, or exfiltrate via OSC 52. We keep newlines and tabs and drop every
+// other control byte (and DEL), which defangs escape sequences by removing
+// their introducer while leaving readable text intact.
+func sanitize(s string) string {
+	if !strings.ContainsFunc(s, isControl) {
+		return s
+	}
+	var b strings.Builder
+	b.Grow(len(s))
+	for _, r := range s {
+		if !isControl(r) {
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
+}
+
+// isControl reports whether r is a control character we strip from untrusted
+// text (C0 controls and DEL, except newline and tab).
+func isControl(r rune) bool {
+	if r == '\n' || r == '\t' {
+		return false
+	}
+	return r < 0x20 || r == 0x7f
 }
 
 // formatDuration renders a short, friendly elapsed time.
