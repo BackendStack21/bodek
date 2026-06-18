@@ -103,10 +103,19 @@ type Model struct {
 	gradRuleW int
 }
 
-// autocomplete holds the @-reference completion popup state.
+// acMode selects what the completion popup is completing.
+type acMode int
+
+const (
+	acRef acMode = iota // @-references (files/sessions), searched server-side
+	acCmd               // slash commands, filtered locally
+)
+
+// autocomplete holds the completion popup state (shared by @ and / modes).
 type autocomplete struct {
 	open    bool
 	loading bool
+	mode    acMode
 	query   string
 	items   []client.Resource
 	sel     int
@@ -197,8 +206,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case acResultMsg:
-		if msg.seq != m.ac.seq {
-			return m, nil // stale response
+		if msg.seq != m.ac.seq || m.ac.mode != acRef {
+			return m, nil // stale response, or popup switched to command mode
 		}
 		m.ac.loading = false
 		m.ac.items = msg.items
@@ -287,7 +296,14 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.refresh()
 			}
 			return m, nil
-		case "tab", "enter":
+		case "tab":
+			m.acceptCompletion()
+			return m, nil
+		case "enter":
+			// A fully-typed command executes; a reference is inserted.
+			if m.ac.mode == acCmd {
+				return m, m.runSelectedCommand()
+			}
 			m.acceptCompletion()
 			return m, nil
 		case "esc":
@@ -436,11 +452,15 @@ func (m *Model) handleEvent(ev client.Event) (tea.Model, tea.Cmd) {
 // ── actions ──────────────────────────────────────────────────────────────
 
 func (m *Model) submit() tea.Cmd {
-	if m.busy || m.disconn {
-		return nil
-	}
 	text := strings.TrimSpace(m.ta.Value())
 	if text == "" {
+		return nil
+	}
+	// Slash commands run locally and are allowed even mid-turn (e.g. /cancel).
+	if strings.HasPrefix(text, "/") {
+		return m.runCommandLine(text)
+	}
+	if m.busy || m.disconn {
 		return nil
 	}
 	m.msgs = append(m.msgs, message{role: roleUser, content: text})
@@ -599,20 +619,33 @@ func refStart(s string) (int, bool) {
 	return loc[4] - 1, true // group 2 start, minus the '@'
 }
 
-// syncAC re-evaluates the input for an @-reference and kicks off a search.
+// syncAC re-evaluates the input and drives the completion popup — slash
+// commands (filtered locally) or @-references (searched server-side).
 func (m *Model) syncAC() tea.Cmd {
-	q, ok := activeRef(m.ta.Value())
+	val := m.ta.Value()
+
+	// Line-initial slash command completion.
+	if name, ok := commandPrefix(val); ok {
+		if m.ac.open && m.ac.mode == acCmd && m.ac.query == name {
+			return nil
+		}
+		m.openCmdAC(name)
+		return nil
+	}
+
+	q, ok := activeRef(val)
 	if !ok {
 		if m.ac.open {
 			m.closeAC()
 		}
 		return nil
 	}
-	if m.ac.open && q == m.ac.query {
+	if m.ac.open && m.ac.mode == acRef && q == m.ac.query {
 		return nil // nothing changed
 	}
 	m.ac.open = true
 	m.ac.loading = true
+	m.ac.mode = acRef
 	m.ac.query = q
 	m.ac.sel = 0
 	m.ac.seq++
@@ -622,21 +655,38 @@ func (m *Model) syncAC() tea.Cmd {
 
 	cl := m.cl
 	return func() tea.Msg {
-		items, err := cl.Resources(q, 6)
+		// @ is for file attachments only; sessions are reached via /sessions
+		// (or ^R). Over-fetch, then keep just files.
+		items, err := cl.Resources(q, 12)
 		if err != nil {
 			return acResultMsg{seq: seq, items: nil}
 		}
-		return acResultMsg{seq: seq, items: items}
+		files := make([]client.Resource, 0, len(items))
+		for _, it := range items {
+			if it.Type == "file" {
+				files = append(files, it)
+			}
+		}
+		if len(files) > 6 {
+			files = files[:6]
+		}
+		return acResultMsg{seq: seq, items: files}
 	}
 }
 
-// acceptCompletion inserts the selected resource reference into the input.
+// acceptCompletion inserts the highlighted item into the input.
 func (m *Model) acceptCompletion() {
 	if len(m.ac.items) == 0 {
 		m.closeAC()
 		return
 	}
 	item := m.ac.items[m.ac.sel]
+	if m.ac.mode == acCmd {
+		m.ta.SetValue(item.ID + " ")
+		m.ta.CursorEnd()
+		m.closeAC()
+		return
+	}
 	val := m.ta.Value()
 	if idx, ok := refStart(val); ok {
 		m.ta.SetValue(val[:idx] + item.ID + " ")

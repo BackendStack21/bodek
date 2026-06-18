@@ -235,8 +235,12 @@ func (m *Model) acPopup() string {
 		innerW = 12
 	}
 
-	title := th.acTitle.Render("@ reference")
-	if hint := "  ↑↓ select · ⇥ insert · esc cancel"; 11+lipgloss.Width(hint) <= innerW {
+	label, hint := "@ attach file", "  ↑↓ select · ⇥ insert · esc cancel"
+	if m.ac.mode == acCmd {
+		label, hint = "commands", "  ↑↓ select · ⇥ complete · ⏎ run · esc cancel"
+	}
+	title := th.acTitle.Render(label)
+	if lipgloss.Width(label)+lipgloss.Width(hint) <= innerW {
 		title += th.acDim.Render(hint)
 	}
 
@@ -245,7 +249,11 @@ func (m *Model) acPopup() string {
 	case m.ac.loading && len(m.ac.items) == 0:
 		rows = append(rows, th.acDim.Render(m.sp.View()+" searching…"))
 	case len(m.ac.items) == 0:
-		rows = append(rows, th.acDim.Render("no matches for @"+m.ac.query))
+		noun := "files"
+		if m.ac.mode == acCmd {
+			noun = "commands"
+		}
+		rows = append(rows, th.acDim.Render("no matching "+noun))
 	default:
 		for i, it := range m.ac.items {
 			// Truncate in plain text first so styled rows never wrap.

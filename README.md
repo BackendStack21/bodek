@@ -81,8 +81,9 @@ by `odek serve` from its usual chain — `~/.odek/config.json` → `./odek.json`
 
 | Key | Action |
 |-----|--------|
-| `⏎` | Send the prompt |
-| `@` | Open file/session reference completion (see below) |
+| `⏎` | Send the prompt (or run a `/command`) |
+| `/` | Open the command palette (see below) |
+| `@` | Attach a file (see below) |
 | `^R` | Browse & resume saved sessions |
 | `^O` | Switch the model |
 | `^T` | Toggle extended thinking for the next turn |
@@ -92,24 +93,35 @@ by `odek serve` from its usual chain — `~/.odek/config.json` → `./odek.json`
 | `PgUp` / `PgDn` / wheel | Scroll the transcript |
 | `^C` | Quit |
 
-### File attachments / `@` references
+### Commands (`/`)
 
-Type `@` in the input to attach context. bodek queries odek's resource index
-live and shows a completion popup; `↑`/`↓` to choose, `⏎` or `⇥` to insert,
-`esc` to dismiss.
+Type `/` at the start of the input for a command palette. `↑`/`↓` to choose,
+`⇥` to complete, `⏎` to run, `esc` to dismiss. You can also just type the full
+command and press `⏎`.
 
-| Reference | Resolves to |
-|-----------|-------------|
-| `@path/to/file` | The file's contents, inlined into your prompt |
-| `@sess:<id>` | A saved session transcript |
+| Command | Action |
+|---------|--------|
+| `/help` | List commands and key bindings |
+| `/clear` | Clear the conversation |
+| `/sessions` | Browse & resume saved sessions |
+| `/model [name]` | Switch model (opens a picker with no argument) |
+| `/thinking [on\|off]` | Toggle extended thinking |
+| `/cancel` | Cancel the running turn |
+| `/quit` | Exit bodek |
+
+### File attachments (`@`)
+
+Type `@` to attach a file. bodek searches the working tree and shows a
+completion popup; `↑`/`↓` to choose, `⏎` or `⇥` to insert, `esc` to dismiss.
 
 ```
-> summarize @internal/client/client.go and compare it with @sess:20260618-ab12
+> summarize @internal/client/client.go and explain the protocol
 ```
 
-odek resolves and inlines the referenced content **server-side** (wrapped in
-its untrusted-content boundary), so attachments go through the same security
-model as any other external input — bodek doesn't special-case them.
+odek resolves and inlines the file content **server-side** (wrapped in its
+untrusted-content boundary), so attachments go through the same security model
+as any other external input — bodek doesn't special-case them. (Saved sessions
+are resumed via `/sessions` or `^R`, not `@`.)
 
 When the agent requests approval for a dangerous operation, answer inline:
 
@@ -130,7 +142,7 @@ When the agent requests approval for a dangerous operation, answer inline:
   panel; your answer is sent straight back over the socket.
 - **Live reasoning** — the model's pre-tool thinking streams in dimmed text,
   with a running elapsed timer and cycling status while it works.
-- **`@` autocomplete** — a live, navigable popup of files and sessions.
+- **Command palette (`/`)** and **file attachments (`@`)** — live, navigable popups.
 - **Context-aware progress** — while the agent works, the status badge shows
   what it's actually doing (`🧪 running tests`, `📖 reading client.go`,
   `🚀 pushing`) with a live elapsed timer.

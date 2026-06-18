@@ -34,6 +34,8 @@ func toolGlyph(name string) string {
 // resourceGlyph returns a glyph for an @-reference result type.
 func resourceGlyph(typ string) string {
 	switch typ {
+	case "command":
+		return "/"
 	case "session":
 		return "⟳"
 	case "skill":

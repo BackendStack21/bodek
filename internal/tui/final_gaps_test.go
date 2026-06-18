@@ -59,7 +59,7 @@ func TestAcPopupLoadingAndEmpty(t *testing.T) {
 	m.ac.loading = false
 	m.ac.items = nil
 	m.ac.query = "zzz"
-	if !strings.Contains(plain(m.acPopup()), "no matches") {
+	if !strings.Contains(plain(m.acPopup()), "no matching") {
 		t.Error("empty popup missing")
 	}
 }
