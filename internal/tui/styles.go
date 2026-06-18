@@ -65,6 +65,9 @@ type theme struct {
 	statusReady lipgloss.Style
 	statusBusy  lipgloss.Style
 
+	toolIcon lipgloss.Style
+	scroll   lipgloss.Style
+
 	footer    lipgloss.Style
 	footerKey lipgloss.Style
 	footerSep lipgloss.Style
@@ -72,6 +75,14 @@ type theme struct {
 	tagline lipgloss.Style
 	tipKey  lipgloss.Style
 	tipText lipgloss.Style
+
+	acBox    lipgloss.Style
+	acTitle  lipgloss.Style
+	acItem   lipgloss.Style
+	acSel    lipgloss.Style
+	acDim    lipgloss.Style
+	acDetail lipgloss.Style
+	acIcon   lipgloss.Style
 }
 
 func newTheme() theme {
@@ -110,6 +121,9 @@ func newTheme() theme {
 		statusReady: lipgloss.NewStyle().Foreground(colGreen),
 		statusBusy:  lipgloss.NewStyle().Foreground(colYellow),
 
+		toolIcon: lipgloss.NewStyle().Foreground(colCyan),
+		scroll:   lipgloss.NewStyle().Foreground(colFaint),
+
 		footer:    lipgloss.NewStyle().Foreground(colFaint),
 		footerKey: lipgloss.NewStyle().Foreground(colMuted).Bold(true),
 		footerSep: lipgloss.NewStyle().Foreground(colHairline),
@@ -117,6 +131,14 @@ func newTheme() theme {
 		tagline: lipgloss.NewStyle().Foreground(colMuted).Italic(true),
 		tipKey:  lipgloss.NewStyle().Foreground(colCyan).Bold(true),
 		tipText: lipgloss.NewStyle().Foreground(colMuted),
+
+		acBox:    lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(colBrand).Padding(0, 1),
+		acTitle:  lipgloss.NewStyle().Foreground(colBrand).Bold(true),
+		acItem:   lipgloss.NewStyle().Foreground(colFg),
+		acSel:    lipgloss.NewStyle().Foreground(colBrand2).Bold(true),
+		acDim:    lipgloss.NewStyle().Foreground(colFaint).Italic(true),
+		acDetail: lipgloss.NewStyle().Foreground(colFaint),
+		acIcon:   lipgloss.NewStyle().Foreground(colCyan),
 	}
 }
 

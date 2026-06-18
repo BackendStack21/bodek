@@ -77,11 +77,31 @@ by `odek serve` from its usual chain — `~/.odek/config.json` → `./odek.json`
 | Key | Action |
 |-----|--------|
 | `⏎` | Send the prompt |
+| `@` | Open file/session reference completion (see below) |
 | `^J` | Insert a newline in the input |
 | `^T` | Toggle extended thinking for the next turn |
 | `^L` | Clear the conversation |
 | `PgUp` / `PgDn` / wheel | Scroll the transcript |
 | `^C` | Quit |
+
+### File attachments / `@` references
+
+Type `@` in the input to attach context. bodek queries odek's resource index
+live and shows a completion popup; `↑`/`↓` to choose, `⏎` or `⇥` to insert,
+`esc` to dismiss.
+
+| Reference | Resolves to |
+|-----------|-------------|
+| `@path/to/file` | The file's contents, inlined into your prompt |
+| `@sess:<id>` | A saved session transcript |
+
+```
+> summarize @internal/client/client.go and compare it with @sess:20260618-ab12
+```
+
+odek resolves and inlines the referenced content **server-side** (wrapped in
+its untrusted-content boundary), so attachments go through the same security
+model as any other external input — bodek doesn't special-case them.
 
 When the agent requests approval for a dangerous operation, answer inline:
 
@@ -96,12 +116,17 @@ When the agent requests approval for a dangerous operation, answer inline:
 ## What you see
 
 - **Streaming answers** rendered as Markdown ([glamour](https://github.com/charmbracelet/glamour)).
-- **Tool activity** — every `tool_call`/`tool_result` shown live with a spinner,
-  argument preview, and a one-line result.
+- **Tool activity** — every `tool_call`/`tool_result` shown live with a glyph
+  per tool, a spinner, an argument preview, and a one-line result.
 - **Security approvals** — odek's `danger` engine prompts surface as an inline
   panel; your answer is sent straight back over the socket.
-- **Live reasoning** — the model's pre-tool thinking streams in dimmed text.
+- **Live reasoning** — the model's pre-tool thinking streams in dimmed text,
+  with a running elapsed timer and cycling status while it works.
+- **`@` autocomplete** — a live, navigable popup of files and sessions.
 - **Telemetry** — session token totals and last-turn latency in the chrome.
+- **Fluent by default** — gradient wordmark and hairline, smooth braille
+  spinner, smart autoscroll that never yanks you while you read history, and a
+  scroll-position indicator.
 - **Engine notices** — skill loads, memory merges, and agent signals appear as
   quiet status lines.
 

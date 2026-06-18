@@ -2,7 +2,10 @@ package tui
 
 import (
 	"encoding/json"
+	"fmt"
+	"regexp"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textarea"
@@ -65,8 +68,11 @@ type Model struct {
 	curIdx   int // index of the streaming assistant message, -1 when idle
 	busy     bool
 	thinking strings.Builder
+	runStart time.Time
+	lastTool string
 
 	approval *client.Event // pending approval, nil when none
+	ac       autocomplete  // @-reference completion state
 
 	model     string
 	sandbox   bool
@@ -81,6 +87,38 @@ type Model struct {
 	notices  []string
 	disconn  bool
 	quitting bool
+
+	gradRule  string // cached full-width gradient rule
+	gradRuleW int
+}
+
+// autocomplete holds the @-reference completion popup state.
+type autocomplete struct {
+	open    bool
+	loading bool
+	query   string
+	items   []client.Resource
+	sel     int
+	seq     int // request sequence, to drop stale responses
+}
+
+// rows is the number of list rows the popup renders.
+func (a autocomplete) rows() int {
+	if len(a.items) == 0 {
+		return 1 // "searching…" / "no matches"
+	}
+	return len(a.items)
+}
+
+// height is the total rendered height of the popup (border + title + rows).
+func (a autocomplete) height() int {
+	return a.rows() + 3
+}
+
+// acResultMsg carries the result of an async resource search.
+type acResultMsg struct {
+	seq   int
+	items []client.Resource
 }
 
 // New builds the initial model.
@@ -97,7 +135,11 @@ func New(cl *client.Client, opts Options) *Model {
 	ta.Focus()
 
 	sp := spinner.New()
-	sp.Spinner = spinner.MiniDot
+	// A smooth braille spinner reads as fluid motion at small size.
+	sp.Spinner = spinner.Spinner{
+		Frames: []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"},
+		FPS:    time.Second / 12,
+	}
 	sp.Style = th.spinner
 
 	return &Model{
@@ -130,7 +172,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case spinner.TickMsg:
 		var cmd tea.Cmd
 		m.sp, cmd = m.sp.Update(msg)
-		if m.busy {
+		if m.busy || m.ac.loading {
 			m.refresh()
 		}
 		return m, cmd
@@ -139,6 +181,19 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.busy = false
 		m.status = "error"
 		m.addNote("error: " + msg.err.Error())
+		m.refresh()
+		return m, nil
+
+	case acResultMsg:
+		if msg.seq != m.ac.seq {
+			return m, nil // stale response
+		}
+		m.ac.loading = false
+		m.ac.items = msg.items
+		if m.ac.sel >= len(m.ac.items) {
+			m.ac.sel = 0
+		}
+		m.relayout()
 		m.refresh()
 		return m, nil
 
@@ -176,6 +231,30 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
+	// The @-reference popup captures navigation keys while open.
+	if m.ac.open {
+		switch msg.String() {
+		case "up", "ctrl+p":
+			if m.ac.sel > 0 {
+				m.ac.sel--
+				m.refresh()
+			}
+			return m, nil
+		case "down", "ctrl+n":
+			if m.ac.sel < len(m.ac.items)-1 {
+				m.ac.sel++
+				m.refresh()
+			}
+			return m, nil
+		case "tab", "enter":
+			m.acceptCompletion()
+			return m, nil
+		case "esc":
+			m.closeAC()
+			return m, nil
+		}
+	}
+
 	switch msg.String() {
 	case "ctrl+c":
 		m.quitting = true
@@ -186,7 +265,7 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// Insert a newline into the textarea.
 		var cmd tea.Cmd
 		m.ta, cmd = m.ta.Update(tea.KeyMsg{Type: tea.KeyEnter})
-		return m, cmd
+		return m, tea.Batch(cmd, m.syncAC())
 	case "ctrl+t":
 		m.thinkOn = !m.thinkOn
 		return m, nil
@@ -202,9 +281,10 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, cmd
 	}
 
+	// Normal typing — update the input, then re-evaluate @-completion.
 	var cmd tea.Cmd
 	m.ta, cmd = m.ta.Update(msg)
-	return m, cmd
+	return m, tea.Batch(cmd, m.syncAC())
 }
 
 func (m *Model) handleEvent(ev client.Event) (tea.Model, tea.Cmd) {
@@ -231,6 +311,7 @@ func (m *Model) handleEvent(ev client.Event) (tea.Model, tea.Cmd) {
 		if i := m.cur(); i >= 0 {
 			m.msgs[i].steps = append(m.msgs[i].steps, step{name: ev.Name, arg: argPreview(ev.Data)})
 		}
+		m.lastTool = ev.Name
 		m.status = "running " + ev.Name
 
 	case "tool_result":
@@ -244,10 +325,12 @@ func (m *Model) handleEvent(ev client.Event) (tea.Model, tea.Cmd) {
 				}
 			}
 		}
+		m.lastTool = ""
 
 	case "done":
 		m.finalize()
 		m.busy = false
+		m.lastTool = ""
 		m.status = "ready"
 		m.sessCtxTok = ev.SessionContextTokens
 		m.sessOutTok = ev.SessionOutputTokens
@@ -261,6 +344,7 @@ func (m *Model) handleEvent(ev client.Event) (tea.Model, tea.Cmd) {
 		}
 		m.finalize()
 		m.busy = false
+		m.lastTool = ""
 		m.status = "error"
 
 	case "approval_request":
@@ -304,8 +388,10 @@ func (m *Model) submit() tea.Cmd {
 	m.msgs = append(m.msgs, message{role: roleAsst, streaming: true})
 	m.curIdx = len(m.msgs) - 1
 	m.ta.Reset()
+	m.closeAC()
 	m.busy = true
 	m.status = "thinking"
+	m.runStart = time.Now()
 	m.thinking.Reset()
 	m.refresh()
 
@@ -378,18 +464,13 @@ func (m *Model) render(content string) string {
 func (m *Model) resize(w, h int) tea.Cmd {
 	m.width, m.height = w, h
 
-	vpHeight := h - headerHeight - inputHeight - footerHeight
-	if vpHeight < 3 {
-		vpHeight = 3
-	}
 	if !m.ready {
-		m.vp = viewport.New(w, vpHeight)
+		m.vp = viewport.New(w, 3)
 		m.ready = true
-	} else {
-		m.vp.Width = w
-		m.vp.Height = vpHeight
 	}
 	m.ta.SetWidth(w - 4)
+	m.gradRule = "" // invalidate cached rule for the new width
+	m.relayout()
 
 	wrap := w - 6
 	if wrap < 20 {
@@ -409,6 +490,111 @@ func (m *Model) resize(w, h int) tea.Cmd {
 	}
 	m.refresh()
 	return nil
+}
+
+// relayout recomputes the viewport height from the current chrome, accounting
+// for the @-reference popup when it is open.
+func (m *Model) relayout() {
+	if !m.ready {
+		return
+	}
+	inputH := inputHeight
+	if m.ac.open {
+		inputH += m.ac.height()
+	}
+	vpH := m.height - headerHeight - footerHeight - inputH
+	if vpH < 3 {
+		vpH = 3
+	}
+	m.vp.Width = m.width
+	m.vp.Height = vpH
+}
+
+// ── @-reference autocomplete ────────────────────────────────────────────────
+
+// refRe matches a trailing @-reference token at the end of the input.
+var refRe = regexp.MustCompile(`(^|\s)@([^\s@]*)$`)
+
+// activeRef returns the query of the trailing @-token, if the cursor is in one.
+func activeRef(s string) (string, bool) {
+	mm := refRe.FindStringSubmatch(s)
+	if mm == nil {
+		return "", false
+	}
+	return mm[2], true
+}
+
+// refStart returns the byte index of the '@' that begins the trailing token.
+func refStart(s string) (int, bool) {
+	loc := refRe.FindStringSubmatchIndex(s)
+	if loc == nil {
+		return 0, false
+	}
+	return loc[4] - 1, true // group 2 start, minus the '@'
+}
+
+// syncAC re-evaluates the input for an @-reference and kicks off a search.
+func (m *Model) syncAC() tea.Cmd {
+	q, ok := activeRef(m.ta.Value())
+	if !ok {
+		if m.ac.open {
+			m.closeAC()
+		}
+		return nil
+	}
+	if m.ac.open && q == m.ac.query {
+		return nil // nothing changed
+	}
+	m.ac.open = true
+	m.ac.loading = true
+	m.ac.query = q
+	m.ac.sel = 0
+	m.ac.seq++
+	seq := m.ac.seq
+	m.relayout()
+	m.refresh()
+
+	cl := m.cl
+	return func() tea.Msg {
+		items, err := cl.Resources(q, 6)
+		if err != nil {
+			return acResultMsg{seq: seq, items: nil}
+		}
+		return acResultMsg{seq: seq, items: items}
+	}
+}
+
+// acceptCompletion inserts the selected resource reference into the input.
+func (m *Model) acceptCompletion() {
+	if len(m.ac.items) == 0 {
+		m.closeAC()
+		return
+	}
+	item := m.ac.items[m.ac.sel]
+	val := m.ta.Value()
+	if idx, ok := refStart(val); ok {
+		m.ta.SetValue(val[:idx] + item.ID + " ")
+		m.ta.CursorEnd()
+	}
+	m.closeAC()
+}
+
+// closeAC dismisses the completion popup and restores the layout.
+func (m *Model) closeAC() {
+	if !m.ac.open && m.ac.items == nil {
+		return
+	}
+	m.ac = autocomplete{seq: m.ac.seq}
+	m.relayout()
+	m.refresh()
+}
+
+// elapsed formats the current run's wall-clock time, e.g. "3.2s".
+func (m *Model) elapsed() string {
+	if m.runStart.IsZero() {
+		return ""
+	}
+	return formatDuration(time.Since(m.runStart))
 }
 
 // argPreview extracts a short, human-friendly summary from a tool's JSON args.
@@ -444,6 +630,14 @@ func linePreview(data string) string {
 
 func collapse(s string) string {
 	return strings.Join(strings.Fields(s), " ")
+}
+
+// formatDuration renders a short, friendly elapsed time.
+func formatDuration(d time.Duration) string {
+	if d < time.Minute {
+		return fmt.Sprintf("%.1fs", d.Seconds())
+	}
+	return fmt.Sprintf("%dm%02ds", int(d.Minutes()), int(d.Seconds())%60)
 }
 
 func truncate(s string, n int) string {

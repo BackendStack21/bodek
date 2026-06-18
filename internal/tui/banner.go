@@ -35,6 +35,7 @@ func welcome(th theme, width int) string {
 
 	tips := [][2]string{
 		{"type a task", "and press enter to run the agent"},
+		{"@ to attach", "reference files & sessions, e.g. @main.go"},
 		{"⏎ send", "·  ^J newline  ·  ^T toggle thinking"},
 		{"^L clear", "·  PgUp/PgDn scroll  ·  ^C quit"},
 		{"approvals", "answer with [a]pprove [d]eny [t]rust"},

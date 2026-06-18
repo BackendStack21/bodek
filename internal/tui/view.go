@@ -3,6 +3,7 @@ package tui
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/lipgloss"
 )
@@ -40,10 +41,11 @@ func (m *Model) header() string {
 	if modelName == "" {
 		modelName = "default"
 	}
-	meta := th.headerMeta.Render(fmt.Sprintf("%s · sandbox %s · think %s",
-		th.headerKey.Render(modelName), sandbox, think))
+	meta := th.headerMeta.Render(" · sandbox "+sandbox+" · think ") +
+		th.headerKey.Render(think)
+	model := th.headerKey.Render(modelName)
 
-	left := logo + th.headerMeta.Render("   "+meta)
+	left := logo + "   " + model + meta
 
 	status := m.statusBadge()
 	tokens := th.headerMeta.Render(fmt.Sprintf("∑ ⌂ %s · ⎇ %s",
@@ -55,8 +57,23 @@ func (m *Model) header() string {
 		gap = 1
 	}
 	bar := left + strings.Repeat(" ", gap) + right
-	rule := th.rule.Render(strings.Repeat("─", max(m.width, 1)))
-	return bar + "\n" + rule
+	return bar + "\n" + m.rule()
+}
+
+// rule returns a full-width gradient hairline, cached per width.
+func (m *Model) rule() string {
+	w := max(m.width, 1)
+	if m.gradRule == "" || m.gradRuleW != w {
+		m.gradRule = gradient(strings.Repeat("─", w), gradFrom, gradTo)
+		m.gradRuleW = w
+	}
+	return m.gradRule
+}
+
+// engagingVerbs cycle while the model is reasoning, so the UI feels alive.
+var engagingVerbs = []string{
+	"thinking", "reasoning it through", "connecting the dots",
+	"consulting the model", "weighing the options", "planning the approach",
 }
 
 func (m *Model) statusBadge() string {
@@ -65,9 +82,25 @@ func (m *Model) statusBadge() string {
 	case m.disconn:
 		return lipgloss.NewStyle().Foreground(colRed).Render("● disconnected")
 	case m.approval != nil:
-		return th.statusBusy.Render("● approval required")
+		return th.statusBusy.Render("⚠ approval required")
 	case m.busy:
-		return th.statusBusy.Render(m.sp.View() + " " + m.status)
+		label := m.status
+		switch {
+		case m.lastTool != "":
+			label = th.toolIcon.Render(toolGlyph(m.lastTool)) + " " +
+				th.statusBusy.Render(m.lastTool)
+		case label == "thinking", label == "":
+			// Cycle engaging verbs roughly every ~1.8s of the run.
+			idx := int(time.Since(m.runStart)/(1800*time.Millisecond)) % len(engagingVerbs)
+			label = th.statusBusy.Render(engagingVerbs[idx])
+		default:
+			label = th.statusBusy.Render(label)
+		}
+		el := ""
+		if e := m.elapsed(); e != "" {
+			el = th.headerMeta.Render(" · " + e)
+		}
+		return th.spinner.Render(m.sp.View()) + " " + label + el
 	default:
 		return th.statusReady.Render("● " + m.status)
 	}
@@ -76,12 +109,17 @@ func (m *Model) statusBadge() string {
 // ── transcript ───────────────────────────────────────────────────────────
 
 // refresh rebuilds the viewport content and scrolls to the latest output.
+// While busy it follows the stream; when idle it preserves the reader's
+// position unless they were already at the bottom.
 func (m *Model) refresh() {
 	if !m.ready {
 		return
 	}
+	stick := m.busy || m.vp.AtBottom()
 	m.vp.SetContent(m.conversation())
-	m.vp.GotoBottom()
+	if stick {
+		m.vp.GotoBottom()
+	}
 }
 
 func (m *Model) conversation() string {
@@ -148,11 +186,12 @@ func (m *Model) renderSteps(msg message) string {
 		case s.done:
 			icon = th.stepDone.Render("✓")
 		case msg.streaming:
-			icon = m.sp.View()
+			icon = th.spinner.Render(m.sp.View())
 		default:
 			icon = th.stepRun.Render("▸")
 		}
-		line := icon + " " + th.stepName.Render(s.name)
+		glyph := th.toolIcon.Render(toolGlyph(s.name))
+		line := icon + " " + glyph + " " + th.stepName.Render(s.name)
 		if s.arg != "" {
 			line += th.stepArg.Render("  " + s.arg)
 		}
@@ -179,7 +218,54 @@ func (m *Model) inputArea() string {
 	if m.approval != nil {
 		return m.approvalPanel()
 	}
-	return m.th.inputBox.Width(m.width - 2).Render(m.ta.View())
+	box := m.th.inputBox.Width(m.width - 2).Render(m.ta.View())
+	if m.ac.open {
+		return m.acPopup() + "\n" + box
+	}
+	return box
+}
+
+// acPopup renders the @-reference completion box. Its height must match
+// autocomplete.height() so the layout math stays exact.
+func (m *Model) acPopup() string {
+	th := m.th
+	// Inner content width inside the box (border + padding = 4 columns).
+	innerW := m.width - 6
+	if innerW < 12 {
+		innerW = 12
+	}
+
+	title := th.acTitle.Render("@ reference")
+	if hint := "  ↑↓ select · ⇥ insert · esc cancel"; 11+lipgloss.Width(hint) <= innerW {
+		title += th.acDim.Render(hint)
+	}
+
+	var rows []string
+	switch {
+	case m.ac.loading && len(m.ac.items) == 0:
+		rows = append(rows, th.acDim.Render(m.sp.View()+" searching…"))
+	case len(m.ac.items) == 0:
+		rows = append(rows, th.acDim.Render("no matches for @"+m.ac.query))
+	default:
+		for i, it := range m.ac.items {
+			// Truncate in plain text first so styled rows never wrap.
+			budget := innerW - 4 // prefix(2) + icon(1) + space(1)
+			lab := truncate(it.Label, budget)
+			rest := budget - lipgloss.Width(lab)
+			det := ""
+			if it.Detail != "" && rest > 6 {
+				det = th.acDetail.Render(truncate("  "+it.Detail, rest))
+			}
+			icon := th.acIcon.Render(resourceGlyph(it.Type))
+			prefix, lbl := "  ", th.acItem.Render(lab)
+			if i == m.ac.sel {
+				prefix, lbl = th.acSel.Render("› "), th.acSel.Render(lab)
+			}
+			rows = append(rows, prefix+icon+" "+lbl+det)
+		}
+	}
+	body := title + "\n" + strings.Join(rows, "\n")
+	return th.acBox.Width(m.width - 2).Render(body)
 }
 
 func (m *Model) approvalPanel() string {
@@ -228,9 +314,16 @@ func (m *Model) footer() string {
 	}
 	left := "  " + strings.Join(keys, sep)
 
-	right := ""
+	var segs []string
 	if m.lastLatency > 0 {
-		right = th.footer.Render(fmt.Sprintf("%.1fs  ", m.lastLatency))
+		segs = append(segs, th.footer.Render(fmt.Sprintf("⚡ %.1fs", m.lastLatency)))
+	}
+	if !m.vp.AtBottom() {
+		segs = append(segs, th.scroll.Render(fmt.Sprintf("↕ %d%%", int(m.vp.ScrollPercent()*100))))
+	}
+	right := ""
+	if len(segs) > 0 {
+		right = strings.Join(segs, th.footerSep.Render("  ·  ")) + "  "
 	}
 	gap := m.width - lipgloss.Width(left) - lipgloss.Width(right)
 	if gap < 1 {

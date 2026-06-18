@@ -10,6 +10,9 @@ package client
 import (
 	"encoding/json"
 	"fmt"
+	"net/http"
+	"net/url"
+	"time"
 
 	ws "golang.org/x/net/websocket"
 )
@@ -64,16 +67,27 @@ type Event struct {
 // socket closes, so the TUI can react instead of hanging.
 const EventDisconnected = "_disconnected"
 
+// Resource is a single @-reference completion candidate from /api/resources.
+type Resource struct {
+	ID     string `json:"id"`     // full reference, e.g. "@src/main.go"
+	Type   string `json:"type"`   // "file" | "session" | "skill"
+	Label  string `json:"label"`  // display label
+	Detail string `json:"detail"` // one-line description
+}
+
 // Client is a connected odek serve session.
 type Client struct {
-	conn   *ws.Conn
-	Events chan Event
+	conn    *ws.Conn
+	baseURL string
+	http    *http.Client
+	Events  chan Event
 }
 
 // Dial connects to an odek serve WebSocket. wsURL is the ws:// endpoint,
-// origin is an http://localhost-based origin accepted by the server, and token
-// is the per-instance CSRF token (obtained from a GET / Set-Cookie header).
-func Dial(wsURL, origin, token string) (*Client, error) {
+// origin is an http://localhost-based origin accepted by the server, baseURL is
+// the http:// root (used for the resource-search API), and token is the
+// per-instance CSRF token (obtained from a GET / Set-Cookie header).
+func Dial(wsURL, origin, baseURL, token string) (*Client, error) {
 	cfg, err := ws.NewConfig(wsURL, origin)
 	if err != nil {
 		return nil, fmt.Errorf("ws config: %w", err)
@@ -85,9 +99,33 @@ func Dial(wsURL, origin, token string) (*Client, error) {
 		return nil, fmt.Errorf("ws dial: %w", err)
 	}
 
-	c := &Client{conn: conn, Events: make(chan Event, 256)}
+	c := &Client{
+		conn:    conn,
+		baseURL: baseURL,
+		http:    &http.Client{Timeout: 3 * time.Second},
+		Events:  make(chan Event, 256),
+	}
 	go c.readLoop()
 	return c, nil
+}
+
+// Resources queries the server's @-reference completion endpoint.
+func (c *Client) Resources(query string, limit int) ([]Resource, error) {
+	u := fmt.Sprintf("%s/api/resources?q=%s&limit=%d",
+		c.baseURL, url.QueryEscape(query), limit)
+	resp, err := c.http.Get(u)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("resources: status %s", resp.Status)
+	}
+	var out []Resource
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 // readLoop decodes frames into Events until the socket closes.
