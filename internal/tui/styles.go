@@ -47,7 +47,9 @@ type theme struct {
 	stepArg  lipgloss.Style
 	stepRun  lipgloss.Style
 	stepDone lipgloss.Style
+	stepErr  lipgloss.Style
 	stepRes  lipgloss.Style
+	stepTree lipgloss.Style
 
 	spinner lipgloss.Style
 
@@ -123,7 +125,9 @@ func newTheme() theme {
 		stepArg:  lipgloss.NewStyle().Foreground(colFaint),
 		stepRun:  lipgloss.NewStyle().Foreground(colYellow),
 		stepDone: lipgloss.NewStyle().Foreground(colGreen),
+		stepErr:  lipgloss.NewStyle().Foreground(colRed).Bold(true),
 		stepRes:  lipgloss.NewStyle().Foreground(colFaint).Italic(true),
+		stepTree: lipgloss.NewStyle().Foreground(colHairline),
 
 		spinner: lipgloss.NewStyle().Foreground(colBrand),
 

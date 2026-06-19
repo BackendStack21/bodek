@@ -137,7 +137,12 @@ When the agent requests approval for a dangerous operation, answer inline:
 
 - **Streaming answers** rendered as Markdown ([glamour](https://github.com/charmbracelet/glamour)).
 - **Tool activity** — every `tool_call`/`tool_result` shown live with a glyph
-  per tool, a spinner, an argument preview, and a one-line result.
+  per tool, a spinner, an argument preview, and a result excerpt rendered as a
+  tree (`⎿`) — multi-line, blank-stripped, capped with a `+N more lines`
+  footer, and tinted with a `✗` when the call fails.
+- **Sub-agents** — delegations are labelled and their `subagent_log` activity
+  nests beneath the delegating call, so a sub-agent's progress reads as its own
+  branch of the step tree.
 - **Security approvals** — odek's `danger` engine prompts surface as an inline
   panel; your answer is sent straight back over the socket.
 - **Live reasoning** — the model's pre-tool thinking streams in dimmed text,

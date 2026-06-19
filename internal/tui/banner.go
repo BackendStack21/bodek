@@ -40,7 +40,8 @@ func welcome(th theme, width int, cwd string) string {
 	}
 	b.WriteByte('\n')
 
-	// key column is right-aligned to a fixed width so the descriptions line up.
+	// key column is left-aligned to a fixed width so both the keys and their
+	// descriptions line up on a flush left edge.
 	tips := [][2]string{
 		{"type a task", "and press enter to run the agent"},
 		{"/ commands", "type / for commands, e.g. /help /sessions /model"},
@@ -52,7 +53,7 @@ func welcome(th theme, width int, cwd string) string {
 	}
 	const keyW = 11
 	for _, t := range tips {
-		b.WriteString(th.tipKey.Render(padLeft(t[0], keyW)) + "  " + th.tipText.Render(t[1]) + "\n")
+		b.WriteString(th.tipKey.Render(padRight(t[0], keyW)) + "  " + th.tipText.Render(t[1]) + "\n")
 	}
 
 	block := strings.TrimRight(b.String(), "\n")
@@ -67,6 +68,15 @@ func padLeft(s string, n int) string {
 		return s
 	}
 	return strings.Repeat(" ", n-w) + s
+}
+
+// padRight right-pads s with spaces to width n (left-aligns within the column).
+func padRight(s string, n int) string {
+	w := lipgloss.Width(s)
+	if w >= n {
+		return s
+	}
+	return s + strings.Repeat(" ", n-w)
 }
 
 // shortenHome replaces a leading $HOME with "~" for a compact, readable path.

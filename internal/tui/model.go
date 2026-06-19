@@ -28,10 +28,13 @@ const (
 
 // step is a single tool invocation within an assistant turn.
 type step struct {
-	name   string
-	arg    string
-	result string
-	done   bool
+	name     string
+	arg      string
+	result   string // sanitized tool output (multi-line); excerpted at render
+	done     bool
+	isErr    bool     // the result reads as a failure (tints the status glyph red)
+	subagent bool     // this call delegates to a sub-agent (renders its log tree)
+	logs     []string // nested sub-agent activity, from subagent_log events
 }
 
 // turnStats is the telemetry of one finalized assistant turn, captured from the
@@ -402,7 +405,8 @@ func (m *Model) handleEvent(ev client.Event) (tea.Model, tea.Cmd) {
 	case "tool_call":
 		arg := argPreview(ev.Data)
 		if i := m.cur(); i >= 0 {
-			m.msgs[i].steps = append(m.msgs[i].steps, step{name: ev.Name, arg: arg})
+			m.msgs[i].steps = append(m.msgs[i].steps,
+				step{name: ev.Name, arg: arg, subagent: isSubagent(ev.Name)})
 		}
 		m.lastTool = ev.Name
 		m.lastArg = arg
@@ -414,7 +418,8 @@ func (m *Model) handleEvent(ev client.Event) (tea.Model, tea.Cmd) {
 			for j := len(steps) - 1; j >= 0; j-- {
 				if steps[j].name == ev.Name && !steps[j].done {
 					steps[j].done = true
-					steps[j].result = linePreview(ev.Data)
+					steps[j].result = resultPreview(ev.Data)
+					steps[j].isErr = looksLikeError(steps[j].result)
 					break
 				}
 			}
@@ -476,7 +481,17 @@ func (m *Model) handleEvent(ev client.Event) (tea.Model, tea.Cmd) {
 	case "agent_signal":
 		m.addNote("signal · " + strings.TrimSpace(ev.SubType+" "+ev.Detail) + eventTail(ev))
 	case "subagent_log":
-		m.addNote("subagent · " + strings.TrimSpace(ev.SubType+" "+ev.Name) + eventTail(ev))
+		line := strings.TrimSpace(ev.SubType + " " + ev.Name)
+		if d := collapse(ev.Detail); d != "" {
+			line = strings.TrimSpace(line + " · " + d)
+		}
+		line += eventTail(ev)
+		// Nest the log under the in-flight sub-agent step when there is one;
+		// otherwise (resumed turn, idle, or an unwrapped log) keep it as a notice.
+		if i := m.cur(); i >= 0 && m.attachSubLog(i, line) {
+			break
+		}
+		m.addNote("subagent · " + line)
 
 	case client.EventDisconnected:
 		m.disconn = true
@@ -829,7 +844,10 @@ func argPreview(data string) string {
 	if err := json.Unmarshal([]byte(data), &m); err != nil {
 		return truncate(collapse(data), 72)
 	}
-	for _, key := range []string{"command", "cmd", "path", "file", "pattern", "query", "url"} {
+	for _, key := range []string{
+		"command", "cmd", "path", "file", "pattern", "query", "url",
+		"prompt", "task", "description", "instruction",
+	} {
 		if v, ok := m[key]; ok {
 			if s, ok := v.(string); ok && s != "" {
 				return truncate(collapse(s), 72)
@@ -845,9 +863,62 @@ func argPreview(data string) string {
 	return truncate(collapse(strings.Join(parts, " ")), 72)
 }
 
-// linePreview returns the first meaningful line of tool output, truncated.
-func linePreview(data string) string {
-	return truncate(collapse(data), 72)
+// resultPreview sanitizes tool output and caps it to a generous number of
+// lines, so the transcript can show a useful excerpt (rendered by renderSteps)
+// without retaining the unbounded output of a chatty tool.
+func resultPreview(data string) string {
+	s := sanitize(data)
+	lines := strings.Split(s, "\n")
+	const cap = 200
+	if len(lines) > cap {
+		lines = lines[:cap]
+	}
+	return strings.Join(lines, "\n")
+}
+
+// isSubagent reports whether a tool name denotes a sub-agent delegation. The
+// substrings mirror toolGlyph / toolProgress so the three stay consistent.
+func isSubagent(name string) bool {
+	n := strings.ToLower(name)
+	return strings.Contains(n, "delegate") ||
+		strings.Contains(n, "subagent") ||
+		strings.Contains(n, "task")
+}
+
+// looksLikeError reports whether a tool result reads as a failure. It is
+// deliberately conservative — keyed off leading error tokens and a couple of
+// unambiguous shell phrases — so ordinary output that merely mentions "error"
+// is not tinted red.
+func looksLikeError(s string) bool {
+	t := strings.ToLower(strings.TrimSpace(s))
+	switch {
+	case strings.HasPrefix(t, "error"),
+		strings.HasPrefix(t, "fatal"),
+		strings.HasPrefix(t, "panic:"),
+		strings.HasPrefix(t, "traceback"),
+		strings.HasPrefix(t, "exception"),
+		strings.HasPrefix(t, "exit status"):
+		return true
+	}
+	return strings.Contains(t, "command not found") ||
+		strings.Contains(t, "no such file or directory")
+}
+
+// attachSubLog appends a sub-agent activity line to the most recent sub-agent
+// step in message i, reporting whether one was found.
+func (m *Model) attachSubLog(i int, line string) bool {
+	const maxSubLogs = 8
+	steps := m.msgs[i].steps
+	for j := len(steps) - 1; j >= 0; j-- {
+		if !steps[j].subagent {
+			continue
+		}
+		if len(steps[j].logs) < maxSubLogs {
+			steps[j].logs = append(steps[j].logs, sanitize(line))
+		}
+		return true
+	}
+	return false
 }
 
 func collapse(s string) string {
