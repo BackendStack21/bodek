@@ -3,8 +3,10 @@ package tui
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 
 	"github.com/BackendStack21/bodek/internal/client"
 )
@@ -30,6 +32,10 @@ func slashCommands() []command {
 			m.refresh()
 			return nil
 		}},
+		{"stats", "session metrics & context gauge", func(m *Model, _ string) tea.Cmd {
+			m.showStats()
+			return nil
+		}},
 		{"sessions", "browse & resume saved sessions", func(m *Model, _ string) tea.Cmd {
 			return m.openSessions()
 		}},
@@ -37,6 +43,7 @@ func slashCommands() []command {
 			if args != "" {
 				m.pendModel = args
 				m.model = args
+				m.resolveMaxContext()
 				m.addNote("model set to " + args + " (applies next turn)")
 				m.refresh()
 				return nil
@@ -152,5 +159,123 @@ func (m *Model) showHelp() {
 		"`^T` thinking · `^J` newline · `Esc` cancel · `^L` clear · `^C` quit\n")
 	content := b.String()
 	m.msgs = append(m.msgs, message{role: roleAsst, content: content, rendered: m.render(content)})
+	m.refresh()
+}
+
+// showStats appends a session dashboard card: context-window usage, token and
+// tool totals, latency, thinking ratio, session age, and model/sandbox. It is
+// built as pre-styled lines (raw) so its colors and column alignment are exact
+// and survive width changes untouched.
+func (m *Model) showStats() {
+	th := m.th
+	// boxW is the total rendered width (incl. border). lipgloss .Width(w) makes
+	// the text content w-2 wide (padding) and adds 2 for the border, so passing
+	// boxW-2 yields a box exactly boxW wide with a boxW-4 content column — which
+	// the divider and rows must match exactly to keep the right edge flush.
+	boxW := max(min(m.vp.Width-2, 60), 28)
+	innerW := boxW - 4
+
+	// A labelled row: an accent-tinted glyph, a muted word, then the value.
+	type row struct {
+		glyph string
+		style lipgloss.Style
+		label string
+		value string
+	}
+	var rows []row
+
+	if len(m.turnStats) > 0 {
+		var sumLat, peakLat float64
+		thinkN := 0
+		for _, t := range m.turnStats {
+			sumLat += t.latency
+			if t.latency > peakLat {
+				peakLat = t.latency
+			}
+			if t.thought {
+				thinkN++
+			}
+		}
+		mean := sumLat / float64(len(m.turnStats))
+
+		ctxVal := th.statsValue.Render(human(m.sessCtxTok))
+		if m.maxContext > 0 {
+			ratio := float64(m.sessCtxTok) / float64(m.maxContext)
+			if ratio > 1 {
+				ratio = 1
+			}
+			ctxVal = th.statsValue.Render(human(m.sessCtxTok)+"/"+humanCtx(m.maxContext)) +
+				"  " + m.gaugeColor(ratio).Render(gaugeGlyph(ratio)) +
+				" " + th.statsDim.Render(fmt.Sprintf("%d%%", int(ratio*100+0.5)))
+		}
+
+		latVal := th.statsValue.Render(fmt.Sprintf("%.1fs", mean))
+		if peakLat > mean+0.05 {
+			latVal += th.statsDim.Render(fmt.Sprintf("  · slowest %.1fs", peakLat))
+		}
+
+		think := "off"
+		if m.thinkOn {
+			think = "on"
+		}
+		// Budget the (sanitized) model id so the " · think …" suffix and the
+		// label gutter still fit the content column without wrapping.
+		suffix := " · think " + think
+		modelBudget := innerW - 11 - lipgloss.Width(suffix)
+		if modelBudget < 8 {
+			modelBudget = 8
+		}
+		modelID := truncate(collapse(orDash(m.model)), modelBudget)
+
+		rows = []row{
+			{"⌂", th.statCtx, "context", ctxVal},
+			{"⎇", th.statCtx, "output", th.statsValue.Render(human(m.sessOutTok))},
+			{"↻", th.statsLabel, "turns", th.statsValue.Render(fmt.Sprintf("%d", len(m.turnStats)))},
+			{"⚒", th.statTool, "tools", th.statsValue.Render(fmt.Sprintf("%d", m.toolTotal))},
+			{"⚡", th.statTime, "latency", latVal},
+			{"✳", th.statThink, "thinking", th.statsValue.Render(fmt.Sprintf("%d of %d turns", thinkN, len(m.turnStats)))},
+			{"◷", th.statsLabel, "active", th.statsValue.Render(formatDuration(time.Since(m.sessionStart)))},
+			{"⬡", th.statThink, "model", th.statsValue.Render(modelID) + th.statsDim.Render(" · think "+think)},
+		}
+	}
+
+	// Align values into a column just past the widest label.
+	gutter := 0
+	for _, r := range rows {
+		if w := lipgloss.Width(r.glyph + " " + r.label); w > gutter {
+			gutter = w
+		}
+	}
+	gutter++ // one space before the value column
+
+	var b strings.Builder
+	title := th.acTitle.Render("⬡ session")
+	if id := shortID(m.sessionID); id != "" {
+		title += " " + th.statsDim.Render(id)
+	}
+	b.WriteString(title)
+	b.WriteString("\n" + th.rule.Render(strings.Repeat("─", innerW)))
+
+	if len(rows) == 0 {
+		b.WriteString("\n" + th.statsDim.Render("no turns yet — ask odek something"))
+	} else {
+		for _, r := range rows {
+			styled := r.style.Render(r.glyph) + " " + th.statsLabel.Render(r.label)
+			pad := gutter - lipgloss.Width(r.glyph+" "+r.label)
+			if pad < 1 {
+				pad = 1
+			}
+			b.WriteString("\n" + styled + strings.Repeat(" ", pad) + r.value)
+		}
+		idline := m.sandboxBadge()
+		if !m.sessionStart.IsZero() {
+			idline += th.statsDim.Render(" · started " + ago(m.sessionStart))
+		}
+		b.WriteString("\n" + th.rule.Render(strings.Repeat("─", innerW)))
+		b.WriteString("\n" + idline)
+	}
+
+	card := th.acBox.Width(boxW - 2).Render(b.String())
+	m.msgs = append(m.msgs, message{role: roleAsst, content: card, rendered: card, raw: true})
 	m.refresh()
 }

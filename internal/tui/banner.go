@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"os"
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
@@ -22,8 +23,9 @@ var (
 )
 
 // welcome renders the splash shown in the conversation area before the first
-// prompt: the wordmark, a tagline, and a few key bindings.
-func welcome(th theme, width int) string {
+// prompt: the wordmark, a tagline, the working directory, and a few key
+// bindings — left-aligned with a gentle margin.
+func welcome(th theme, width int, cwd string) string {
 	var b strings.Builder
 	for _, line := range bannerArt {
 		b.WriteString(gradient(line, gradFrom, gradTo))
@@ -31,29 +33,55 @@ func welcome(th theme, width int) string {
 	}
 	b.WriteByte('\n')
 	b.WriteString(th.tagline.Render("a beautiful terminal interface for the odek agent"))
-	b.WriteString("\n\n")
+	b.WriteByte('\n')
+	if dir := shortenHome(cwd); dir != "" {
+		b.WriteString(th.statsDim.Render(dir))
+		b.WriteByte('\n')
+	}
+	b.WriteByte('\n')
 
+	// key column is right-aligned to a fixed width so the descriptions line up.
 	tips := [][2]string{
 		{"type a task", "and press enter to run the agent"},
 		{"/ commands", "type / for commands, e.g. /help /sessions /model"},
+		{"/stats", "session metrics & live context-window gauge"},
 		{"@ to attach", "attach files, e.g. @main.go"},
 		{"⏎ send", "·  ^J newline  ·  ^T toggle thinking"},
 		{"^L clear", "·  PgUp/PgDn scroll  ·  ^C quit"},
 		{"approvals", "answer with [a]pprove [d]eny [t]rust"},
 	}
+	const keyW = 11
 	for _, t := range tips {
-		b.WriteString("  " + th.tipKey.Render(pad(t[0], 12)) + th.tipText.Render(t[1]) + "\n")
+		b.WriteString(th.tipKey.Render(padLeft(t[0], keyW)) + "  " + th.tipText.Render(t[1]) + "\n")
 	}
 
-	block := b.String()
-	// Center the splash block within the available width for a polished look.
-	return lipgloss.NewStyle().Width(width).Align(lipgloss.Center).Render(block)
+	block := strings.TrimRight(b.String(), "\n")
+	// Left-aligned (no centering) with a small left margin for breathing room.
+	return lipgloss.NewStyle().Width(width).PaddingLeft(2).Render(block)
 }
 
-// pad right-pads s with spaces to width n.
-func pad(s string, n int) string {
-	if lipgloss.Width(s) >= n {
+// padLeft left-pads s with spaces to width n (right-aligns within the column).
+func padLeft(s string, n int) string {
+	w := lipgloss.Width(s)
+	if w >= n {
 		return s
 	}
-	return s + strings.Repeat(" ", n-lipgloss.Width(s))
+	return strings.Repeat(" ", n-w) + s
+}
+
+// shortenHome replaces a leading $HOME with "~" for a compact, readable path.
+func shortenHome(p string) string {
+	p = strings.TrimSpace(p)
+	if p == "" {
+		return ""
+	}
+	if home, err := os.UserHomeDir(); err == nil && home != "" {
+		if p == home {
+			return "~"
+		}
+		if strings.HasPrefix(p, home+string(os.PathSeparator)) {
+			return "~" + p[len(home):]
+		}
+	}
+	return p
 }

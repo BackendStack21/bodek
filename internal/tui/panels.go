@@ -132,6 +132,7 @@ func (m *Model) panelSelect() tea.Cmd {
 		if m.panelSel < len(m.models) {
 			m.pendModel = m.models[m.panelSel].ID
 			m.model = m.pendModel
+			m.resolveMaxContext()
 			m.addNote("model set to " + m.pendModel + " (applies next turn)")
 			m.closePanel()
 		}
@@ -205,6 +206,7 @@ func (m *Model) handleModelsMsg(msg modelsMsg) {
 	}
 	m.models = msg.items
 	m.panelSel = 0
+	m.resolveMaxContext() // now that the budget is known, the header gauge can show
 	if len(m.models) == 0 {
 		m.panelMsg = "no models advertised"
 	} else {
@@ -224,8 +226,19 @@ func (m *Model) handleSessionDetail(msg sessionDetailMsg) {
 	m.tokens.Set(msg.sess.ID, msg.token)
 	if msg.sess.Model != "" {
 		m.model = msg.sess.Model
+		m.resolveMaxContext()
 	}
 	m.sandbox = msg.sess.Sandbox
+	// Resuming a session swaps in a fresh transcript, so the session-scoped
+	// telemetry must reset too — otherwise /stats, the header gauge, and the
+	// footer would report the previous session's (monotonically accumulating)
+	// turns, tools, tokens, and age. The next done event repopulates them.
+	m.turnStats = nil
+	m.toolTotal = 0
+	m.sessionStart = time.Time{}
+	m.sessCtxTok = 0
+	m.sessOutTok = 0
+	m.lastLatency = 0
 	m.msgs = m.msgs[:0]
 	for _, mm := range msg.sess.Messages {
 		// Persisted transcripts are attacker-influenced (agent output, and the

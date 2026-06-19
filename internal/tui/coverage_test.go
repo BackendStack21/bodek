@@ -162,8 +162,8 @@ func TestTinyHelpers(t *testing.T) {
 	if max(1, 2) != 2 || max(5, 3) != 5 {
 		t.Error("max")
 	}
-	if pad("ab", 4) != "ab  " || pad("abcd", 2) != "abcd" {
-		t.Errorf("pad: %q / %q", pad("ab", 4), pad("abcd", 2))
+	if padLeft("ab", 4) != "  ab" || padLeft("abcd", 2) != "abcd" {
+		t.Errorf("padLeft: %q / %q", padLeft("ab", 4), padLeft("abcd", 2))
 	}
 	if human(0) != "0" {
 		t.Error("human zero")

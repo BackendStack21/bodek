@@ -68,6 +68,26 @@ type theme struct {
 	toolIcon lipgloss.Style
 	scroll   lipgloss.Style
 
+	// per-turn stat line + session dashboard + context gauge
+	statLine  lipgloss.Style
+	statSep   lipgloss.Style
+	statTime  lipgloss.Style
+	statCtx   lipgloss.Style
+	statTool  lipgloss.Style
+	statThink lipgloss.Style
+	statGlyph lipgloss.Style
+
+	gaugeOK   lipgloss.Style
+	gaugeWarn lipgloss.Style
+	gaugeHot  lipgloss.Style
+
+	statsLabel lipgloss.Style
+	statsValue lipgloss.Style
+	statsDim   lipgloss.Style
+
+	opChip       lipgloss.Style
+	untrustedTag lipgloss.Style
+
 	footer    lipgloss.Style
 	footerKey lipgloss.Style
 	footerSep lipgloss.Style
@@ -123,6 +143,27 @@ func newTheme() theme {
 
 		toolIcon: lipgloss.NewStyle().Foreground(colCyan),
 		scroll:   lipgloss.NewStyle().Foreground(colFaint),
+
+		// Per-turn stat line: glyphs carry the hue, numbers recede in faint so
+		// the row sits quietly beneath the prose.
+		statLine:  lipgloss.NewStyle().Foreground(colFaint),
+		statSep:   lipgloss.NewStyle().Foreground(colHairline),
+		statTime:  lipgloss.NewStyle().Foreground(colYellow),
+		statCtx:   lipgloss.NewStyle().Foreground(colMuted),
+		statTool:  lipgloss.NewStyle().Foreground(colCyan),
+		statThink: lipgloss.NewStyle().Foreground(colBrand),
+		statGlyph: lipgloss.NewStyle().Foreground(colFaint),
+
+		gaugeOK:   lipgloss.NewStyle().Foreground(colGreen),
+		gaugeWarn: lipgloss.NewStyle().Foreground(colYellow),
+		gaugeHot:  lipgloss.NewStyle().Foreground(colRed),
+
+		statsLabel: lipgloss.NewStyle().Foreground(colMuted),
+		statsValue: lipgloss.NewStyle().Foreground(colFg),
+		statsDim:   lipgloss.NewStyle().Foreground(colFaint).Italic(true),
+
+		opChip:       lipgloss.NewStyle().Foreground(colCyan),
+		untrustedTag: lipgloss.NewStyle().Foreground(colYellow),
 
 		footer:    lipgloss.NewStyle().Foreground(colFaint),
 		footerKey: lipgloss.NewStyle().Foreground(colMuted).Bold(true),

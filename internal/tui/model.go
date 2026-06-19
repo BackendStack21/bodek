@@ -34,6 +34,19 @@ type step struct {
 	done   bool
 }
 
+// turnStats is the telemetry of one finalized assistant turn, captured from the
+// done event plus locally-tracked timing/tool activity. It powers the per-turn
+// stat line and the /stats session dashboard.
+type turnStats struct {
+	latency    float64       // model latency reported by the server (seconds)
+	wall       time.Duration // wall-clock from prompt submit to done
+	ctxTok     int           // context tokens consumed this turn
+	outTok     int           // output tokens produced this turn
+	toolCount  int           // tool invocations this turn
+	toolGlyphs []string      // up to 4 deduped tool glyphs, in first-seen order
+	thought    bool          // the model streamed reasoning this turn
+}
+
 // message is one entry in the transcript.
 type message struct {
 	role      role
@@ -41,6 +54,8 @@ type message struct {
 	rendered  string // cached glamour render (assistant, finalized)
 	steps     []step
 	streaming bool
+	stats     *turnStats // finalized-turn telemetry; nil while streaming / for history
+	raw       bool       // content is pre-styled; render verbatim, never re-render
 }
 
 // Options carries startup display info into the model.
@@ -48,6 +63,7 @@ type Options struct {
 	Model   string
 	Sandbox bool
 	CWD     string
+	LogPath string // file the spawned server's stderr is captured to, if any
 }
 
 // Model is the Bubble Tea model for bodek.
@@ -93,6 +109,11 @@ type Model struct {
 	sessCtxTok  int
 	sessOutTok  int
 	lastLatency float64
+
+	maxContext   int         // active model's context window (0 = unknown → gauge hidden)
+	turnStats    []turnStats // per-turn telemetry retained for the /stats dashboard
+	toolTotal    int         // cumulative tool calls this session
+	sessionStart time.Time   // first-prompt timestamp, for session wall-clock
 
 	status   string
 	notices  []string
@@ -179,7 +200,7 @@ func New(cl *client.Client, opts Options) *Model {
 }
 
 func (m *Model) Init() tea.Cmd {
-	return tea.Batch(textarea.Blink, m.sp.Tick, listen(m.events))
+	return tea.Batch(textarea.Blink, m.sp.Tick, listen(m.events), m.fetchModels())
 }
 
 func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -363,6 +384,7 @@ func (m *Model) handleEvent(ev client.Event) (tea.Model, tea.Cmd) {
 		}
 		if ev.Model != "" {
 			m.model = ev.Model
+			m.resolveMaxContext()
 		}
 		m.sandbox = ev.Sandbox
 
@@ -401,6 +423,26 @@ func (m *Model) handleEvent(ev client.Event) (tea.Model, tea.Cmd) {
 		m.lastArg = ""
 
 	case "done":
+		// Capture per-turn telemetry from the live message BEFORE finalize()
+		// resets m.thinking and clears curIdx.
+		if i := m.cur(); i >= 0 {
+			wall := time.Duration(0)
+			if !m.runStart.IsZero() {
+				wall = time.Since(m.runStart)
+			}
+			ts := turnStats{
+				latency:    ev.Latency,
+				wall:       wall,
+				ctxTok:     ev.ContextTokens,
+				outTok:     ev.OutputTokens,
+				toolCount:  len(m.msgs[i].steps),
+				toolGlyphs: stepGlyphs(m.msgs[i].steps),
+				thought:    m.thinking.Len() > 0,
+			}
+			m.msgs[i].stats = &ts
+			m.turnStats = append(m.turnStats, ts)
+			m.toolTotal += ts.toolCount
+		}
 		m.finalize()
 		m.busy = false
 		m.lastTool = ""
@@ -428,19 +470,22 @@ func (m *Model) handleEvent(ev client.Event) (tea.Model, tea.Cmd) {
 		m.status = "approval required"
 
 	case "skill_event":
-		m.addNote("skill · " + strings.TrimSpace(ev.SubType+" "+ev.SkillName))
+		m.addNote("skill · " + strings.TrimSpace(ev.SubType+" "+ev.SkillName) + eventTail(ev))
 	case "memory_event":
-		m.addNote("memory · " + strings.TrimSpace(ev.SubType+" "+ev.Target))
+		m.addNote("memory · " + strings.TrimSpace(ev.SubType+" "+ev.Target) + eventTail(ev))
 	case "agent_signal":
-		m.addNote("signal · " + strings.TrimSpace(ev.SubType+" "+ev.Detail))
+		m.addNote("signal · " + strings.TrimSpace(ev.SubType+" "+ev.Detail) + eventTail(ev))
 	case "subagent_log":
-		m.addNote("subagent · " + strings.TrimSpace(ev.SubType+" "+ev.Name))
+		m.addNote("subagent · " + strings.TrimSpace(ev.SubType+" "+ev.Name) + eventTail(ev))
 
 	case client.EventDisconnected:
 		m.disconn = true
 		m.busy = false
 		m.status = "disconnected"
 		m.addNote("disconnected from odek serve")
+		if m.opts.LogPath != "" {
+			m.addNote("server log · " + m.opts.LogPath)
+		}
 		m.refresh()
 		return m, nil
 	}
@@ -471,6 +516,9 @@ func (m *Model) submit() tea.Cmd {
 	m.busy = true
 	m.status = "thinking"
 	m.runStart = time.Now()
+	if m.sessionStart.IsZero() {
+		m.sessionStart = m.runStart
+	}
 	m.thinking.Reset()
 	m.refresh()
 
@@ -509,6 +557,62 @@ func (m *Model) answer(action string) tea.Cmd {
 }
 
 // ── helpers ────────────────────────────────────────────────────────────────
+
+// resolveMaxContext sets m.maxContext from the active model's advertised
+// context window, or 0 when the model list is unknown or has no match (which
+// hides the header gauge rather than guessing).
+func (m *Model) resolveMaxContext() {
+	m.maxContext = 0
+	for _, md := range m.models {
+		if md.ID == m.model {
+			m.maxContext = md.MaxContext
+			return
+		}
+	}
+}
+
+// stepGlyphs returns up to 4 deduped tool glyphs for a turn's steps, in
+// first-seen order, for the per-turn stat line.
+func stepGlyphs(steps []step) []string {
+	const max = 4
+	seen := make(map[string]bool, len(steps))
+	out := make([]string, 0, max)
+	for _, s := range steps {
+		g := toolGlyph(s.name)
+		if seen[g] {
+			continue
+		}
+		seen[g] = true
+		out = append(out, g)
+		if len(out) == max {
+			break
+		}
+	}
+	return out
+}
+
+// eventTail renders the optional ×count / #task-index suffix shared by the
+// engine-event notices (skill / memory / signal / subagent).
+func eventTail(ev client.Event) string {
+	s := ""
+	if ev.Count > 0 {
+		s += fmt.Sprintf(" ×%d", ev.Count)
+	}
+	if ev.TaskIdx > 0 {
+		s += fmt.Sprintf(" #%d", ev.TaskIdx)
+	}
+	return s
+}
+
+// fetchModels loads the advertised model list at startup so the context-window
+// gauge knows the active model's budget without the picker ever being opened.
+func (m *Model) fetchModels() tea.Cmd {
+	cl := m.cl
+	return func() tea.Msg {
+		items, err := cl.Models()
+		return modelsMsg{items: items, err: err}
+	}
+}
 
 // cur returns the index of the active streaming assistant message, or -1.
 func (m *Model) cur() int {
@@ -567,9 +671,11 @@ func (m *Model) resize(w, h int) tea.Cmd {
 		glamour.WithWordWrap(wrap),
 	); err == nil {
 		m.glam = r
-		// Re-render finalized assistant messages at the new width.
+		// Re-render finalized assistant messages at the new width. Pre-styled
+		// cards (raw) are point-in-time snapshots and must never go through
+		// glamour, which would mangle their embedded ANSI.
 		for i := range m.msgs {
-			if m.msgs[i].role == roleAsst && !m.msgs[i].streaming {
+			if m.msgs[i].role == roleAsst && !m.msgs[i].streaming && !m.msgs[i].raw {
 				m.msgs[i].rendered = m.render(m.msgs[i].content)
 			}
 		}

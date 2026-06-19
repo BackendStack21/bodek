@@ -6,8 +6,10 @@ package main
 import (
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -45,15 +47,44 @@ func run() error {
 
 	extraArgs := flag.Args()
 
+	// A spawned `odek serve` logs to stderr. Routing that to our own terminal
+	// would corrupt the Bubble Tea alt-screen (stray writes desync the diff
+	// renderer), so we capture it to a log file and keep a short in-memory tail
+	// to surface if the server dies during startup. When attaching to an
+	// external server (--url) there is no subprocess, so nothing is captured.
+	var (
+		logTail *ringWriter
+		logPath string
+	)
+	// io.Writer(io.Discard) keeps the interface type (serverErr is reassigned to
+	// io.MultiWriter / *ringWriter below) without the redundant typed-var
+	// declaration that staticcheck's QF1011 flags.
+	serverErr := io.Writer(io.Discard)
+	if *url == "" {
+		logTail = newRingWriter(50)
+		if f, path, closeLog := openServerLog(); path != "" {
+			defer closeLog()
+			logPath = path
+			serverErr = io.MultiWriter(f, logTail)
+		} else {
+			serverErr = logTail
+		}
+	}
+
 	// Spawn or attach to the odek serve backend.
 	srv, err := server.Connect(server.Options{
 		URL:       *url,
 		Bin:       *bin,
 		Sandbox:   *sandbox,
 		ExtraArgs: extraArgs,
-		Stderr:    os.Stderr,
+		Stderr:    serverErr,
 	})
 	if err != nil {
+		if logTail != nil {
+			if tail := strings.TrimSpace(logTail.String()); tail != "" {
+				return fmt.Errorf("%w\n\nodek serve output:\n%s", err, tail)
+			}
+		}
 		return err
 	}
 	defer srv.Stop()
@@ -76,9 +107,14 @@ func run() error {
 	model := tui.New(cl, tui.Options{
 		Sandbox: *sandbox,
 		CWD:     cwd,
+		LogPath: logPath,
 	})
 
-	p := tea.NewProgram(model, tea.WithAltScreen(), tea.WithMouseCellMotion())
+	// No mouse capture: with mouse reporting on, the terminal cannot do native
+	// click-drag text selection. Leaving it off lets users select & copy text
+	// (copy-on-select where the terminal supports it). Scrolling stays on the
+	// keyboard (PgUp/PgDn, ^U/^D).
+	p := tea.NewProgram(model, tea.WithAltScreen())
 	if _, err := p.Run(); err != nil {
 		return fmt.Errorf("TUI exited: %w", err)
 	}
