@@ -360,28 +360,68 @@ func (m *Model) renderSteps(msg message) string {
 		return ""
 	}
 	th := m.th
-	lines := make([]string, 0, len(msg.steps))
+	// Detail lines (sub-agent logs, then the result excerpt) hang under each tool
+	// line on a light tree connector; clamp them to the assistant bar's width
+	// (border + padding + the 4-column connector) so they never wrap.
+	budget := m.vp.Width - 8
+	if budget < 16 {
+		budget = 16
+	}
+	lines := make([]string, 0, len(msg.steps)*2)
 	for _, s := range msg.steps {
+		// Status glyph: a spinner while the call runs, then ✓ / ✗ once it lands.
 		var icon string
 		switch {
+		case !s.done && msg.streaming:
+			icon = th.spinner.Render(m.sp.View())
+		case s.done && s.isErr:
+			icon = th.stepErr.Render("✗")
 		case s.done:
 			icon = th.stepDone.Render("✓")
-		case msg.streaming:
-			icon = th.spinner.Render(m.sp.View())
 		default:
 			icon = th.stepRun.Render("▸")
 		}
-		glyph := th.toolIcon.Render(toolGlyph(s.name))
-		line := icon + " " + glyph + " " + th.stepName.Render(s.name)
-		if s.arg != "" {
-			line += th.stepArg.Render("  " + s.arg)
+		head := icon + " " + th.toolIcon.Render(toolGlyph(s.name)) + " " + th.stepName.Render(s.name)
+		if s.subagent {
+			head += th.stepArg.Render(" · sub-agent")
 		}
-		lines = append(lines, line)
-		if s.done && s.result != "" {
-			lines = append(lines, th.stepRes.Render("    ↳ "+s.result))
+		if s.arg != "" {
+			head += th.stepArg.Render("  " + truncate(s.arg, budget))
+		}
+		lines = append(lines, head)
+
+		// Nested sub-agent activity, then the tool's own output.
+		details := append([]string{}, s.logs...)
+		if s.done {
+			details = append(details, resultExcerpt(s.result)...)
+		}
+		for i, d := range details {
+			conn := "    "
+			if i == 0 {
+				conn = "  ⎿ "
+			}
+			lines = append(lines, th.stepTree.Render(conn)+th.stepRes.Render(truncate(d, budget)))
 		}
 	}
 	return strings.Join(lines, "\n")
+}
+
+// resultExcerpt turns sanitized tool output into a compact, blank-stripped
+// preview: up to maxResultLines meaningful lines, with a "+N more lines"
+// footer when the output runs longer.
+func resultExcerpt(result string) []string {
+	const maxResultLines = 5
+	var out []string
+	for _, ln := range strings.Split(result, "\n") {
+		if c := collapse(ln); c != "" {
+			out = append(out, c)
+		}
+	}
+	if len(out) <= maxResultLines {
+		return out
+	}
+	trimmed := append([]string{}, out[:maxResultLines]...)
+	return append(trimmed, fmt.Sprintf("… +%d more lines", len(out)-maxResultLines))
 }
 
 func (m *Model) renderNotices() string {
