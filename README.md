@@ -34,6 +34,9 @@ bodek reuses that exact protocol from the terminal, which means:
   appear in the TUI exactly as the engine emits them.
 - **One source of truth** — upgrade odek and bodek gets the new behaviour for
   free.
+- **Minimal core footprint** — odek stays deliberately dependency-light, while
+  the rich terminal UI lives here with its Bubble Tea, glamour, and other
+  front-end dependencies.
 
 ```
 ┌──────────────┐   WebSocket (RFC 6455, JSON)   ┌──────────────────┐
