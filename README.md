@@ -104,11 +104,12 @@ command and press `⏎`.
 
 | Command | Action |
 |---------|--------|
-| `/help` | List commands and key bindings |
+| `/help` | Show available commands and key bindings |
 | `/clear` | Clear the conversation |
+| `/stats` | Show session metrics & context-window gauge |
 | `/sessions` | Browse & resume saved sessions |
 | `/model [name]` | Switch model (opens a picker with no argument) |
-| `/thinking [on\|off]` | Toggle extended thinking |
+| `/thinking [on\|off]` | Toggle extended thinking for the next turn |
 | `/cancel` | Cancel the running turn |
 | `/quit` | Exit bodek |
 
@@ -202,17 +203,6 @@ endpoints, token store, and the full Bubble Tea update/view loop are exercised
 by unit and integration tests against an in-process `odek serve` stand-in.
 Internal-package statement coverage is **~99%** (client 100%, tui 99%, tokens
 98%, server 95% — the remainder is unreachable OS-error handling).
-
----
-
-## Changelog
-
-### v0.0.5
-
-- Scroll the transcript with `↑`/`↓` (when the input cursor is at the top/bottom
-  line), `PgUp`/`PgDn`, or the mouse wheel.
-- Cap the live reasoning/thinking excerpt so long streams don't push the
-  conversation off-screen.
 
 ---
 
