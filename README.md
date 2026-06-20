@@ -205,6 +205,17 @@ Internal-package statement coverage is **~99%** (client 100%, tui 99%, tokens
 
 ---
 
+## Changelog
+
+### v0.0.5
+
+- Scroll the transcript with `↑`/`↓` (when the input cursor is at the top/bottom
+  line), `PgUp`/`PgDn`, or the mouse wheel.
+- Cap the live reasoning/thinking excerpt so long streams don't push the
+  conversation off-screen.
+
+---
+
 ## License
 
 MIT — see [LICENSE](LICENSE).
