@@ -93,7 +93,7 @@ by `odek serve` from its usual chain — `~/.odek/config.json` → `./odek.json`
 | `^J` | Insert a newline in the input |
 | `^L` | Clear the conversation |
 | `Esc` | Cancel the running turn |
-| `PgUp` / `PgDn` / wheel | Scroll the transcript |
+| `↑` / `↓` / `PgUp` / `PgDn` / wheel | Scroll the transcript |
 | `^C` | Quit |
 
 ### Commands (`/`)

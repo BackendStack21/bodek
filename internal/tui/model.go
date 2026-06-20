@@ -6,6 +6,7 @@ import (
 	"regexp"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textarea"
@@ -365,6 +366,21 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.refresh()
 		}
 		return m, nil
+	case "up", "ctrl+p":
+		// Scroll the transcript when the cursor is already at the top line of
+		// the input; otherwise let the textarea move the cursor up.
+		if m.ta.Line() == 0 {
+			var cmd tea.Cmd
+			m.vp, cmd = m.vp.Update(msg)
+			return m, cmd
+		}
+	case "down", "ctrl+n":
+		// Likewise, scroll down when the cursor is on the bottom input line.
+		if m.ta.Line() == m.ta.LineCount()-1 {
+			var cmd tea.Cmd
+			m.vp, cmd = m.vp.Update(msg)
+			return m, cmd
+		}
 	case "pgup", "pgdown", "ctrl+u", "ctrl+d":
 		var cmd tea.Cmd
 		m.vp, cmd = m.vp.Update(msg)
@@ -393,6 +409,7 @@ func (m *Model) handleEvent(ev client.Event) (tea.Model, tea.Cmd) {
 
 	case "thinking":
 		m.thinking.WriteString(sanitize(ev.Content))
+		capThinking(&m.thinking, maxThinkingLen)
 		m.status = "thinking"
 
 	case "token":
@@ -919,6 +936,31 @@ func (m *Model) attachSubLog(i int, line string) bool {
 		return true
 	}
 	return false
+}
+
+// maxThinkingLen caps the live "thinking…" excerpt so a verbose reasoning
+// stream does not push the transcript off-screen.
+const maxThinkingLen = 240
+
+// capThinking trims the builder to at most n runes, starting at the next
+// whitespace so the visible excerpt does not begin mid-word.
+func capThinking(b *strings.Builder, n int) {
+	if b.Len() <= n {
+		return
+	}
+	s := []rune(b.String())
+	if len(s) <= n {
+		return
+	}
+	s = s[len(s)-n:]
+	for i, r := range s {
+		if unicode.IsSpace(r) {
+			s = s[i+1:]
+			break
+		}
+	}
+	b.Reset()
+	b.WriteString(string(s))
 }
 
 func collapse(s string) string {

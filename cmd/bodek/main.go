@@ -110,11 +110,11 @@ func run() error {
 		LogPath: logPath,
 	})
 
-	// No mouse capture: with mouse reporting on, the terminal cannot do native
-	// click-drag text selection. Leaving it off lets users select & copy text
-	// (copy-on-select where the terminal supports it). Scrolling stays on the
-	// keyboard (PgUp/PgDn, ^U/^D).
-	p := tea.NewProgram(model, tea.WithAltScreen())
+	// Mouse reporting enables wheel scrolling in the transcript. Click-drag text
+	// selection is delegated to the terminal's shift+drag fallback where the
+	// terminal supports it; otherwise users can rely on keyboard scrolling
+	// (↑/↓, PgUp/PgDn, ^U/^D).
+	p := tea.NewProgram(model, tea.WithAltScreen(), tea.WithMouseCellMotion())
 	if _, err := p.Run(); err != nil {
 		return fmt.Errorf("TUI exited: %w", err)
 	}
