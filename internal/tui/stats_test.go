@@ -78,6 +78,40 @@ func TestNoStatLineWhileStreaming(t *testing.T) {
 	}
 }
 
+// TestGaugeFollowsTurnFill is a regression test: the header gauge must track
+// the last turn's contextTokens (the live window fill, which drops after odek
+// trims history), not sessionContextTokens, which is cumulative and only grows.
+func TestGaugeFollowsTurnFill(t *testing.T) {
+	m := driveTurn(t, client.Event{
+		Type: "done", Latency: 1,
+		ContextTokens: 900, OutputTokens: 100,
+		SessionContextTokens: 50000, SessionOutputTokens: 300,
+	})
+	m.model = "big"
+	m.models = []client.ModelInfo{{ID: "big", MaxContext: 1000}}
+	m.resolveMaxContext()
+	if out := plain(m.header()); !strings.Contains(out, "90%") {
+		t.Errorf("gauge should reflect the turn fill (90%%), got:\n%s", out)
+	}
+
+	// Next turn comes back smaller after a history trim — the gauge drops,
+	// even though the cumulative session total kept growing.
+	m.msgs = append(m.msgs, message{role: roleAsst, streaming: true})
+	m.curIdx = len(m.msgs) - 1
+	m.busy = true
+	m.handleEvent(client.Event{
+		Type: "done", Latency: 1,
+		ContextTokens: 300, OutputTokens: 100,
+		SessionContextTokens: 51200, SessionOutputTokens: 400,
+	})
+	if m.winCtxTok != 300 {
+		t.Fatalf("winCtxTok = %d, want 300", m.winCtxTok)
+	}
+	if out := plain(m.header()); !strings.Contains(out, "30%") {
+		t.Errorf("gauge should drop after a trim (30%%), got:\n%s", out)
+	}
+}
+
 func TestContextGauge(t *testing.T) {
 	m := newTestModel()
 	m.model = "big"
@@ -87,6 +121,7 @@ func TestContextGauge(t *testing.T) {
 		t.Fatalf("maxContext = %d, want 1000", m.maxContext)
 	}
 	m.sessCtxTok = 380
+	m.winCtxTok = 380
 
 	out := plain(m.header())
 	for _, want := range []string{"○", "38%", "380/1k"} {
