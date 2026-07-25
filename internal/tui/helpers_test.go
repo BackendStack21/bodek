@@ -25,6 +25,8 @@ func TestHuman(t *testing.T) {
 		{0, "0"},
 		{42, "42"},
 		{1234, "1.2k"},
+		{999_499, "999.5k"}, // just under the rounding seam
+		{999_500, "1.0M"},   // one-decimal k rounding would reach 1000.0k → promote
 		{2_500_000, "2.5M"},
 	}
 	for _, c := range cases {
@@ -40,6 +42,16 @@ func TestTruncate(t *testing.T) {
 	}
 	if got := truncate("hello world", 5); got != "hell…" {
 		t.Errorf("truncate: got %q", got)
+	}
+	// A zero/negative budget (very narrow terminal) must not panic.
+	for _, n := range []int{0, -1, -8} {
+		if got := truncate("hello", n); got != "" {
+			t.Errorf("truncate(_, %d) = %q, want empty", n, got)
+		}
+	}
+	// Budget of one leaves room for the ellipsis alone.
+	if got := truncate("hello", 1); got != "…" {
+		t.Errorf("truncate(_, 1) = %q, want ellipsis", got)
 	}
 }
 

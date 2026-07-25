@@ -126,6 +126,10 @@ type Model struct {
 
 	gradRule  string // cached full-width gradient rule
 	gradRuleW int
+	logoCache string // cached gradient logo (width-independent)
+
+	convPrefix string // cached rendering of the finalized transcript prefix
+	convCount  int    // messages the prefix covers (-1 = invalidated)
 }
 
 // acMode selects what the completion popup is completing.
@@ -362,8 +366,7 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case "ctrl+l":
 		if !m.busy {
-			m.msgs = nil
-			m.refresh()
+			m.clearConversation()
 		}
 		return m, nil
 	case "up", "ctrl+p":
@@ -490,6 +493,7 @@ func (m *Model) handleEvent(ev client.Event) (tea.Model, tea.Cmd) {
 		e := ev
 		m.approval = &e
 		m.status = "approval required"
+		m.relayout() // the panel is taller than the textarea — shrink the viewport
 
 	case "skill_event":
 		m.addNote("skill · " + strings.TrimSpace(ev.SubType+" "+ev.SkillName) + eventTail(ev))
@@ -527,6 +531,23 @@ func (m *Model) handleEvent(ev client.Event) (tea.Model, tea.Cmd) {
 }
 
 // ── actions ──────────────────────────────────────────────────────────────
+
+// clearConversation wipes the transcript and the session-scoped telemetry, so
+// /stats, the header gauge, and the footer start fresh after a clear instead
+// of reporting turns, tools, tokens, and age from before it (mirrors the
+// reset done when resuming a session).
+func (m *Model) clearConversation() {
+	m.msgs = nil
+	m.curIdx = -1
+	m.convCount = -1 // transcript replaced — drop the cached prefix
+	m.turnStats = nil
+	m.toolTotal = 0
+	m.sessionStart = time.Time{}
+	m.sessCtxTok = 0
+	m.sessOutTok = 0
+	m.lastLatency = 0
+	m.refresh()
+}
 
 func (m *Model) submit() tea.Cmd {
 	text := strings.TrimSpace(m.ta.Value())
@@ -578,6 +599,7 @@ func (m *Model) answer(action string) tea.Cmd {
 	id := m.approval.ID
 	m.approval = nil
 	m.status = "thinking"
+	m.relayout()
 	m.refresh()
 	cl := m.cl
 	return func() tea.Msg {
@@ -691,7 +713,8 @@ func (m *Model) resize(w, h int) tea.Cmd {
 		m.ready = true
 	}
 	m.ta.SetWidth(w - 4)
-	m.gradRule = "" // invalidate cached rule for the new width
+	m.gradRule = ""  // invalidate cached rule for the new width
+	m.convCount = -1 // and the cached transcript prefix (bars are width-dependent)
 	m.relayout()
 
 	wrap := w - 6
@@ -717,21 +740,34 @@ func (m *Model) resize(w, h int) tea.Cmd {
 }
 
 // relayout recomputes the viewport height from the current chrome, accounting
-// for the @-reference popup when it is open.
+// for the approval panel or the @-reference popup when either is open.
 func (m *Model) relayout() {
 	if !m.ready {
 		return
 	}
-	inputH := inputHeight
-	if m.ac.open {
-		inputH += m.ac.height()
-	}
-	vpH := m.height - headerHeight - footerHeight - inputH
+	vpH := m.height - headerHeight - footerHeight - m.inputAreaHeight()
 	if vpH < 3 {
 		vpH = 3
 	}
 	m.vp.Width = m.width
 	m.vp.Height = vpH
+}
+
+// inputAreaHeight is the number of rows the input area renders, so the
+// viewport shrinks by exactly the right amount and the footer never moves.
+func (m *Model) inputAreaHeight() int {
+	if m.approval != nil {
+		rows := 3 // head + command + keys
+		if m.approval.Description != "" {
+			rows++
+		}
+		return rows + 2 // panel border
+	}
+	h := inputHeight
+	if m.ac.open {
+		h += m.ac.height()
+	}
+	return h
 }
 
 // ── @-reference autocomplete ────────────────────────────────────────────────
@@ -843,12 +879,18 @@ func (m *Model) closeAC() {
 	m.refresh()
 }
 
-// elapsed formats the current run's wall-clock time, e.g. "3.2s".
+// elapsed formats the current run's wall-clock time in whole seconds (the live
+// badge re-renders with every spinner tick, so tenths would flicker). The
+// finalized per-turn stat line keeps tenths via formatDuration.
 func (m *Model) elapsed() string {
 	if m.runStart.IsZero() {
 		return ""
 	}
-	return formatDuration(time.Since(m.runStart))
+	d := time.Since(m.runStart)
+	if d < time.Minute {
+		return fmt.Sprintf("%ds", int(d.Seconds()))
+	}
+	return fmt.Sprintf("%dm%02ds", int(d.Minutes()), int(d.Seconds())%60)
 }
 
 // argPreview extracts a short, human-friendly summary from a tool's JSON args.
@@ -1006,6 +1048,9 @@ func formatDuration(d time.Duration) string {
 }
 
 func truncate(s string, n int) string {
+	if n < 1 {
+		return "" // no room even for the ellipsis (very narrow terminal)
+	}
 	r := []rune(s)
 	if len(r) <= n {
 		return s

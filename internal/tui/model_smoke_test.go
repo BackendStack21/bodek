@@ -22,9 +22,11 @@ func plain(s string) string { return ansiRe.ReplaceAllString(s, "") }
 
 // newTestModel builds a Model without a live client/TTY for rendering tests.
 func newTestModel() *Model {
+	ta := textarea.New()
+	ta.SetHeight(3) // match New(), so inputHeight row math holds
 	m := &Model{
 		th:     newTheme(),
-		ta:     textarea.New(),
+		ta:     ta,
 		sp:     spinner.New(),
 		curIdx: -1,
 		status: "ready",
@@ -104,4 +106,29 @@ func TestWindowSizeMsg(t *testing.T) {
 	if !m.ready {
 		t.Error("model not ready after WindowSizeMsg")
 	}
+}
+
+// TestApprovalPanelLayoutStable verifies the screen does not grow a row when
+// the approval panel (taller than the textarea it replaces) opens or closes.
+func TestApprovalPanelLayoutStable(t *testing.T) {
+	m := newTestModel()
+	height := func() int { return strings.Count(m.View(), "\n") + 1 }
+	base := height()
+
+	// A description pushes the panel to 6 rendered rows; relayout must shrink
+	// the viewport to match so the footer stays put.
+	m.handleEvent(client.Event{Type: "approval_request", Risk: "shell_exec",
+		Name: "shell", Command: "rm x", Description: "delete files", AllowTrust: true})
+	if got := height(); got != base {
+		t.Errorf("view height changed when approval opened: %d → %d rows", base, got)
+	}
+	m.answer("approve")
+	if got := height(); got != base {
+		t.Errorf("view height changed when approval closed: %d → %d rows", base, got)
+	}
+
+	// Very narrow terminal: truncate budgets go ≤ 0 — must not panic.
+	m.resize(6, 12)
+	m.handleEvent(client.Event{Type: "approval_request", Name: "shell", Command: "rm x"})
+	_ = m.View()
 }

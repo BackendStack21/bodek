@@ -3,8 +3,12 @@ package tui
 import (
 	"strings"
 	"testing"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+
+	"github.com/BackendStack21/bodek/internal/client"
+	"github.com/BackendStack21/bodek/internal/tokens"
 )
 
 // TestUpDownScrollTranscript verifies that ↑/↓ scroll the conversation when
@@ -102,5 +106,98 @@ func TestMouseWheelScrollsTranscript(t *testing.T) {
 	_, _ = m.Update(tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonWheelDown})
 	if !m.vp.AtBottom() {
 		t.Errorf("mouse wheel down did not return to bottom: yoffset=%d", m.vp.YOffset)
+	}
+}
+
+// TestBusyRefreshKeepsScrollback verifies that a run in progress does not yank
+// the reader to the bottom on every refresh: autoscroll only sticks when the
+// viewport is already at the bottom.
+func TestBusyRefreshKeepsScrollback(t *testing.T) {
+	m := newTestModel()
+
+	md := strings.Repeat("transcript line\n", 60)
+	m.msgs = append(m.msgs,
+		message{role: roleUser, content: "q"},
+		message{role: roleAsst, content: md, rendered: m.render(md)},
+	)
+	m.refresh()
+	if !m.vp.AtBottom() {
+		t.Fatal("precondition: transcript should start at the bottom")
+	}
+
+	// Scroll up, then stream a turn: refreshes must leave the position alone.
+	m.vp.ScrollUp(5)
+	top := m.vp.YOffset
+	m.msgs = append(m.msgs, message{role: roleAsst, streaming: true})
+	m.curIdx = len(m.msgs) - 1
+	m.busy = true
+	m.runStart = time.Now()
+	m.handleEvent(client.Event{Type: "token", Content: "streaming…"})
+	if m.vp.YOffset != top {
+		t.Errorf("busy refresh yanked scrollback: yoffset %d → %d", top, m.vp.YOffset)
+	}
+
+	// Once back at the bottom, the reader follows the stream again.
+	m.vp.GotoBottom()
+	m.handleEvent(client.Event{Type: "token", Content: "more"})
+	if !m.vp.AtBottom() {
+		t.Error("at-bottom reader should follow the stream")
+	}
+}
+
+// TestTranscriptPrefixCached verifies the finalized transcript prefix renders
+// once and is reused across streaming ticks, and that the cache invalidates on
+// finalize, resize, and wholesale transcript replacement (session resume).
+func TestTranscriptPrefixCached(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	m := newTestModel()
+	m.tokens = tokens.Open()
+	m.msgs = append(m.msgs,
+		message{role: roleUser, content: "q"},
+		message{role: roleAsst, content: "answer", streaming: true},
+	)
+	m.curIdx = 1
+	m.busy = true
+
+	m.refresh()
+	if m.convCount != 1 || m.convPrefix == "" {
+		t.Fatalf("prefix not cached: count=%d", m.convCount)
+	}
+	prefix := m.convPrefix
+	// A streaming tick re-renders only the tail; the prefix is untouched.
+	m.handleEvent(client.Event{Type: "token", Content: "…"})
+	if m.convPrefix != prefix {
+		t.Error("streaming tick rebuilt the finalized prefix")
+	}
+
+	// Finalizing extends the prefix to cover the whole transcript.
+	m.handleEvent(client.Event{Type: "done"})
+	if m.convCount != len(m.msgs) {
+		t.Errorf("after finalize convCount=%d, want %d", m.convCount, len(m.msgs))
+	}
+	if !strings.Contains(plain(m.convPrefix), "answer") {
+		t.Error("finalized prefix missing the answer")
+	}
+
+	// Resize invalidates (the message bars are width-dependent) and rebuilds.
+	wide := m.convPrefix
+	m.resize(80, 30)
+	if m.convPrefix == wide {
+		t.Error("resize did not rebuild the prefix at the new width")
+	}
+	if m.convCount != len(m.msgs) || !strings.Contains(plain(m.convPrefix), "answer") {
+		t.Error("prefix not rebuilt after resize")
+	}
+
+	// Resuming a session swaps the transcript (same length here, which a pure
+	// count check could not catch) — the stale prefix must not be served.
+	m.handleSessionDetail(sessionDetailMsg{sess: client.Session{ID: "s2",
+		Messages: []client.SessionMessage{
+			{Role: "user", Content: "q"},
+			{Role: "assistant", Content: "resumed reply"},
+		}}})
+	if strings.Contains(plain(m.convPrefix), "answer") ||
+		!strings.Contains(plain(m.convPrefix), "resumed reply") {
+		t.Errorf("stale prefix after resume: %q", plain(m.convPrefix))
 	}
 }

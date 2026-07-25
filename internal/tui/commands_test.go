@@ -36,11 +36,16 @@ func TestSlashCommandsViaSubmit(t *testing.T) {
 		t.Errorf("/clear left %d messages", len(m.msgs))
 	}
 
-	// /help appends a rendered help card; input is reset.
+	// /help appends a pre-styled help card; input is reset.
 	m.ta.SetValue("/help")
 	exec(m.submit())
-	if len(m.msgs) == 0 || !strings.Contains(m.msgs[len(m.msgs)-1].content, "Commands") {
-		t.Error("/help did not append a help card")
+	if len(m.msgs) == 0 {
+		t.Fatal("/help did not append a help card")
+	}
+	help := m.msgs[len(m.msgs)-1]
+	if !help.raw || !strings.Contains(plain(help.content), "commands") ||
+		!strings.Contains(plain(help.content), "/sessions") {
+		t.Errorf("/help card malformed (raw=%v):\n%s", help.raw, plain(help.content))
 	}
 	if m.ta.Value() != "" {
 		t.Errorf("input not reset after command: %q", m.ta.Value())
