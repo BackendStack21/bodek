@@ -131,6 +131,26 @@ func TestPersistWriteAndRenameErrors(t *testing.T) {
 	s2.Set("k", "v") // WriteFile ok, Rename onto a directory fails
 }
 
+func TestConcurrentAccess(t *testing.T) {
+	// Smoke test for the Store's locking: run with -race to catch data races.
+	s := &Store{m: map[string]string{}}
+	done := make(chan struct{})
+	for i := 0; i < 4; i++ {
+		go func(i int) {
+			defer func() { done <- struct{}{} }()
+			id := string(rune('a' + i))
+			for j := 0; j < 50; j++ {
+				s.Set(id, "tok")
+				_ = s.Get(id)
+				s.Delete(id)
+			}
+		}(i)
+	}
+	for i := 0; i < 4; i++ {
+		<-done
+	}
+}
+
 func TestOpenWithCorruptFile(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("HOME", dir)

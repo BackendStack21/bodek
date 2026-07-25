@@ -18,7 +18,8 @@ var (
 	colRed      = lipgloss.Color("#F87171")
 	colFg       = lipgloss.Color("#E5E7EB")
 	colMuted    = lipgloss.Color("#9CA3AF")
-	colFaint    = lipgloss.Color("#6B7280")
+	colFaint    = lipgloss.Color("#6B7280") // chrome only — too dim for body text
+	colBodyText = lipgloss.Color("#8B93A3") // brighter faint for content text
 	colHairline = lipgloss.Color("#3B3B4F")
 )
 
@@ -40,7 +41,6 @@ type theme struct {
 	userBar   lipgloss.Style
 	asstLabel lipgloss.Style
 	asstBar   lipgloss.Style
-	sysLabel  lipgloss.Style
 	sysBar    lipgloss.Style
 
 	stepName lipgloss.Style
@@ -67,6 +67,11 @@ type theme struct {
 	statusReady lipgloss.Style
 	statusBusy  lipgloss.Style
 
+	// header/status badges (sandbox state, connectivity)
+	badgeOK     lipgloss.Style
+	badgeWarn   lipgloss.Style
+	badgeDanger lipgloss.Style
+
 	toolIcon lipgloss.Style
 	scroll   lipgloss.Style
 
@@ -90,9 +95,10 @@ type theme struct {
 	opChip       lipgloss.Style
 	untrustedTag lipgloss.Style
 
-	footer    lipgloss.Style
-	footerKey lipgloss.Style
-	footerSep lipgloss.Style
+	footer       lipgloss.Style
+	footerKey    lipgloss.Style
+	footerSep    lipgloss.Style
+	footerDanger lipgloss.Style
 
 	tagline lipgloss.Style
 	tipKey  lipgloss.Style
@@ -118,7 +124,6 @@ func newTheme() theme {
 		userBar:   lipgloss.NewStyle().Foreground(colFg).Border(lipgloss.ThickBorder(), false, false, false, true).BorderForeground(colBrand2).PaddingLeft(1),
 		asstLabel: lipgloss.NewStyle().Foreground(colBrand).Bold(true),
 		asstBar:   lipgloss.NewStyle().Border(lipgloss.ThickBorder(), false, false, false, true).BorderForeground(colBrand).PaddingLeft(1),
-		sysLabel:  lipgloss.NewStyle().Foreground(colRed).Bold(true),
 		sysBar:    lipgloss.NewStyle().Foreground(colRed).Border(lipgloss.ThickBorder(), false, false, false, true).BorderForeground(colRed).PaddingLeft(1),
 
 		stepName: lipgloss.NewStyle().Foreground(colCyan),
@@ -126,7 +131,7 @@ func newTheme() theme {
 		stepRun:  lipgloss.NewStyle().Foreground(colYellow),
 		stepDone: lipgloss.NewStyle().Foreground(colGreen),
 		stepErr:  lipgloss.NewStyle().Foreground(colRed).Bold(true),
-		stepRes:  lipgloss.NewStyle().Foreground(colFaint).Italic(true),
+		stepRes:  lipgloss.NewStyle().Foreground(colBodyText).Italic(true),
 		stepTree: lipgloss.NewStyle().Foreground(colHairline),
 
 		spinner: lipgloss.NewStyle().Foreground(colBrand),
@@ -134,8 +139,8 @@ func newTheme() theme {
 		taCursorLine: lipgloss.NewStyle(),
 		inputBox:     lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(colHairline).Padding(0, 1),
 
-		noticeStyle: lipgloss.NewStyle().Foreground(colFaint).Italic(true),
-		thinkStyle:  lipgloss.NewStyle().Foreground(colFaint).Italic(true),
+		noticeStyle: lipgloss.NewStyle().Foreground(colBodyText).Italic(true),
+		thinkStyle:  lipgloss.NewStyle().Foreground(colBodyText).Italic(true),
 
 		apprBox:  lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(colYellow).Padding(0, 1),
 		apprHead: lipgloss.NewStyle().Foreground(colYellow).Bold(true),
@@ -144,6 +149,10 @@ func newTheme() theme {
 
 		statusReady: lipgloss.NewStyle().Foreground(colGreen),
 		statusBusy:  lipgloss.NewStyle().Foreground(colYellow),
+
+		badgeOK:     lipgloss.NewStyle().Foreground(colGreen),
+		badgeWarn:   lipgloss.NewStyle().Foreground(colYellow),
+		badgeDanger: lipgloss.NewStyle().Foreground(colRed),
 
 		toolIcon: lipgloss.NewStyle().Foreground(colCyan),
 		scroll:   lipgloss.NewStyle().Foreground(colFaint),
@@ -169,9 +178,10 @@ func newTheme() theme {
 		opChip:       lipgloss.NewStyle().Foreground(colCyan),
 		untrustedTag: lipgloss.NewStyle().Foreground(colYellow),
 
-		footer:    lipgloss.NewStyle().Foreground(colFaint),
-		footerKey: lipgloss.NewStyle().Foreground(colMuted).Bold(true),
-		footerSep: lipgloss.NewStyle().Foreground(colHairline),
+		footer:       lipgloss.NewStyle().Foreground(colFaint),
+		footerKey:    lipgloss.NewStyle().Foreground(colMuted).Bold(true),
+		footerSep:    lipgloss.NewStyle().Foreground(colHairline),
+		footerDanger: lipgloss.NewStyle().Foreground(colRed),
 
 		tagline: lipgloss.NewStyle().Foreground(colMuted).Italic(true),
 		tipKey:  lipgloss.NewStyle().Foreground(colCyan).Bold(true),

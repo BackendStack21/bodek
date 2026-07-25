@@ -27,9 +27,7 @@ func slashCommands() []command {
 			return nil
 		}},
 		{"clear", "clear the conversation", func(m *Model, _ string) tea.Cmd {
-			m.msgs = nil
-			m.curIdx = -1
-			m.refresh()
+			m.clearConversation()
 			return nil
 		}},
 		{"stats", "session metrics & context gauge", func(m *Model, _ string) tea.Cmd {
@@ -147,18 +145,43 @@ func (m *Model) openCmdAC(query string) {
 	m.refresh()
 }
 
-// showHelp appends a rendered help card listing commands and key bindings.
+// showHelp appends a help card listing commands and key bindings. Like /stats
+// it is pre-styled to the brand palette (raw), not glamour's stock dark style.
 func (m *Model) showHelp() {
+	th := m.th
+	// Same box math as the /stats card: Width(boxW-2) renders boxW wide with a
+	// boxW-4 content column the rules must match.
+	boxW := max(min(m.vp.Width-2, 60), 28)
+	innerW := boxW - 4
+	rule := "\n" + th.rule.Render(strings.Repeat("─", innerW))
+
 	var b strings.Builder
-	b.WriteString("### Commands\n\n")
+	b.WriteString(th.acTitle.Render("⬡ help"))
+	b.WriteString(rule)
+	b.WriteString("\n" + th.statsLabel.Render("commands"))
+	const cmdW = 10 // longest name is "/thinking"
 	for _, c := range slashCommands() {
-		b.WriteString(fmt.Sprintf("- `/%s` — %s\n", c.name, c.desc))
+		b.WriteString("\n" + th.tipKey.Render(padRight("/"+c.name, cmdW)) + " " + th.tipText.Render(c.desc))
 	}
-	b.WriteString("\n### Keys\n\n")
-	b.WriteString("`@` attach files/sessions · `^R` sessions · `^O` model · " +
-		"`^T` thinking · `^J` newline · `Esc` cancel · `^L` clear · `^C` quit\n")
-	content := b.String()
-	m.msgs = append(m.msgs, message{role: roleAsst, content: content, rendered: m.render(content)})
+	b.WriteString(rule)
+	b.WriteString("\n" + th.statsLabel.Render("keys"))
+	const keyW = 4
+	for _, k := range [][2]string{
+		{"⏎", "send · run a /command"},
+		{"^J", "newline in the input"},
+		{"@", "attach files"},
+		{"^R", "browse & resume sessions"},
+		{"^O", "switch model"},
+		{"^T", "toggle extended thinking"},
+		{"^L", "clear the conversation"},
+		{"esc", "cancel the running turn"},
+		{"^C", "quit"},
+	} {
+		b.WriteString("\n" + th.tipKey.Render(padRight(k[0], keyW)) + " " + th.tipText.Render(k[1]))
+	}
+
+	card := th.acBox.Width(boxW - 2).Render(b.String())
+	m.msgs = append(m.msgs, message{role: roleAsst, content: card, rendered: card, raw: true})
 	m.refresh()
 }
 

@@ -47,9 +47,9 @@ func welcome(th theme, width int, cwd string) string {
 		{"/ commands", "type / for commands, e.g. /help /sessions /model"},
 		{"/stats", "session metrics & live context-window gauge"},
 		{"@ to attach", "attach files, e.g. @main.go"},
-		{"⏎ send", "·  ^J newline  ·  ^T toggle thinking"},
-		{"^L clear", "·  ↑/↓ scroll  ·  PgUp/PgDn page  ·  ^C quit"},
-		{"approvals", "answer with [a]pprove [d]eny [t]rust"},
+		{"⏎ send", "^J newline  ·  ^T toggle thinking"},
+		{"^L clear", "↑/↓ scroll  ·  PgUp/PgDn page  ·  ^C quit"},
+		{"approvals", "a approve  ·  d deny  ·  t trust"},
 	}
 	const keyW = 11
 	for _, t := range tips {

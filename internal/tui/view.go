@@ -31,7 +31,12 @@ func (m *Model) View() string {
 
 func (m *Model) header() string {
 	th := m.th
-	logo := th.logo.Render(gradient("⬡ bodek", gradFrom, gradTo))
+	// The logo gradient is width-independent, so render it once and cache it
+	// (like gradRule) instead of re-interpolating every frame.
+	if m.logoCache == "" {
+		m.logoCache = th.logo.Render(gradient("⬡ bodek", gradFrom, gradTo))
+	}
+	logo := m.logoCache
 
 	think := "off"
 	if m.thinkOn {
@@ -41,8 +46,8 @@ func (m *Model) header() string {
 	if modelName == "" {
 		modelName = "default"
 	}
-	// Sandbox status, prominently colored: green shield when isolated, amber
-	// warning when the agent has host access.
+	// Sandbox status, prominently colored: green ● when isolated, amber ▲
+	// when the agent has host access.
 	sandbox := m.sandboxBadge()
 	meta := th.headerMeta.Render(" · think ") + th.headerKey.Render(think)
 	model := th.headerKey.Render(modelName)
@@ -118,27 +123,25 @@ func (m *Model) gaugeColor(ratio float64) lipgloss.Style {
 	}
 }
 
-// sandboxBadge renders the agent's isolation state: a green shield when
-// sandboxed, an amber warning when it has host access. Shared by the header and
-// the /stats card so the two never drift.
+// sandboxBadge renders the agent's isolation state with the monochrome glyph
+// vocabulary (width-stable, unlike emoji): a green ● when sandboxed, an amber ▲
+// when it has host access. Shared by the header and the /stats card so the two
+// never drift.
 func (m *Model) sandboxBadge() string {
 	if m.sandbox {
-		return lipgloss.NewStyle().Foreground(colGreen).Render("🛡 sandboxed")
+		return m.th.badgeOK.Render("● sandboxed")
 	}
-	return lipgloss.NewStyle().Foreground(colYellow).Render("⚠ host access")
+	return m.th.badgeWarn.Render("▲ host access")
 }
 
-// gaugeGlyph quantizes a fill ratio into a five-step circle.
+// gaugeGlyph mirrors the gaugeColor bands (0.75 / 0.90) so fill and hue tell
+// the same story: open while comfortable, half when warm, full when hot.
 func gaugeGlyph(r float64) string {
 	switch {
-	case r >= 0.87:
+	case r >= 0.90:
 		return "●"
-	case r >= 0.62:
-		return "◕"
-	case r >= 0.37:
-		return "◑"
-	case r >= 0.12:
-		return "◔"
+	case r >= 0.75:
+		return "◐"
 	default:
 		return "○"
 	}
@@ -158,7 +161,7 @@ func (m *Model) statusBadge() string {
 	th := m.th
 	switch {
 	case m.disconn:
-		return lipgloss.NewStyle().Foreground(colRed).Render("● disconnected")
+		return th.badgeDanger.Render("● disconnected")
 	case m.approval != nil:
 		return th.statusBusy.Render("⚠ approval required")
 	case m.busy:
@@ -185,14 +188,14 @@ func (m *Model) statusBadge() string {
 
 // ── transcript ───────────────────────────────────────────────────────────
 
-// refresh rebuilds the viewport content and scrolls to the latest output.
-// While busy it follows the stream; when idle it preserves the reader's
-// position unless they were already at the bottom.
+// refresh rebuilds the viewport content and scrolls to the latest output only
+// when the reader is already at the bottom — a run in progress must not yank
+// them away from scrollback they are reading.
 func (m *Model) refresh() {
 	if !m.ready {
 		return
 	}
-	stick := m.busy || m.vp.AtBottom()
+	stick := m.vp.AtBottom()
 	m.vp.SetContent(m.conversation())
 	if stick {
 		m.vp.GotoBottom()
@@ -203,8 +206,28 @@ func (m *Model) conversation() string {
 	if len(m.msgs) == 0 {
 		return welcome(m.th, m.vp.Width, m.opts.CWD)
 	}
-	blocks := make([]string, 0, len(m.msgs)+1)
-	for i := range m.msgs {
+	// Everything before the in-flight streaming message is stable, so cache its
+	// rendering (convPrefix) and re-render only the tail — a spinner tick would
+	// otherwise re-style every finalized message each frame. The cache is
+	// invalidated when the message list is replaced wholesale (clear, resume)
+	// or re-rendered (resize).
+	tail := len(m.msgs)
+	if i := m.cur(); i >= 0 {
+		tail = i
+	}
+	if m.convCount != tail {
+		blocks := make([]string, 0, tail)
+		for i := 0; i < tail; i++ {
+			blocks = append(blocks, m.renderMessage(m.msgs[i]))
+		}
+		m.convPrefix = strings.Join(blocks, "\n\n")
+		m.convCount = tail
+	}
+	blocks := make([]string, 0, len(m.msgs)-tail+2)
+	if m.convPrefix != "" {
+		blocks = append(blocks, m.convPrefix)
+	}
+	for i := tail; i < len(m.msgs); i++ {
 		blocks = append(blocks, m.renderMessage(m.msgs[i]))
 	}
 	// Live reasoning for the in-flight turn, shown dimly under the steps.
@@ -519,10 +542,10 @@ func (m *Model) approvalPanel() string {
 		desc = th.noticeStyle.Render(truncate(collapse(a.Description), m.width-8)) + "\n"
 	}
 
-	keys := th.apprKey.Render("[a]") + th.apprBody.Render(" approve   ") +
-		th.apprKey.Render("[d]") + th.apprBody.Render(" deny")
+	keys := th.apprKey.Render("a") + th.apprBody.Render(" approve   ") +
+		th.apprKey.Render("d") + th.apprBody.Render(" deny")
 	if a.AllowTrust {
-		keys += th.apprKey.Render("   [t]") + th.apprBody.Render(" trust class")
+		keys += th.apprBody.Render("   ") + th.apprKey.Render("t") + th.apprBody.Render(" trust class")
 	}
 
 	body := head + "\n" + cmd + "\n" + desc + keys
@@ -540,10 +563,19 @@ func (m *Model) footer() string {
 		return th.footer.Render("  connection closed · press ^C to quit")
 	}
 	if m.panel == panelSessions {
-		return m.panelFooter("↑↓ select", "⏎ resume", "d delete", "esc close")
+		return m.panelFooter(
+			th.footer.Render("↑↓ select"),
+			th.footer.Render("⏎ resume"),
+			th.footerDanger.Render("d delete"), // destructive — tinted to telegraph it
+			th.footer.Render("esc close"),
+		)
 	}
 	if m.panel == panelModels {
-		return m.panelFooter("↑↓ select", "⏎ use", "esc close")
+		return m.panelFooter(
+			th.footer.Render("↑↓ select"),
+			th.footer.Render("⏎ use"),
+			th.footer.Render("esc close"),
+		)
 	}
 	// The status bar carries no static key cheatsheet (the welcome splash and
 	// /help cover that) — only the live run state: a cancel hint while busy on
@@ -576,14 +608,10 @@ func (m *Model) footer() string {
 	return left + strings.Repeat(" ", gap) + right
 }
 
-// panelFooter renders a simple hint line for an open panel.
+// panelFooter joins pre-styled hint segments for an open panel (pre-styled so
+// destructive hints can carry the danger tint).
 func (m *Model) panelFooter(hints ...string) string {
-	th := m.th
-	parts := make([]string, len(hints))
-	for i, h := range hints {
-		parts[i] = th.footer.Render(h)
-	}
-	return "  " + strings.Join(parts, th.footerSep.Render("  ·  "))
+	return "  " + strings.Join(hints, m.th.footerSep.Render("  ·  "))
 }
 
 // ── small helpers ──────────────────────────────────────────────────────────
@@ -598,7 +626,7 @@ func orDash(s string) string {
 // human formats a token count compactly (e.g. 1234 → "1.2k").
 func human(n int) string {
 	switch {
-	case n >= 1_000_000:
+	case n >= 999_500: // promote to M once one-decimal k rounding would reach 1000.0k
 		return fmt.Sprintf("%.1fM", float64(n)/1_000_000)
 	case n >= 1_000:
 		return fmt.Sprintf("%.1fk", float64(n)/1_000)

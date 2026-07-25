@@ -69,12 +69,20 @@ bodek looks for `odek` on your `PATH`. To point at a specific binary use
 ## Usage
 
 ```bash
-bodek                                 # launch odek serve and start chatting
-bodek --sandbox                       # run tool calls inside odek's Docker sandbox
-bodek --url http://127.0.0.1:8080     # attach to an already-running odek serve
-bodek --odek-bin ./odek               # use a specific odek binary
-bodek -- --prompt-caching             # pass extra flags through to `odek serve`
+bodek                                             # launch odek serve and start chatting
+bodek --sandbox                                   # run tool calls inside odek's Docker sandbox
+bodek --url 'http://127.0.0.1:8080/?token=…'      # attach with the token URL odek serve printed
+bodek --url http://127.0.0.1:8080 --token d3adb33f  # attach with an explicit token
+bodek --odek-bin ./odek                           # use a specific odek binary
+bodek -- --prompt-caching                         # pass extra flags through to `odek serve`
 ```
+
+`odek serve` protects its WebSocket and REST APIs with a per-instance token it
+prints to stderr at startup (`odek serve ⚡  http://…/?token=…`). When bodek
+spawns the server it picks the token up automatically; when you attach to one
+that's already running, paste the token URL into `--url` or pass the token
+itself via `--token`. Older odek versions without token enforcement are
+detected and connected to as before.
 
 Configuration (model, base URL, API key, MCP servers, memory, skills) is read
 by `odek serve` from its usual chain — `~/.odek/config.json` → `./odek.json` →

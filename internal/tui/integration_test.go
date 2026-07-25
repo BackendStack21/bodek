@@ -2,6 +2,7 @@ package tui
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -17,23 +18,61 @@ import (
 // wired builds a Model backed by a live in-process odek-serve stand-in.
 func wired(t *testing.T) *Model {
 	t.Helper()
+	return standIn(t, "tok")
+}
+
+// standIn builds a Model against an in-process odek-serve stand-in that
+// optionally enforces the per-instance WS token (cookie or X-Odek-Ws-Token
+// header) on /ws and /api/*, mirroring odek serve; an empty token disables
+// enforcement like odek versions that predate enforced auth.
+func standIn(t *testing.T, token string) *Model {
+	t.Helper()
 	t.Setenv("HOME", t.TempDir())
 
-	mux := http.NewServeMux()
-	mux.Handle("/ws", ws.Handler(func(c *ws.Conn) {
-		for {
-			var d []byte
-			if err := ws.Message.Receive(c, &d); err != nil {
+	// serveTokenOK mirrors odek serve's validateServeToken: the token is
+	// accepted via the odek_ws_token cookie or the X-Odek-Ws-Token header.
+	serveTokenOK := func(r *http.Request) bool {
+		if token == "" {
+			return true
+		}
+		if c, err := r.Cookie("odek_ws_token"); err == nil && c.Value == token {
+			return true
+		}
+		return r.Header.Get("X-Odek-Ws-Token") == token
+	}
+	guard := func(h http.HandlerFunc) http.HandlerFunc {
+		return func(w http.ResponseWriter, r *http.Request) {
+			if !serveTokenOK(r) {
+				w.WriteHeader(http.StatusForbidden)
 				return
 			}
-			_ = ws.JSON.Send(c, map[string]any{"type": "session", "session_id": "s1", "auth_token": "a1", "model": "m"})
-			_ = ws.Message.Send(c, `{"type":"done","latency":1}`)
+			h(w, r)
 		}
-	}))
-	mux.HandleFunc("/api/sessions", func(w http.ResponseWriter, r *http.Request) {
-		json.NewEncoder(w).Encode([]client.Session{{ID: "s1", Task: "first task", Turns: 1, UpdatedAt: time.Now()}})
+	}
+
+	mux := http.NewServeMux()
+	mux.Handle("/ws", ws.Server{
+		Handshake: func(cfg *ws.Config, r *http.Request) error {
+			if !serveTokenOK(r) {
+				return errors.New("missing or invalid server token")
+			}
+			return nil
+		},
+		Handler: ws.Handler(func(c *ws.Conn) {
+			for {
+				var d []byte
+				if err := ws.Message.Receive(c, &d); err != nil {
+					return
+				}
+				_ = ws.JSON.Send(c, map[string]any{"type": "session", "session_id": "s1", "auth_token": "a1", "model": "m"})
+				_ = ws.Message.Send(c, `{"type":"done","latency":1}`)
+			}
+		}),
 	})
-	mux.HandleFunc("/api/sessions/", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/api/sessions", guard(func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode([]client.Session{{ID: "s1", Task: "first task", Turns: 1, UpdatedAt: time.Now()}})
+	}))
+	mux.HandleFunc("/api/sessions/", guard(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodDelete {
 			w.WriteHeader(http.StatusNoContent)
 			return
@@ -47,20 +86,20 @@ func wired(t *testing.T) *Model {
 				{Role: "assistant", Content: ""}, // skipped (empty)
 			},
 		})
-	})
-	mux.HandleFunc("/api/models", func(w http.ResponseWriter, r *http.Request) {
+	}))
+	mux.HandleFunc("/api/models", guard(func(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode([]client.ModelInfo{{ID: "m1", Description: "one", Current: true}})
-	})
-	mux.HandleFunc("/api/resources", func(w http.ResponseWriter, r *http.Request) {
+	}))
+	mux.HandleFunc("/api/resources", guard(func(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode([]client.Resource{{ID: "@main.go", Type: "file", Label: "main.go", Detail: "1 KB"}})
-	})
-	mux.HandleFunc("/api/cancel", func(w http.ResponseWriter, r *http.Request) {
+	}))
+	mux.HandleFunc("/api/cancel", guard(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
-	})
+	}))
 
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
-	cl, err := client.Dial("ws"+strings.TrimPrefix(srv.URL, "http")+"/ws", srv.URL, srv.URL, "tok")
+	cl, err := client.Dial("ws"+strings.TrimPrefix(srv.URL, "http")+"/ws", srv.URL, srv.URL, token)
 	if err != nil {
 		t.Fatalf("Dial: %v", err)
 	}
@@ -69,6 +108,16 @@ func wired(t *testing.T) *Model {
 	m := New(cl, Options{Model: "m"})
 	m.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
 	return m
+}
+
+func TestStandInWithoutTokenEnforcement(t *testing.T) {
+	// Empty token = an odek that predates enforced auth: the stand-in serves
+	// /ws and /api/* without any token checks.
+	m := standIn(t, "")
+	m.Update(exec(m.openModels()))
+	if len(m.models) != 1 {
+		t.Fatalf("models against an unenforced stand-in: %d", len(m.models))
+	}
 }
 
 func exec(cmd tea.Cmd) tea.Msg {
@@ -356,5 +405,9 @@ func TestElapsed(t *testing.T) {
 	m.runStart = time.Now().Add(-2 * time.Second)
 	if m.elapsed() == "" {
 		t.Error("elapsed should be non-empty during a run")
+	}
+	// The live badge ticks in whole seconds (tenths would flicker at 12fps).
+	if strings.Contains(m.elapsed(), ".") {
+		t.Errorf("elapsed should not show tenths: %q", m.elapsed())
 	}
 }

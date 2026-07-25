@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/BackendStack21/bodek/internal/client"
@@ -88,10 +89,18 @@ func TestContextGauge(t *testing.T) {
 	m.sessCtxTok = 380
 
 	out := plain(m.header())
-	for _, want := range []string{"◑", "38%", "380/1k"} {
+	for _, want := range []string{"○", "38%", "380/1k"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("header gauge missing %q in:\n%s", want, out)
 		}
+	}
+
+	// Fill glyph and color band move together: half past 75%, full past 90%.
+	if g := gaugeGlyph(0.80); g != "◐" {
+		t.Errorf("gaugeGlyph(0.80) = %q, want ◐", g)
+	}
+	if g := gaugeGlyph(0.95); g != "●" {
+		t.Errorf("gaugeGlyph(0.95) = %q, want ●", g)
 	}
 
 	// Unknown budget hides the gauge entirely (no percent sign in the header).
@@ -240,5 +249,54 @@ func TestSessionResumeResetsTelemetry(t *testing.T) {
 	if m.sessCtxTok != 0 || m.sessOutTok != 0 || m.lastLatency != 0 {
 		t.Errorf("session token/latency not reset: ctx=%d out=%d lat=%v",
 			m.sessCtxTok, m.sessOutTok, m.lastLatency)
+	}
+}
+
+// Clearing the conversation (/clear or ctrl+l) must also reset the session
+// telemetry, so the stats UI doesn't keep showing pre-clear turns, tools,
+// tokens, and age.
+func TestClearResetsTelemetry(t *testing.T) {
+	clears := map[string]func(m *Model){
+		"/clear": func(m *Model) {
+			for _, c := range slashCommands() {
+				if c.name == "clear" {
+					c.run(m, "")
+				}
+			}
+		},
+		"ctrl+l": func(m *Model) {
+			m.Update(tea.KeyMsg{Type: tea.KeyCtrlL})
+		},
+	}
+	for name, clear := range clears {
+		t.Run(name, func(t *testing.T) {
+			m := driveTurn(t, client.Event{
+				Type: "done", Latency: 2.5,
+				ContextTokens: 1200, OutputTokens: 340,
+				SessionContextTokens: 1200, SessionOutputTokens: 340,
+			})
+			if len(m.turnStats) == 0 || m.toolTotal == 0 || m.sessCtxTok == 0 {
+				t.Fatal("precondition: session telemetry not populated by the turn")
+			}
+
+			clear(m)
+
+			if len(m.msgs) != 0 {
+				t.Errorf("msgs not cleared: %d", len(m.msgs))
+			}
+			if len(m.turnStats) != 0 {
+				t.Errorf("turnStats not reset: %d", len(m.turnStats))
+			}
+			if m.toolTotal != 0 {
+				t.Errorf("toolTotal not reset: %d", m.toolTotal)
+			}
+			if !m.sessionStart.IsZero() {
+				t.Error("sessionStart not reset")
+			}
+			if m.sessCtxTok != 0 || m.sessOutTok != 0 || m.lastLatency != 0 {
+				t.Errorf("session token/latency not reset: ctx=%d out=%d lat=%v",
+					m.sessCtxTok, m.sessOutTok, m.lastLatency)
+			}
+		})
 	}
 }

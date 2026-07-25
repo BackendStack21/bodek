@@ -28,7 +28,8 @@ func main() {
 
 func run() error {
 	var (
-		url     = flag.String("url", "", "attach to an already-running odek serve URL (e.g. http://127.0.0.1:8080)")
+		url     = flag.String("url", "", "attach to an already-running odek serve URL (e.g. http://127.0.0.1:8080/?token=…)")
+		token   = flag.String("token", "", "WS auth token for an attached odek serve (as printed at its startup)")
 		sandbox = flag.Bool("sandbox", false, "run tool calls inside odek's Docker sandbox")
 		bin     = flag.String("odek-bin", "", "path to the odek binary to spawn (default: odek on PATH)")
 	)
@@ -38,10 +39,11 @@ func run() error {
 		fmt.Fprintf(os.Stderr, "Options:\n")
 		flag.PrintDefaults()
 		fmt.Fprintf(os.Stderr, "\nExamples:\n")
-		fmt.Fprintf(os.Stderr, "  bodek                               # spawn odek serve and start chatting\n")
-		fmt.Fprintf(os.Stderr, "  bodek --sandbox                     # spawn odek serve with Docker sandbox\n")
-		fmt.Fprintf(os.Stderr, "  bodek --url http://127.0.0.1:8080   # attach to a running odek serve\n")
-		fmt.Fprintf(os.Stderr, "  bodek -- --prompt-caching           # pass extra flags to odek serve\n")
+		fmt.Fprintf(os.Stderr, "  bodek                                             # spawn odek serve and start chatting\n")
+		fmt.Fprintf(os.Stderr, "  bodek --sandbox                                   # spawn odek serve with Docker sandbox\n")
+		fmt.Fprintf(os.Stderr, "  bodek --url 'http://127.0.0.1:8080/?token=…'      # attach with the token URL odek serve printed\n")
+		fmt.Fprintf(os.Stderr, "  bodek --url http://127.0.0.1:8080 --token d3adb33f  # attach with an explicit token\n")
+		fmt.Fprintf(os.Stderr, "  bodek -- --prompt-caching                         # pass extra flags to odek serve\n")
 	}
 	flag.Parse()
 
@@ -74,6 +76,7 @@ func run() error {
 	// Spawn or attach to the odek serve backend.
 	srv, err := server.Connect(server.Options{
 		URL:       *url,
+		Token:     *token,
 		Bin:       *bin,
 		Sandbox:   *sandbox,
 		ExtraArgs: extraArgs,

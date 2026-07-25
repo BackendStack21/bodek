@@ -240,6 +240,7 @@ func (m *Model) handleSessionDetail(msg sessionDetailMsg) {
 	m.sessOutTok = 0
 	m.lastLatency = 0
 	m.msgs = m.msgs[:0]
+	m.convCount = -1 // transcript swapped for the resumed one — drop the cache
 	for _, mm := range msg.sess.Messages {
 		// Persisted transcripts are attacker-influenced (agent output, and the
 		// session file itself); strip terminal control sequences before display.
@@ -309,14 +310,8 @@ func (m *Model) renderPanel(w, h int) string {
 		body += "\n" + strings.Join(windowRows(rows, m.panelSel, visible), "\n")
 	}
 
-	box := lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(colBrand).
-		Padding(0, 1).
-		Width(w - 2).
-		Height(h - 2).
-		Render(body)
-	return box
+	// acBox is exactly the rounded brand box this panel used to hand-build.
+	return th.acBox.Width(w - 2).Height(h - 2).Render(body)
 }
 
 func (m *Model) sessionRows(w int) []string {

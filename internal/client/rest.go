@@ -110,6 +110,9 @@ func (c *Client) do(method, u, sessionToken string) (*http.Response, error) {
 	if err != nil {
 		return nil, err
 	}
+	if c.serveToken != "" {
+		req.Header.Set("X-Odek-Ws-Token", c.serveToken)
+	}
 	if sessionToken != "" {
 		req.Header.Set("X-Session-Token", sessionToken)
 	}
