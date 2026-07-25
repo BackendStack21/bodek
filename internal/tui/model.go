@@ -119,10 +119,12 @@ type Model struct {
 	toolTotal    int         // cumulative tool calls this session
 	sessionStart time.Time   // first-prompt timestamp, for session wall-clock
 
-	status   string
-	notices  []string
-	disconn  bool
-	quitting bool
+	status    string
+	notices   []string
+	noticeExp []time.Time // parallel to notices; zero = sticky, else expires at
+	noticeSeq int         // bumped on each transient notice, to invalidate stale timers
+	disconn   bool
+	quitting  bool
 
 	gradRule  string // cached full-width gradient rule
 	gradRuleW int
@@ -162,6 +164,15 @@ func (a autocomplete) rows() int {
 // height is the total rendered height of the popup (border + title + rows).
 func (a autocomplete) height() int {
 	return a.rows() + 3
+}
+
+// noticeTTL is how long transient info traces (skill / memory / signal /
+// subagent) stay on screen before fading out.
+const noticeTTL = 5 * time.Second
+
+// noticeExpireMsg fires noticeTTL after the last transient notice was added.
+type noticeExpireMsg struct {
+	seq int
 }
 
 // acResultMsg carries the result of an async resource search.
@@ -273,6 +284,13 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case eventMsg:
 		return m.handleEvent(client.Event(msg))
+
+	case noticeExpireMsg:
+		if msg.seq == m.noticeSeq {
+			m.pruneNotices(time.Now())
+			m.refresh()
+		}
+		return m, nil
 
 	case tea.MouseMsg:
 		var cmd tea.Cmd
@@ -397,6 +415,7 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m *Model) handleEvent(ev client.Event) (tea.Model, tea.Cmd) {
+	prevSeq := m.noticeSeq
 	switch ev.Type {
 	case "session":
 		m.sessionID = ev.SessionID
@@ -496,11 +515,11 @@ func (m *Model) handleEvent(ev client.Event) (tea.Model, tea.Cmd) {
 		m.relayout() // the panel is taller than the textarea — shrink the viewport
 
 	case "skill_event":
-		m.addNote("skill · " + strings.TrimSpace(ev.SubType+" "+ev.SkillName) + eventTail(ev))
+		m.addTransientNote("skill · " + strings.TrimSpace(ev.SubType+" "+ev.SkillName) + eventTail(ev))
 	case "memory_event":
-		m.addNote("memory · " + strings.TrimSpace(ev.SubType+" "+ev.Target) + eventTail(ev))
+		m.addTransientNote("memory · " + strings.TrimSpace(ev.SubType+" "+ev.Target) + eventTail(ev))
 	case "agent_signal":
-		m.addNote("signal · " + strings.TrimSpace(ev.SubType+" "+ev.Detail) + eventTail(ev))
+		m.addTransientNote("signal · " + strings.TrimSpace(ev.SubType+" "+ev.Detail) + eventTail(ev))
 	case "subagent_log":
 		line := strings.TrimSpace(ev.SubType + " " + ev.Name)
 		if d := collapse(ev.Detail); d != "" {
@@ -512,7 +531,7 @@ func (m *Model) handleEvent(ev client.Event) (tea.Model, tea.Cmd) {
 		if i := m.cur(); i >= 0 && m.attachSubLog(i, line) {
 			break
 		}
-		m.addNote("subagent · " + line)
+		m.addTransientNote("subagent · " + line)
 
 	case client.EventDisconnected:
 		m.disconn = true
@@ -527,7 +546,7 @@ func (m *Model) handleEvent(ev client.Event) (tea.Model, tea.Cmd) {
 	}
 
 	m.refresh()
-	return m, listen(m.events)
+	return m, tea.Batch(listen(m.events), m.noticeTimer(prevSeq))
 }
 
 // ── actions ──────────────────────────────────────────────────────────────
@@ -686,11 +705,51 @@ func (m *Model) finalize() {
 	m.thinking.Reset()
 }
 
+// addNote appends a sticky notice (errors, disconnects) that stays until
+// pushed out by newer ones.
 func (m *Model) addNote(s string) {
+	m.pushNote(s, time.Time{})
+}
+
+// addTransientNote appends an info trace that fades after noticeTTL.
+func (m *Model) addTransientNote(s string) {
+	m.pushNote(s, time.Now().Add(noticeTTL))
+	m.noticeSeq++
+}
+
+func (m *Model) pushNote(s string, exp time.Time) {
 	m.notices = append(m.notices, sanitize(s))
+	m.noticeExp = append(m.noticeExp, exp)
 	if len(m.notices) > 6 {
 		m.notices = m.notices[len(m.notices)-6:]
+		m.noticeExp = m.noticeExp[len(m.noticeExp)-6:]
 	}
+}
+
+// pruneNotices drops transient notices whose expiry has passed.
+func (m *Model) pruneNotices(now time.Time) {
+	kept := m.notices[:0]
+	keptExp := m.noticeExp[:0]
+	for i, n := range m.notices {
+		if exp := m.noticeExp[i]; exp.IsZero() || now.Before(exp) {
+			kept = append(kept, n)
+			keptExp = append(keptExp, exp)
+		}
+	}
+	m.notices = kept
+	m.noticeExp = keptExp
+}
+
+// noticeTimer schedules the expiry sweep when a transient notice was added
+// since prevSeq; otherwise it returns nil.
+func (m *Model) noticeTimer(prevSeq int) tea.Cmd {
+	if m.noticeSeq == prevSeq {
+		return nil
+	}
+	seq := m.noticeSeq
+	return tea.Tick(noticeTTL, func(time.Time) tea.Msg {
+		return noticeExpireMsg{seq: seq}
+	})
 }
 
 // render runs content through glamour; falls back to raw text on error.
