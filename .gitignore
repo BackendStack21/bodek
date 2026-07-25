@@ -1,6 +1,7 @@
 # Build artifacts
 /bin/
 /bodek
+/coverage.out
 
 # Editor / OS noise
 .DS_Store

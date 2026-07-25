@@ -63,6 +63,64 @@ func TestSpawnDefaultBinMissing(t *testing.T) {
 	}
 }
 
+func TestConnectURLNotReady(t *testing.T) {
+	// Attaching to a URL whose server never answers must fail after the ready
+	// timeout instead of hanging.
+	old := readyTimeout
+	readyTimeout = 250 * time.Millisecond
+	defer func() { readyTimeout = old }()
+
+	if _, err := Connect(Options{URL: "http://127.0.0.1:1"}); err == nil {
+		t.Error("expected Connect to fail when the attached server is not ready")
+	}
+}
+
+func TestSpawnStartError(t *testing.T) {
+	// A binary that passes LookPath but cannot be exec'd (its shebang points
+	// at a nonexistent interpreter) must surface the cmd.Start error.
+	bin := filepath.Join(t.TempDir(), "odek-fake")
+	if err := os.WriteFile(bin, []byte("#!/nonexistent-interpreter-xyz\n"), 0o755); err != nil {
+		t.Fatalf("write fake odek: %v", err)
+	}
+	c := &Conn{}
+	if err := c.spawn(Options{Bin: bin}, "127.0.0.1:0"); err == nil {
+		t.Error("expected spawn to fail when the binary cannot be started")
+	}
+}
+
+func TestStopKillsLingeringProcess(t *testing.T) {
+	// A server that ignores SIGINT must be force-killed once stopTimeout
+	// elapses. `exec` preserves the ignored-signal disposition, so the sleep
+	// itself ignores SIGINT and Stop falls back to Kill.
+	sh, err := exec.LookPath("sh")
+	if err != nil {
+		t.Skip("no 'sh' binary available")
+	}
+	old := stopTimeout
+	stopTimeout = 200 * time.Millisecond
+	defer func() { stopTimeout = old }()
+
+	// The "ready" line guarantees the trap is installed before SIGINT is sent.
+	c := &Conn{proc: exec.Command(sh, "-c", "trap '' INT; echo ready; exec sleep 30")}
+	stdout, err := c.proc.StdoutPipe()
+	if err != nil {
+		t.Fatalf("stdout pipe: %v", err)
+	}
+	if err := c.proc.Start(); err != nil {
+		t.Fatalf("start: %v", err)
+	}
+	if _, err := io.ReadFull(stdout, make([]byte, len("ready\n"))); err != nil {
+		t.Fatalf("read readiness line: %v", err)
+	}
+	done := make(chan struct{})
+	go func() { c.Stop(); close(done) }()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("Stop did not fall back to Kill for a lingering process")
+	}
+}
+
 func TestConnectSpawnNotReady(t *testing.T) {
 	bin, err := exec.LookPath("sleep")
 	if err != nil {

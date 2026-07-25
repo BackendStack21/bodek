@@ -24,6 +24,10 @@ const wsTokenCookie = "odek_ws_token"
 // variable so tests can shorten it.
 var readyTimeout = 30 * time.Second
 
+// stopTimeout bounds how long Stop waits for the spawned server's graceful
+// shutdown before killing it. It is a variable so tests can shorten it.
+var stopTimeout = 8 * time.Second
+
 // Conn holds everything needed to talk to an odek serve instance.
 type Conn struct {
 	BaseURL string // http://127.0.0.1:port
@@ -162,7 +166,7 @@ func (c *Conn) Stop() {
 	go func() { _ = c.proc.Wait(); close(done) }()
 	select {
 	case <-done:
-	case <-time.After(8 * time.Second):
+	case <-time.After(stopTimeout):
 		_ = c.proc.Process.Kill()
 	}
 }

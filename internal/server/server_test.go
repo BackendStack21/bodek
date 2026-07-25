@@ -63,6 +63,14 @@ func TestFetchTokenRequestError(t *testing.T) {
 	}
 }
 
+func TestLegacyTokenProbeError(t *testing.T) {
+	// Unreachable server: the cookie fetch fails and the auth-enforcement
+	// probe fails too, so legacyToken returns a hard error.
+	if _, err := legacyToken("http://127.0.0.1:1"); err == nil {
+		t.Error("expected legacyToken probe error to unreachable host")
+	}
+}
+
 func TestConnectViaURL(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.SetCookie(w, &http.Cookie{Name: wsTokenCookie, Value: "tok"})
@@ -171,6 +179,7 @@ func TestSplitTokenURL(t *testing.T) {
 		{"http://127.0.0.1:8080/?token=abc", "http://127.0.0.1:8080/", "abc"},
 		{"http://127.0.0.1:8080", "http://127.0.0.1:8080", ""},
 		{"http://127.0.0.1:8080/?token=a%20b", "http://127.0.0.1:8080/", "a b"},
+		{"\x7f", "\x7f", ""}, // unparseable URL is returned as-is, without a token
 	}
 	for _, tc := range cases {
 		base, token := splitTokenURL(tc.raw)
