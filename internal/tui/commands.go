@@ -221,13 +221,13 @@ func (m *Model) showStats() {
 		}
 		mean := sumLat / float64(len(m.turnStats))
 
-		ctxVal := th.statsValue.Render(human(m.sessCtxTok))
+		ctxVal := th.statsValue.Render(human(m.winCtxTok))
 		if m.maxContext > 0 {
-			ratio := float64(m.sessCtxTok) / float64(m.maxContext)
+			ratio := float64(m.winCtxTok) / float64(m.maxContext)
 			if ratio > 1 {
 				ratio = 1
 			}
-			ctxVal = th.statsValue.Render(human(m.sessCtxTok)+"/"+humanCtx(m.maxContext)) +
+			ctxVal = th.statsValue.Render(human(m.winCtxTok)+"/"+humanCtx(m.maxContext)) +
 				"  " + m.gaugeColor(ratio).Render(gaugeGlyph(ratio)) +
 				" " + th.statsDim.Render(fmt.Sprintf("%d%%", int(ratio*100+0.5)))
 		}

@@ -112,6 +112,7 @@ type Model struct {
 
 	sessCtxTok  int
 	sessOutTok  int
+	winCtxTok   int // live context-window fill: last turn's contextTokens
 	lastLatency float64
 
 	maxContext   int         // active model's context window (0 = unknown → gauge hidden)
@@ -494,6 +495,7 @@ func (m *Model) handleEvent(ev client.Event) (tea.Model, tea.Cmd) {
 		m.status = "ready"
 		m.sessCtxTok = ev.SessionContextTokens
 		m.sessOutTok = ev.SessionOutputTokens
+		m.winCtxTok = ev.ContextTokens
 		m.lastLatency = ev.Latency
 
 	case "error":
@@ -564,6 +566,7 @@ func (m *Model) clearConversation() {
 	m.sessionStart = time.Time{}
 	m.sessCtxTok = 0
 	m.sessOutTok = 0
+	m.winCtxTok = 0
 	m.lastLatency = 0
 	m.refresh()
 }

@@ -84,7 +84,7 @@ func TestShowStatsBranches(t *testing.T) {
 	m.thinkOn = true
 	m.sessionID = "sess-123"
 	m.maxContext = 100
-	m.sessCtxTok = 250 // 250% → clamped to 100%
+	m.winCtxTok = 250 // 250% → clamped to 100%
 	m.sessionStart = time.Now().Add(-time.Minute)
 	m.turnStats = []turnStats{
 		{latency: 1.0, thought: true},
@@ -304,12 +304,12 @@ func TestCtxGaugeClamps(t *testing.T) {
 	m := newTestModel()
 	m.maxContext = 100
 
-	m.sessCtxTok = -5 // corrupt/negative accounting → clamp to 0%
+	m.winCtxTok = -5 // corrupt/negative accounting → clamp to 0%
 	if out := plain(m.ctxGauge(true)); !strings.Contains(out, "0%") {
 		t.Errorf("negative ratio gauge = %q, want 0%%", out)
 	}
 
-	m.sessCtxTok = 250 // overrun → clamp to 100%
+	m.winCtxTok = 250 // overrun → clamp to 100%
 	if out := plain(m.ctxGauge(false)); !strings.Contains(out, "100%") {
 		t.Errorf("overrun ratio gauge = %q, want 100%%", out)
 	}
