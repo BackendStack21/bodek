@@ -1,10 +1,15 @@
 package server
 
 import (
+	"bytes"
+	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"os/exec"
+	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -75,13 +80,74 @@ func TestConnectSpawnNotReady(t *testing.T) {
 }
 
 func TestConnectFetchTokenFailure(t *testing.T) {
-	// Server is ready but never issues the token cookie → Connect fails at
-	// fetchToken and tears down.
+	// Server is ready but enforces auth without ever issuing a token cookie →
+	// the legacy fallback probe 403s and Connect fails.
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/models" {
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
 		w.WriteHeader(http.StatusOK)
 	}))
 	defer srv.Close()
 	if _, err := Connect(Options{URL: srv.URL}); err == nil {
-		t.Error("expected Connect to fail without a token cookie")
+		t.Error("expected Connect to fail when auth is enforced and no token is available")
+	}
+}
+
+// fakeOdekScript writes a shell script that mimics `odek serve` startup output
+// on stderr and then exits, so Connect can scan the token from it.
+func fakeOdekScript(t *testing.T, stderrLines ...string) string {
+	t.Helper()
+	var b strings.Builder
+	b.WriteString("#!/bin/sh\n")
+	for _, l := range stderrLines {
+		fmt.Fprintf(&b, "echo '%s' >&2\n", l)
+	}
+	path := filepath.Join(t.TempDir(), "odek-fake")
+	if err := os.WriteFile(path, []byte(b.String()), 0o755); err != nil {
+		t.Fatalf("write fake odek: %v", err)
+	}
+	return path
+}
+
+func TestConnectSpawnTokenFromStderr(t *testing.T) {
+	// A current odek serve prints its token to stderr; Connect must pick it up
+	// from the "WS token:" line while passing stderr through verbatim.
+	bin := fakeOdekScript(t,
+		"odek serve ⚡  http://127.0.0.1:9999/?token=cafef00d",
+		"  WebSocket: ws://127.0.0.1:9999/ws",
+		"  WS token:  cafef00d",
+	)
+	var stderr bytes.Buffer
+	conn, err := Connect(Options{Bin: bin, Stderr: &stderr})
+	if err != nil {
+		t.Fatalf("Connect: %v", err)
+	}
+	if conn.Token != "cafef00d" {
+		t.Errorf("Token = %q, want %q", conn.Token, "cafef00d")
+	}
+	conn.Stop() // wait for the child's stderr copier to finish before reading
+	for _, want := range []string{"odek serve ⚡", "WebSocket:", "WS token:  cafef00d"} {
+		if !strings.Contains(stderr.String(), want) {
+			t.Errorf("stderr passthrough missing %q, got:\n%s", want, stderr.String())
+		}
+	}
+}
+
+func TestConnectSpawnTokenFromBannerFallback(t *testing.T) {
+	// If the "WS token:" line is absent, the ?token= query in the banner URL
+	// is the fallback.
+	bin := fakeOdekScript(t,
+		"odek serve ⚡  http://127.0.0.1:9999/?token=beefcafe",
+		"  WebSocket: ws://127.0.0.1:9999/ws",
+	)
+	conn, err := Connect(Options{Bin: bin, Stderr: io.Discard})
+	if err != nil {
+		t.Fatalf("Connect: %v", err)
+	}
+	defer conn.Stop()
+	if conn.Token != "beefcafe" {
+		t.Errorf("Token = %q, want %q", conn.Token, "beefcafe")
 	}
 }

@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -198,6 +199,61 @@ func TestRESTEndpoints(t *testing.T) {
 	}
 	if err := cl.Cancel("s1", "tok"); err != nil {
 		t.Fatalf("Cancel: %v", err)
+	}
+}
+
+func TestRESTCarriesServeToken(t *testing.T) {
+	// Every REST request must carry the per-instance serve token, mirroring
+	// odek serve's requireServeToken (cookie or X-Odek-Ws-Token header).
+	var seen []string
+	var mu sync.Mutex
+	record := func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		seen = append(seen, r.URL.Path+":"+r.Header.Get("X-Odek-Ws-Token"))
+		mu.Unlock()
+	}
+	mux := http.NewServeMux()
+	mux.Handle("/ws", ws.Handler(func(c *ws.Conn) { _, _ = c.Write(nil) }))
+	mux.HandleFunc("/api/sessions", func(w http.ResponseWriter, r *http.Request) {
+		record(w, r)
+		json.NewEncoder(w).Encode([]Session{})
+	})
+	mux.HandleFunc("/api/models", func(w http.ResponseWriter, r *http.Request) {
+		record(w, r)
+		json.NewEncoder(w).Encode([]ModelInfo{})
+	})
+	mux.HandleFunc("/api/resources", func(w http.ResponseWriter, r *http.Request) {
+		record(w, r)
+		json.NewEncoder(w).Encode([]Resource{})
+	})
+	mux.HandleFunc("/api/cancel", func(w http.ResponseWriter, r *http.Request) {
+		record(w, r)
+		w.WriteHeader(http.StatusNoContent)
+	})
+	cl, _ := newTestServer(t, mux)
+
+	if _, err := cl.Sessions(); err != nil {
+		t.Fatalf("Sessions: %v", err)
+	}
+	if _, err := cl.Models(); err != nil {
+		t.Fatalf("Models: %v", err)
+	}
+	if _, err := cl.Resources("x", 1); err != nil {
+		t.Fatalf("Resources: %v", err)
+	}
+	if err := cl.Cancel("s1", "tok"); err != nil {
+		t.Fatalf("Cancel: %v", err)
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	if len(seen) != 4 {
+		t.Fatalf("expected 4 API calls, got %v", seen)
+	}
+	for _, s := range seen {
+		if !strings.HasSuffix(s, ":test-token") {
+			t.Errorf("request missing serve token header: %q", s)
+		}
 	}
 }
 

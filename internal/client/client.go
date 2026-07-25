@@ -78,16 +78,18 @@ type Resource struct {
 
 // Client is a connected odek serve session.
 type Client struct {
-	conn    *ws.Conn
-	baseURL string
-	http    *http.Client
-	Events  chan Event
+	conn       *ws.Conn
+	baseURL    string
+	serveToken string
+	http       *http.Client
+	Events     chan Event
 }
 
 // Dial connects to an odek serve WebSocket. wsURL is the ws:// endpoint,
 // origin is an http://localhost-based origin accepted by the server, baseURL is
-// the http:// root (used for the resource-search API), and token is the
-// per-instance CSRF token (obtained from a GET / Set-Cookie header).
+// the http:// root (used for the REST APIs), and token is the per-instance
+// CSRF token resolved by server.Connect (token URL, stderr banner, or legacy
+// cookie). It is sent on the WS handshake and on every REST request.
 func Dial(wsURL, origin, baseURL, token string) (*Client, error) {
 	cfg, err := ws.NewConfig(wsURL, origin)
 	if err != nil {
@@ -101,10 +103,11 @@ func Dial(wsURL, origin, baseURL, token string) (*Client, error) {
 	}
 
 	c := &Client{
-		conn:    conn,
-		baseURL: baseURL,
-		http:    &http.Client{Timeout: 3 * time.Second},
-		Events:  make(chan Event, 256),
+		conn:       conn,
+		baseURL:    baseURL,
+		serveToken: token,
+		http:       &http.Client{Timeout: 3 * time.Second},
+		Events:     make(chan Event, 256),
 	}
 	go c.readLoop()
 	return c, nil
@@ -114,7 +117,7 @@ func Dial(wsURL, origin, baseURL, token string) (*Client, error) {
 func (c *Client) Resources(query string, limit int) ([]Resource, error) {
 	u := fmt.Sprintf("%s/api/resources?q=%s&limit=%d",
 		c.baseURL, url.QueryEscape(query), limit)
-	resp, err := c.http.Get(u)
+	resp, err := c.do(http.MethodGet, u, "")
 	if err != nil {
 		return nil, err
 	}
