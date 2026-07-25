@@ -81,6 +81,38 @@ func TestAddNoteRingBuffer(t *testing.T) {
 	}
 }
 
+func TestTransientNoticeExpires(t *testing.T) {
+	m := wired(t)
+	m.addNote("sticky")
+	m.addTransientNote("skill · loaded")
+	if cmd := m.noticeTimer(0); cmd == nil {
+		t.Fatal("transient notice should schedule an expiry timer")
+	}
+	// Expiry sweep drops the transient trace but keeps the sticky note.
+	m.noticeExp[1] = time.Now().Add(-time.Second)
+	if _, cmd := m.Update(noticeExpireMsg{seq: m.noticeSeq}); cmd != nil {
+		t.Error("expiry sweep should not reschedule")
+	}
+	if got := strings.Join(m.notices, "\n"); got != "sticky" {
+		t.Errorf("notices after expiry = %q", got)
+	}
+	// A stale timer (superseded by a newer notice) must not clear anything.
+	m.addTransientNote("skill · saved")
+	m.Update(noticeExpireMsg{seq: m.noticeSeq - 1})
+	if len(m.notices) != 2 {
+		t.Errorf("stale timer cleared notices: %v", m.notices)
+	}
+}
+
+func TestRenderNoticesHidesExpired(t *testing.T) {
+	m := wired(t)
+	m.addTransientNote("skill · loaded")
+	m.noticeExp[0] = time.Now().Add(-time.Second)
+	if got := m.renderNotices(); got != "" {
+		t.Errorf("expired notice still rendered: %q", got)
+	}
+}
+
 func TestArgPreviewFallbacks(t *testing.T) {
 	if got := argPreview(`{"foo":"bar"}`); got != "bar" {
 		t.Errorf("argPreview value-join = %q", got)

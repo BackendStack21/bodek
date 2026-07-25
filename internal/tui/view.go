@@ -236,7 +236,9 @@ func (m *Model) conversation() string {
 		blocks = append(blocks, lipgloss.NewStyle().Width(m.vp.Width).Render(think))
 	}
 	if len(m.notices) > 0 {
-		blocks = append(blocks, m.renderNotices())
+		if notes := m.renderNotices(); notes != "" {
+			blocks = append(blocks, notes)
+		}
 	}
 	return strings.Join(blocks, "\n\n")
 }
@@ -449,9 +451,13 @@ func resultExcerpt(result string) []string {
 
 func (m *Model) renderNotices() string {
 	th := m.th
-	lines := make([]string, len(m.notices))
+	now := time.Now()
+	lines := make([]string, 0, len(m.notices))
 	for i, n := range m.notices {
-		lines[i] = th.noticeStyle.Render("· " + n)
+		if exp := m.noticeExp[i]; !exp.IsZero() && !now.Before(exp) {
+			continue // expired transient, pending the next sweep
+		}
+		lines = append(lines, th.noticeStyle.Render("· "+n))
 	}
 	return strings.Join(lines, "\n")
 }
