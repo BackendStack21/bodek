@@ -26,28 +26,60 @@ func main() {
 	}
 }
 
-func run() error {
-	var (
-		url     = flag.String("url", "", "attach to an already-running odek serve URL (e.g. http://127.0.0.1:8080/?token=…)")
-		token   = flag.String("token", "", "WS auth token for an attached odek serve (as printed at its startup)")
-		sandbox = flag.Bool("sandbox", false, "run tool calls inside odek's Docker sandbox")
-		bin     = flag.String("odek-bin", "", "path to the odek binary to spawn (default: odek on PATH)")
-	)
-	flag.Usage = func() {
-		fmt.Fprintf(os.Stderr, "Usage: bodek [options] [-- <odek serve flags>]\n\n")
-		fmt.Fprintf(os.Stderr, "A terminal interface for the odek agent.\n\n")
-		fmt.Fprintf(os.Stderr, "Options:\n")
-		flag.PrintDefaults()
-		fmt.Fprintf(os.Stderr, "\nExamples:\n")
-		fmt.Fprintf(os.Stderr, "  bodek                                             # spawn odek serve and start chatting\n")
-		fmt.Fprintf(os.Stderr, "  bodek --sandbox                                   # spawn odek serve with Docker sandbox\n")
-		fmt.Fprintf(os.Stderr, "  bodek --url 'http://127.0.0.1:8080/?token=…'      # attach with the token URL odek serve printed\n")
-		fmt.Fprintf(os.Stderr, "  bodek --url http://127.0.0.1:8080 --token d3adb33f  # attach with an explicit token\n")
-		fmt.Fprintf(os.Stderr, "  bodek -- --prompt-caching                         # pass extra flags to odek serve\n")
-	}
-	flag.Parse()
+type config struct {
+	url       string
+	token     string
+	sandbox   bool
+	bin       string
+	mouse     bool
+	extraArgs []string
+}
 
-	extraArgs := flag.Args()
+func parseConfig(args []string, output io.Writer) (config, error) {
+	var cfg config
+	fs := flag.NewFlagSet("bodek", flag.ContinueOnError)
+	if output != nil {
+		fs.SetOutput(output)
+	}
+	fs.StringVar(&cfg.url, "url", "", "attach to an already-running odek serve URL (e.g. http://127.0.0.1:8080/?token=…)")
+	fs.StringVar(&cfg.token, "token", "", "WS auth token for an attached odek serve (as printed at its startup)")
+	fs.BoolVar(&cfg.sandbox, "sandbox", false, "run tool calls inside odek's Docker sandbox")
+	fs.StringVar(&cfg.bin, "odek-bin", "", "path to the odek binary to spawn (default: odek on PATH)")
+	fs.BoolVar(&cfg.mouse, "mouse", false, "enable mouse wheel scrolling (disables native text selection/copy)")
+	fs.Usage = func() {
+		_, _ = fmt.Fprintf(fs.Output(), "Usage: bodek [options] [-- <odek serve flags>]\n\n")
+		_, _ = fmt.Fprintf(fs.Output(), "A terminal interface for the odek agent.\n\n")
+		_, _ = fmt.Fprintf(fs.Output(), "Options:\n")
+		fs.PrintDefaults()
+		_, _ = fmt.Fprintf(fs.Output(), "\nExamples:\n")
+		_, _ = fmt.Fprintf(fs.Output(), "  bodek                                             # spawn odek serve and start chatting\n")
+		_, _ = fmt.Fprintf(fs.Output(), "  bodek --sandbox                                   # spawn odek serve with Docker sandbox\n")
+		_, _ = fmt.Fprintf(fs.Output(), "  bodek --url 'http://127.0.0.1:8080/?token=…'      # attach with the token URL odek serve printed\n")
+		_, _ = fmt.Fprintf(fs.Output(), "  bodek --url http://127.0.0.1:8080 --token d3adb33f  # attach with an explicit token\n")
+		_, _ = fmt.Fprintf(fs.Output(), "  bodek --mouse                                     # enable mouse wheel scrolling (blocks text selection)\n")
+		_, _ = fmt.Fprintf(fs.Output(), "  bodek -- --prompt-caching                         # pass extra flags to odek serve\n")
+	}
+	if err := fs.Parse(args); err != nil {
+		fs.Usage()
+		return config{}, err
+	}
+	cfg.extraArgs = fs.Args()
+	return cfg, nil
+}
+
+func buildProgramOptions(mouse bool) []tea.ProgramOption {
+	opts := []tea.ProgramOption{tea.WithAltScreen()}
+	if mouse {
+		opts = append(opts, tea.WithMouseCellMotion())
+	}
+	return opts
+}
+
+func run() error {
+	cfg, err := parseConfig(os.Args[1:], os.Stderr)
+	if err != nil {
+		return err
+	}
 
 	// A spawned `odek serve` logs to stderr. Routing that to our own terminal
 	// would corrupt the Bubble Tea alt-screen (stray writes desync the diff
@@ -62,7 +94,7 @@ func run() error {
 	// io.MultiWriter / *ringWriter below) without the redundant typed-var
 	// declaration that staticcheck's QF1011 flags.
 	serverErr := io.Writer(io.Discard)
-	if *url == "" {
+	if cfg.url == "" {
 		logTail = newRingWriter(50)
 		if f, path, closeLog := openServerLog(); path != "" {
 			defer closeLog()
@@ -75,11 +107,11 @@ func run() error {
 
 	// Spawn or attach to the odek serve backend.
 	srv, err := server.Connect(server.Options{
-		URL:       *url,
-		Token:     *token,
-		Bin:       *bin,
-		Sandbox:   *sandbox,
-		ExtraArgs: extraArgs,
+		URL:       cfg.url,
+		Token:     cfg.token,
+		Bin:       cfg.bin,
+		Sandbox:   cfg.sandbox,
+		ExtraArgs: cfg.extraArgs,
 		Stderr:    serverErr,
 	})
 	if err != nil {
@@ -108,16 +140,16 @@ func run() error {
 	setupSignalHandler(srv, cl)
 
 	model := tui.New(cl, tui.Options{
-		Sandbox: *sandbox,
+		Sandbox: cfg.sandbox,
 		CWD:     cwd,
 		LogPath: logPath,
 	})
 
-	// Mouse reporting enables wheel scrolling in the transcript. Click-drag text
-	// selection is delegated to the terminal's shift+drag fallback where the
-	// terminal supports it; otherwise users can rely on keyboard scrolling
-	// (↑/↓, PgUp/PgDn, ^U/^D).
-	p := tea.NewProgram(model, tea.WithAltScreen(), tea.WithMouseCellMotion())
+	// Mouse reporting enables wheel scrolling in the transcript, but it also
+	// captures the terminal mouse and blocks native click-drag text selection
+	// and copy. Keep it off by default so users can copy freely; enable it only
+	// when explicitly requested with --mouse.
+	p := tea.NewProgram(model, buildProgramOptions(cfg.mouse)...)
 	if _, err := p.Run(); err != nil {
 		return fmt.Errorf("TUI exited: %w", err)
 	}
