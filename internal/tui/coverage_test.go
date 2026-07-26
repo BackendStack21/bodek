@@ -96,7 +96,7 @@ func TestTransientNoticeExpires(t *testing.T) {
 	if got := strings.Join(m.notices, "\n"); got != "sticky" {
 		t.Errorf("notices after expiry = %q", got)
 	}
-	// A stale timer (superseded by a newer notice) must not clear anything.
+	// A stale timer must not clear notices that have not expired yet.
 	m.addTransientNote("skill · saved")
 	m.Update(noticeExpireMsg{seq: m.noticeSeq - 1})
 	if len(m.notices) != 2 {

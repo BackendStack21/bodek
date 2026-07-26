@@ -169,9 +169,9 @@ func (a autocomplete) height() int {
 
 // noticeTTL is how long transient info traces (skill / memory / signal /
 // subagent) stay on screen before fading out.
-const noticeTTL = 5 * time.Second
+const noticeTTL = 3 * time.Second
 
-// noticeExpireMsg fires noticeTTL after the last transient notice was added.
+// noticeExpireMsg fires noticeTTL after a transient notice was added.
 type noticeExpireMsg struct {
 	seq int
 }
@@ -287,10 +287,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.handleEvent(client.Event(msg))
 
 	case noticeExpireMsg:
-		if msg.seq == m.noticeSeq {
-			m.pruneNotices(time.Now())
-			m.refresh()
-		}
+		m.pruneNotices(time.Now())
+		m.refresh()
 		return m, nil
 
 	case tea.MouseMsg:
