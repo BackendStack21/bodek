@@ -76,6 +76,7 @@ bodek --sandbox                                   # run tool calls inside odek's
 bodek --url 'http://127.0.0.1:8080/?token=…'      # attach with the token URL odek serve printed
 bodek --url http://127.0.0.1:8080 --token d3adb33f  # attach with an explicit token
 bodek --odek-bin ./odek                           # use a specific odek binary
+bodek --mouse                                     # enable mouse wheel scrolling (blocks text selection)
 bodek -- --prompt-caching                         # pass extra flags through to `odek serve`
 ```
 
@@ -103,7 +104,8 @@ by `odek serve` from its usual chain — `~/.odek/config.json` → `./odek.json`
 | `^J` | Insert a newline in the input |
 | `^L` | Clear the conversation |
 | `Esc` | Cancel the running turn |
-| `↑` / `↓` / `PgUp` / `PgDn` / wheel | Scroll the transcript |
+| `↑` / `↓` / `PgUp` / `PgDn` | Scroll the transcript |
+| `wheel` (with `--mouse`) | Scroll the transcript |
 | `^C` | Quit |
 
 ### Commands (`/`)

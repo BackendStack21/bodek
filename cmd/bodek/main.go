@@ -32,6 +32,7 @@ func run() error {
 		token   = flag.String("token", "", "WS auth token for an attached odek serve (as printed at its startup)")
 		sandbox = flag.Bool("sandbox", false, "run tool calls inside odek's Docker sandbox")
 		bin     = flag.String("odek-bin", "", "path to the odek binary to spawn (default: odek on PATH)")
+		mouse   = flag.Bool("mouse", false, "enable mouse wheel scrolling (disables native text selection/copy)")
 	)
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, "Usage: bodek [options] [-- <odek serve flags>]\n\n")
@@ -113,11 +114,15 @@ func run() error {
 		LogPath: logPath,
 	})
 
-	// Mouse reporting enables wheel scrolling in the transcript. Click-drag text
-	// selection is delegated to the terminal's shift+drag fallback where the
-	// terminal supports it; otherwise users can rely on keyboard scrolling
-	// (↑/↓, PgUp/PgDn, ^U/^D).
-	p := tea.NewProgram(model, tea.WithAltScreen(), tea.WithMouseCellMotion())
+	// Mouse reporting enables wheel scrolling in the transcript, but it also
+	// captures the terminal mouse and blocks native click-drag text selection
+	// and copy. Keep it off by default so users can copy freely; enable it only
+	// when explicitly requested with --mouse.
+	programOpts := []tea.ProgramOption{tea.WithAltScreen()}
+	if *mouse {
+		programOpts = append(programOpts, tea.WithMouseCellMotion())
+	}
+	p := tea.NewProgram(model, programOpts...)
 	if _, err := p.Run(); err != nil {
 		return fmt.Errorf("TUI exited: %w", err)
 	}
