@@ -7,6 +7,8 @@
 
 **A beautiful [Bubble Tea](https://github.com/charmbracelet/bubbletea) terminal interface for the [odek](https://github.com/BackendStack21/odek) agent.**
 
+[📺 Watch intro →](bodek-intro-july-2026.mov)
+
 ```
 ██████   ██████  ██████  ███████ ██   ██
 ██   ██ ██    ██ ██   ██ ██      ██  ██
