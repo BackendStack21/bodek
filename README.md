@@ -52,6 +52,33 @@ bodek reuses that exact protocol from the terminal, which means:
 
 ## Install
 
+**Prerequisite:** bodek is only the front-end — you also need the `odek`
+engine. See [odek's install instructions](https://github.com/BackendStack21/odek)
+(any OpenAI-compatible provider key via `ODEK_API_KEY`).
+
+### Prebuilt binaries (bodek only)
+
+Download the latest compiled binary from the
+[releases page](https://github.com/BackendStack21/bodek/releases) — archives
+are published for Linux, macOS, and Windows (amd64 & arm64), with
+`checksums.txt` for verification.
+
+One-liner for Linux / macOS (resolves the latest asset for your platform and
+installs into `~/.local/bin`):
+
+```bash
+OS=$(uname -s | tr '[:upper:]' '[:lower:]')
+ARCH=$(uname -m); [ "$ARCH" = "x86_64" ] && ARCH=amd64
+URL=$(curl -fsSL https://api.github.com/repos/BackendStack21/bodek/releases/latest \
+  | grep browser_download_url | grep "${OS}_${ARCH}" | cut -d '"' -f 4)
+curl -fsSL "$URL" | tar -xz bodek && install -m 755 bodek ~/.local/bin/
+```
+
+On Windows, download the `windows_amd64` (or `arm64`) `.zip` from the
+releases page and put `bodek.exe` on your `PATH`.
+
+### From source
+
 ```bash
 # Install odek (the engine) and bodek (the TUI)
 go install github.com/BackendStack21/odek/cmd/odek@latest
