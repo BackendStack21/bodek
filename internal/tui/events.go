@@ -3,6 +3,9 @@ package tui
 import (
 	"encoding/json"
 	"fmt"
+	"regexp"
+	"sort"
+	"strconv"
 	"strings"
 	"time"
 	"unicode"
@@ -225,6 +228,93 @@ func eventTail(ev client.Event) string {
 	return s
 }
 
+// normalizeToolResult prepares raw tool output for DISPLAY ONLY — the stored
+// and forwarded data is never touched. It handles two render-noise shapes:
+//  1. JSON envelopes (read_file, search_files, …): Go's encoding/json
+//     HTML-escapes <, >, & in string values, so the odek prompt-injection
+//     wrapper shows up as <untrusted_content_… — the envelope is
+//     decoded and the real content rendered, with remaining scalar metadata
+//     as a one-line footer.
+//  2. untrusted_content wrappers, folded into a "⚠ untrusted: <source>"
+//     badge line. Both the literal tag form (live stream events) and the
+//     < escaped form (undecoded JSON envelopes) are recognized.
+//
+// Fail-safe: anything that does not match a known shape exactly is returned
+// unchanged — normalization is never lossy.
+func normalizeToolResult(data string) string {
+	return foldUntrustedWrappers(decodeToolEnvelope(data))
+}
+
+// decodeToolEnvelope unwraps a JSON object with a string "content" field,
+// returning the decoded content plus a footer line of the remaining scalar
+// metadata (e.g. "total_lines: 430"). Nested objects/arrays, missing
+// content, or invalid JSON mean an unknown shape — returned unchanged.
+func decodeToolEnvelope(data string) string {
+	t := strings.TrimSpace(data)
+	if len(t) < 2 || t[0] != '{' {
+		return data
+	}
+	var env map[string]any
+	if err := json.Unmarshal([]byte(t), &env); err != nil {
+		return data
+	}
+	content, ok := env["content"].(string)
+	if !ok {
+		return data
+	}
+	meta := make(map[string]string, len(env)-1)
+	for k, v := range env {
+		if k == "content" || v == nil {
+			continue
+		}
+		switch x := v.(type) {
+		case string:
+			meta[k] = x
+		case float64:
+			meta[k] = strconv.FormatFloat(x, 'f', -1, 64)
+		case bool:
+			meta[k] = strconv.FormatBool(x)
+		default:
+			return data // nested value: not a known envelope shape
+		}
+	}
+	if len(meta) == 0 {
+		return content
+	}
+	keys := make([]string, 0, len(meta))
+	for k := range meta {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	parts := make([]string, 0, len(keys))
+	for _, k := range keys {
+		parts = append(parts, k+": "+meta[k])
+	}
+	return content + "\n(" + strings.Join(parts, " · ") + ")"
+}
+
+// untrustedWrapperRe matches an odek prompt-injection wrapper in either its
+// literal form or the < escaped form produced by encoding/json.
+// Capture groups: 1 = source attribute, 2 = wrapped body.
+var untrustedWrapperRe = regexp.MustCompile(
+	`(?s)(?:<|\\u003c)untrusted_content_[0-9a-f]+ source=\\?"([^"]*)\\?"(?:>|\\u003e)\n?(.*?)\n?(?:<|\\u003c)/untrusted_content_[0-9a-f]+(?:>|\\u003e)`)
+
+// foldUntrustedWrappers replaces each untrusted_content wrapper with a badge
+// line naming the source, followed by the wrapped body.
+func foldUntrustedWrappers(s string) string {
+	if !strings.Contains(s, "untrusted_content_") {
+		return s
+	}
+	return untrustedWrapperRe.ReplaceAllStringFunc(s, func(m string) string {
+		sub := untrustedWrapperRe.FindStringSubmatch(m)
+		badge := "⚠ untrusted: " + sub[1]
+		if body := sub[2]; body != "" {
+			return badge + "\n" + body
+		}
+		return badge
+	})
+}
+
 // cur returns the index of the active streaming assistant message, or -1.
 func (m *Model) cur() int {
 	if m.curIdx >= 0 && m.curIdx < len(m.msgs) {
@@ -331,7 +421,7 @@ func argPreview(data string) string {
 // lines, so the transcript can show a useful excerpt (rendered by renderSteps)
 // without retaining the unbounded output of a chatty tool.
 func resultPreview(data string) string {
-	s := sanitize(data)
+	s := sanitize(normalizeToolResult(data))
 	lines := strings.Split(s, "\n")
 	const cap = 200
 	if len(lines) > cap {
