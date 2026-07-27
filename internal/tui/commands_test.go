@@ -3,6 +3,8 @@ package tui
 import (
 	"strings"
 	"testing"
+
+	tea "github.com/charmbracelet/bubbletea"
 )
 
 func TestCommandPrefix(t *testing.T) {
@@ -125,6 +127,36 @@ func TestCommandCompletion(t *testing.T) {
 	}
 	if m.ac.open {
 		t.Error("popup should close after accept")
+	}
+}
+
+// While the command popup is open, plain keys must keep flowing into the
+// input (narrowing the filter) instead of being swallowed.
+func TestCommandPopupKeepsTyping(t *testing.T) {
+	m := wired(t)
+	m.Update(key("/")) // opens the command popup
+	if !m.ac.open || m.ac.mode != acCmd {
+		t.Fatalf("command popup not open: %+v", m.ac)
+	}
+	m.Update(key("h")) // must reach the input, not be swallowed
+	if got := m.ta.Value(); got != "/h" {
+		t.Fatalf("input after typing = %q, want %q", got, "/h")
+	}
+	if !m.ac.open || m.ac.mode != acCmd {
+		t.Fatal("popup should stay open while the name is typed")
+	}
+	if len(m.ac.items) != 1 || m.ac.items[0].ID != "/help" {
+		t.Errorf("popup should re-filter to /help: %+v", m.ac.items)
+	}
+	// Backspace edits the input too.
+	m.Update(tea.KeyMsg{Type: tea.KeyBackspace})
+	if got := m.ta.Value(); got != "/" {
+		t.Errorf("input after backspace = %q, want %q", got, "/")
+	}
+	// ctrl+c still quits while the popup has capture.
+	m.Update(key("ctrl+c"))
+	if !m.quitting {
+		t.Error("ctrl+c should quit while the popup is open")
 	}
 }
 
