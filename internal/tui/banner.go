@@ -50,7 +50,7 @@ func welcome(th theme, width int, cwd string) string {
 		{"⏎ send", "^J newline  ·  ^T toggle thinking"},
 		{"^L clear", "↑/↓ scroll  ·  PgUp/PgDn page  ·  ^C quit"},
 		{"approvals", "a approve  ·  d deny  ·  t trust"},
-		{"tool steps", "^E expand the last step  ·  --mouse to click-expand"},
+		{"tool steps", "^E toggle tool details  ·  --mouse to click-expand"},
 	}
 	const keyW = 11
 	for _, t := range tips {

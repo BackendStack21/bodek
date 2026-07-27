@@ -7,7 +7,7 @@ import (
 	"github.com/BackendStack21/bodek/internal/client"
 )
 
-// TestThinkingCap verifies that the live reasoning excerpt is capped so a long
+// TestThinkingCap verifies that each reasoning block is capped so a long
 // thinking stream cannot grow without bound.
 func TestThinkingCap(t *testing.T) {
 	m := newTestModel()
@@ -19,41 +19,67 @@ func TestThinkingCap(t *testing.T) {
 	chunk := strings.Repeat("word ", 200)
 	m.handleEvent(client.Event{Type: "thinking", Content: chunk})
 
-	if m.thinking.Len() > maxThinkingLen*2 {
-		t.Errorf("thinking excerpt grew too large: %d", m.thinking.Len())
+	if len(m.msgs[0].items) != 1 || !m.msgs[0].items[0].thinking {
+		t.Fatalf("expected one thinking item, got %+v", m.msgs[0].items)
+	}
+	block := m.msgs[0].items[0].text
+	if len(block) > maxThinkingLen*2 {
+		t.Errorf("thinking block grew too large: %d", len(block))
 	}
 
 	// The visible excerpt should end with the tail of the latest input.
-	out := m.thinking.String()
-	if !strings.HasSuffix(out, "word ") {
-		t.Errorf("thinking excerpt lost the tail: %q", out)
+	if !strings.HasSuffix(block, "word ") {
+		t.Errorf("thinking block lost the tail: %q", block)
 	}
 
-	// A subsequent event should keep replacing/capping from the end.
+	// A subsequent event extends the same block, capping from the end again.
 	m.handleEvent(client.Event{Type: "thinking", Content: "final thought"})
-	if !strings.Contains(m.thinking.String(), "final thought") {
-		t.Errorf("latest thinking not retained: %q", m.thinking.String())
+	if len(m.msgs[0].items) != 1 {
+		t.Fatalf("thinking delta opened a new block: %+v", m.msgs[0].items)
+	}
+	if !strings.Contains(m.msgs[0].items[0].text, "final thought") {
+		t.Errorf("latest thinking not retained: %q", m.msgs[0].items[0].text)
 	}
 }
 
-// TestThinkingRendersAboveTools verifies that live reasoning appears at the top
-// of the assistant body, before any tool summaries.
-func TestThinkingRendersAboveTools(t *testing.T) {
+// TestThinkingInterleavesWithTools verifies that reasoning blocks and tool
+// steps render in chronological order — thinking before and after a tool call
+// appears around it, not pinned above it — both while streaming and after the
+// turn is finalized.
+func TestThinkingInterleavesWithTools(t *testing.T) {
 	m := newTestModel()
 	m.msgs = append(m.msgs, message{role: roleAsst, streaming: true})
 	m.curIdx = 0
 	m.busy = true
 
-	m.handleEvent(client.Event{Type: "thinking", Content: "I need to check the file."})
+	m.handleEvent(client.Event{Type: "thinking", Content: "first"})
 	m.handleEvent(client.Event{Type: "tool_call", Name: "read_file", Data: `{"path":"main.go"}`})
 	m.handleEvent(client.Event{Type: "tool_result", Name: "read_file", Data: "package main\n"})
+	m.handleEvent(client.Event{Type: "thinking", Content: "second thought"})
 
+	assertOrder := func(out string) {
+		t.Helper()
+		firstIdx := strings.Index(out, "first")
+		toolIdx := strings.Index(out, "read_file")
+		secondIdx := strings.Index(out, "second thought")
+		if firstIdx < 0 || toolIdx < 0 || secondIdx < 0 {
+			t.Fatalf("missing timeline entries in:\n%s", out)
+		}
+		if firstIdx >= toolIdx || toolIdx >= secondIdx {
+			t.Errorf("thinking should interleave around the tool step in:\n%s", out)
+		}
+	}
+
+	// Streaming render.
 	rendered, _ := m.renderMessage(m.msgs[0], 0, 0)
-	out := plain(rendered)
-	thinkIdx := strings.Index(out, "I need to check the file")
-	toolIdx := strings.Index(out, "read_file")
-	if thinkIdx < 0 || toolIdx < 0 || thinkIdx > toolIdx {
-		t.Errorf("thinking should appear before tools in:\n%s", out)
+	assertOrder(plain(rendered))
+
+	// Finalized render keeps the same chronological order.
+	m.handleEvent(client.Event{Type: "done", Latency: 0.5, ContextTokens: 10, OutputTokens: 1})
+	rendered, _ = m.renderMessage(m.msgs[0], 0, 0)
+	assertOrder(plain(rendered))
+	if m.msgs[0].thinking != "first\nsecond thought" {
+		t.Errorf("finalized thinking not concatenated: %q", m.msgs[0].thinking)
 	}
 }
 

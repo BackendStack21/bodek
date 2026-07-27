@@ -175,9 +175,8 @@ func (m *Model) statusBadge() string {
 			label = toolProgress(m.lastTool, m.lastArg)
 		case m.status == "responding":
 			label = "💬 composing the reply"
-		default: // thinking / pre-tool: cycle phrases so a pause feels alive.
-			idx := int(time.Since(m.runStart)/(1500*time.Millisecond)) % len(thinkingPhrases)
-			label = thinkingPhrases[idx]
+		default: // thinking / pre-tool
+			label = "🧠 thinking"
 		}
 		el := ""
 		if e := m.elapsed(); e != "" {
@@ -283,24 +282,46 @@ func (m *Model) renderMessage(msg message, msgIdx, lineOffset int) (string, []st
 		if strings.TrimSpace(content) == "" && msg.streaming {
 			content = th.thinkStyle.Render(m.sp.View() + " thinking…")
 		}
-		// Compose the turn body: thinking → tools → response.
+		// Compose the turn body from the chronological timeline: reasoning
+		// blocks and tool steps interleaved in arrival order.
+		items := msg.items
+		if len(items) == 0 {
+			// Messages without a timeline (hand-built or resumed transcripts)
+			// fall back to the old fixed order: thinking, then steps.
+			if strings.TrimSpace(msg.thinking) != "" {
+				items = append(items, turnItem{thinking: true, text: msg.thinking})
+			}
+			for i := range msg.steps {
+				items = append(items, turnItem{stepIdx: i})
+			}
+		}
 		var b strings.Builder
-		thinking := msg.thinking
-		if msg.streaming && m.busy {
-			thinking = m.thinking.String()
-		}
-		thinkingLines := 0
-		if t := strings.TrimSpace(thinking); t != "" {
-			line := th.thinkStyle.Width(max(m.vp.Width-4, 8)).Render("… " + collapse(t))
-			b.WriteString(line)
-			thinkingLines = lineCount(line)
-		}
-		steps, refs := m.renderSteps(msg, lineOffset+1+thinkingLines, msgIdx)
-		if steps != "" {
+		var refs []stepRef
+		line := lineOffset + 1 // body starts one line below the label
+		for _, it := range items {
+			if it.thinking {
+				t := strings.TrimSpace(it.text)
+				if t == "" {
+					continue
+				}
+				excerpt := th.thinkStyle.Width(max(m.vp.Width-4, 8)).Render("… " + collapse(t))
+				if b.Len() > 0 {
+					b.WriteString("\n")
+				}
+				b.WriteString(excerpt)
+				line += lineCount(excerpt)
+				continue
+			}
+			if it.stepIdx < 0 || it.stepIdx >= len(msg.steps) {
+				continue
+			}
+			block, ref, n := m.renderStep(msg.steps[it.stepIdx], msg.streaming, msgIdx, it.stepIdx, line)
 			if b.Len() > 0 {
 				b.WriteString("\n")
 			}
-			b.WriteString(steps)
+			b.WriteString(block)
+			refs = append(refs, ref)
+			line += n
 		}
 		if strings.TrimSpace(content) != "" {
 			if b.Len() > 0 {
@@ -419,13 +440,13 @@ func max(a, b int) int {
 	return b
 }
 
-func (m *Model) renderSteps(msg message, startLine, msgIdx int) (string, []stepRef) {
-	if len(msg.steps) == 0 {
-		return "", nil
-	}
+// renderStep renders one tool step as a one-line summary (expand chevron,
+// status icon, tool glyph, name, arg, and — once done — its response time),
+// plus its full output/logs when expanded. It returns the rendered block, the
+// stepRef for mouse hit-testing (pointing at startLine), and the block's line
+// count.
+func (m *Model) renderStep(s step, streaming bool, msgIdx, stepIdx, startLine int) (string, stepRef, int) {
 	th := m.th
-	// One-line tool summaries: expand chevron, status icon, tool glyph, name,
-	// arg, and a short result arrow. Expanded rows show full output/logs.
 	budget := m.vp.Width - 10
 	if budget < 14 {
 		budget = 14
@@ -434,78 +455,64 @@ func (m *Model) renderSteps(msg message, startLine, msgIdx int) (string, []stepR
 	if detailBudget < 16 {
 		detailBudget = 16
 	}
-	lines := make([]string, 0, len(msg.steps))
-	var refs []stepRef
-	currentLine := 0
-	for stepIdx, s := range msg.steps {
-		// Status glyph: a spinner while the call runs, then ✓ / ✗ once it lands.
-		var icon string
-		switch {
-		case !s.done && msg.streaming:
-			icon = th.spinner.Render(m.sp.View())
-		case s.done && s.isErr:
-			icon = th.stepErr.Render("✗")
-		case s.done:
-			icon = th.stepDone.Render("✓")
-		default:
-			icon = th.stepRun.Render("▸")
-		}
-		var chevron string
-		if s.done {
-			if s.expanded {
-				chevron = th.stepTree.Render("▼")
-			} else {
-				chevron = th.stepTree.Render("▶")
-			}
+	// A step shows its details when toggled individually or via the global
+	// Ctrl+E toggle.
+	expanded := s.expanded || m.expandAll
+	// Status glyph: a spinner while the call runs, then ✓ / ✗ once it lands.
+	var icon string
+	switch {
+	case !s.done && streaming:
+		icon = th.spinner.Render(m.sp.View())
+	case s.done && s.isErr:
+		icon = th.stepErr.Render("✗")
+	case s.done:
+		icon = th.stepDone.Render("✓")
+	default:
+		icon = th.stepRun.Render("▸")
+	}
+	var chevron string
+	if s.done {
+		if expanded {
+			chevron = th.stepTree.Render("▼")
 		} else {
-			chevron = th.stepTree.Render(" ")
+			chevron = th.stepTree.Render("▶")
 		}
-		head := chevron + " " + icon + " " + th.toolIcon.Render(toolGlyph(s.name)) + " " + th.stepName.Render(s.name)
-		if s.subagent {
-			head += th.stepArg.Render(" · sub-agent")
+	} else {
+		chevron = th.stepTree.Render(" ")
+	}
+	head := chevron + " " + icon + " " + th.toolIcon.Render(toolGlyph(s.name)) + " " + th.stepName.Render(s.name)
+	if s.subagent {
+		head += th.stepArg.Render(" · sub-agent")
+	}
+	if s.arg != "" {
+		head += th.stepArg.Render("  " + truncate(s.arg, budget))
+	}
+	// Response time appears only once the call lands — while running, the
+	// spinner already conveys that.
+	if s.done && s.dur > 0 {
+		head += th.stepArg.Render("  " + formatStepDur(s.dur))
+	}
+	lines := []string{head}
+	if expanded {
+		details := append([]string{}, s.logs...)
+		for _, ln := range strings.Split(s.result, "\n") {
+			if c := collapse(ln); c != "" {
+				details = append(details, c)
+			}
 		}
-		if s.arg != "" {
-			head += th.stepArg.Render("  " + truncate(s.arg, budget))
+		if len(details) > 200 {
+			details = details[:200]
+			details = append(details, "… output truncated")
 		}
-		if s.done {
-			resBudget := m.vp.Width - lipgloss.Width(head) - 10
-			if resBudget < 12 {
-				resBudget = 12
+		for i, d := range details {
+			conn := "    "
+			if i == 0 {
+				conn = "  ⎿ "
 			}
-			if res := resultOneLiner(s.result, resBudget); res != "" {
-				sep := th.stepTree.Render("  → ")
-				if s.isErr {
-					head += sep + th.stepErr.Render(res)
-				} else {
-					head += sep + th.stepRes.Render(res)
-				}
-			}
-		}
-		refs = append(refs, stepRef{msgIdx: msgIdx, stepIdx: stepIdx, line: startLine + currentLine})
-		lines = append(lines, head)
-		currentLine++
-		if s.expanded {
-			details := append([]string{}, s.logs...)
-			for _, ln := range strings.Split(s.result, "\n") {
-				if c := collapse(ln); c != "" {
-					details = append(details, c)
-				}
-			}
-			if len(details) > 200 {
-				details = details[:200]
-				details = append(details, "… output truncated")
-			}
-			for i, d := range details {
-				conn := "    "
-				if i == 0 {
-					conn = "  ⎿ "
-				}
-				lines = append(lines, th.stepTree.Render(conn)+th.stepRes.Render(truncate(d, detailBudget)))
-				currentLine++
-			}
+			lines = append(lines, th.stepTree.Render(conn)+th.stepRes.Render(truncate(d, detailBudget)))
 		}
 	}
-	return strings.Join(lines, "\n"), refs
+	return strings.Join(lines, "\n"), stepRef{msgIdx: msgIdx, stepIdx: stepIdx, line: startLine}, len(lines)
 }
 
 // resultExcerpt turns sanitized tool output into a compact, blank-stripped
@@ -524,17 +531,6 @@ func resultExcerpt(result string) []string {
 	}
 	trimmed := append([]string{}, out[:maxResultLines]...)
 	return append(trimmed, fmt.Sprintf("… +%d more lines", len(out)-maxResultLines))
-}
-
-// resultOneLiner returns the first meaningful line of tool output, collapsed
-// to a single line and capped to n runes for compact one-line summaries.
-func resultOneLiner(result string, n int) string {
-	for _, ln := range strings.Split(result, "\n") {
-		if c := collapse(ln); c != "" {
-			return truncate(c, n)
-		}
-	}
-	return ""
 }
 
 func (m *Model) renderNotices() string {

@@ -73,13 +73,33 @@ func TestResourcesNon200(t *testing.T) {
 func TestSessionDetailFallbackToken(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// No X-Session-Token header → SessionDetail falls back to the passed token.
-		w.Write([]byte(`{"id":"s1"}`))
+		w.Write([]byte(`{"id":"s1","messages":[` +
+			`{"role":"assistant","content":"done","reasoning_content":"thought",` +
+			`"tool_calls":[{"id":"c1","type":"function","function":{"name":"shell","arguments":"{\"cmd\":\"ls\"}"}}]},` +
+			`{"role":"tool","name":"shell","tool_call_id":"c1","content":"out"}` +
+			`]}`))
 	}))
 	defer srv.Close()
 	c := &Client{baseURL: srv.URL, http: &http.Client{Timeout: time.Second}}
-	_, tok, err := c.SessionDetail("s1", "passed-token")
+	sess, tok, err := c.SessionDetail("s1", "passed-token")
 	if err != nil || tok != "passed-token" {
 		t.Fatalf("fallback token = %q, err=%v", tok, err)
+	}
+	// The full OpenAI-style transcript decodes: reasoning, tool calls, and the
+	// tool result's name / tool_call_id pairing.
+	if len(sess.Messages) != 2 {
+		t.Fatalf("messages = %+v", sess.Messages)
+	}
+	a, tr := sess.Messages[0], sess.Messages[1]
+	if a.ReasoningContent != "thought" || len(a.ToolCalls) != 1 {
+		t.Errorf("assistant message = %+v", a)
+	}
+	tc := a.ToolCalls[0]
+	if tc.ID != "c1" || tc.Type != "function" || tc.Function.Name != "shell" || tc.Function.Arguments != `{"cmd":"ls"}` {
+		t.Errorf("tool call = %+v", tc)
+	}
+	if tr.Name != "shell" || tr.ToolCallID != "c1" || tr.Content != "out" {
+		t.Errorf("tool result = %+v", tr)
 	}
 }
 

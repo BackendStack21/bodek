@@ -33,10 +33,12 @@ type step struct {
 	arg      string
 	result   string // sanitized tool output (multi-line); excerpted at render
 	done     bool
-	isErr    bool     // the result reads as a failure (tints the status glyph red)
-	subagent bool     // this call delegates to a sub-agent (renders its log tree)
-	logs     []string // nested sub-agent activity, from subagent_log events
-	expanded bool     // user has expanded this step to show full output/logs
+	isErr    bool          // the result reads as a failure (tints the status glyph red)
+	subagent bool          // this call delegates to a sub-agent (renders its log tree)
+	logs     []string      // nested sub-agent activity, from subagent_log events
+	expanded bool          // user has expanded this step to show full output/logs
+	started  time.Time     // when the tool_call arrived; zero for resumed history
+	dur      time.Duration // wall-clock the call took; 0 until the result lands
 }
 
 // stepRef maps a rendered transcript line to a specific step for mouse
@@ -45,6 +47,14 @@ type stepRef struct {
 	msgIdx  int
 	stepIdx int
 	line    int
+}
+
+// turnItem is one entry in a turn's chronological timeline: either a
+// reasoning block or a tool call, in arrival order.
+type turnItem struct {
+	thinking bool   // false = tool step
+	text     string // thinking excerpt when thinking (capped per block)
+	stepIdx  int    // index into msg.steps when !thinking
 }
 
 // turnStats is the telemetry of one finalized assistant turn, captured from the
@@ -67,6 +77,7 @@ type message struct {
 	rendered  string // cached glamour render (assistant, finalized)
 	thinking  string // captured reasoning for this turn (finalized)
 	steps     []step
+	items     []turnItem // chronological timeline of reasoning blocks and tool calls
 	streaming bool
 	stats     *turnStats // finalized-turn telemetry; nil while streaming / for history
 	raw       bool       // content is pre-styled; render verbatim, never re-render
@@ -99,7 +110,6 @@ type Model struct {
 	msgs     []message
 	curIdx   int // index of the streaming assistant message, -1 when idle
 	busy     bool
-	thinking strings.Builder
 	runStart time.Time
 	lastTool string
 	lastArg  string
@@ -113,6 +123,7 @@ type Model struct {
 	authToken string // session-scoped token (for cancel / resume)
 	pendModel string // model to apply on the next prompt
 	thinkOn   bool
+	expandAll bool // Ctrl+E: render every step's full output/logs
 
 	panel    panelMode
 	sessions []client.Session
@@ -411,7 +422,10 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case "ctrl+e":
-		m.toggleRecentStep()
+		// Global details toggle: every step (including in-flight ones) shows
+		// its full output/logs; the per-step mouse toggle still layers on top.
+		m.expandAll = !m.expandAll
+		m.convCount = -1 // re-render the cached transcript prefix too
 		m.refresh()
 		return m, nil
 	case "up", "ctrl+p":
@@ -457,8 +471,17 @@ func (m *Model) handleEvent(ev client.Event) (tea.Model, tea.Cmd) {
 		m.sandbox = ev.Sandbox
 
 	case "thinking":
-		m.thinking.WriteString(sanitize(ev.Content))
-		capThinking(&m.thinking, maxThinkingLen)
+		// Append to the open reasoning block (the last timeline item when it is
+		// a thinking item), or start a new one after a tool call.
+		if i := m.cur(); i >= 0 {
+			msg := &m.msgs[i]
+			if n := len(msg.items); n > 0 && msg.items[n-1].thinking {
+				msg.items[n-1].text = capThinkingText(msg.items[n-1].text+sanitize(ev.Content), maxThinkingLen)
+			} else {
+				msg.items = append(msg.items, turnItem{thinking: true,
+					text: capThinkingText(sanitize(ev.Content), maxThinkingLen)})
+			}
+		}
 		m.status = "thinking"
 
 	case "token":
@@ -472,7 +495,8 @@ func (m *Model) handleEvent(ev client.Event) (tea.Model, tea.Cmd) {
 		arg := argPreview(ev.Data)
 		if i := m.cur(); i >= 0 {
 			m.msgs[i].steps = append(m.msgs[i].steps,
-				step{name: ev.Name, arg: arg, subagent: isSubagent(ev.Name)})
+				step{name: ev.Name, arg: arg, subagent: isSubagent(ev.Name), started: time.Now()})
+			m.msgs[i].items = append(m.msgs[i].items, turnItem{stepIdx: len(m.msgs[i].steps) - 1})
 		}
 		m.lastTool = ev.Name
 		m.lastArg = arg
@@ -486,6 +510,9 @@ func (m *Model) handleEvent(ev client.Event) (tea.Model, tea.Cmd) {
 					steps[j].done = true
 					steps[j].result = resultPreview(ev.Data)
 					steps[j].isErr = looksLikeError(steps[j].result)
+					if !steps[j].started.IsZero() {
+						steps[j].dur = time.Since(steps[j].started)
+					}
 					break
 				}
 			}
@@ -495,11 +522,18 @@ func (m *Model) handleEvent(ev client.Event) (tea.Model, tea.Cmd) {
 
 	case "done":
 		// Capture per-turn telemetry from the live message BEFORE finalize()
-		// resets m.thinking and clears curIdx.
+		// clears curIdx.
 		if i := m.cur(); i >= 0 {
 			wall := time.Duration(0)
 			if !m.runStart.IsZero() {
 				wall = time.Since(m.runStart)
+			}
+			thought := false
+			for _, it := range m.msgs[i].items {
+				if it.thinking {
+					thought = true
+					break
+				}
 			}
 			ts := turnStats{
 				latency:    ev.Latency,
@@ -508,7 +542,7 @@ func (m *Model) handleEvent(ev client.Event) (tea.Model, tea.Cmd) {
 				outTok:     ev.OutputTokens,
 				toolCount:  len(m.msgs[i].steps),
 				toolGlyphs: stepGlyphs(m.msgs[i].steps),
-				thought:    m.thinking.Len() > 0,
+				thought:    thought,
 			}
 			m.msgs[i].stats = &ts
 			m.turnStats = append(m.turnStats, ts)
@@ -622,7 +656,6 @@ func (m *Model) submit() tea.Cmd {
 	if m.sessionStart.IsZero() {
 		m.sessionStart = m.runStart
 	}
-	m.thinking.Reset()
 	m.refresh()
 
 	thinking := ""
@@ -731,10 +764,17 @@ func (m *Model) finalize() {
 	if i := m.cur(); i >= 0 {
 		m.msgs[i].streaming = false
 		m.msgs[i].rendered = m.render(m.msgs[i].content)
-		m.msgs[i].thinking = m.thinking.String()
+		// Keep the turn's reasoning concatenated on the message for
+		// compatibility; the timeline (items) drives the actual rendering.
+		var thoughts []string
+		for _, it := range m.msgs[i].items {
+			if it.thinking {
+				thoughts = append(thoughts, it.text)
+			}
+		}
+		m.msgs[i].thinking = strings.Join(thoughts, "\n")
 	}
 	m.curIdx = -1
-	m.thinking.Reset()
 }
 
 // addNote appends a sticky notice (errors, disconnects) that stays until
@@ -1075,29 +1115,44 @@ func (m *Model) attachSubLog(i int, line string) bool {
 // stream does not push the transcript off-screen.
 const maxThinkingLen = 240
 
-// capThinking trims the builder to at most n runes, starting at the next
-// whitespace so the visible excerpt does not begin mid-word.
-func capThinking(b *strings.Builder, n int) {
-	if b.Len() <= n {
-		return
-	}
-	s := []rune(b.String())
+// capThinkingText trims s to at most n runes, starting at the next whitespace
+// so the visible excerpt does not begin mid-word.
+func capThinkingText(s string, n int) string {
 	if len(s) <= n {
-		return
+		return s
 	}
-	s = s[len(s)-n:]
-	for i, r := range s {
-		if unicode.IsSpace(r) {
-			s = s[i+1:]
+	r := []rune(s)
+	if len(r) <= n {
+		return s
+	}
+	r = r[len(r)-n:]
+	for i, c := range r {
+		if unicode.IsSpace(c) {
+			r = r[i+1:]
 			break
 		}
 	}
-	b.Reset()
-	b.WriteString(string(s))
+	return string(r)
 }
 
 func collapse(s string) string {
 	return strings.Join(strings.Fields(sanitize(s)), " ")
+}
+
+// stripToolResultFrame unwraps the delimiter frame odek adds around persisted
+// tool results (a "┌── TOOL RESULT: …" header line and a matching
+// "└── END TOOL RESULT: …" footer) for prompt-injection safety, returning the
+// raw inner output. Live tool_result events carry the unframed output, so
+// resume strips the frame to render both identically. Unframed input is
+// returned unchanged.
+func stripToolResultFrame(s string) string {
+	lines := strings.Split(strings.TrimSuffix(s, "\n"), "\n")
+	if len(lines) >= 3 &&
+		strings.HasPrefix(lines[0], "┌── TOOL RESULT:") &&
+		strings.HasPrefix(lines[len(lines)-1], "└── END TOOL RESULT:") {
+		return strings.Join(lines[1:len(lines)-1], "\n")
+	}
+	return s
 }
 
 // sanitize strips terminal control sequences from untrusted content before it
@@ -1138,6 +1193,19 @@ func formatDuration(d time.Duration) string {
 	return fmt.Sprintf("%dm%02ds", int(d.Minutes()), int(d.Seconds())%60)
 }
 
+// formatStepDur renders a tool call's response time compactly: milliseconds
+// under a second, tenths of a second under a minute, then minutes+seconds.
+func formatStepDur(d time.Duration) string {
+	switch {
+	case d < time.Second:
+		return fmt.Sprintf("%dms", d.Milliseconds())
+	case d < time.Minute:
+		return fmt.Sprintf("%.1fs", d.Seconds())
+	default:
+		return fmt.Sprintf("%dm%02ds", int(d.Minutes()), int(d.Seconds())%60)
+	}
+}
+
 func truncate(s string, n int) string {
 	if n < 1 {
 		return "" // no room even for the ellipsis (very narrow terminal)
@@ -1161,17 +1229,6 @@ func (m *Model) toggleStep(msgIdx, stepIdx int) {
 	}
 	steps[stepIdx].expanded = !steps[stepIdx].expanded
 	m.convCount = -1
-}
-
-// toggleRecentStep expands/collapses the last step of the most recent message
-// that has steps. Bound to the "e" key.
-func (m *Model) toggleRecentStep() {
-	for i := len(m.msgs) - 1; i >= 0; i-- {
-		if len(m.msgs[i].steps) > 0 {
-			m.toggleStep(i, len(m.msgs[i].steps)-1)
-			return
-		}
-	}
 }
 
 // stepAtLine maps a viewport content line to the nearest step header at or

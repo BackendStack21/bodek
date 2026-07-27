@@ -287,14 +287,11 @@ func TestElapsedMinutes(t *testing.T) {
 	}
 }
 
-// TestCapThinkingRuneBoundary covers the rune-count early return: a builder
+// TestCapThinkingRuneBoundary covers the rune-count early return: a string
 // over the byte cap but under the rune cap is left untouched.
 func TestCapThinkingRuneBoundary(t *testing.T) {
-	var b strings.Builder
-	b.WriteString("ééé") // 6 bytes > 4, but 3 runes ≤ 4
-	capThinking(&b, 4)
-	if b.String() != "ééé" {
-		t.Errorf("capThinking trimmed a rune-fitting builder to %q", b.String())
+	if got := capThinkingText("ééé", 4); got != "ééé" {
+		t.Errorf("capThinkingText trimmed a rune-fitting string to %q", got)
 	}
 }
 
