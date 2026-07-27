@@ -283,6 +283,11 @@ func (m *Model) conversation() string {
 		blocks = append(blocks, m.convPrefix)
 	}
 	for i := tail; i < len(m.msgs); i++ {
+		if emptyStreamingTurn(m.msgs[i]) {
+			// Nothing to show yet: the top-bar spinner is the sole
+			// progress signal — no bare odek block, no placeholder.
+			continue
+		}
 		s, r := m.renderMessage(m.msgs[i], i, lineOffset)
 		blocks = append(blocks, s)
 		refs = append(refs, r...)
@@ -295,6 +300,23 @@ func (m *Model) conversation() string {
 	}
 	m.stepLineIndex = refs
 	return strings.Join(blocks, "\n\n")
+}
+
+// emptyStreamingTurn reports whether a message is an in-flight assistant
+// turn without any visible content yet — no tokens, reasoning, or steps.
+func emptyStreamingTurn(msg message) bool {
+	if msg.role != roleAsst || !msg.streaming {
+		return false
+	}
+	if strings.TrimSpace(msg.content) != "" || strings.TrimSpace(msg.thinking) != "" || len(msg.steps) > 0 {
+		return false
+	}
+	for _, it := range msg.items {
+		if !it.thinking || strings.TrimSpace(it.text) != "" {
+			return false
+		}
+	}
+	return true
 }
 
 func (m *Model) renderMessage(msg message, msgIdx, lineOffset int) (string, []stepRef) {
@@ -319,9 +341,6 @@ func (m *Model) renderMessage(msg message, msgIdx, lineOffset int) (string, []st
 		content := msg.content
 		if !msg.streaming && msg.rendered != "" {
 			content = msg.rendered
-		}
-		if strings.TrimSpace(content) == "" && msg.streaming {
-			content = th.thinkStyle.Render(m.sp.View() + " thinking…")
 		}
 		// Compose the turn body from the chronological timeline: reasoning
 		// blocks and tool steps interleaved in arrival order.
