@@ -105,6 +105,8 @@ bodek --url http://127.0.0.1:8080 --token d3adb33f  # attach with an explicit to
 bodek --odek-bin ./odek                           # use a specific odek binary
 bodek --mouse                                     # enable mouse wheel scrolling (blocks text selection)
 bodek -- --prompt-caching                         # pass extra flags through to `odek serve`
+bodek version                                     # print the bodek version
+bodek upgrade                                     # download and install the latest release
 ```
 
 `odek serve` protects its WebSocket and REST APIs with a per-instance token it

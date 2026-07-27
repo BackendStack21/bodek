@@ -49,6 +49,9 @@ func parseConfig(args []string, output io.Writer) (config, error) {
 	fs.Usage = func() {
 		_, _ = fmt.Fprintf(fs.Output(), "Usage: bodek [options] [-- <odek serve flags>]\n\n")
 		_, _ = fmt.Fprintf(fs.Output(), "A terminal interface for the odek agent.\n\n")
+		_, _ = fmt.Fprintf(fs.Output(), "Commands:\n")
+		_, _ = fmt.Fprintf(fs.Output(), "  version   print the bodek version\n")
+		_, _ = fmt.Fprintf(fs.Output(), "  upgrade   download and install the latest release\n\n")
 		_, _ = fmt.Fprintf(fs.Output(), "Options:\n")
 		fs.PrintDefaults()
 		_, _ = fmt.Fprintf(fs.Output(), "\nExamples:\n")
@@ -76,6 +79,12 @@ func buildProgramOptions(mouse bool) []tea.ProgramOption {
 }
 
 func run() error {
+	// Bare subcommands (`bodek version`, `bodek upgrade`) bypass the TUI
+	// entirely, so they run before flag parsing.
+	if handled, err := handleSubcommand(os.Args[1:], os.Stdout); handled {
+		return err
+	}
+
 	cfg, err := parseConfig(os.Args[1:], os.Stderr)
 	if err != nil {
 		return err
