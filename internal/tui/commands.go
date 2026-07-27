@@ -174,8 +174,10 @@ func (m *Model) showHelp() {
 		{"^O", "switch model"},
 		{"^T", "toggle extended thinking"},
 		{"^L", "clear the conversation"},
+		{"^E", "expand the last tool step"},
 		{"esc", "cancel the running turn"},
 		{"^C", "quit"},
+		{"--mouse", "click tool rows to expand"},
 	} {
 		b.WriteString("\n" + th.tipKey.Render(padRight(k[0], keyW)) + " " + th.tipText.Render(k[1]))
 	}

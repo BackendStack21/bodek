@@ -207,6 +207,7 @@ func (m *Model) refresh() {
 
 func (m *Model) conversation() string {
 	if len(m.msgs) == 0 {
+		m.stepLineIndex = nil
 		return welcome(m.th, m.vp.Width, m.opts.CWD)
 	}
 	// Everything before the in-flight streaming message is stable, so cache its
@@ -218,56 +219,63 @@ func (m *Model) conversation() string {
 	if i := m.cur(); i >= 0 {
 		tail = i
 	}
+	var refs []stepRef
+	lineOffset := 0
 	if m.convCount != tail {
 		blocks := make([]string, 0, tail)
 		for i := 0; i < tail; i++ {
-			blocks = append(blocks, m.renderMessage(m.msgs[i]))
+			s, r := m.renderMessage(m.msgs[i], i, lineOffset)
+			blocks = append(blocks, s)
+			refs = append(refs, r...)
+			lineOffset += lineCount(s) + 1 // blank separator between blocks
 		}
 		m.convPrefix = strings.Join(blocks, "\n\n")
+		m.convPrefixRefs = refs
 		m.convCount = tail
+	} else {
+		refs = append(refs, m.convPrefixRefs...)
+		if m.convPrefix != "" {
+			lineOffset = lineCount(m.convPrefix) + 1
+		}
 	}
 	blocks := make([]string, 0, len(m.msgs)-tail+2)
 	if m.convPrefix != "" {
 		blocks = append(blocks, m.convPrefix)
 	}
 	for i := tail; i < len(m.msgs); i++ {
-		blocks = append(blocks, m.renderMessage(m.msgs[i]))
-	}
-	// Live reasoning for the in-flight turn, shown dimly under the steps.
-	if m.busy && m.thinking.Len() > 0 {
-		think := m.th.thinkStyle.Render("… " + collapse(m.thinking.String()))
-		blocks = append(blocks, lipgloss.NewStyle().Width(m.vp.Width).Render(think))
+		s, r := m.renderMessage(m.msgs[i], i, lineOffset)
+		blocks = append(blocks, s)
+		refs = append(refs, r...)
+		lineOffset += lineCount(s) + 1
 	}
 	if len(m.notices) > 0 {
 		if notes := m.renderNotices(); notes != "" {
 			blocks = append(blocks, notes)
 		}
 	}
+	m.stepLineIndex = refs
 	return strings.Join(blocks, "\n\n")
 }
 
-func (m *Model) renderMessage(msg message) string {
+func (m *Model) renderMessage(msg message, msgIdx, lineOffset int) (string, []stepRef) {
 	th := m.th
 	// Pre-styled cards (e.g. /stats) render verbatim — no label, no bar, and
 	// never re-rendered through glamour.
 	if msg.raw {
-		return msg.content
+		return msg.content, nil
 	}
 	switch msg.role {
 	case roleUser:
 		label := th.userLabel.Render("❯ you")
 		body := th.userBar.Width(m.vp.Width - 2).Render(msg.content)
-		return label + "\n" + body
+		return label + "\n" + body, nil
 
 	case roleNote:
-		return th.sysBar.Width(m.vp.Width - 2).Render(msg.content)
+		return th.sysBar.Width(m.vp.Width - 2).Render(msg.content), nil
 
 	default: // assistant
 		label := th.asstLabel.Render("⬡ odek")
-		// Resolve the body first (finalized markdown, or the streaming
-		// "thinking…" placeholder) so the steps→body separator is based on what
-		// actually renders — otherwise the placeholder lands on the last step's
-		// line instead of its own.
+		// Resolve the markdown body (finalized or streaming) first.
 		content := msg.content
 		if !msg.streaming && msg.rendered != "" {
 			content = msg.rendered
@@ -275,14 +283,31 @@ func (m *Model) renderMessage(msg message) string {
 		if strings.TrimSpace(content) == "" && msg.streaming {
 			content = th.thinkStyle.Render(m.sp.View() + " thinking…")
 		}
+		// Compose the turn body: thinking → tools → response.
 		var b strings.Builder
-		if steps := m.renderSteps(msg); steps != "" {
-			b.WriteString(steps)
-			if strings.TrimSpace(content) != "" {
+		thinking := msg.thinking
+		if msg.streaming && m.busy {
+			thinking = m.thinking.String()
+		}
+		thinkingLines := 0
+		if t := strings.TrimSpace(thinking); t != "" {
+			line := th.thinkStyle.Copy().Width(max(m.vp.Width-4, 8)).Render("… " + collapse(t))
+			b.WriteString(line)
+			thinkingLines = lineCount(line)
+		}
+		steps, refs := m.renderSteps(msg, lineOffset+1+thinkingLines, msgIdx)
+		if steps != "" {
+			if b.Len() > 0 {
 				b.WriteString("\n")
 			}
+			b.WriteString(steps)
 		}
-		b.WriteString(content)
+		if strings.TrimSpace(content) != "" {
+			if b.Len() > 0 {
+				b.WriteString("\n")
+			}
+			b.WriteString(content)
+		}
 		body := th.asstBar.Width(m.vp.Width - 2).Render(strings.TrimRight(b.String(), "\n"))
 		out := label + "\n" + body
 		if msg.stats != nil {
@@ -290,8 +315,19 @@ func (m *Model) renderMessage(msg message) string {
 				out += "\n" + line
 			}
 		}
-		return out
+		return out, refs
 	}
+}
+
+// lineCount returns the number of newline-terminated lines in a rendered block.
+func lineCount(s string) int {
+	if s == "" {
+		return 0
+	}
+	if strings.HasSuffix(s, "\n") {
+		return strings.Count(s, "\n")
+	}
+	return strings.Count(s, "\n") + 1
 }
 
 // statLine renders the compact telemetry row shown beneath a finalized
@@ -383,20 +419,25 @@ func max(a, b int) int {
 	return b
 }
 
-func (m *Model) renderSteps(msg message) string {
+func (m *Model) renderSteps(msg message, startLine, msgIdx int) (string, []stepRef) {
 	if len(msg.steps) == 0 {
-		return ""
+		return "", nil
 	}
 	th := m.th
-	// Detail lines (sub-agent logs, then the result excerpt) hang under each tool
-	// line on a light tree connector; clamp them to the assistant bar's width
-	// (border + padding + the 4-column connector) so they never wrap.
-	budget := m.vp.Width - 8
-	if budget < 16 {
-		budget = 16
+	// One-line tool summaries: expand chevron, status icon, tool glyph, name,
+	// arg, and a short result arrow. Expanded rows show full output/logs.
+	budget := m.vp.Width - 10
+	if budget < 14 {
+		budget = 14
 	}
-	lines := make([]string, 0, len(msg.steps)*2)
-	for _, s := range msg.steps {
+	detailBudget := m.vp.Width - 8
+	if detailBudget < 16 {
+		detailBudget = 16
+	}
+	lines := make([]string, 0, len(msg.steps))
+	var refs []stepRef
+	currentLine := 0
+	for stepIdx, s := range msg.steps {
 		// Status glyph: a spinner while the call runs, then ✓ / ✗ once it lands.
 		var icon string
 		switch {
@@ -409,29 +450,62 @@ func (m *Model) renderSteps(msg message) string {
 		default:
 			icon = th.stepRun.Render("▸")
 		}
-		head := icon + " " + th.toolIcon.Render(toolGlyph(s.name)) + " " + th.stepName.Render(s.name)
+		var chevron string
+		if s.done {
+			if s.expanded {
+				chevron = th.stepTree.Render("▼")
+			} else {
+				chevron = th.stepTree.Render("▶")
+			}
+		} else {
+			chevron = th.stepTree.Render(" ")
+		}
+		head := chevron + " " + icon + " " + th.toolIcon.Render(toolGlyph(s.name)) + " " + th.stepName.Render(s.name)
 		if s.subagent {
 			head += th.stepArg.Render(" · sub-agent")
 		}
 		if s.arg != "" {
 			head += th.stepArg.Render("  " + truncate(s.arg, budget))
 		}
-		lines = append(lines, head)
-
-		// Nested sub-agent activity, then the tool's own output.
-		details := append([]string{}, s.logs...)
 		if s.done {
-			details = append(details, resultExcerpt(s.result)...)
-		}
-		for i, d := range details {
-			conn := "    "
-			if i == 0 {
-				conn = "  ⎿ "
+			resBudget := m.vp.Width - lipgloss.Width(head) - 10
+			if resBudget < 12 {
+				resBudget = 12
 			}
-			lines = append(lines, th.stepTree.Render(conn)+th.stepRes.Render(truncate(d, budget)))
+			if res := resultOneLiner(s.result, resBudget); res != "" {
+				sep := th.stepTree.Render("  → ")
+				if s.isErr {
+					head += sep + th.stepErr.Render(res)
+				} else {
+					head += sep + th.stepRes.Render(res)
+				}
+			}
+		}
+		refs = append(refs, stepRef{msgIdx: msgIdx, stepIdx: stepIdx, line: startLine + currentLine})
+		lines = append(lines, head)
+		currentLine++
+		if s.expanded {
+			details := append([]string{}, s.logs...)
+			for _, ln := range strings.Split(s.result, "\n") {
+				if c := collapse(ln); c != "" {
+					details = append(details, c)
+				}
+			}
+			if len(details) > 200 {
+				details = details[:200]
+				details = append(details, "… output truncated")
+			}
+			for i, d := range details {
+				conn := "    "
+				if i == 0 {
+					conn = "  ⎿ "
+				}
+				lines = append(lines, th.stepTree.Render(conn)+th.stepRes.Render(truncate(d, detailBudget)))
+				currentLine++
+			}
 		}
 	}
-	return strings.Join(lines, "\n")
+	return strings.Join(lines, "\n"), refs
 }
 
 // resultExcerpt turns sanitized tool output into a compact, blank-stripped
@@ -450,6 +524,17 @@ func resultExcerpt(result string) []string {
 	}
 	trimmed := append([]string{}, out[:maxResultLines]...)
 	return append(trimmed, fmt.Sprintf("… +%d more lines", len(out)-maxResultLines))
+}
+
+// resultOneLiner returns the first meaningful line of tool output, collapsed
+// to a single line and capped to n runes for compact one-line summaries.
+func resultOneLiner(result string, n int) string {
+	for _, ln := range strings.Split(result, "\n") {
+		if c := collapse(ln); c != "" {
+			return truncate(c, n)
+		}
+	}
+	return ""
 }
 
 func (m *Model) renderNotices() string {
