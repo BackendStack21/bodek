@@ -154,6 +154,9 @@ func run() error {
 		LogPath:     logPath,
 		OdekVersion: srv.Version,
 		Version:     currentVersion(),
+		Reconnect: func() (*client.Client, error) {
+			return client.Dial(srv.WSURL, srv.Origin, srv.BaseURL, srv.Token)
+		},
 	})
 
 	// Mouse reporting enables wheel scrolling in the transcript, but it also

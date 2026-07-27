@@ -1,12 +1,9 @@
 package tui
 
 import (
-	"encoding/json"
 	"fmt"
-	"regexp"
 	"strings"
 	"time"
-	"unicode"
 
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textarea"
@@ -92,6 +89,11 @@ type Options struct {
 	LogPath     string // file the spawned server's stderr is captured to, if any
 	OdekVersion string // engine version for the header (empty when attached/unknown)
 	Version     string // bodek's own version; drives the startup update check
+
+	// Reconnect, when set, redials the server after the socket drops. The
+	// session resumes transparently: every prompt already carries
+	// session_id + auth_token, so the next send re-binds it server-side.
+	Reconnect func() (*client.Client, error)
 }
 
 // Model is the Bubble Tea model for bodek.
@@ -162,53 +164,9 @@ type Model struct {
 	convPrefixRefs []stepRef // step header line index for the cached prefix
 	convCount      int       // messages the prefix covers (-1 = invalidated)
 	stepLineIndex  []stepRef // full transcript step index for mouse hit-testing
-}
 
-// acMode selects what the completion popup is completing.
-type acMode int
-
-const (
-	acRef acMode = iota // @-references (files/sessions), searched server-side
-	acCmd               // slash commands, filtered locally
-)
-
-// autocomplete holds the completion popup state (shared by @ and / modes).
-type autocomplete struct {
-	open    bool
-	loading bool
-	mode    acMode
-	query   string
-	items   []client.Resource
-	sel     int
-	seq     int // request sequence, to drop stale responses
-}
-
-// rows is the number of list rows the popup renders.
-func (a autocomplete) rows() int {
-	if len(a.items) == 0 {
-		return 1 // "searching…" / "no matches"
-	}
-	return len(a.items)
-}
-
-// height is the total rendered height of the popup (border + title + rows).
-func (a autocomplete) height() int {
-	return a.rows() + 3
-}
-
-// noticeTTL is how long transient info traces (skill / memory / signal /
-// subagent) stay on screen before fading out.
-const noticeTTL = 3 * time.Second
-
-// noticeExpireMsg fires noticeTTL after a transient notice was added.
-type noticeExpireMsg struct {
-	seq int
-}
-
-// acResultMsg carries the result of an async resource search.
-type acResultMsg struct {
-	seq   int
-	items []client.Resource
+	renderPending bool // a coalesced streaming render is scheduled
+	renderSeq     int  // bumped per scheduled flush, to drop stale ticks
 }
 
 // New builds the initial model.
@@ -270,6 +228,13 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, cmd
 
+	case renderFlushMsg:
+		if msg.seq == m.renderSeq && m.renderPending {
+			m.renderPending = false
+			m.refresh()
+		}
+		return m, nil
+
 	case errMsg:
 		m.busy = false
 		m.status = "error"
@@ -326,6 +291,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case eventMsg:
 		return m.handleEvent(client.Event(msg))
 
+	case reconnectMsg:
+		return m.handleReconnect(msg)
+
 	case noticeExpireMsg:
 		m.pruneNotices(time.Now())
 		m.refresh()
@@ -358,20 +326,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// Approval mode captures the keyboard until answered.
 	if m.approval != nil {
-		switch msg.String() {
-		case "a", "y":
-			return m, m.answer("approve")
-		case "d", "n":
-			return m, m.answer("deny")
-		case "t":
-			if m.approval.AllowTrust {
-				return m, m.answer("trust")
-			}
-		case "ctrl+c":
-			m.quitting = true
-			return m, tea.Quit
-		}
-		return m, nil
+		return m.handleApprovalKey(msg)
 	}
 
 	// A full-area panel (sessions / models) captures the keyboard while open.
@@ -381,33 +336,7 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	// The @-reference popup captures navigation keys while open.
 	if m.ac.open {
-		switch msg.String() {
-		case "up", "ctrl+p":
-			if m.ac.sel > 0 {
-				m.ac.sel--
-				m.refresh()
-			}
-			return m, nil
-		case "down", "ctrl+n":
-			if m.ac.sel < len(m.ac.items)-1 {
-				m.ac.sel++
-				m.refresh()
-			}
-			return m, nil
-		case "tab":
-			m.acceptCompletion()
-			return m, nil
-		case "enter":
-			// A fully-typed command executes; a reference is inserted.
-			if m.ac.mode == acCmd {
-				return m, m.runSelectedCommand()
-			}
-			m.acceptCompletion()
-			return m, nil
-		case "esc":
-			m.closeAC()
-			return m, nil
-		}
+		return m.handleACKey(msg)
 	}
 
 	switch msg.String() {
@@ -472,162 +401,6 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, tea.Batch(cmd, m.syncAC())
 }
 
-func (m *Model) handleEvent(ev client.Event) (tea.Model, tea.Cmd) {
-	prevSeq := m.noticeSeq
-	switch ev.Type {
-	case "session":
-		m.sessionID = ev.SessionID
-		if ev.AuthToken != "" {
-			m.authToken = ev.AuthToken
-			m.tokens.Set(ev.SessionID, ev.AuthToken)
-		}
-		if ev.Model != "" {
-			m.model = ev.Model
-			m.resolveMaxContext()
-		}
-		m.sandbox = ev.Sandbox
-
-	case "thinking":
-		// Append to the open reasoning block (the last timeline item when it is
-		// a thinking item), or start a new one after a tool call.
-		if i := m.cur(); i >= 0 {
-			msg := &m.msgs[i]
-			if n := len(msg.items); n > 0 && msg.items[n-1].thinking {
-				msg.items[n-1].text = capThinkingText(msg.items[n-1].text+sanitize(ev.Content), maxThinkingLen)
-			} else {
-				msg.items = append(msg.items, turnItem{thinking: true,
-					text: capThinkingText(sanitize(ev.Content), maxThinkingLen)})
-			}
-		}
-		m.status = "thinking"
-
-	case "token":
-		if i := m.cur(); i >= 0 {
-			m.msgs[i].content += sanitize(ev.Content)
-			m.msgs[i].streaming = true
-		}
-		m.status = "responding"
-
-	case "tool_call":
-		arg := argPreview(ev.Data)
-		if i := m.cur(); i >= 0 {
-			m.msgs[i].steps = append(m.msgs[i].steps,
-				step{name: ev.Name, arg: arg, subagent: isSubagent(ev.Name), started: time.Now()})
-			m.msgs[i].items = append(m.msgs[i].items, turnItem{stepIdx: len(m.msgs[i].steps) - 1})
-		}
-		m.lastTool = ev.Name
-		m.lastArg = arg
-		m.status = "running " + ev.Name
-
-	case "tool_result":
-		if i := m.cur(); i >= 0 {
-			steps := m.msgs[i].steps
-			for j := len(steps) - 1; j >= 0; j-- {
-				if steps[j].name == ev.Name && !steps[j].done {
-					steps[j].done = true
-					steps[j].result = resultPreview(ev.Data)
-					steps[j].isErr = looksLikeError(steps[j].result)
-					if !steps[j].started.IsZero() {
-						steps[j].dur = time.Since(steps[j].started)
-					}
-					break
-				}
-			}
-		}
-		m.lastTool = ""
-		m.lastArg = ""
-
-	case "done":
-		// Capture per-turn telemetry from the live message BEFORE finalize()
-		// clears curIdx.
-		if i := m.cur(); i >= 0 {
-			wall := time.Duration(0)
-			if !m.runStart.IsZero() {
-				wall = time.Since(m.runStart)
-			}
-			thought := false
-			for _, it := range m.msgs[i].items {
-				if it.thinking {
-					thought = true
-					break
-				}
-			}
-			ts := turnStats{
-				latency:    ev.Latency,
-				wall:       wall,
-				ctxTok:     ev.ContextTokens,
-				outTok:     ev.OutputTokens,
-				toolCount:  len(m.msgs[i].steps),
-				toolGlyphs: stepGlyphs(m.msgs[i].steps),
-				thought:    thought,
-			}
-			m.msgs[i].stats = &ts
-			m.turnStats = append(m.turnStats, ts)
-			m.toolTotal += ts.toolCount
-		}
-		m.finalize()
-		m.busy = false
-		m.lastTool = ""
-		m.lastArg = ""
-		m.status = "ready"
-		m.sessCtxTok = ev.SessionContextTokens
-		m.sessOutTok = ev.SessionOutputTokens
-		m.winCtxTok = ev.ContextTokens
-		m.lastLatency = ev.Latency
-
-	case "error":
-		if i := m.cur(); i >= 0 && m.msgs[i].content == "" {
-			m.msgs[i].content = "**Error:** " + ev.Message
-		} else {
-			m.addNote("error: " + ev.Message)
-		}
-		m.finalize()
-		m.busy = false
-		m.lastTool = ""
-		m.lastArg = ""
-		m.status = "error"
-
-	case "approval_request":
-		e := ev
-		m.approval = &e
-		m.status = "approval required"
-		m.relayout() // the panel is taller than the textarea — shrink the viewport
-
-	case "skill_event":
-		m.addTransientNote("skill · " + strings.TrimSpace(ev.SubType+" "+ev.SkillName) + eventTail(ev))
-	case "memory_event":
-		m.addTransientNote("memory · " + strings.TrimSpace(ev.SubType+" "+ev.Target) + eventTail(ev))
-	case "agent_signal":
-		m.addTransientNote("signal · " + strings.TrimSpace(ev.SubType+" "+ev.Detail) + eventTail(ev))
-	case "subagent_log":
-		line := strings.TrimSpace(ev.SubType + " " + ev.Name)
-		if d := collapse(ev.Detail); d != "" {
-			line = strings.TrimSpace(line + " · " + d)
-		}
-		line += eventTail(ev)
-		// Nest the log under the in-flight sub-agent step when there is one;
-		// otherwise (resumed turn, idle, or an unwrapped log) keep it as a notice.
-		if i := m.cur(); i >= 0 && m.attachSubLog(i, line) {
-			break
-		}
-		m.addTransientNote("subagent · " + line)
-
-	case client.EventDisconnected:
-		m.disconn = true
-		m.busy = false
-		m.status = "disconnected"
-		m.addNote("disconnected from odek serve")
-		if m.opts.LogPath != "" {
-			m.addNote("server log · " + m.opts.LogPath)
-		}
-		m.refresh()
-		return m, nil
-	}
-
-	m.refresh()
-	return m, tea.Batch(listen(m.events), m.noticeTimer(prevSeq))
-}
-
 // ── actions ──────────────────────────────────────────────────────────────
 
 // clearConversation wipes the transcript and the session-scoped telemetry, so
@@ -650,66 +423,6 @@ func (m *Model) clearConversation() {
 	m.refresh()
 }
 
-func (m *Model) submit() tea.Cmd {
-	text := strings.TrimSpace(m.ta.Value())
-	if text == "" {
-		return nil
-	}
-	// Slash commands run locally and are allowed even mid-turn (e.g. /cancel).
-	if strings.HasPrefix(text, "/") {
-		return m.runCommandLine(text)
-	}
-	if m.busy || m.disconn {
-		return nil
-	}
-	m.msgs = append(m.msgs, message{role: roleUser, content: text})
-	m.msgs = append(m.msgs, message{role: roleAsst, streaming: true})
-	m.curIdx = len(m.msgs) - 1
-	m.ta.Reset()
-	m.closeAC()
-	m.busy = true
-	m.status = "thinking"
-	m.runStart = time.Now()
-	if m.sessionStart.IsZero() {
-		m.sessionStart = m.runStart
-	}
-	m.refresh()
-
-	thinking := ""
-	if m.thinkOn {
-		thinking = "enabled"
-	}
-	opts := client.PromptOpts{
-		Thinking:  thinking,
-		Model:     m.pendModel,
-		SessionID: m.sessionID,
-		AuthToken: m.authToken,
-	}
-	m.pendModel = "" // applied
-	cl := m.cl
-	return func() tea.Msg {
-		if err := cl.SendPrompt(text, opts); err != nil {
-			return errMsg{err}
-		}
-		return nil
-	}
-}
-
-func (m *Model) answer(action string) tea.Cmd {
-	id := m.approval.ID
-	m.approval = nil
-	m.status = "thinking"
-	m.relayout()
-	m.refresh()
-	cl := m.cl
-	return func() tea.Msg {
-		if err := cl.SendApproval(id, action); err != nil {
-			return errMsg{err}
-		}
-		return nil
-	}
-}
-
 // ── helpers ────────────────────────────────────────────────────────────────
 
 // resolveMaxContext sets m.maxContext from the active model's advertised
@@ -725,39 +438,6 @@ func (m *Model) resolveMaxContext() {
 	}
 }
 
-// stepGlyphs returns up to 4 deduped tool glyphs for a turn's steps, in
-// first-seen order, for the per-turn stat line.
-func stepGlyphs(steps []step) []string {
-	const max = 4
-	seen := make(map[string]bool, len(steps))
-	out := make([]string, 0, max)
-	for _, s := range steps {
-		g := toolGlyph(s.name)
-		if seen[g] {
-			continue
-		}
-		seen[g] = true
-		out = append(out, g)
-		if len(out) == max {
-			break
-		}
-	}
-	return out
-}
-
-// eventTail renders the optional ×count / #task-index suffix shared by the
-// engine-event notices (skill / memory / signal / subagent).
-func eventTail(ev client.Event) string {
-	s := ""
-	if ev.Count > 0 {
-		s += fmt.Sprintf(" ×%d", ev.Count)
-	}
-	if ev.TaskIdx > 0 {
-		s += fmt.Sprintf(" #%d", ev.TaskIdx)
-	}
-	return s
-}
-
 // fetchModels loads the advertised model list at startup so the context-window
 // gauge knows the active model's budget without the picker ever being opened.
 func (m *Model) fetchModels() tea.Cmd {
@@ -766,79 +446,6 @@ func (m *Model) fetchModels() tea.Cmd {
 		items, err := cl.Models()
 		return modelsMsg{items: items, err: err}
 	}
-}
-
-// cur returns the index of the active streaming assistant message, or -1.
-func (m *Model) cur() int {
-	if m.curIdx >= 0 && m.curIdx < len(m.msgs) {
-		return m.curIdx
-	}
-	return -1
-}
-
-// finalize closes out the streaming assistant message, rendering its markdown.
-func (m *Model) finalize() {
-	if i := m.cur(); i >= 0 {
-		m.msgs[i].streaming = false
-		m.msgs[i].rendered = m.render(m.msgs[i].content)
-		// Keep the turn's reasoning concatenated on the message for
-		// compatibility; the timeline (items) drives the actual rendering.
-		var thoughts []string
-		for _, it := range m.msgs[i].items {
-			if it.thinking {
-				thoughts = append(thoughts, it.text)
-			}
-		}
-		m.msgs[i].thinking = strings.Join(thoughts, "\n")
-	}
-	m.curIdx = -1
-}
-
-// addNote appends a sticky notice (errors, disconnects) that stays until
-// pushed out by newer ones.
-func (m *Model) addNote(s string) {
-	m.pushNote(s, time.Time{})
-}
-
-// addTransientNote appends an info trace that fades after noticeTTL.
-func (m *Model) addTransientNote(s string) {
-	m.pushNote(s, time.Now().Add(noticeTTL))
-	m.noticeSeq++
-}
-
-func (m *Model) pushNote(s string, exp time.Time) {
-	m.notices = append(m.notices, sanitize(s))
-	m.noticeExp = append(m.noticeExp, exp)
-	if len(m.notices) > 6 {
-		m.notices = m.notices[len(m.notices)-6:]
-		m.noticeExp = m.noticeExp[len(m.noticeExp)-6:]
-	}
-}
-
-// pruneNotices drops transient notices whose expiry has passed.
-func (m *Model) pruneNotices(now time.Time) {
-	kept := m.notices[:0]
-	keptExp := m.noticeExp[:0]
-	for i, n := range m.notices {
-		if exp := m.noticeExp[i]; exp.IsZero() || now.Before(exp) {
-			kept = append(kept, n)
-			keptExp = append(keptExp, exp)
-		}
-	}
-	m.notices = kept
-	m.noticeExp = keptExp
-}
-
-// noticeTimer schedules the expiry sweep when a transient notice was added
-// since prevSeq; otherwise it returns nil.
-func (m *Model) noticeTimer(prevSeq int) tea.Cmd {
-	if m.noticeSeq == prevSeq {
-		return nil
-	}
-	seq := m.noticeSeq
-	return tea.Tick(noticeTTL, func(time.Time) tea.Msg {
-		return noticeExpireMsg{seq: seq}
-	})
 }
 
 // render runs content through glamour; falls back to raw text on error.
@@ -918,115 +525,6 @@ func (m *Model) inputAreaHeight() int {
 	return h
 }
 
-// ── @-reference autocomplete ────────────────────────────────────────────────
-
-// refRe matches a trailing @-reference token at the end of the input.
-var refRe = regexp.MustCompile(`(^|\s)@([^\s@]*)$`)
-
-// activeRef returns the query of the trailing @-token, if the cursor is in one.
-func activeRef(s string) (string, bool) {
-	mm := refRe.FindStringSubmatch(s)
-	if mm == nil {
-		return "", false
-	}
-	return mm[2], true
-}
-
-// refStart returns the byte index of the '@' that begins the trailing token.
-func refStart(s string) (int, bool) {
-	loc := refRe.FindStringSubmatchIndex(s)
-	if loc == nil {
-		return 0, false
-	}
-	return loc[4] - 1, true // group 2 start, minus the '@'
-}
-
-// syncAC re-evaluates the input and drives the completion popup — slash
-// commands (filtered locally) or @-references (searched server-side).
-func (m *Model) syncAC() tea.Cmd {
-	val := m.ta.Value()
-
-	// Line-initial slash command completion.
-	if name, ok := commandPrefix(val); ok {
-		if m.ac.open && m.ac.mode == acCmd && m.ac.query == name {
-			return nil
-		}
-		m.openCmdAC(name)
-		return nil
-	}
-
-	q, ok := activeRef(val)
-	if !ok {
-		if m.ac.open {
-			m.closeAC()
-		}
-		return nil
-	}
-	if m.ac.open && m.ac.mode == acRef && q == m.ac.query {
-		return nil // nothing changed
-	}
-	m.ac.open = true
-	m.ac.loading = true
-	m.ac.mode = acRef
-	m.ac.query = q
-	m.ac.sel = 0
-	m.ac.seq++
-	seq := m.ac.seq
-	m.relayout()
-	m.refresh()
-
-	cl := m.cl
-	return func() tea.Msg {
-		// @ is for file attachments only; sessions are reached via /sessions
-		// (or ^R). Over-fetch, then keep just files.
-		items, err := cl.Resources(q, 12)
-		if err != nil {
-			return acResultMsg{seq: seq, items: nil}
-		}
-		files := make([]client.Resource, 0, len(items))
-		for _, it := range items {
-			if it.Type == "file" {
-				files = append(files, it)
-			}
-		}
-		if len(files) > 6 {
-			files = files[:6]
-		}
-		return acResultMsg{seq: seq, items: files}
-	}
-}
-
-// acceptCompletion inserts the highlighted item into the input.
-func (m *Model) acceptCompletion() {
-	if len(m.ac.items) == 0 {
-		m.closeAC()
-		return
-	}
-	item := m.ac.items[m.ac.sel]
-	if m.ac.mode == acCmd {
-		m.ta.SetValue(item.ID + " ")
-		m.ta.CursorEnd()
-		m.closeAC()
-		return
-	}
-	val := m.ta.Value()
-	if idx, ok := refStart(val); ok {
-		m.ta.SetValue(val[:idx] + item.ID + " ")
-		m.ta.CursorEnd()
-	}
-	m.closeAC()
-}
-
-// closeAC dismisses the completion popup and restores the layout.
-func (m *Model) closeAC() {
-	if !m.ac.open && m.ac.items == nil {
-		return
-	}
-	m.ac = autocomplete{seq: m.ac.seq}
-	m.relayout()
-	m.refresh()
-}
-
 // elapsed formats the current run's wall-clock time in whole seconds (the live
 // badge re-renders with every spinner tick, so tenths would flicker). The
 // finalized per-turn stat line keeps tenths via formatDuration.
@@ -1039,137 +537,6 @@ func (m *Model) elapsed() string {
 		return fmt.Sprintf("%ds", int(d.Seconds()))
 	}
 	return fmt.Sprintf("%dm%02ds", int(d.Minutes()), int(d.Seconds())%60)
-}
-
-// argPreview extracts a short, human-friendly summary from a tool's JSON args.
-func argPreview(data string) string {
-	data = strings.TrimSpace(data)
-	if data == "" {
-		return ""
-	}
-	var m map[string]any
-	if err := json.Unmarshal([]byte(data), &m); err != nil {
-		return truncate(collapse(data), 72)
-	}
-	for _, key := range []string{
-		"command", "cmd", "path", "file", "pattern", "query", "url",
-		"prompt", "task", "description", "instruction",
-	} {
-		if v, ok := m[key]; ok {
-			if s, ok := v.(string); ok && s != "" {
-				return truncate(collapse(s), 72)
-			}
-		}
-	}
-	parts := make([]string, 0, len(m))
-	for _, v := range m {
-		if s, ok := v.(string); ok && s != "" {
-			parts = append(parts, s)
-		}
-	}
-	return truncate(collapse(strings.Join(parts, " ")), 72)
-}
-
-// resultPreview sanitizes tool output and caps it to a generous number of
-// lines, so the transcript can show a useful excerpt (rendered by renderSteps)
-// without retaining the unbounded output of a chatty tool.
-func resultPreview(data string) string {
-	s := sanitize(data)
-	lines := strings.Split(s, "\n")
-	const cap = 200
-	if len(lines) > cap {
-		lines = lines[:cap]
-	}
-	return strings.Join(lines, "\n")
-}
-
-// isSubagent reports whether a tool name denotes a sub-agent delegation. The
-// substrings mirror toolGlyph / toolProgress so the three stay consistent.
-func isSubagent(name string) bool {
-	n := strings.ToLower(name)
-	return strings.Contains(n, "delegate") ||
-		strings.Contains(n, "subagent") ||
-		strings.Contains(n, "task")
-}
-
-// looksLikeError reports whether a tool result reads as a failure. It is
-// deliberately conservative — keyed off leading error tokens and a couple of
-// unambiguous shell phrases — so ordinary output that merely mentions "error"
-// is not tinted red.
-func looksLikeError(s string) bool {
-	t := strings.ToLower(strings.TrimSpace(s))
-	switch {
-	case strings.HasPrefix(t, "error"),
-		strings.HasPrefix(t, "fatal"),
-		strings.HasPrefix(t, "panic:"),
-		strings.HasPrefix(t, "traceback"),
-		strings.HasPrefix(t, "exception"),
-		strings.HasPrefix(t, "exit status"):
-		return true
-	}
-	return strings.Contains(t, "command not found") ||
-		strings.Contains(t, "no such file or directory")
-}
-
-// attachSubLog appends a sub-agent activity line to the most recent sub-agent
-// step in message i, reporting whether one was found.
-func (m *Model) attachSubLog(i int, line string) bool {
-	const maxSubLogs = 8
-	steps := m.msgs[i].steps
-	for j := len(steps) - 1; j >= 0; j-- {
-		if !steps[j].subagent {
-			continue
-		}
-		if len(steps[j].logs) < maxSubLogs {
-			steps[j].logs = append(steps[j].logs, sanitize(line))
-		}
-		return true
-	}
-	return false
-}
-
-// maxThinkingLen caps the live "thinking…" excerpt so a verbose reasoning
-// stream does not push the transcript off-screen.
-const maxThinkingLen = 240
-
-// capThinkingText trims s to at most n runes, starting at the next whitespace
-// so the visible excerpt does not begin mid-word.
-func capThinkingText(s string, n int) string {
-	if len(s) <= n {
-		return s
-	}
-	r := []rune(s)
-	if len(r) <= n {
-		return s
-	}
-	r = r[len(r)-n:]
-	for i, c := range r {
-		if unicode.IsSpace(c) {
-			r = r[i+1:]
-			break
-		}
-	}
-	return string(r)
-}
-
-func collapse(s string) string {
-	return strings.Join(strings.Fields(sanitize(s)), " ")
-}
-
-// stripToolResultFrame unwraps the delimiter frame odek adds around persisted
-// tool results (a "┌── TOOL RESULT: …" header line and a matching
-// "└── END TOOL RESULT: …" footer) for prompt-injection safety, returning the
-// raw inner output. Live tool_result events carry the unframed output, so
-// resume strips the frame to render both identically. Unframed input is
-// returned unchanged.
-func stripToolResultFrame(s string) string {
-	lines := strings.Split(strings.TrimSuffix(s, "\n"), "\n")
-	if len(lines) >= 3 &&
-		strings.HasPrefix(lines[0], "┌── TOOL RESULT:") &&
-		strings.HasPrefix(lines[len(lines)-1], "└── END TOOL RESULT:") {
-		return strings.Join(lines[1:len(lines)-1], "\n")
-	}
-	return s
 }
 
 // sanitize strips terminal control sequences from untrusted content before it
