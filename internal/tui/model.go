@@ -36,6 +36,15 @@ type step struct {
 	isErr    bool     // the result reads as a failure (tints the status glyph red)
 	subagent bool     // this call delegates to a sub-agent (renders its log tree)
 	logs     []string // nested sub-agent activity, from subagent_log events
+	expanded bool     // user has expanded this step to show full output/logs
+}
+
+// stepRef maps a rendered transcript line to a specific step for mouse
+// hit-testing.
+type stepRef struct {
+	msgIdx  int
+	stepIdx int
+	line    int
 }
 
 // turnStats is the telemetry of one finalized assistant turn, captured from the
@@ -56,6 +65,7 @@ type message struct {
 	role      role
 	content   string // raw text/markdown
 	rendered  string // cached glamour render (assistant, finalized)
+	thinking  string // captured reasoning for this turn (finalized)
 	steps     []step
 	streaming bool
 	stats     *turnStats // finalized-turn telemetry; nil while streaming / for history
@@ -131,8 +141,10 @@ type Model struct {
 	gradRuleW int
 	logoCache string // cached gradient logo (width-independent)
 
-	convPrefix string // cached rendering of the finalized transcript prefix
-	convCount  int    // messages the prefix covers (-1 = invalidated)
+	convPrefix     string    // cached rendering of the finalized transcript prefix
+	convPrefixRefs []stepRef // step header line index for the cached prefix
+	convCount      int       // messages the prefix covers (-1 = invalidated)
+	stepLineIndex  []stepRef // full transcript step index for mouse hit-testing
 }
 
 // acMode selects what the completion popup is completing.
@@ -292,6 +304,18 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tea.MouseMsg:
+		if msg.Action == tea.MouseActionPress && msg.Button == tea.MouseButtonLeft && m.panel == panelNone && !m.ac.open {
+			// Viewport content begins below the header (2 rows).
+			top := 2
+			if msg.Y >= top && msg.Y < top+m.vp.Height {
+				line := msg.Y - top + m.vp.YOffset
+				if msgIdx, stepIdx, ok := m.stepAtLine(line); ok {
+					m.toggleStep(msgIdx, stepIdx)
+					m.refresh()
+					return m, nil
+				}
+			}
+		}
 		var cmd tea.Cmd
 		m.vp, cmd = m.vp.Update(msg)
 		return m, cmd
@@ -385,6 +409,10 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if !m.busy {
 			m.clearConversation()
 		}
+		return m, nil
+	case "ctrl+e":
+		m.toggleRecentStep()
+		m.refresh()
 		return m, nil
 	case "up", "ctrl+p":
 		// Scroll the transcript when the cursor is already at the top line of
@@ -559,6 +587,8 @@ func (m *Model) clearConversation() {
 	m.msgs = nil
 	m.curIdx = -1
 	m.convCount = -1 // transcript replaced — drop the cached prefix
+	m.convPrefixRefs = nil
+	m.stepLineIndex = nil
 	m.turnStats = nil
 	m.toolTotal = 0
 	m.sessionStart = time.Time{}
@@ -701,6 +731,7 @@ func (m *Model) finalize() {
 	if i := m.cur(); i >= 0 {
 		m.msgs[i].streaming = false
 		m.msgs[i].rendered = m.render(m.msgs[i].content)
+		m.msgs[i].thinking = m.thinking.String()
 	}
 	m.curIdx = -1
 	m.thinking.Reset()
@@ -1116,4 +1147,48 @@ func truncate(s string, n int) string {
 		return s
 	}
 	return string(r[:n-1]) + "…"
+}
+
+// toggleStep flips the expanded state of a step and invalidates the transcript
+// prefix cache so the re-render picks it up.
+func (m *Model) toggleStep(msgIdx, stepIdx int) {
+	if msgIdx < 0 || msgIdx >= len(m.msgs) {
+		return
+	}
+	steps := m.msgs[msgIdx].steps
+	if stepIdx < 0 || stepIdx >= len(steps) {
+		return
+	}
+	steps[stepIdx].expanded = !steps[stepIdx].expanded
+	m.convCount = -1
+}
+
+// toggleRecentStep expands/collapses the last step of the most recent message
+// that has steps. Bound to the "e" key.
+func (m *Model) toggleRecentStep() {
+	for i := len(m.msgs) - 1; i >= 0; i-- {
+		if len(m.msgs[i].steps) > 0 {
+			m.toggleStep(i, len(m.msgs[i].steps)-1)
+			return
+		}
+	}
+}
+
+// stepAtLine maps a viewport content line to the nearest step header at or
+// above it. Used for mouse click-to-expand.
+func (m *Model) stepAtLine(line int) (msgIdx, stepIdx int, ok bool) {
+	if len(m.stepLineIndex) == 0 {
+		return
+	}
+	var ref *stepRef
+	for i := range m.stepLineIndex {
+		if m.stepLineIndex[i].line > line {
+			break
+		}
+		ref = &m.stepLineIndex[i]
+	}
+	if ref == nil {
+		return
+	}
+	return ref.msgIdx, ref.stepIdx, true
 }

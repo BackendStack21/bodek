@@ -37,13 +37,13 @@ func TestHeaderThinkAndSandbox(t *testing.T) {
 func TestRenderNoteAndStepDefaultIcon(t *testing.T) {
 	m := wired(t)
 	// roleNote rendering.
-	out := m.renderMessage(message{role: roleNote, content: "a note"})
+	out, _ := m.renderMessage(message{role: roleNote, content: "a note"}, 0, 0)
 	if !strings.Contains(plain(out), "a note") {
 		t.Error("note message not rendered")
 	}
 	// A finalized assistant message with an unfinished step uses the ▸ icon.
 	msg := message{role: roleAsst, content: "done", steps: []step{{name: "shell", done: false}}}
-	out = m.renderMessage(msg)
+	out, _ = m.renderMessage(msg, 0, 0)
 	if !strings.Contains(plain(out), "shell") {
 		t.Error("step not rendered")
 	}
