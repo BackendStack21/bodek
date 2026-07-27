@@ -37,6 +37,14 @@ func (m *Model) header() string {
 		m.logoCache = th.logo.Render(gradient("⬡ bodek", gradFrom, gradTo))
 	}
 	logo := m.logoCache
+	// bodek's own version rides next to the logo; bare numbers get a v prefix
+	// to match the "odek vX.Y.Z" segment.
+	if v := m.bodekVersion; v != "" {
+		if v[0] >= '0' && v[0] <= '9' {
+			v = "v" + v
+		}
+		logo += " " + th.headerMeta.Render(v)
+	}
 
 	think := "off"
 	if m.thinkOn {
