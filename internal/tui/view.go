@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
 
@@ -201,6 +202,31 @@ func (m *Model) statusBadge() string {
 }
 
 // ── transcript ───────────────────────────────────────────────────────────
+
+// streamRenderInterval is the coalescing window for high-frequency streaming
+// events (tokens, thinking): instead of rebuilding the viewport — which
+// re-runs glamour on the streaming tail — per event, they share one rebuild.
+const streamRenderInterval = 80 * time.Millisecond
+
+// renderFlushMsg fires streamRenderInterval after the first coalesced
+// streaming event; a stale seq means a newer flush superseded it.
+type renderFlushMsg struct {
+	seq int
+}
+
+// queueRender schedules the coalesced streaming-render flush, or returns nil
+// when one is already pending (all events since then share that flush).
+func (m *Model) queueRender() tea.Cmd {
+	if m.renderPending {
+		return nil
+	}
+	m.renderPending = true
+	m.renderSeq++
+	seq := m.renderSeq
+	return tea.Tick(streamRenderInterval, func(time.Time) tea.Msg {
+		return renderFlushMsg{seq: seq}
+	})
+}
 
 // refresh rebuilds the viewport content and scrolls to the latest output only
 // when the reader is already at the bottom — a run in progress must not yank

@@ -23,6 +23,7 @@ type noticeExpireMsg struct {
 
 func (m *Model) handleEvent(ev client.Event) (tea.Model, tea.Cmd) {
 	prevSeq := m.noticeSeq
+	stream := false // high-frequency event: coalesce the render (see queueRender)
 	switch ev.Type {
 	case "session":
 		m.sessionID = ev.SessionID
@@ -49,6 +50,7 @@ func (m *Model) handleEvent(ev client.Event) (tea.Model, tea.Cmd) {
 			}
 		}
 		m.status = "thinking"
+		stream = true
 
 	case "token":
 		if i := m.cur(); i >= 0 {
@@ -56,6 +58,7 @@ func (m *Model) handleEvent(ev client.Event) (tea.Model, tea.Cmd) {
 			m.msgs[i].streaming = true
 		}
 		m.status = "responding"
+		stream = true
 
 	case "tool_call":
 		arg := argPreview(ev.Data)
@@ -114,6 +117,7 @@ func (m *Model) handleEvent(ev client.Event) (tea.Model, tea.Cmd) {
 			m.turnStats = append(m.turnStats, ts)
 			m.toolTotal += ts.toolCount
 		}
+		m.renderPending = false // the turn's final state renders now, not on a flush
 		m.finalize()
 		m.busy = false
 		m.lastTool = ""
@@ -130,6 +134,7 @@ func (m *Model) handleEvent(ev client.Event) (tea.Model, tea.Cmd) {
 		} else {
 			m.addNote("error: " + ev.Message)
 		}
+		m.renderPending = false
 		m.finalize()
 		m.busy = false
 		m.lastTool = ""
@@ -164,6 +169,7 @@ func (m *Model) handleEvent(ev client.Event) (tea.Model, tea.Cmd) {
 	case client.EventDisconnected:
 		m.disconn = true
 		m.busy = false
+		m.renderPending = false
 		m.status = "disconnected"
 		m.addNote("disconnected from odek serve")
 		if m.opts.LogPath != "" {
@@ -173,6 +179,9 @@ func (m *Model) handleEvent(ev client.Event) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
+	if stream {
+		return m, tea.Batch(listen(m.events), m.noticeTimer(prevSeq), m.queueRender())
+	}
 	m.refresh()
 	return m, tea.Batch(listen(m.events), m.noticeTimer(prevSeq))
 }

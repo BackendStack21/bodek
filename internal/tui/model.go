@@ -159,6 +159,9 @@ type Model struct {
 	convPrefixRefs []stepRef // step header line index for the cached prefix
 	convCount      int       // messages the prefix covers (-1 = invalidated)
 	stepLineIndex  []stepRef // full transcript step index for mouse hit-testing
+
+	renderPending bool // a coalesced streaming render is scheduled
+	renderSeq     int  // bumped per scheduled flush, to drop stale ticks
 }
 
 // New builds the initial model.
@@ -219,6 +222,13 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.refresh()
 		}
 		return m, cmd
+
+	case renderFlushMsg:
+		if msg.seq == m.renderSeq && m.renderPending {
+			m.renderPending = false
+			m.refresh()
+		}
+		return m, nil
 
 	case errMsg:
 		m.busy = false

@@ -133,6 +133,7 @@ func TestBusyRefreshKeepsScrollback(t *testing.T) {
 	m.busy = true
 	m.runStart = time.Now()
 	m.handleEvent(client.Event{Type: "token", Content: "streaming…"})
+	m.Update(renderFlushMsg{seq: m.renderSeq}) // deliver the coalesced render
 	if m.vp.YOffset != top {
 		t.Errorf("busy refresh yanked scrollback: yoffset %d → %d", top, m.vp.YOffset)
 	}
@@ -140,6 +141,7 @@ func TestBusyRefreshKeepsScrollback(t *testing.T) {
 	// Once back at the bottom, the reader follows the stream again.
 	m.vp.GotoBottom()
 	m.handleEvent(client.Event{Type: "token", Content: "more"})
+	m.Update(renderFlushMsg{seq: m.renderSeq}) // deliver the coalesced render
 	if !m.vp.AtBottom() {
 		t.Error("at-bottom reader should follow the stream")
 	}
@@ -166,6 +168,7 @@ func TestTranscriptPrefixCached(t *testing.T) {
 	prefix := m.convPrefix
 	// A streaming tick re-renders only the tail; the prefix is untouched.
 	m.handleEvent(client.Event{Type: "token", Content: "…"})
+	m.Update(renderFlushMsg{seq: m.renderSeq}) // deliver the coalesced render
 	if m.convPrefix != prefix {
 		t.Error("streaming tick rebuilt the finalized prefix")
 	}
