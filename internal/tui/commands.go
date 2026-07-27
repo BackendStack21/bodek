@@ -174,7 +174,7 @@ func (m *Model) showHelp() {
 		{"^O", "switch model"},
 		{"^T", "toggle extended thinking"},
 		{"^L", "clear the conversation"},
-		{"^E", "expand the last tool step"},
+		{"^E", "toggle tool details"},
 		{"esc", "cancel the running turn"},
 		{"^C", "quit"},
 		{"--mouse", "click tool rows to expand"},

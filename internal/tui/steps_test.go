@@ -3,6 +3,7 @@ package tui
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/BackendStack21/bodek/internal/client"
 )
@@ -125,7 +126,7 @@ func renderStepsForTest(m *Model, msg message, startLine, msgIdx int) (string, [
 }
 
 // TestRenderStepsSubagentAndError exercises the one-line step summary: a
-// sub-agent label, a compact result arrow, and an error-tinted result.
+// sub-agent label, an error-tinted status glyph, and no result excerpt.
 func TestRenderStepsSubagentAndError(t *testing.T) {
 	m := newTestModel()
 	msg := message{
@@ -140,12 +141,16 @@ func TestRenderStepsSubagentAndError(t *testing.T) {
 	}
 	out, _ := renderStepsForTest(m, msg, 0, 0)
 	plainOut := plain(out)
-	for _, want := range []string{"sub-agent", "delegate_task", "explore", "→ done", "✗", "shell", "go test", "→ exit status 1", "▶"} {
+	for _, want := range []string{"sub-agent", "delegate_task", "explore", "✗", "shell", "go test", "▶"} {
 		if !strings.Contains(plainOut, want) {
 			t.Errorf("renderSteps missing %q in:\n%s", want, plainOut)
 		}
 	}
-	// Nested logs are still captured but no longer expanded in the default render.
+	// The compact head carries no result excerpt — details only on expand.
+	if strings.Contains(plainOut, "→") || strings.Contains(plainOut, "exit status 1") {
+		t.Errorf("compact head should not show a result excerpt:\n%s", plainOut)
+	}
+	// Nested logs are still captured but not expanded in the default render.
 	if strings.Contains(plainOut, "⎿") || strings.Contains(plainOut, "explorer") {
 		t.Errorf("renderSteps should not expand nested logs in one-line mode:\n%s", plainOut)
 	}
@@ -183,18 +188,58 @@ func TestRenderStepsExpanded(t *testing.T) {
 	}
 }
 
-func TestResultOneLiner(t *testing.T) {
-	if got := resultOneLiner("first\nsecond", 10); got != "first" {
-		t.Errorf("resultOneLiner first line: %q", got)
+func TestFormatStepDur(t *testing.T) {
+	cases := []struct {
+		d    time.Duration
+		want string
+	}{
+		{320 * time.Millisecond, "320ms"},
+		{999 * time.Millisecond, "999ms"},
+		{1200 * time.Millisecond, "1.2s"},
+		{59 * time.Second, "59.0s"},
+		{65 * time.Second, "1m05s"},
 	}
-	if got := resultOneLiner("\n  \nsecond", 8); got != "second" {
-		t.Errorf("resultOneLiner skips blanks: %q", got)
+	for _, c := range cases {
+		if got := formatStepDur(c.d); got != c.want {
+			t.Errorf("formatStepDur(%v) = %q, want %q", c.d, got, c.want)
+		}
 	}
-	if got := resultOneLiner("", 8); got != "" {
-		t.Errorf("resultOneLiner empty: %q", got)
+}
+
+// TestStepDuration drives a tool call through handleEvent and checks the step
+// head: the response time appears once done, and no result excerpt shows.
+func TestStepDuration(t *testing.T) {
+	m := newTestModel()
+	m.msgs = append(m.msgs, message{role: roleAsst, streaming: true})
+	m.curIdx = 0
+	m.busy = true
+
+	m.handleEvent(client.Event{Type: "tool_call", Name: "shell", Data: `{"command":"go test"}`})
+	m.handleEvent(client.Event{Type: "tool_result", Name: "shell", Data: "ok"})
+	st := m.msgs[0].steps[0]
+	if !st.done || st.started.IsZero() || st.dur <= 0 {
+		t.Fatalf("tool_result should stamp the step duration: %+v", st)
 	}
-	if got := resultOneLiner("a very long first meaningful line", 10); got != "a very lo…" {
-		t.Errorf("resultOneLiner truncation: %q", got)
+
+	// A done step head shows the duration (fixture-set, for exact rendering).
+	msg := message{role: roleAsst, steps: []step{
+		{name: "shell", arg: "go test", done: true, result: "exit status 1", dur: 320 * time.Millisecond},
+	}}
+	out, _ := renderStepsForTest(m, msg, 0, 0)
+	plainOut := plain(out)
+	if !strings.Contains(plainOut, "320ms") {
+		t.Errorf("done head missing duration: %q", plainOut)
+	}
+	if strings.Contains(plainOut, "→") || strings.Contains(plainOut, "exit status 1") {
+		t.Errorf("compact head should not show a result excerpt: %q", plainOut)
+	}
+
+	// A running step shows no duration even if one was recorded.
+	msg = message{role: roleAsst, streaming: true, steps: []step{
+		{name: "shell", arg: "go test", dur: 320 * time.Millisecond},
+	}}
+	if out, _ := renderStepsForTest(m, msg, 0, 0); strings.Contains(plain(out), "320ms") {
+		t.Errorf("running step should not show a duration: %q", plain(out))
 	}
 }
 
@@ -216,34 +261,53 @@ func TestToggleStep(t *testing.T) {
 	}
 }
 
-func TestToggleRecentStep(t *testing.T) {
-	m := newTestModel()
-	m.msgs = append(m.msgs,
-		message{role: roleAsst, steps: []step{{name: "read", done: true, result: "ok"}}},
-		message{role: roleAsst, steps: []step{{name: "shell", done: true, result: "done"}}},
-	)
-	m.toggleRecentStep()
-	if !m.msgs[1].steps[0].expanded {
-		t.Error("toggleRecentStep did not expand the most recent step")
-	}
-	if m.msgs[0].steps[0].expanded {
-		t.Error("toggleRecentStep expanded the wrong step")
-	}
-}
-
-func TestKeyCtrlEExpandsStep(t *testing.T) {
+// TestKeyCtrlETogglesToolDetails verifies Ctrl+E flips the global details
+// toggle: every step across messages — cached prefix and streaming tail alike —
+// reveals its detail lines, and a second press collapses them again.
+func TestKeyCtrlETogglesToolDetails(t *testing.T) {
 	m := newTestModel()
 	m.ta.Focus()
-	m.msgs = append(m.msgs, message{role: roleAsst, steps: []step{{name: "shell", done: true, result: "ok"}}})
+	m.msgs = append(m.msgs,
+		message{role: roleAsst, steps: []step{{name: "read", done: true, result: "file contents"}}},
+		message{role: roleAsst, streaming: true, steps: []step{{name: "shell", done: true, result: "build ok"}}},
+	)
+	m.curIdx = 1
+	m.busy = true
 
-	// Pressing Ctrl+E should expand the most recent step, even while typing.
+	// Collapsed by default: no detail lines anywhere.
+	out := plain(m.conversation())
+	if strings.Contains(out, "file contents") || strings.Contains(out, "build ok") {
+		t.Fatalf("details should be hidden by default:\n%s", out)
+	}
+
+	// Ctrl+E expands every step in both messages, even while typing.
 	m.ta.SetValue("hello")
 	m.Update(key("ctrl+e"))
-	if !m.msgs[0].steps[0].expanded {
-		t.Error("Ctrl+E should expand the recent step")
+	if !m.expandAll {
+		t.Fatal("Ctrl+E should enable expandAll")
+	}
+	out = plain(m.conversation())
+	if !strings.Contains(out, "file contents") || !strings.Contains(out, "build ok") {
+		t.Errorf("Ctrl+E should reveal details for all steps:\n%s", out)
 	}
 	if got := m.ta.Value(); got != "hello" {
 		t.Errorf("Ctrl+E should not alter the input, got %q", got)
+	}
+
+	// A per-step toggle layers on top of the global one.
+	m.toggleStep(0, 0)
+
+	// A second Ctrl+E collapses everything except individually toggled steps.
+	m.Update(key("ctrl+e"))
+	if m.expandAll {
+		t.Fatal("second Ctrl+E should disable expandAll")
+	}
+	out = plain(m.conversation())
+	if strings.Contains(out, "build ok") {
+		t.Errorf("second Ctrl+E should hide details:\n%s", out)
+	}
+	if !strings.Contains(out, "file contents") {
+		t.Errorf("individually expanded step should stay open:\n%s", out)
 	}
 }
 

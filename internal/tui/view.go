@@ -442,9 +442,10 @@ func max(a, b int) int {
 }
 
 // renderStep renders one tool step as a one-line summary (expand chevron,
-// status icon, tool glyph, name, arg, and a short result arrow), plus its full
-// output/logs when expanded. It returns the rendered block, the stepRef for
-// mouse hit-testing (pointing at startLine), and the block's line count.
+// status icon, tool glyph, name, arg, and — once done — its response time),
+// plus its full output/logs when expanded. It returns the rendered block, the
+// stepRef for mouse hit-testing (pointing at startLine), and the block's line
+// count.
 func (m *Model) renderStep(s step, streaming bool, msgIdx, stepIdx, startLine int) (string, stepRef, int) {
 	th := m.th
 	budget := m.vp.Width - 10
@@ -455,6 +456,9 @@ func (m *Model) renderStep(s step, streaming bool, msgIdx, stepIdx, startLine in
 	if detailBudget < 16 {
 		detailBudget = 16
 	}
+	// A step shows its details when toggled individually or via the global
+	// Ctrl+E toggle.
+	expanded := s.expanded || m.expandAll
 	// Status glyph: a spinner while the call runs, then ✓ / ✗ once it lands.
 	var icon string
 	switch {
@@ -469,7 +473,7 @@ func (m *Model) renderStep(s step, streaming bool, msgIdx, stepIdx, startLine in
 	}
 	var chevron string
 	if s.done {
-		if s.expanded {
+		if expanded {
 			chevron = th.stepTree.Render("▼")
 		} else {
 			chevron = th.stepTree.Render("▶")
@@ -484,22 +488,13 @@ func (m *Model) renderStep(s step, streaming bool, msgIdx, stepIdx, startLine in
 	if s.arg != "" {
 		head += th.stepArg.Render("  " + truncate(s.arg, budget))
 	}
-	if s.done {
-		resBudget := m.vp.Width - lipgloss.Width(head) - 10
-		if resBudget < 12 {
-			resBudget = 12
-		}
-		if res := resultOneLiner(s.result, resBudget); res != "" {
-			sep := th.stepTree.Render("  → ")
-			if s.isErr {
-				head += sep + th.stepErr.Render(res)
-			} else {
-				head += sep + th.stepRes.Render(res)
-			}
-		}
+	// Response time appears only once the call lands — while running, the
+	// spinner already conveys that.
+	if s.done && s.dur > 0 {
+		head += th.stepArg.Render("  " + formatStepDur(s.dur))
 	}
 	lines := []string{head}
-	if s.expanded {
+	if expanded {
 		details := append([]string{}, s.logs...)
 		for _, ln := range strings.Split(s.result, "\n") {
 			if c := collapse(ln); c != "" {
@@ -537,17 +532,6 @@ func resultExcerpt(result string) []string {
 	}
 	trimmed := append([]string{}, out[:maxResultLines]...)
 	return append(trimmed, fmt.Sprintf("… +%d more lines", len(out)-maxResultLines))
-}
-
-// resultOneLiner returns the first meaningful line of tool output, collapsed
-// to a single line and capped to n runes for compact one-line summaries.
-func resultOneLiner(result string, n int) string {
-	for _, ln := range strings.Split(result, "\n") {
-		if c := collapse(ln); c != "" {
-			return truncate(c, n)
-		}
-	}
-	return ""
 }
 
 func (m *Model) renderNotices() string {

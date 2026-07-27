@@ -33,10 +33,12 @@ type step struct {
 	arg      string
 	result   string // sanitized tool output (multi-line); excerpted at render
 	done     bool
-	isErr    bool     // the result reads as a failure (tints the status glyph red)
-	subagent bool     // this call delegates to a sub-agent (renders its log tree)
-	logs     []string // nested sub-agent activity, from subagent_log events
-	expanded bool     // user has expanded this step to show full output/logs
+	isErr    bool          // the result reads as a failure (tints the status glyph red)
+	subagent bool          // this call delegates to a sub-agent (renders its log tree)
+	logs     []string      // nested sub-agent activity, from subagent_log events
+	expanded bool          // user has expanded this step to show full output/logs
+	started  time.Time     // when the tool_call arrived; zero for resumed history
+	dur      time.Duration // wall-clock the call took; 0 until the result lands
 }
 
 // stepRef maps a rendered transcript line to a specific step for mouse
@@ -121,6 +123,7 @@ type Model struct {
 	authToken string // session-scoped token (for cancel / resume)
 	pendModel string // model to apply on the next prompt
 	thinkOn   bool
+	expandAll bool // Ctrl+E: render every step's full output/logs
 
 	panel    panelMode
 	sessions []client.Session
@@ -419,7 +422,10 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case "ctrl+e":
-		m.toggleRecentStep()
+		// Global details toggle: every step (including in-flight ones) shows
+		// its full output/logs; the per-step mouse toggle still layers on top.
+		m.expandAll = !m.expandAll
+		m.convCount = -1 // re-render the cached transcript prefix too
 		m.refresh()
 		return m, nil
 	case "up", "ctrl+p":
@@ -489,7 +495,7 @@ func (m *Model) handleEvent(ev client.Event) (tea.Model, tea.Cmd) {
 		arg := argPreview(ev.Data)
 		if i := m.cur(); i >= 0 {
 			m.msgs[i].steps = append(m.msgs[i].steps,
-				step{name: ev.Name, arg: arg, subagent: isSubagent(ev.Name)})
+				step{name: ev.Name, arg: arg, subagent: isSubagent(ev.Name), started: time.Now()})
 			m.msgs[i].items = append(m.msgs[i].items, turnItem{stepIdx: len(m.msgs[i].steps) - 1})
 		}
 		m.lastTool = ev.Name
@@ -504,6 +510,9 @@ func (m *Model) handleEvent(ev client.Event) (tea.Model, tea.Cmd) {
 					steps[j].done = true
 					steps[j].result = resultPreview(ev.Data)
 					steps[j].isErr = looksLikeError(steps[j].result)
+					if !steps[j].started.IsZero() {
+						steps[j].dur = time.Since(steps[j].started)
+					}
 					break
 				}
 			}
@@ -1168,6 +1177,19 @@ func formatDuration(d time.Duration) string {
 	return fmt.Sprintf("%dm%02ds", int(d.Minutes()), int(d.Seconds())%60)
 }
 
+// formatStepDur renders a tool call's response time compactly: milliseconds
+// under a second, tenths of a second under a minute, then minutes+seconds.
+func formatStepDur(d time.Duration) string {
+	switch {
+	case d < time.Second:
+		return fmt.Sprintf("%dms", d.Milliseconds())
+	case d < time.Minute:
+		return fmt.Sprintf("%.1fs", d.Seconds())
+	default:
+		return fmt.Sprintf("%dm%02ds", int(d.Minutes()), int(d.Seconds())%60)
+	}
+}
+
 func truncate(s string, n int) string {
 	if n < 1 {
 		return "" // no room even for the ellipsis (very narrow terminal)
@@ -1191,17 +1213,6 @@ func (m *Model) toggleStep(msgIdx, stepIdx int) {
 	}
 	steps[stepIdx].expanded = !steps[stepIdx].expanded
 	m.convCount = -1
-}
-
-// toggleRecentStep expands/collapses the last step of the most recent message
-// that has steps. Bound to the "e" key.
-func (m *Model) toggleRecentStep() {
-	for i := len(m.msgs) - 1; i >= 0; i-- {
-		if len(m.msgs[i].steps) > 0 {
-			m.toggleStep(i, len(m.msgs[i].steps)-1)
-			return
-		}
-	}
 }
 
 // stepAtLine maps a viewport content line to the nearest step header at or
