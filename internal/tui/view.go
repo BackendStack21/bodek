@@ -47,10 +47,6 @@ func (m *Model) header() string {
 		logo += " " + th.headerMeta.Render(v)
 	}
 
-	think := "off"
-	if m.thinkOn {
-		think = "on"
-	}
 	modelName := m.model
 	if modelName == "" {
 		modelName = "default"
@@ -58,14 +54,13 @@ func (m *Model) header() string {
 	// Sandbox status, prominently colored: green ● when isolated, amber ▲
 	// when the agent has host access.
 	sandbox := m.sandboxBadge()
-	meta := th.headerMeta.Render(" · think ") + th.headerKey.Render(think)
 	model := th.headerKey.Render(modelName)
 
 	left := logo + "   " + model
 	if m.odekVersion != "" {
 		left += th.headerMeta.Render(" · odek ") + th.headerKey.Render(m.odekVersion)
 	}
-	left += th.headerMeta.Render("  ·  ") + sandbox + meta
+	left += th.headerMeta.Render("  ·  ") + sandbox
 
 	status := m.statusBadge()
 	tokens := th.headerMeta.Render(fmt.Sprintf("∑ ⌂ %s · ⎇ %s",
