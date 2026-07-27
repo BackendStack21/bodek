@@ -39,8 +39,16 @@ func (m *Model) handleACKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "esc":
 		m.closeAC()
 		return m, nil
+	case "ctrl+c":
+		m.quitting = true
+		return m, tea.Quit
 	}
-	return m, nil
+	// Any other key is plain input: forward it to the textarea, then
+	// re-evaluate the popup against the new value — typing narrows the
+	// filter, backspace widens it, a space ends command completion.
+	var cmd tea.Cmd
+	m.ta, cmd = m.ta.Update(msg)
+	return m, tea.Batch(cmd, m.syncAC())
 }
 
 // acMode selects what the completion popup is completing.
