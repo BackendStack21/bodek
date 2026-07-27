@@ -304,7 +304,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tea.MouseMsg:
-		if msg.Type == tea.MouseLeft && m.panel == panelNone && !m.ac.open {
+		if msg.Action == tea.MouseActionPress && msg.Button == tea.MouseButtonLeft && m.panel == panelNone && !m.ac.open {
 			// Viewport content begins below the header (2 rows).
 			top := 2
 			if msg.Y >= top && msg.Y < top+m.vp.Height {

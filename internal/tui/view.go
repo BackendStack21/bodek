@@ -291,7 +291,7 @@ func (m *Model) renderMessage(msg message, msgIdx, lineOffset int) (string, []st
 		}
 		thinkingLines := 0
 		if t := strings.TrimSpace(thinking); t != "" {
-			line := th.thinkStyle.Copy().Width(max(m.vp.Width-4, 8)).Render("… " + collapse(t))
+			line := th.thinkStyle.Width(max(m.vp.Width-4, 8)).Render("… " + collapse(t))
 			b.WriteString(line)
 			thinkingLines = lineCount(line)
 		}
