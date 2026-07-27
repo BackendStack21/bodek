@@ -9,11 +9,12 @@ Keep it that way.
 
 | Path | Responsibility |
 |------|----------------|
-| `cmd/bodek` | CLI entry point: flags, lifecycle, wiring |
+| `cmd/bodek` | CLI entry point: flags, lifecycle, `version` / `upgrade` subcommands |
 | `internal/server` | Launch / attach to `odek serve`, resolve the auth token |
 | `internal/client` | odek serve WebSocket protocol (transport + REST + decoding) |
 | `internal/tokens` | Local persistence of per-session auth tokens |
 | `internal/tui` | The Bubble Tea model, update loop, panels, and view |
+| `internal/update` | Self-upgrade: fetch and swap in the latest GitHub release binary |
 
 ## Commands
 
@@ -84,13 +85,29 @@ feat(tui): compact tool steps with Ctrl+E details toggle
   refactors, renames, or reformatting.
 - **Security**: anything rendered from the wire (tokens, tool output, file
   contents) must go through `sanitize()` — see `internal/tui/model.go`.
-  Never render raw remote content.
+  Never render raw remote content. Tool results arrive as JSON envelopes
+  wrapped in untrusted-content markers: decode the envelope and fold the
+  wrappers away before display — don't render either verbatim.
 - The transcript model in `internal/tui`: each assistant `message` keeps a
   chronological `items []turnItem` timeline (reasoning blocks and step
   references interleaved). Preserve arrival order; don't regress to a
-  single per-turn reasoning blob.
+  single per-turn reasoning blob, and don't reintroduce a separate
+  in-transcript thinking placeholder alongside it.
 - Events arrive from `internal/client` already in chronological order —
   keep ingestion order-dependent and idempotent.
+- `internal/tui` is split by responsibility: `model.go` holds the core
+  model, `events.go` event handling, `input.go` key/text input,
+  `approval.go` the approval flow, `reconnect.go` socket recovery. Put
+  new code in the matching file instead of growing `model.go`.
+- The TUI reconnects with backoff and resumes the session after a socket
+  drop (`reconnect.go`) — don't break that by assuming a single
+  connection per run.
+- Streaming renders are coalesced into one flush per 80ms for
+  performance; batching new redraw paths the same way keeps the TUI
+  responsive.
+- The slash-completion popup holds key capture while open; typed keys
+  must keep flowing to the input. Route keys through the popup first,
+  then fall through to normal input handling.
 
 ## Workflow rules for agents
 
