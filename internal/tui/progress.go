@@ -5,17 +5,6 @@ import (
 	"strings"
 )
 
-// thinkingPhrases cycle in the status badge while the model reasons before it
-// acts, so a pause always feels alive.
-var thinkingPhrases = []string{
-	"🧠 thinking",
-	"🔮 reasoning it through",
-	"🧩 connecting the dots",
-	"💭 mulling it over",
-	"✨ planning the approach",
-	"📐 weighing the options",
-}
-
 // toolProgress returns a playful, context-aware status line for a running tool,
 // derived from the tool name and its argument preview.
 func toolProgress(name, arg string) string {

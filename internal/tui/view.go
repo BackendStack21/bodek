@@ -175,9 +175,8 @@ func (m *Model) statusBadge() string {
 			label = toolProgress(m.lastTool, m.lastArg)
 		case m.status == "responding":
 			label = "💬 composing the reply"
-		default: // thinking / pre-tool: cycle phrases so a pause feels alive.
-			idx := int(time.Since(m.runStart)/(1500*time.Millisecond)) % len(thinkingPhrases)
-			label = thinkingPhrases[idx]
+		default: // thinking / pre-tool
+			label = "🧠 thinking"
 		}
 		el := ""
 		if e := m.elapsed(); e != "" {
