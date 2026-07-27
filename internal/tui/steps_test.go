@@ -109,6 +109,21 @@ func TestSubagentLogNesting(t *testing.T) {
 	}
 }
 
+// renderStepsForTest renders all steps of a message through renderStep,
+// mirroring the deleted renderSteps helper.
+func renderStepsForTest(m *Model, msg message, startLine, msgIdx int) (string, []stepRef) {
+	var blocks []string
+	var refs []stepRef
+	line := startLine
+	for i, s := range msg.steps {
+		block, ref, n := m.renderStep(s, msg.streaming, msgIdx, i, line)
+		blocks = append(blocks, block)
+		refs = append(refs, ref)
+		line += n
+	}
+	return strings.Join(blocks, "\n"), refs
+}
+
 // TestRenderStepsSubagentAndError exercises the one-line step summary: a
 // sub-agent label, a compact result arrow, and an error-tinted result.
 func TestRenderStepsSubagentAndError(t *testing.T) {
@@ -123,7 +138,7 @@ func TestRenderStepsSubagentAndError(t *testing.T) {
 				result: "exit status 1\nFAIL"},
 		},
 	}
-	out, _ := m.renderSteps(msg, 0, 0)
+	out, _ := renderStepsForTest(m, msg, 0, 0)
 	plainOut := plain(out)
 	for _, want := range []string{"sub-agent", "delegate_task", "explore", "→ done", "✗", "shell", "go test", "→ exit status 1", "▶"} {
 		if !strings.Contains(plainOut, want) {
@@ -139,10 +154,10 @@ func TestRenderStepsSubagentAndError(t *testing.T) {
 	// in a finalized turn renders the pending glyph. Also drive the narrow-width
 	// budget floor.
 	m.vp.Width = 8
-	if s, _ := m.renderSteps(message{streaming: true, steps: []step{{name: "read", arg: "x"}}}, 0, 0); s == "" {
+	if s, _ := renderStepsForTest(m, message{streaming: true, steps: []step{{name: "read", arg: "x"}}}, 0, 0); s == "" {
 		t.Error("streaming step rendered empty")
 	}
-	if s, _ := m.renderSteps(message{streaming: false, steps: []step{{name: "read"}}}, 0, 0); !strings.Contains(plain(s), "▸") {
+	if s, _ := renderStepsForTest(m, message{streaming: false, steps: []step{{name: "read"}}}, 0, 0); !strings.Contains(plain(s), "▸") {
 		t.Errorf("pending step missing ▸ glyph: %q", plain(s))
 	}
 }
@@ -153,7 +168,7 @@ func TestRenderStepsExpanded(t *testing.T) {
 		{name: "shell", arg: "go test", done: true, isErr: true, expanded: true,
 			result: "exit status 1\nFAIL"},
 	}}
-	out, refs := m.renderSteps(msg, 5, 0)
+	out, refs := renderStepsForTest(m, msg, 5, 0)
 	plainOut := plain(out)
 	for _, want := range []string{"▼", "shell", "go test", "exit status 1", "FAIL"} {
 		if !strings.Contains(plainOut, want) {
