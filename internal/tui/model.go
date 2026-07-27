@@ -1139,6 +1139,22 @@ func collapse(s string) string {
 	return strings.Join(strings.Fields(sanitize(s)), " ")
 }
 
+// stripToolResultFrame unwraps the delimiter frame odek adds around persisted
+// tool results (a "┌── TOOL RESULT: …" header line and a matching
+// "└── END TOOL RESULT: …" footer) for prompt-injection safety, returning the
+// raw inner output. Live tool_result events carry the unframed output, so
+// resume strips the frame to render both identically. Unframed input is
+// returned unchanged.
+func stripToolResultFrame(s string) string {
+	lines := strings.Split(strings.TrimSuffix(s, "\n"), "\n")
+	if len(lines) >= 3 &&
+		strings.HasPrefix(lines[0], "┌── TOOL RESULT:") &&
+		strings.HasPrefix(lines[len(lines)-1], "└── END TOOL RESULT:") {
+		return strings.Join(lines[1:len(lines)-1], "\n")
+	}
+	return s
+}
+
 // sanitize strips terminal control sequences from untrusted content before it
 // is rendered. Agent output — streamed tokens, tool results, file contents,
 // resumed transcripts — is attacker-influenced; raw C0 control bytes (notably

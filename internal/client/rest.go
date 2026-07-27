@@ -8,10 +8,24 @@ import (
 	"time"
 )
 
-// SessionMessage is one turn in a saved session transcript.
+// SessionMessage is one message in a saved session transcript.
 type SessionMessage struct {
-	Role    string `json:"role"`
-	Content string `json:"content"`
+	Role             string            `json:"role"`
+	Content          string            `json:"content"`
+	Name             string            `json:"name,omitempty"`
+	ToolCallID       string            `json:"tool_call_id,omitempty"`
+	ToolCalls        []SessionToolCall `json:"tool_calls,omitempty"`
+	ReasoningContent string            `json:"reasoning_content,omitempty"`
+}
+
+// SessionToolCall is one persisted tool invocation (OpenAI wire format).
+type SessionToolCall struct {
+	ID       string `json:"id"`
+	Type     string `json:"type"`
+	Function struct {
+		Name      string `json:"name"`
+		Arguments string `json:"arguments"`
+	} `json:"function"`
 }
 
 // Session is a saved conversation, as returned by the session API.

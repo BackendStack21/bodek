@@ -242,22 +242,105 @@ func (m *Model) handleSessionDetail(msg sessionDetailMsg) {
 	m.lastLatency = 0
 	m.msgs = m.msgs[:0]
 	m.convCount = -1 // transcript swapped for the resumed one — drop the cache
-	for _, mm := range msg.sess.Messages {
-		// Persisted transcripts are attacker-influenced (agent output, and the
-		// session file itself); strip terminal control sequences before display.
-		content := sanitize(mm.Content)
-		switch mm.Role {
-		case "user":
-			m.msgs = append(m.msgs, message{role: roleUser, content: content})
-		case "assistant":
-			if strings.TrimSpace(content) == "" {
-				continue
-			}
-			m.msgs = append(m.msgs, message{role: roleAsst, content: content, rendered: m.render(content)})
-		}
-	}
+	m.replayTranscript(msg.sess.Messages)
 	m.addNote("resumed session " + shortID(msg.sess.ID))
 	m.closePanel()
+}
+
+// replayTranscript rebuilds a saved transcript turn by turn so a resumed
+// session renders identically to a live one: a user message opens a turn,
+// and everything up to the next user message accumulates into a single
+// assistant message — reasoning blocks, tool calls/results, and reply text
+// interleaved in arrival order, mirroring live event ingestion. System
+// messages are dropped; blank assistant messages (no reply, reasoning, or
+// steps) are skipped.
+func (m *Model) replayTranscript(msgs []client.SessionMessage) {
+	var cur *message // current turn's assistant message, not yet flushed
+	stepByCallID := map[string]int{}
+
+	// flush closes the current assistant message: it folds the timeline's
+	// thinking items into msg.thinking (like finalize) and renders the reply.
+	flush := func() {
+		if cur == nil {
+			return
+		}
+		var thoughts []string
+		for _, it := range cur.items {
+			if it.thinking {
+				thoughts = append(thoughts, it.text)
+			}
+		}
+		cur.thinking = strings.Join(thoughts, "\n")
+		cur.rendered = m.render(cur.content)
+		if strings.TrimSpace(cur.content) != "" || len(cur.items) > 0 {
+			m.msgs = append(m.msgs, *cur)
+		}
+		cur = nil
+		stepByCallID = map[string]int{}
+	}
+
+	for _, mm := range msgs {
+		// Persisted transcripts are attacker-influenced (agent output, and the
+		// session file itself); strip terminal control sequences before display.
+		switch mm.Role {
+		case "user":
+			flush()
+			m.msgs = append(m.msgs, message{role: roleUser, content: sanitize(mm.Content)})
+		case "assistant":
+			if cur == nil {
+				cur = &message{role: roleAsst}
+			}
+			if rc := sanitize(mm.ReasoningContent); strings.TrimSpace(rc) != "" {
+				cur.items = append(cur.items, turnItem{thinking: true,
+					text: capThinkingText(rc, maxThinkingLen)})
+			}
+			for _, tc := range mm.ToolCalls {
+				name := tc.Function.Name
+				cur.steps = append(cur.steps, step{
+					name:     name,
+					arg:      argPreview(tc.Function.Arguments),
+					subagent: isSubagent(name),
+				})
+				stepByCallID[tc.ID] = len(cur.steps) - 1
+				cur.items = append(cur.items, turnItem{stepIdx: len(cur.steps) - 1})
+			}
+			if c := sanitize(mm.Content); strings.TrimSpace(c) != "" {
+				if cur.content != "" {
+					cur.content += "\n\n"
+				}
+				cur.content += c
+			}
+		case "tool":
+			if cur == nil {
+				continue // a tool result with no assistant message to attach to
+			}
+			// Persisted results are wrapped in odek's prompt-injection frame;
+			// live tool_result events carry the raw output — strip it so both
+			// render identically. resultPreview sanitizes the unwrapped output.
+			result := resultPreview(stripToolResultFrame(mm.Content))
+			// Match by tool_call_id first; fall back to the live tool_result
+			// behavior of scanning backwards by name for an unfinished step.
+			idx, ok := stepByCallID[mm.ToolCallID]
+			if ok && cur.steps[idx].done {
+				ok = false
+			}
+			if !ok {
+				for j := len(cur.steps) - 1; j >= 0; j-- {
+					if cur.steps[j].name == mm.Name && !cur.steps[j].done {
+						idx, ok = j, true
+						break
+					}
+				}
+			}
+			if !ok {
+				continue
+			}
+			cur.steps[idx].done = true
+			cur.steps[idx].result = result
+			cur.steps[idx].isErr = looksLikeError(result)
+		}
+	}
+	flush()
 }
 
 func (m *Model) handleSessionDeleted(msg sessionDeletedMsg) tea.Cmd {
