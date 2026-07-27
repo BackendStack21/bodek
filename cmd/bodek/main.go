@@ -149,9 +149,11 @@ func run() error {
 	setupSignalHandler(srv, cl)
 
 	model := tui.New(cl, tui.Options{
-		Sandbox: cfg.sandbox,
-		CWD:     cwd,
-		LogPath: logPath,
+		Sandbox:     cfg.sandbox,
+		CWD:         cwd,
+		LogPath:     logPath,
+		OdekVersion: srv.Version,
+		Version:     currentVersion(),
 	})
 
 	// Mouse reporting enables wheel scrolling in the transcript, but it also

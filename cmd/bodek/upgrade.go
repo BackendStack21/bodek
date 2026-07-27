@@ -8,7 +8,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -17,19 +16,9 @@ import (
 	"runtime"
 	"strings"
 	"time"
+
+	"github.com/BackendStack21/bodek/internal/update"
 )
-
-// releasesLatestURL is the GitHub API endpoint for the latest bodek release.
-const releasesLatestURL = "https://api.github.com/repos/BackendStack21/bodek/releases/latest"
-
-// githubRelease is the subset of the GitHub releases API we consume.
-type githubRelease struct {
-	TagName string `json:"tag_name"`
-	Assets  []struct {
-		Name string `json:"name"`
-		URL  string `json:"browser_download_url"`
-	} `json:"assets"`
-}
 
 // runUpgrade self-updates the running executable to the latest release.
 func runUpgrade(stdout io.Writer) error {
@@ -38,14 +27,14 @@ func runUpgrade(stdout io.Writer) error {
 		return fmt.Errorf("locate current executable: %w", err)
 	}
 	client := &http.Client{Timeout: 10 * time.Second}
-	return upgrade(context.Background(), client, releasesLatestURL, exe, stdout)
+	return upgrade(context.Background(), client, update.LatestURL, exe, stdout)
 }
 
 // upgrade performs the full self-update against the given API endpoint,
 // replacing the executable at exePath. runUpgrade wires in the production
 // defaults; tests point it at an httptest server and a temp binary.
 func upgrade(ctx context.Context, client *http.Client, apiURL, exePath string, stdout io.Writer) error {
-	tag, assets, err := latestRelease(ctx, client, apiURL)
+	tag, assets, err := update.LatestRelease(ctx, client, apiURL)
 	if err != nil {
 		return err
 	}
@@ -97,37 +86,6 @@ func upgrade(ctx context.Context, client *http.Client, apiURL, exePath string, s
 		_, _ = fmt.Fprintf(stdout, "upgraded bodek v%s → v%s\n", current, latest)
 	}
 	return nil
-}
-
-// latestRelease fetches the latest published release and returns its tag
-// (e.g. "v0.0.10") plus a name → download URL map of its assets.
-func latestRelease(ctx context.Context, client *http.Client, apiURL string) (tag string, assets map[string]string, err error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, apiURL, nil)
-	if err != nil {
-		return "", nil, fmt.Errorf("build latest-release request: %w", err)
-	}
-	req.Header.Set("User-Agent", "bodek-updater")
-	req.Header.Set("Accept", "application/vnd.github+json")
-	resp, err := client.Do(req)
-	if err != nil {
-		return "", nil, fmt.Errorf("query latest release: %w", err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-	if resp.StatusCode != http.StatusOK {
-		return "", nil, fmt.Errorf("query latest release: unexpected status %s", resp.Status)
-	}
-	var rel githubRelease
-	if err := json.NewDecoder(resp.Body).Decode(&rel); err != nil {
-		return "", nil, fmt.Errorf("decode latest release: %w", err)
-	}
-	if rel.TagName == "" {
-		return "", nil, fmt.Errorf("latest release has no tag_name")
-	}
-	assets = make(map[string]string, len(rel.Assets))
-	for _, a := range rel.Assets {
-		assets[a.Name] = a.URL
-	}
-	return rel.TagName, assets, nil
 }
 
 // archiveName mirrors the GoReleaser name_template: tar.gz everywhere except

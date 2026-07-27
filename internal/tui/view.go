@@ -52,7 +52,11 @@ func (m *Model) header() string {
 	meta := th.headerMeta.Render(" · think ") + th.headerKey.Render(think)
 	model := th.headerKey.Render(modelName)
 
-	left := logo + "   " + model + th.headerMeta.Render("  ·  ") + sandbox + meta
+	left := logo + "   " + model
+	if m.odekVersion != "" {
+		left += th.headerMeta.Render(" · odek ") + th.headerKey.Render(m.odekVersion)
+	}
+	left += th.headerMeta.Render("  ·  ") + sandbox + meta
 
 	status := m.statusBadge()
 	tokens := th.headerMeta.Render(fmt.Sprintf("∑ ⌂ %s · ⎇ %s",

@@ -16,6 +16,7 @@ import (
 
 	"github.com/BackendStack21/bodek/internal/client"
 	"github.com/BackendStack21/bodek/internal/tokens"
+	"github.com/BackendStack21/bodek/internal/update"
 )
 
 // role identifies who authored a conversation entry.
@@ -85,10 +86,12 @@ type message struct {
 
 // Options carries startup display info into the model.
 type Options struct {
-	Model   string
-	Sandbox bool
-	CWD     string
-	LogPath string // file the spawned server's stderr is captured to, if any
+	Model       string
+	Sandbox     bool
+	CWD         string
+	LogPath     string // file the spawned server's stderr is captured to, if any
+	OdekVersion string // engine version for the header (empty when attached/unknown)
+	Version     string // bodek's own version; drives the startup update check
 }
 
 // Model is the Bubble Tea model for bodek.
@@ -124,6 +127,9 @@ type Model struct {
 	pendModel string // model to apply on the next prompt
 	thinkOn   bool
 	expandAll bool // Ctrl+E: render every step's full output/logs
+
+	odekVersion  string // engine version shown in the header ("" hides it)
+	bodekVersion string // bodek's own version, for the startup update check
 
 	panel    panelMode
 	sessions []client.Session
@@ -227,23 +233,25 @@ func New(cl *client.Client, opts Options) *Model {
 	sp.Style = th.spinner
 
 	return &Model{
-		cl:      cl,
-		events:  cl.Events,
-		opts:    opts,
-		th:      th,
-		tokens:  tokens.Open(),
-		ta:      ta,
-		sp:      sp,
-		curIdx:  -1,
-		model:   opts.Model,
-		sandbox: opts.Sandbox,
-		thinkOn: false,
-		status:  "ready",
+		cl:           cl,
+		events:       cl.Events,
+		opts:         opts,
+		th:           th,
+		tokens:       tokens.Open(),
+		ta:           ta,
+		sp:           sp,
+		curIdx:       -1,
+		model:        opts.Model,
+		sandbox:      opts.Sandbox,
+		thinkOn:      false,
+		status:       "ready",
+		odekVersion:  opts.OdekVersion,
+		bodekVersion: opts.Version,
 	}
 }
 
 func (m *Model) Init() tea.Cmd {
-	return tea.Batch(textarea.Blink, m.sp.Tick, listen(m.events), m.fetchModels())
+	return tea.Batch(textarea.Blink, m.sp.Tick, listen(m.events), m.fetchModels(), m.checkUpdate())
 }
 
 func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -302,6 +310,15 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case cancelDoneMsg:
 		if msg.err != nil {
 			m.addNote("cancel failed: " + msg.err.Error())
+			m.refresh()
+		}
+		return m, nil
+
+	case updateCheckMsg:
+		// Silent on error or when already current: the hint only ever nags
+		// once, at startup, when a newer release is confirmed.
+		if msg.err == nil && update.Newer(msg.latest, m.bodekVersion) {
+			m.addNote(fmt.Sprintf("⬆ bodek %s available — run `bodek upgrade`", msg.latest))
 			m.refresh()
 		}
 		return m, nil

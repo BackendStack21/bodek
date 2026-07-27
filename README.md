@@ -207,6 +207,10 @@ When the agent requests approval for a dangerous operation, answer inline:
   scroll-position indicator.
 - **Engine notices** — skill loads, memory merges, and agent signals appear as
   quiet status lines.
+- **Engine version** — the header shows the spawned odek's version next to the
+  model name.
+- **Update hint** — at startup, a quiet note appears when a newer bodek release
+  is available (`bodek upgrade` installs it; dev builds are never nagged).
 
 ---
 

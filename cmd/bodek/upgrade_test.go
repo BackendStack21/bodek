@@ -8,7 +8,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -83,16 +82,11 @@ func upgradeServer(t *testing.T, tag, assetName string, archive []byte, badCheck
 		if got := r.Header.Get("User-Agent"); got != "bodek-updater" {
 			t.Errorf("expected User-Agent bodek-updater, got %q", got)
 		}
-		rel := githubRelease{TagName: tag}
-		rel.Assets = []struct {
-			Name string `json:"name"`
-			URL  string `json:"browser_download_url"`
-		}{
-			{Name: assetName, URL: base + "/files/" + assetName},
-			{Name: "checksums.txt", URL: base + "/files/checksums.txt"},
-		}
 		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(rel)
+		_, _ = fmt.Fprintf(w, `{"tag_name":%q,"assets":[`+
+			`{"name":%q,"browser_download_url":%q},`+
+			`{"name":"checksums.txt","browser_download_url":%q}]}`,
+			tag, assetName, base+"/files/"+assetName, base+"/files/checksums.txt")
 	})
 	mux.HandleFunc("/files/"+assetName, func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write(archive)
@@ -215,17 +209,6 @@ func TestUpgradeMissingPlatformAsset(t *testing.T) {
 	}
 	if got := readFile(t, exe); string(got) != "old bodek" {
 		t.Errorf("executable must be untouched, got %q", got)
-	}
-}
-
-func TestLatestReleaseHTTPError(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusForbidden)
-	}))
-	t.Cleanup(srv.Close)
-	_, _, err := latestRelease(context.Background(), srv.Client(), srv.URL)
-	if err == nil || !strings.Contains(err.Error(), "unexpected status") {
-		t.Fatalf("expected status error, got %v", err)
 	}
 }
 

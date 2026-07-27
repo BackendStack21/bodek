@@ -34,6 +34,7 @@ type Conn struct {
 	WSURL   string // ws://127.0.0.1:port/ws
 	Origin  string // http://127.0.0.1:port (accepted by the server's origin check)
 	Token   string // per-instance CSRF token
+	Version string // engine version as printed by `<bin> version` (e.g. "v0.2.0"); spawn mode only
 
 	proc *exec.Cmd        // non-nil when bodek spawned the server
 	scan *tokenScanWriter // non-nil when bodek spawned the server
@@ -129,6 +130,9 @@ func (c *Conn) spawn(opts Options, addr string) error {
 	if _, err := exec.LookPath(bin); err != nil {
 		return fmt.Errorf("cannot find %q on PATH — install odek or pass --url to attach to a running server", bin)
 	}
+	// odek serve exposes no version over HTTP/WS, so ask the binary directly.
+	// Best effort: any failure leaves Version empty and never blocks startup.
+	c.Version = binVersion(context.Background(), bin)
 	args := []string{"serve", "--addr", addr}
 	if !opts.Sandbox {
 		args = append(args, "--no-sandbox")
@@ -151,6 +155,29 @@ func (c *Conn) spawn(opts Options, addr string) error {
 	}
 	c.proc = cmd
 	return nil
+}
+
+// versionTimeout bounds the `<bin> version` probe so a hung binary never
+// delays startup.
+const versionTimeout = 2 * time.Second
+
+// binVersion runs `<bin> version` and returns the token following "odek" on
+// the first output line, exactly as printed (e.g. "v0.2.0" from "odek v0.2.0",
+// or "1.2.3" from a bare "odek 1.2.3"). Any failure — missing binary, non-zero
+// exit, timeout, or unrecognized output — yields "" and is not fatal.
+func binVersion(ctx context.Context, bin string) string {
+	ctx, cancel := context.WithTimeout(ctx, versionTimeout)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, bin, "version").Output()
+	if err != nil {
+		return ""
+	}
+	line, _, _ := strings.Cut(string(out), "\n")
+	fields := strings.Fields(line)
+	if len(fields) >= 2 && fields[0] == "odek" {
+		return fields[1]
+	}
+	return ""
 }
 
 // Stop terminates a spawned server (no-op when attached to an external one).
