@@ -74,6 +74,35 @@ func TestRenderStreamingTurn(t *testing.T) {
 	}
 }
 
+// TestEmptyStreamingTurnHidden verifies that while a streamed assistant turn
+// has no content yet, the transcript shows neither a "thinking…" placeholder
+// nor a bare odek block — the top-bar spinner is the only progress signal.
+// The turn block appears atomically once the first real content arrives.
+func TestEmptyStreamingTurnHidden(t *testing.T) {
+	m := newTestModel()
+	m.msgs = append(m.msgs,
+		message{role: roleUser, content: "hi"},
+		message{role: roleAsst, streaming: true},
+	)
+	m.curIdx = 1
+	m.busy = true
+
+	out := plain(m.conversation())
+	if strings.Contains(out, "thinking…") {
+		t.Errorf("transcript shows duplicated thinking placeholder:\n%s", out)
+	}
+	if strings.Contains(out, "⬡ odek") {
+		t.Errorf("empty streaming turn renders a bare odek block:\n%s", out)
+	}
+
+	// First reasoning chunk makes the turn block visible.
+	m.handleEvent(client.Event{Type: "thinking", Content: "hmm"})
+	out = plain(m.conversation())
+	if !strings.Contains(out, "⬡ odek") || !strings.Contains(out, "hmm") {
+		t.Errorf("turn block did not appear after first content:\n%s", out)
+	}
+}
+
 // TestApprovalAndAutocompleteRender ensures the approval panel and the @-popup
 // render at full and narrow widths without panicking.
 func TestApprovalAndAutocompleteRender(t *testing.T) {
