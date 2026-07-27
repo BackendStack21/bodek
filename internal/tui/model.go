@@ -89,6 +89,11 @@ type Options struct {
 	LogPath     string // file the spawned server's stderr is captured to, if any
 	OdekVersion string // engine version for the header (empty when attached/unknown)
 	Version     string // bodek's own version; drives the startup update check
+
+	// Reconnect, when set, redials the server after the socket drops. The
+	// session resumes transparently: every prompt already carries
+	// session_id + auth_token, so the next send re-binds it server-side.
+	Reconnect func() (*client.Client, error)
 }
 
 // Model is the Bubble Tea model for bodek.
@@ -285,6 +290,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case eventMsg:
 		return m.handleEvent(client.Event(msg))
+
+	case reconnectMsg:
+		return m.handleReconnect(msg)
 
 	case noticeExpireMsg:
 		m.pruneNotices(time.Now())

@@ -177,6 +177,9 @@ func (m *Model) statusBadge() string {
 	th := m.th
 	switch {
 	case m.disconn:
+		if strings.HasPrefix(m.status, "reconnecting") {
+			return th.statusBusy.Render("● reconnecting…")
+		}
 		return th.badgeDanger.Render("● disconnected")
 	case m.approval != nil:
 		return th.statusBusy.Render("⚠ approval required")

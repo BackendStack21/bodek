@@ -170,6 +170,12 @@ func (m *Model) handleEvent(ev client.Event) (tea.Model, tea.Cmd) {
 		m.disconn = true
 		m.busy = false
 		m.renderPending = false
+		if cmd := m.scheduleReconnect(0); cmd != nil {
+			m.status = "reconnecting…"
+			m.addNote("connection lost — reconnecting…")
+			m.refresh()
+			return m, cmd
+		}
 		m.status = "disconnected"
 		m.addNote("disconnected from odek serve")
 		if m.opts.LogPath != "" {

@@ -197,6 +197,9 @@ When the agent requests approval for a dangerous operation, answer inline:
   what it's actually doing (`🧪 running tests`, `📖 reading client.go`,
   `🚀 pushing`) with a live elapsed timer.
 - **Session browser** (`^R`) — resume, replay, or delete past conversations.
+- **Auto-reconnect** — if the socket drops, bodek redials with backoff
+  (500ms → 8s, 5 attempts) and the session resumes transparently on your next
+  prompt; only a server that stays down leaves the `disconnected` badge.
 - **Model switcher** (`^O`) — change the model for the next turn.
 - **Cancellation** (`Esc`) — abort a running turn via odek's cancel API.
 - **Sandbox aware** — the header shows `🛡 sandboxed` or `⚠ host access`; pass
