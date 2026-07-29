@@ -58,13 +58,13 @@ func (m *Model) handleReconnect(msg reconnectMsg) (tea.Model, tea.Cmd) {
 		// (including the server-side memory buffer) transparently.
 		m.addNote("reconnected to odek serve — the session resumes on your next prompt")
 		m.refresh()
-		return m, listen(m.events)
+		return m, tea.Batch(listen(m.events), m.sendQueued())
 	}
 	if msg.attempt+1 < maxReconnectAttempts {
 		return m, m.scheduleReconnect(msg.attempt + 1)
 	}
 	m.status = "disconnected"
-	m.addNote("reconnect failed — " + msg.err.Error())
+	m.addNote("reconnect failed — " + msg.err.Error() + " · press r to retry")
 	if m.opts.LogPath != "" {
 		m.addNote("server log · " + m.opts.LogPath)
 	}

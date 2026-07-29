@@ -136,10 +136,13 @@ by `odek serve` from its usual chain — `~/.odek/config.json` → `./odek.json`
 | `↑` / `↓` (empty input) | Recall previous prompts (prompt history) |
 | `↑` / `↓` / `PgUp` / `PgDn` | Scroll the transcript |
 | `wheel` (with `--mouse`) | Scroll the transcript |
+| `r` (when disconnected) | Retry the connection |
 | `^C` | Quit |
 
 Prompts sent while a turn is running are **queued** and sent automatically
-when the turn ends — the footer shows how many are waiting.
+when the turn ends — the footer shows how many are waiting. If the
+connection drops, bodek retries with backoff and, after giving up, keeps
+your draft and offers a manual retry on `r`.
 
 ### Commands (`/`)
 

@@ -345,6 +345,15 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleACKey(msg)
 	}
 
+	// A dead connection offers a manual retry on r — only with an empty
+	// input, so a drafted prompt is never disturbed.
+	if m.disconn && m.opts.Reconnect != nil && msg.String() == "r" && m.ta.Value() == "" {
+		m.status = "reconnecting"
+		m.addNote("retrying connection…")
+		m.refresh()
+		return m, m.scheduleReconnect(0)
+	}
+
 	switch msg.String() {
 	case "ctrl+c":
 		m.quitting = true

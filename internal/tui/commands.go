@@ -177,6 +177,7 @@ func (m *Model) showHelp() {
 		{"^L", "clear the conversation"},
 		{"^E", "toggle tool details"},
 		{"esc", "cancel the running turn"},
+		{"r", "retry a lost connection"},
 		{"^C", "quit"},
 		{"--mouse", "click tool rows to expand"},
 	} {

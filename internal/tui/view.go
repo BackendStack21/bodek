@@ -705,7 +705,12 @@ func (m *Model) footer() string {
 		return th.footer.Render("  answer the approval prompt to continue")
 	}
 	if m.disconn {
-		return th.footer.Render("  connection closed · press ^C to quit")
+		hints := []string{th.footer.Render("connection closed")}
+		if m.opts.Reconnect != nil {
+			hints = append(hints, th.footerKey.Render("r")+th.footer.Render(" retry"))
+		}
+		hints = append(hints, th.footer.Render("^C to quit"))
+		return "  " + strings.Join(hints, th.footerSep.Render(" · "))
 	}
 	if m.panel == panelSessions {
 		return m.panelFooter(

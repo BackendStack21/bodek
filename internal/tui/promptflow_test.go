@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"errors"
 	"strings"
 	"testing"
 
@@ -15,6 +16,58 @@ func busyTurn(m *Model) {
 	)
 	m.curIdx = 1
 	m.busy = true
+}
+
+// TestDisconnectedRetry verifies the dead-connection state offers a manual
+// redial on r, and that typing r into a draft is never hijacked.
+func TestDisconnectedRetry(t *testing.T) {
+	m := newTestModel()
+	m.ta.Focus()
+	m.opts.Reconnect = func() (*client.Client, error) { return nil, errors.New("down") }
+	m.disconn = true
+	m.status = "disconnected"
+
+	if foot := plain(m.footer()); !strings.Contains(foot, "r") || !strings.Contains(foot, "retry") {
+		t.Errorf("disconnected footer missing retry hint: %q", foot)
+	}
+
+	_, cmd := m.Update(key("r"))
+	if cmd == nil {
+		t.Fatal("r while disconnected should schedule a redial")
+	}
+	if m.status != "reconnecting" {
+		t.Errorf("status = %q, want reconnecting", m.status)
+	}
+
+	// A non-empty draft keeps r as plain typing.
+	m.status = "disconnected"
+	m.ta.SetValue("draft")
+	m.Update(key("r"))
+	if m.ta.Value() != "draftr" {
+		t.Errorf("r with a draft should type, got %q", m.ta.Value())
+	}
+}
+
+// TestReconnectDrainsQueue verifies a successful redial flushes prompts
+// queued while the socket was down.
+func TestReconnectDrainsQueue(t *testing.T) {
+	m := wired(t) // live stand-in: m.cl is a real connected client
+	m.disconn = true
+	m.queue = []string{"held"}
+
+	_, cmd := m.handleReconnect(reconnectMsg{attempt: 0, cl: m.cl})
+	if m.disconn {
+		t.Fatal("reconnect with a client should clear the disconnected state")
+	}
+	if len(m.queue) != 0 {
+		t.Errorf("queue should drain on reconnect, got %v", m.queue)
+	}
+	if !m.busy {
+		t.Error("drained prompt should start a new turn")
+	}
+	if cmd == nil {
+		t.Error("reconnect should return the listen/send batch")
+	}
 }
 
 // TestSubmitWhileBusyQueues verifies that ⏎ mid-turn queues the prompt
