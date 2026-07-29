@@ -111,6 +111,10 @@ feat(tui): compact tool steps with Ctrl+E details toggle
 
 ## Workflow rules for agents
 
+- **Never modify the odek project from a bodek session.** bodek is a pure
+  front-end; if a fix requires changes in odek (protocol, `odek serve`,
+  engine behaviour), do not edit that repo — instead summarize the required
+  change and suggest it to the user as a task for an odek session.
 - Don't run `git commit`/`git push` unless the user explicitly asks.
 - Don't add dependencies without checking `go.mod` first and flagging it
   to the user.
