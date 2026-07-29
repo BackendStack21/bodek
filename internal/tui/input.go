@@ -98,9 +98,30 @@ func (m *Model) submit() tea.Cmd {
 	if strings.HasPrefix(text, "/") {
 		return m.runCommandLine(text)
 	}
-	if m.busy || m.disconn {
+	if m.disconn {
+		// Keep the draft — swallowing it silently reads as a lost message.
+		prev := m.noticeSeq
+		m.addTransientNote("disconnected — press r to retry, your draft is kept")
+		m.refresh()
+		return m.noticeTimer(prev)
+	}
+	if m.busy {
+		// Queue mid-turn prompts instead of dropping them; the queue drains
+		// automatically when the running turn ends.
+		m.queue = append(m.queue, text)
+		m.ta.Reset()
+		m.closeAC()
+		m.refresh()
 		return nil
 	}
+	m.ta.Reset()
+	m.closeAC()
+	return m.sendPrompt(text)
+}
+
+// sendPrompt appends the user/assistant pair to the transcript and
+// dispatches the prompt to the server.
+func (m *Model) sendPrompt(text string) tea.Cmd {
 	m.msgs = append(m.msgs, message{role: roleUser, content: text})
 	m.msgs = append(m.msgs, message{role: roleAsst, streaming: true})
 	m.curIdx = len(m.msgs) - 1
@@ -132,6 +153,17 @@ func (m *Model) submit() tea.Cmd {
 		}
 		return nil
 	}
+}
+
+// sendQueued pops the oldest queued prompt and sends it when the model is
+// idle and connected; otherwise it is a no-op (nil cmd).
+func (m *Model) sendQueued() tea.Cmd {
+	if m.busy || m.disconn || len(m.queue) == 0 {
+		return nil
+	}
+	text := m.queue[0]
+	m.queue = m.queue[1:]
+	return m.sendPrompt(text)
 }
 
 // ── @-reference autocomplete ────────────────────────────────────────────────

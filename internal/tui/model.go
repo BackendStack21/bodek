@@ -121,6 +121,7 @@ type Model struct {
 
 	approval *client.Event // pending approval, nil when none
 	ac       autocomplete  // @-reference completion state
+	queue    []string      // prompts typed mid-turn, sent when the turn ends
 
 	model     string
 	sandbox   bool
@@ -240,7 +241,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.status = "error"
 		m.addNote("error: " + msg.err.Error())
 		m.refresh()
-		return m, nil
+		return m, m.sendQueued()
 
 	case acResultMsg:
 		if msg.seq != m.ac.seq || m.ac.mode != acRef {

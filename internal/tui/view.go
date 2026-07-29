@@ -728,6 +728,9 @@ func (m *Model) footer() string {
 	left := ""
 	if m.busy {
 		left = "  " + th.footerKey.Render("esc") + th.footer.Render(" cancel")
+		if n := len(m.queue); n > 0 {
+			left += th.footerSep.Render(" · ") + th.scroll.Render(fmt.Sprintf("▸ %d queued", n))
+		}
 	}
 
 	var segs []string

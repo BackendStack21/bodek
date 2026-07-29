@@ -182,8 +182,16 @@ func TestSubmitGuards(t *testing.T) {
 	}
 	m.disconn = true
 	m.ta.SetValue("hi")
-	if m.submit() != nil {
-		t.Error("submit while disconnected should be nil")
+	cmd := m.submit()
+	if cmd == nil {
+		t.Error("submit while disconnected should arm the notice expiry")
+	}
+	if m.ta.Value() != "hi" {
+		t.Error("submit while disconnected must keep the draft")
+	}
+	exec(cmd) // fires the notice-expiry tick safely
+	if len(m.notices) == 0 {
+		t.Error("submit while disconnected should explain why nothing was sent")
 	}
 }
 

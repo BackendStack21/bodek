@@ -124,7 +124,7 @@ by `odek serve` from its usual chain — `~/.odek/config.json` → `./odek.json`
 
 | Key | Action |
 |-----|--------|
-| `⏎` | Send the prompt (or run a `/command`) |
+| `⏎` | Send the prompt (queues it while a turn is running) |
 | `/` | Open the command palette (see below) |
 | `@` | Attach a file (see below) |
 | `^R` | Browse & resume saved sessions |
@@ -132,10 +132,13 @@ by `odek serve` from its usual chain — `~/.odek/config.json` → `./odek.json`
 | `^T` | Toggle extended thinking for the next turn |
 | `^J` | Insert a newline in the input |
 | `^L` | Clear the conversation |
-| `Esc` | Cancel the running turn |
+| `Esc` | Cancel the running turn (queued prompts return to the input) |
 | `↑` / `↓` / `PgUp` / `PgDn` | Scroll the transcript |
 | `wheel` (with `--mouse`) | Scroll the transcript |
 | `^C` | Quit |
+
+Prompts sent while a turn is running are **queued** and sent automatically
+when the turn ends — the footer shows how many are waiting.
 
 ### Commands (`/`)
 

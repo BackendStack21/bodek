@@ -167,7 +167,7 @@ func (m *Model) showHelp() {
 	b.WriteString("\n" + th.statsLabel.Render("keys"))
 	const keyW = 4
 	for _, k := range [][2]string{
-		{"⏎", "send · run a /command"},
+		{"⏎", "send · queue mid-turn · run a /command"},
 		{"^J", "newline in the input"},
 		{"@", "attach files"},
 		{"^R", "browse & resume sessions"},
