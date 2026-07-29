@@ -748,7 +748,14 @@ func (m *Model) footer() string {
 		segs = append(segs, seg)
 	}
 	if !m.vp.AtBottom() {
-		segs = append(segs, th.scroll.Render(fmt.Sprintf("↕ %d%%", int(m.vp.ScrollPercent()*100))))
+		seg := ""
+		if m.busy {
+			seg = th.scroll.Render("↓ new output") + th.footerSep.Render(" · ")
+		}
+		seg += th.footerKey.Render("G") + th.footer.Render(" latest") +
+			th.footerSep.Render(" · ") +
+			th.scroll.Render(fmt.Sprintf("↕ %d%%", int(m.vp.ScrollPercent()*100)))
+		segs = append(segs, seg)
 	}
 	right := ""
 	if len(segs) > 0 {

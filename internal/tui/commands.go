@@ -171,6 +171,7 @@ func (m *Model) showHelp() {
 		{"^J", "newline in the input"},
 		{"@", "attach files"},
 		{"↑↓", "recall prompts · scroll"},
+		{"G", "jump to the latest output"},
 		{"^R", "browse & resume sessions"},
 		{"^O", "switch model"},
 		{"^T", "toggle extended thinking"},

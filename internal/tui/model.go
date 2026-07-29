@@ -413,6 +413,13 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.vp, cmd = m.vp.Update(msg)
 			return m, cmd
 		}
+	case "G", "end":
+		// Jump to the latest output — only with an empty input, so typing a
+		// capital G (or using End for cursor movement) is never hijacked.
+		if m.ta.Value() == "" {
+			m.vp.GotoBottom()
+			return m, nil
+		}
 	case "pgup", "pgdown", "ctrl+u", "ctrl+d":
 		var cmd tea.Cmd
 		m.vp, cmd = m.vp.Update(msg)

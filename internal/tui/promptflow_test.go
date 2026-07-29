@@ -5,6 +5,8 @@ import (
 	"strings"
 	"testing"
 
+	tea "github.com/charmbracelet/bubbletea"
+
 	"github.com/BackendStack21/bodek/internal/client"
 )
 
@@ -16,6 +18,59 @@ func busyTurn(m *Model) {
 	)
 	m.curIdx = 1
 	m.busy = true
+}
+
+// TestJumpToLatest verifies G/End jump to the bottom with an empty input and
+// never hijack typing.
+func TestJumpToLatest(t *testing.T) {
+	m := newTestModel()
+	m.ta.Focus()
+	tallTranscript(m)
+	m.vp.GotoTop()
+	if m.vp.AtBottom() {
+		t.Fatal("precondition: scrolled away from the bottom")
+	}
+
+	// Footer advertises the jump while off-bottom.
+	if foot := plain(m.footer()); !strings.Contains(foot, "G") || !strings.Contains(foot, "latest") {
+		t.Errorf("footer missing jump hint: %q", foot)
+	}
+
+	m.Update(key("G"))
+	if !m.vp.AtBottom() {
+		t.Error("G should jump to the latest output")
+	}
+
+	// End behaves the same (real terminals send KeyEnd, not runes).
+	m.vp.GotoTop()
+	m.Update(tea.KeyMsg{Type: tea.KeyEnd})
+	if !m.vp.AtBottom() {
+		t.Error("End should jump to the latest output")
+	}
+
+	// With a draft, G types instead of jumping.
+	m.vp.GotoTop()
+	m.ta.SetValue("draft")
+	m.Update(key("G"))
+	if m.vp.AtBottom() {
+		t.Error("G with a draft must not jump")
+	}
+	if m.ta.Value() != "draftG" {
+		t.Errorf("G with a draft should type, got %q", m.ta.Value())
+	}
+}
+
+// TestNewOutputIndicator verifies the footer calls out fresh output while
+// scrolled up mid-run.
+func TestNewOutputIndicator(t *testing.T) {
+	m := newTestModel()
+	tallTranscript(m)
+	m.vp.GotoTop()
+	m.busy = true
+
+	if foot := plain(m.footer()); !strings.Contains(foot, "new output") {
+		t.Errorf("busy off-bottom footer missing new-output indicator: %q", foot)
+	}
 }
 
 // TestDisconnectedRetry verifies the dead-connection state offers a manual
