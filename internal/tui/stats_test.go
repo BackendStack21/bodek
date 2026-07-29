@@ -112,6 +112,41 @@ func TestGaugeFollowsTurnFill(t *testing.T) {
 	}
 }
 
+// TestUsageEventRefreshesGaugeMidTurn is a regression test: odek serve emits
+// a per-iteration "usage" event during a run; the header gauge must refresh
+// on it instead of staying stale until "done" arrives at the end of the
+// whole agent loop.
+func TestUsageEventRefreshesGaugeMidTurn(t *testing.T) {
+	m := newTestModel()
+	m.model = "big"
+	m.models = []client.ModelInfo{{ID: "big", MaxContext: 1000}}
+	m.resolveMaxContext()
+	m.msgs = append(m.msgs, message{role: roleAsst, streaming: true})
+	m.curIdx = len(m.msgs) - 1
+	m.busy = true
+	m.status = "responding"
+
+	m.handleEvent(client.Event{Type: "usage", ContextTokens: 400, OutputTokens: 50})
+	if m.winCtxTok != 400 {
+		t.Fatalf("winCtxTok = %d, want 400", m.winCtxTok)
+	}
+	if out := plain(m.header()); !strings.Contains(out, "40%") {
+		t.Errorf("gauge should refresh mid-run (40%%), got:\n%s", out)
+	}
+
+	// A zero-usage event (provider without usage reporting) must not zero a
+	// previously known fill.
+	m.handleEvent(client.Event{Type: "usage"})
+	if m.winCtxTok != 400 {
+		t.Fatalf("winCtxTok = %d, want 400 (zero usage ignored)", m.winCtxTok)
+	}
+
+	// The mid-run state must not be disturbed: still busy, still responding.
+	if !m.busy || m.status != "responding" {
+		t.Errorf("usage event must not end the turn: busy=%v status=%q", m.busy, m.status)
+	}
+}
+
 func TestContextGauge(t *testing.T) {
 	m := newTestModel()
 	m.model = "big"
