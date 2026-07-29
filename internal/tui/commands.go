@@ -167,15 +167,18 @@ func (m *Model) showHelp() {
 	b.WriteString("\n" + th.statsLabel.Render("keys"))
 	const keyW = 4
 	for _, k := range [][2]string{
-		{"⏎", "send · run a /command"},
+		{"⏎", "send · queue mid-turn · run a /command"},
 		{"^J", "newline in the input"},
 		{"@", "attach files"},
+		{"↑↓", "recall prompts · scroll"},
+		{"G", "jump to the latest output"},
 		{"^R", "browse & resume sessions"},
 		{"^O", "switch model"},
 		{"^T", "toggle extended thinking"},
 		{"^L", "clear the conversation"},
 		{"^E", "toggle tool details"},
 		{"esc", "cancel the running turn"},
+		{"r", "retry a lost connection"},
 		{"^C", "quit"},
 		{"--mouse", "click tool rows to expand"},
 	} {

@@ -124,7 +124,7 @@ by `odek serve` from its usual chain — `~/.odek/config.json` → `./odek.json`
 
 | Key | Action |
 |-----|--------|
-| `⏎` | Send the prompt (or run a `/command`) |
+| `⏎` | Send the prompt (queues it while a turn is running) |
 | `/` | Open the command palette (see below) |
 | `@` | Attach a file (see below) |
 | `^R` | Browse & resume saved sessions |
@@ -132,10 +132,20 @@ by `odek serve` from its usual chain — `~/.odek/config.json` → `./odek.json`
 | `^T` | Toggle extended thinking for the next turn |
 | `^J` | Insert a newline in the input |
 | `^L` | Clear the conversation |
-| `Esc` | Cancel the running turn |
+| `Esc` | Cancel the running turn (queued prompts return to the input) |
+| `↑` / `↓` (empty input) | Recall previous prompts (prompt history) |
 | `↑` / `↓` / `PgUp` / `PgDn` | Scroll the transcript |
+| `G` / `End` (empty input) | Jump to the latest output |
 | `wheel` (with `--mouse`) | Scroll the transcript |
+| `r` (when disconnected) | Retry the connection |
 | `^C` | Quit |
+
+Prompts sent while a turn is running are **queued** and sent automatically
+when the turn ends — the footer shows how many are waiting. While the
+transcript is scrolled up mid-run, the footer flags `↓ new output`; press
+`G` to jump to the latest. If the connection drops, bodek retries with
+backoff and, after giving up, keeps your draft and offers a manual retry
+on `r`.
 
 ### Commands (`/`)
 

@@ -192,7 +192,8 @@ func (m *Model) handleEvent(ev client.Event) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(listen(m.events), m.noticeTimer(prevSeq), m.queueRender())
 	}
 	m.refresh()
-	return m, tea.Batch(listen(m.events), m.noticeTimer(prevSeq))
+	// A turn that just ended (done / error) drains the next queued prompt.
+	return m, tea.Batch(listen(m.events), m.noticeTimer(prevSeq), m.sendQueued())
 }
 
 // stepGlyphs returns up to 4 deduped tool glyphs for a turn's steps, in

@@ -705,7 +705,12 @@ func (m *Model) footer() string {
 		return th.footer.Render("  answer the approval prompt to continue")
 	}
 	if m.disconn {
-		return th.footer.Render("  connection closed · press ^C to quit")
+		hints := []string{th.footer.Render("connection closed")}
+		if m.opts.Reconnect != nil {
+			hints = append(hints, th.footerKey.Render("r")+th.footer.Render(" retry"))
+		}
+		hints = append(hints, th.footer.Render("^C to quit"))
+		return "  " + strings.Join(hints, th.footerSep.Render(" · "))
 	}
 	if m.panel == panelSessions {
 		return m.panelFooter(
@@ -728,6 +733,9 @@ func (m *Model) footer() string {
 	left := ""
 	if m.busy {
 		left = "  " + th.footerKey.Render("esc") + th.footer.Render(" cancel")
+		if n := len(m.queue); n > 0 {
+			left += th.footerSep.Render(" · ") + th.scroll.Render(fmt.Sprintf("▸ %d queued", n))
+		}
 	}
 
 	var segs []string
@@ -740,7 +748,14 @@ func (m *Model) footer() string {
 		segs = append(segs, seg)
 	}
 	if !m.vp.AtBottom() {
-		segs = append(segs, th.scroll.Render(fmt.Sprintf("↕ %d%%", int(m.vp.ScrollPercent()*100))))
+		seg := ""
+		if m.busy {
+			seg = th.scroll.Render("↓ new output") + th.footerSep.Render(" · ")
+		}
+		seg += th.footerKey.Render("G") + th.footer.Render(" latest") +
+			th.footerSep.Render(" · ") +
+			th.scroll.Render(fmt.Sprintf("↕ %d%%", int(m.vp.ScrollPercent()*100)))
+		segs = append(segs, seg)
 	}
 	right := ""
 	if len(segs) > 0 {

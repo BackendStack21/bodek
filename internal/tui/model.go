@@ -121,6 +121,12 @@ type Model struct {
 
 	approval *client.Event // pending approval, nil when none
 	ac       autocomplete  // @-reference completion state
+	queue    []string      // prompts typed mid-turn, sent when the turn ends
+
+	history   []string // submitted prompts, newest last (recalled with ↑)
+	histNav   bool     // true while ↑/↓ is walking the history
+	histIdx   int      // index into history while navigating
+	histDraft string   // input stashed while navigating history
 
 	model     string
 	sandbox   bool
@@ -240,7 +246,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.status = "error"
 		m.addNote("error: " + msg.err.Error())
 		m.refresh()
-		return m, nil
+		return m, m.sendQueued()
 
 	case acResultMsg:
 		if msg.seq != m.ac.seq || m.ac.mode != acRef {
@@ -339,6 +345,15 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleACKey(msg)
 	}
 
+	// A dead connection offers a manual retry on r — only with an empty
+	// input, so a drafted prompt is never disturbed.
+	if m.disconn && m.opts.Reconnect != nil && msg.String() == "r" && m.ta.Value() == "" {
+		m.status = "reconnecting"
+		m.addNote("retrying connection…")
+		m.refresh()
+		return m, m.scheduleReconnect(0)
+	}
+
 	switch msg.String() {
 	case "ctrl+c":
 		m.quitting = true
@@ -375,19 +390,35 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.refresh()
 		return m, nil
 	case "up", "ctrl+p":
-		// Scroll the transcript when the cursor is already at the top line of
-		// the input; otherwise let the textarea move the cursor up.
+		// At the top input line: an empty input (or an active history walk)
+		// recalls older prompts; otherwise scroll the transcript. Below the
+		// top line the textarea moves the cursor up instead.
 		if m.ta.Line() == 0 {
+			if (m.histNav || m.ta.Value() == "") && m.historyPrev() {
+				return m, nil
+			}
 			var cmd tea.Cmd
 			m.vp, cmd = m.vp.Update(msg)
 			return m, cmd
 		}
 	case "down", "ctrl+n":
-		// Likewise, scroll down when the cursor is on the bottom input line.
+		// Likewise at the bottom line: walk forward through the history when
+		// navigating it, else scroll the transcript down.
 		if m.ta.Line() == m.ta.LineCount()-1 {
+			if m.histNav {
+				m.historyNext()
+				return m, nil
+			}
 			var cmd tea.Cmd
 			m.vp, cmd = m.vp.Update(msg)
 			return m, cmd
+		}
+	case "G", "end":
+		// Jump to the latest output — only with an empty input, so typing a
+		// capital G (or using End for cursor movement) is never hijacked.
+		if m.ta.Value() == "" {
+			m.vp.GotoBottom()
+			return m, nil
 		}
 	case "pgup", "pgdown", "ctrl+u", "ctrl+d":
 		var cmd tea.Cmd

@@ -169,10 +169,21 @@ func (m *Model) deleteSelected() tea.Cmd {
 	}
 }
 
-// cancelRun aborts the in-flight prompt via the cancel API.
+// cancelRun aborts the in-flight prompt via the cancel API. Queued prompts
+// belong to the user, not the cancelled turn: hand them back to the input
+// for editing instead of firing them into a cancelled session.
 func (m *Model) cancelRun() tea.Cmd {
 	if !m.busy || m.sessionID == "" {
 		return nil
+	}
+	if len(m.queue) > 0 {
+		draft := strings.Join(m.queue, "\n")
+		if cur := m.ta.Value(); cur != "" {
+			draft = cur + "\n" + draft
+		}
+		m.ta.SetValue(draft)
+		m.ta.CursorEnd()
+		m.queue = nil
 	}
 	m.status = "cancelling"
 	m.refresh()
