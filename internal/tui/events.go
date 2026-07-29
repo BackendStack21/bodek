@@ -131,6 +131,16 @@ func (m *Model) handleEvent(ev client.Event) (tea.Model, tea.Cmd) {
 		m.winCtxTok = ev.ContextTokens
 		m.lastLatency = ev.Latency
 
+	case "usage":
+		// Per-iteration window fill from odek serve: keeps the header gauge
+		// live during multi-turn runs instead of waiting for "done". A zero
+		// value means the provider reported no usage — keep the last known
+		// fill rather than zeroing the gauge.
+		if ev.ContextTokens > 0 {
+			m.winCtxTok = ev.ContextTokens
+		}
+		stream = true
+
 	case "error":
 		if i := m.cur(); i >= 0 && m.msgs[i].content == "" {
 			m.msgs[i].content = "**Error:** " + ev.Message
