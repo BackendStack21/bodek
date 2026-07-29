@@ -170,6 +170,7 @@ func (m *Model) showHelp() {
 		{"⏎", "send · queue mid-turn · run a /command"},
 		{"^J", "newline in the input"},
 		{"@", "attach files"},
+		{"↑↓", "recall prompts · scroll"},
 		{"^R", "browse & resume sessions"},
 		{"^O", "switch model"},
 		{"^T", "toggle extended thinking"},

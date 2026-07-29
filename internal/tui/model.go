@@ -123,6 +123,11 @@ type Model struct {
 	ac       autocomplete  // @-reference completion state
 	queue    []string      // prompts typed mid-turn, sent when the turn ends
 
+	history   []string // submitted prompts, newest last (recalled with ↑)
+	histNav   bool     // true while ↑/↓ is walking the history
+	histIdx   int      // index into history while navigating
+	histDraft string   // input stashed while navigating history
+
 	model     string
 	sandbox   bool
 	sessionID string
@@ -376,16 +381,25 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.refresh()
 		return m, nil
 	case "up", "ctrl+p":
-		// Scroll the transcript when the cursor is already at the top line of
-		// the input; otherwise let the textarea move the cursor up.
+		// At the top input line: an empty input (or an active history walk)
+		// recalls older prompts; otherwise scroll the transcript. Below the
+		// top line the textarea moves the cursor up instead.
 		if m.ta.Line() == 0 {
+			if (m.histNav || m.ta.Value() == "") && m.historyPrev() {
+				return m, nil
+			}
 			var cmd tea.Cmd
 			m.vp, cmd = m.vp.Update(msg)
 			return m, cmd
 		}
 	case "down", "ctrl+n":
-		// Likewise, scroll down when the cursor is on the bottom input line.
+		// Likewise at the bottom line: walk forward through the history when
+		// navigating it, else scroll the transcript down.
 		if m.ta.Line() == m.ta.LineCount()-1 {
+			if m.histNav {
+				m.historyNext()
+				return m, nil
+			}
 			var cmd tea.Cmd
 			m.vp, cmd = m.vp.Update(msg)
 			return m, cmd

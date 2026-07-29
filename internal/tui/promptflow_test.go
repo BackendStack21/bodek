@@ -66,6 +66,99 @@ func TestQueuedPromptSendsOnDone(t *testing.T) {
 	}
 }
 
+// tallTranscript loads a scrollable assistant message into the transcript.
+// (A markdown list survives glamour as one rendered line per item; a plain
+// "x\n" repeat would collapse into a single wrapped paragraph.)
+func tallTranscript(m *Model) {
+	md := strings.Repeat("- item\n", 60)
+	m.msgs = append(m.msgs, message{role: roleAsst, content: md, rendered: m.render(md)})
+	m.refresh()
+	if m.vp.TotalLineCount() <= m.vp.Height {
+		panic("tallTranscript: content should exceed the viewport")
+	}
+}
+
+// TestHistoryRecall verifies ↑/↓ walks submitted prompts and restores the
+// stashed draft past the newest entry.
+func TestHistoryRecall(t *testing.T) {
+	m := newTestModel()
+	m.sendPrompt("first")
+	m.handleEvent(client.Event{Type: "done", Latency: 1})
+	m.sendPrompt("second")
+	m.handleEvent(client.Event{Type: "done", Latency: 1})
+	m.sendPrompt("second") // consecutive dup — must not double-record
+	if len(m.history) != 2 {
+		t.Fatalf("history = %v, want [first second]", m.history)
+	}
+
+	m.Update(key("up"))
+	if got := m.ta.Value(); got != "second" {
+		t.Errorf("first up = %q, want %q", got, "second")
+	}
+	m.Update(key("up"))
+	if got := m.ta.Value(); got != "first" {
+		t.Errorf("second up = %q, want %q", got, "first")
+	}
+	m.Update(key("up")) // at the oldest entry: consumed, no movement
+	if got := m.ta.Value(); got != "first" {
+		t.Errorf("up past oldest = %q, want %q", got, "first")
+	}
+	m.Update(key("down"))
+	if got := m.ta.Value(); got != "second" {
+		t.Errorf("down = %q, want %q", got, "second")
+	}
+	m.Update(key("down")) // past newest: restore the (empty) draft
+	if got := m.ta.Value(); got != "" {
+		t.Errorf("down past newest = %q, want empty draft", got)
+	}
+	if m.histNav {
+		t.Error("history navigation should end past the newest entry")
+	}
+}
+
+// TestHistoryScrollFallback verifies ↑ still scrolls the transcript when
+// there is no history to recall (empty input, tall transcript).
+func TestHistoryScrollFallback(t *testing.T) {
+	m := newTestModel()
+	tallTranscript(m)
+	bottom := m.vp.YOffset
+
+	m.Update(key("up"))
+	if m.vp.YOffset >= bottom {
+		t.Error("up with empty history should scroll the transcript")
+	}
+}
+
+// TestHistoryEdgeCases covers the history ring cap, the no-navigation guard,
+// and cancelRun's draft-prepend branch.
+func TestHistoryEdgeCases(t *testing.T) {
+	m := newTestModel()
+	for i := 0; i < maxHistory+10; i++ {
+		m.recordHistory("prompt")
+		m.recordHistory("unique")
+	}
+	if len(m.history) != maxHistory {
+		t.Errorf("history should cap at %d, got %d", maxHistory, len(m.history))
+	}
+
+	// historyNext outside navigation is a safe no-op.
+	m.ta.SetValue("keep")
+	m.historyNext()
+	if m.ta.Value() != "keep" {
+		t.Error("historyNext without navigation must not touch the input")
+	}
+
+	// Cancel with both a draft and a queue prepends the draft.
+	busyTurn(m)
+	m.sessionID = "s1"
+	m.ta.SetValue("draft")
+	m.queue = []string{"held"}
+	m.cancelRun()
+	if got := m.ta.Value(); got != "draft\nheld" {
+		t.Errorf("cancel restore = %q, want draft prepended to queue", got)
+	}
+}
+
 // TestCancelRestoresQueue verifies that esc hands queued prompts back to the
 // input instead of firing them into a cancelled session.
 func TestCancelRestoresQueue(t *testing.T) {

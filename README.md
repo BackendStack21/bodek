@@ -133,6 +133,7 @@ by `odek serve` from its usual chain — `~/.odek/config.json` → `./odek.json`
 | `^J` | Insert a newline in the input |
 | `^L` | Clear the conversation |
 | `Esc` | Cancel the running turn (queued prompts return to the input) |
+| `↑` / `↓` (empty input) | Recall previous prompts (prompt history) |
 | `↑` / `↓` / `PgUp` / `PgDn` | Scroll the transcript |
 | `wheel` (with `--mouse`) | Scroll the transcript |
 | `^C` | Quit |

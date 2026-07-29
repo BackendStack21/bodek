@@ -119,9 +119,10 @@ func (m *Model) submit() tea.Cmd {
 	return m.sendPrompt(text)
 }
 
-// sendPrompt appends the user/assistant pair to the transcript and
-// dispatches the prompt to the server.
+// sendPrompt appends the user/assistant pair to the transcript, records the
+// prompt in the history ring, and dispatches it to the server.
 func (m *Model) sendPrompt(text string) tea.Cmd {
+	m.recordHistory(text)
 	m.msgs = append(m.msgs, message{role: roleUser, content: text})
 	m.msgs = append(m.msgs, message{role: roleAsst, streaming: true})
 	m.curIdx = len(m.msgs) - 1
@@ -164,6 +165,61 @@ func (m *Model) sendQueued() tea.Cmd {
 	text := m.queue[0]
 	m.queue = m.queue[1:]
 	return m.sendPrompt(text)
+}
+
+// maxHistory bounds the in-memory prompt history ring.
+const maxHistory = 100
+
+// recordHistory appends a submitted prompt to the history ring (deduping
+// consecutive repeats) and resets any active history navigation.
+func (m *Model) recordHistory(text string) {
+	m.histNav = false
+	m.histDraft = ""
+	if n := len(m.history); n > 0 && m.history[n-1] == text {
+		return
+	}
+	m.history = append(m.history, text)
+	if len(m.history) > maxHistory {
+		m.history = m.history[len(m.history)-maxHistory:]
+	}
+}
+
+// historyPrev steps back through the prompt history, stashing the current
+// input on the first step. Returns false when there is nothing to recall, so
+// the caller can fall back to scrolling. At the oldest entry the key is
+// consumed without moving.
+func (m *Model) historyPrev() bool {
+	if len(m.history) == 0 {
+		return false
+	}
+	switch {
+	case !m.histNav:
+		m.histDraft = m.ta.Value()
+		m.histIdx = len(m.history) - 1
+		m.histNav = true
+	case m.histIdx > 0:
+		m.histIdx--
+	}
+	m.ta.SetValue(m.history[m.histIdx])
+	m.ta.CursorEnd()
+	return true
+}
+
+// historyNext steps forward through the history; past the newest entry it
+// restores the stashed draft and leaves navigation mode.
+func (m *Model) historyNext() {
+	if !m.histNav {
+		return
+	}
+	if m.histIdx < len(m.history)-1 {
+		m.histIdx++
+		m.ta.SetValue(m.history[m.histIdx])
+	} else {
+		m.histNav = false
+		m.ta.SetValue(m.histDraft)
+		m.histDraft = ""
+	}
+	m.ta.CursorEnd()
 }
 
 // ── @-reference autocomplete ────────────────────────────────────────────────
