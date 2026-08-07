@@ -186,7 +186,7 @@ func tallTranscript(m *Model) {
 	}
 }
 
-// TestHistoryRecall verifies ↑/↓ walks submitted prompts and restores the
+// TestHistoryRecall verifies ^P/^N walks submitted prompts and restores the
 // stashed draft past the newest entry.
 func TestHistoryRecall(t *testing.T) {
 	m := newTestModel()
@@ -199,33 +199,33 @@ func TestHistoryRecall(t *testing.T) {
 		t.Fatalf("history = %v, want [first second]", m.history)
 	}
 
-	m.Update(key("up"))
+	m.Update(key("ctrl+p"))
 	if got := m.ta.Value(); got != "second" {
-		t.Errorf("first up = %q, want %q", got, "second")
+		t.Errorf("first ^P = %q, want %q", got, "second")
 	}
-	m.Update(key("up"))
+	m.Update(key("ctrl+p"))
 	if got := m.ta.Value(); got != "first" {
-		t.Errorf("second up = %q, want %q", got, "first")
+		t.Errorf("second ^P = %q, want %q", got, "first")
 	}
-	m.Update(key("up")) // at the oldest entry: consumed, no movement
+	m.Update(key("ctrl+p")) // at the oldest entry: consumed, no movement
 	if got := m.ta.Value(); got != "first" {
-		t.Errorf("up past oldest = %q, want %q", got, "first")
+		t.Errorf("^P past oldest = %q, want %q", got, "first")
 	}
-	m.Update(key("down"))
+	m.Update(key("ctrl+n"))
 	if got := m.ta.Value(); got != "second" {
-		t.Errorf("down = %q, want %q", got, "second")
+		t.Errorf("^N = %q, want %q", got, "second")
 	}
-	m.Update(key("down")) // past newest: restore the (empty) draft
+	m.Update(key("ctrl+n")) // past newest: restore the (empty) draft
 	if got := m.ta.Value(); got != "" {
-		t.Errorf("down past newest = %q, want empty draft", got)
+		t.Errorf("^N past newest = %q, want empty draft", got)
 	}
 	if m.histNav {
 		t.Error("history navigation should end past the newest entry")
 	}
 }
 
-// TestHistoryScrollFallback verifies ↑ still scrolls the transcript when
-// there is no history to recall (empty input, tall transcript).
+// TestHistoryScrollFallback verifies ↑ scrolls the transcript with an empty
+// input (no history recorded yet, tall transcript).
 func TestHistoryScrollFallback(t *testing.T) {
 	m := newTestModel()
 	tallTranscript(m)
@@ -234,6 +234,30 @@ func TestHistoryScrollFallback(t *testing.T) {
 	m.Update(key("up"))
 	if m.vp.YOffset >= bottom {
 		t.Error("up with empty history should scroll the transcript")
+	}
+}
+
+// TestUpScrollsEvenWithHistory is the regression test for the scroll-vs-recall
+// conflict: bare ↑/↓ must scroll the transcript even when prompt history
+// exists — recall moved to the dedicated ^P/^N binding.
+func TestUpScrollsEvenWithHistory(t *testing.T) {
+	m := newTestModel()
+	m.recordHistory("earlier prompt")
+	tallTranscript(m)
+	bottom := m.vp.YOffset
+
+	m.Update(key("up"))
+	if m.vp.YOffset >= bottom {
+		t.Error("up should scroll the transcript even with prompt history present")
+	}
+	if m.histNav || m.ta.Value() != "" {
+		t.Errorf("up must not touch prompt history: histNav=%v input=%q", m.histNav, m.ta.Value())
+	}
+
+	// ^P still recalls.
+	m.Update(key("ctrl+p"))
+	if got := m.ta.Value(); got != "earlier prompt" {
+		t.Errorf("^P = %q, want %q", got, "earlier prompt")
 	}
 }
 

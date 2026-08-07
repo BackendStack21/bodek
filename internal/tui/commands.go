@@ -170,7 +170,9 @@ func (m *Model) showHelp() {
 		{"⏎", "send · queue mid-turn · run a /command"},
 		{"^J", "newline in the input"},
 		{"@", "attach files"},
-		{"↑↓", "recall prompts · scroll"},
+		{"↑↓", "scroll the transcript"},
+		{"Pg↑↓", "page the transcript"},
+		{"^P^N", "recall prompts"},
 		{"G", "jump to the latest output"},
 		{"^R", "browse & resume sessions"},
 		{"^O", "switch model"},
@@ -180,7 +182,7 @@ func (m *Model) showHelp() {
 		{"esc", "cancel the running turn"},
 		{"r", "retry a lost connection"},
 		{"^C", "quit"},
-		{"--mouse", "click tool rows to expand"},
+		{"--mouse", "wheel scroll · click tool rows"},
 	} {
 		b.WriteString("\n" + th.tipKey.Render(padRight(k[0], keyW)) + " " + th.tipText.Render(k[1]))
 	}

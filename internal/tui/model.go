@@ -124,7 +124,7 @@ type Model struct {
 	queue    []string      // prompts typed mid-turn, sent when the turn ends
 
 	history   []string // submitted prompts, newest last (recalled with ↑)
-	histNav   bool     // true while ↑/↓ is walking the history
+	histNav   bool     // true while ^P/^N is walking the history
 	histIdx   int      // index into history while navigating
 	histDraft string   // input stashed while navigating history
 
@@ -180,7 +180,7 @@ func New(cl *client.Client, opts Options) *Model {
 	th := newTheme()
 
 	ta := textarea.New()
-	ta.Placeholder = "Ask odek to build, fix, explore… (⏎ send · ^J newline)"
+	ta.Placeholder = "Ask odek to build, fix, explore… (⏎ send · ^J newline · ↑ scroll · ^P history)"
 	ta.Prompt = th.asstLabel.Render("┃ ")
 	ta.ShowLineNumbers = false
 	ta.CharLimit = 0
@@ -389,26 +389,28 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.convCount = -1 // re-render the cached transcript prefix too
 		m.refresh()
 		return m, nil
-	case "up", "ctrl+p":
-		// At the top input line: an empty input (or an active history walk)
-		// recalls older prompts; otherwise scroll the transcript. Below the
-		// top line the textarea moves the cursor up instead.
-		if m.ta.Line() == 0 {
-			if (m.histNav || m.ta.Value() == "") && m.historyPrev() {
-				return m, nil
-			}
+	case "ctrl+p":
+		// Prompt-history recall lives on this dedicated readline-style
+		// binding so bare ↑/↓ are free to scroll the transcript — the far
+		// more frequent intent while the input holds focus.
+		if m.ta.Line() == 0 && (m.histNav || m.ta.Value() == "") {
+			m.historyPrev()
+			return m, nil
+		}
+	case "ctrl+n":
+		if m.ta.Line() == m.ta.LineCount()-1 && m.histNav {
+			m.historyNext()
+			return m, nil
+		}
+	case "up", "down":
+		// At the input's edge lines, scroll the transcript; inside a
+		// multi-line input the textarea moves the cursor instead.
+		if msg.String() == "up" && m.ta.Line() == 0 {
 			var cmd tea.Cmd
 			m.vp, cmd = m.vp.Update(msg)
 			return m, cmd
 		}
-	case "down", "ctrl+n":
-		// Likewise at the bottom line: walk forward through the history when
-		// navigating it, else scroll the transcript down.
-		if m.ta.Line() == m.ta.LineCount()-1 {
-			if m.histNav {
-				m.historyNext()
-				return m, nil
-			}
+		if msg.String() == "down" && m.ta.Line() == m.ta.LineCount()-1 {
 			var cmd tea.Cmd
 			m.vp, cmd = m.vp.Update(msg)
 			return m, cmd

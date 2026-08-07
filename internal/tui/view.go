@@ -752,7 +752,9 @@ func (m *Model) footer() string {
 		if m.busy {
 			seg = th.scroll.Render("↓ new output") + th.footerSep.Render(" · ")
 		}
-		seg += th.footerKey.Render("G") + th.footer.Render(" latest") +
+		seg += th.footerKey.Render("PgUp") + th.footer.Render(" more") +
+			th.footerSep.Render(" · ") +
+			th.footerKey.Render("G") + th.footer.Render(" latest") +
 			th.footerSep.Render(" · ") +
 			th.scroll.Render(fmt.Sprintf("↕ %d%%", int(m.vp.ScrollPercent()*100)))
 		segs = append(segs, seg)
