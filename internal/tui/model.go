@@ -415,9 +415,14 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.vp, cmd = m.vp.Update(msg)
 			return m, cmd
 		}
-	case "G", "end":
-		// Jump to the latest output — only with an empty input, so typing a
-		// capital G (or using End for cursor movement) is never hijacked.
+	case "ctrl+g":
+		// Jump to the latest output. A ctrl binding, so typing a capital G
+		// (even as the first character of a prompt) is never hijacked.
+		m.vp.GotoBottom()
+		return m, nil
+	case "end":
+		// End doubles as jump-to-latest — only with an empty input, so its
+		// cursor-movement meaning inside a draft keeps working.
 		if m.ta.Value() == "" {
 			m.vp.GotoBottom()
 			return m, nil

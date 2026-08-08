@@ -173,7 +173,7 @@ func (m *Model) showHelp() {
 		{"↑↓", "scroll the transcript"},
 		{"Pg↑↓", "page the transcript"},
 		{"^P^N", "recall prompts"},
-		{"G", "jump to the latest output"},
+		{"^G", "jump to the latest output"},
 		{"^R", "browse & resume sessions"},
 		{"^O", "switch model"},
 		{"^T", "toggle extended thinking"},
