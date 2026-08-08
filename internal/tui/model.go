@@ -150,10 +150,11 @@ type Model struct {
 	winCtxTok   int // live context-window fill: last turn's contextTokens
 	lastLatency float64
 
-	maxContext   int         // active model's context window (0 = unknown → gauge hidden)
-	turnStats    []turnStats // per-turn telemetry retained for the /stats dashboard
-	toolTotal    int         // cumulative tool calls this session
-	sessionStart time.Time   // first-prompt timestamp, for session wall-clock
+	limits       client.Limits // server budget limits + token prices (zero prices → cost hidden)
+	maxContext   int           // active model's context window (0 = unknown → gauge hidden)
+	turnStats    []turnStats   // per-turn telemetry retained for the /stats dashboard
+	toolTotal    int           // cumulative tool calls this session
+	sessionStart time.Time     // first-prompt timestamp, for session wall-clock
 
 	status    string
 	notices   []string
@@ -215,7 +216,7 @@ func New(cl *client.Client, opts Options) *Model {
 }
 
 func (m *Model) Init() tea.Cmd {
-	return tea.Batch(textarea.Blink, m.sp.Tick, listen(m.events), m.fetchModels(), m.checkUpdate())
+	return tea.Batch(textarea.Blink, m.sp.Tick, listen(m.events), m.fetchModels(), m.fetchLimits(), m.checkUpdate())
 }
 
 func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -269,6 +270,10 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case modelsMsg:
 		m.handleModelsMsg(msg)
 		m.refresh()
+		return m, nil
+
+	case limitsMsg:
+		m.handleLimitsMsg(msg)
 		return m, nil
 
 	case sessionDetailMsg:
@@ -483,6 +488,17 @@ func (m *Model) fetchModels() tea.Cmd {
 	return func() tea.Msg {
 		items, err := cl.Models()
 		return modelsMsg{items: items, err: err}
+	}
+}
+
+// fetchLimits loads the server's budget limits and token prices at startup so
+// turn footers and /stats can render cost. Prices resolve per active model at
+// render time, so model switches need no refetch.
+func (m *Model) fetchLimits() tea.Cmd {
+	cl := m.cl
+	return func() tea.Msg {
+		resp, err := cl.Limits()
+		return limitsMsg{resp: resp, err: err}
 	}
 }
 

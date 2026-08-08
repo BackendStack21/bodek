@@ -157,7 +157,7 @@ command and press `⏎`.
 |---------|--------|
 | `/help` | Show available commands and key bindings |
 | `/clear` | Clear the conversation |
-| `/stats` | Show session metrics & context-window gauge |
+| `/stats` | Show session metrics, cost & context-window gauge |
 | `/sessions` | Browse & resume saved sessions |
 | `/model [name]` | Switch model (opens a picker with no argument) |
 | `/thinking [on\|off]` | Toggle extended thinking for the next turn |
@@ -215,6 +215,10 @@ When the agent requests approval for a dangerous operation, answer inline:
 - **Sandbox aware** — the header shows `🛡 sandboxed` or `⚠ host access`; pass
   `--sandbox` to run tool calls inside odek's Docker isolation.
 - **Telemetry** — session token totals and last-turn latency in the chrome.
+- **Cost tracking** — when odek has token prices configured (limits), the
+  header shows the running session spend, each turn footer its estimated
+  cost, and `/stats` rolls up the session (with the `max_cost_usd` cap when
+  set); hidden entirely otherwise.
 - **Fluent by default** — gradient wordmark and hairline, smooth braille
   spinner, smart autoscroll that never yanks you while you read history, and a
   scroll-position indicator.

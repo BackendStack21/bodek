@@ -61,6 +61,11 @@ func (m *Model) header() string {
 		left += th.headerMeta.Render(" · odek ") + th.headerKey.Render(m.odekVersion)
 	}
 	left += th.headerMeta.Render("  ·  ") + sandbox
+	// Session spend rides the left cluster; hidden until odek reports both
+	// token prices (never show a guessed $0).
+	if inPrice, outPrice := m.limits.ResolvePrices(m.model); inPrice > 0 && outPrice > 0 {
+		left += th.headerMeta.Render("  ·  ") + th.headerKey.Render(formatUSD(costUSD(m.sessCtxTok, m.sessOutTok, inPrice, outPrice)))
+	}
 
 	status := m.statusBadge()
 	tokens := th.headerMeta.Render(fmt.Sprintf("∑ ⌂ %s · ⎇ %s",
@@ -442,6 +447,11 @@ func (m *Model) statLine(ts turnStats) string {
 		}
 		add(tools, 1)
 	}
+	// turn cost — only when odek has token prices configured (both must be
+	// non-zero, mirroring odek's own cost-enforcement gate)
+	if inPrice, outPrice := m.limits.ResolvePrices(m.model); inPrice > 0 && outPrice > 0 {
+		add(th.statCtx.Render("$")+th.statLine.Render(" "+formatUSD(costUSD(ts.ctxTok, ts.outTok, inPrice, outPrice))), 2)
+	}
 	// thinking marker — no value
 	if ts.thought {
 		add(th.statThink.Render("✳"), 2)
@@ -795,6 +805,29 @@ func human(n int) string {
 	default:
 		return fmt.Sprintf("%d", n)
 	}
+}
+
+// costUSD estimates the dollar cost of inTok input and outTok output tokens
+// at per-million prices.
+func costUSD(inTok, outTok int, inPrice, outPrice float64) float64 {
+	return (float64(inTok)*inPrice + float64(outTok)*outPrice) / 1e6
+}
+
+// formatUSD renders a dollar amount compactly: cents at $1+, up to four
+// decimals below (trailing zeros trimmed, two-decimal floor) so small
+// per-turn costs stay visible instead of rounding to $0.00.
+func formatUSD(v float64) string {
+	if v >= 1 {
+		return fmt.Sprintf("$%.2f", v)
+	}
+	if v <= 0 {
+		return "$0"
+	}
+	s := strings.TrimRight(fmt.Sprintf("%.4f", v), "0")
+	if i := strings.IndexByte(s, '.'); len(s)-i < 3 {
+		s += strings.Repeat("0", 3-(len(s)-i))
+	}
+	return "$" + s
 }
 
 // humanCtx formats a context-window count to whole-k with no trailing ".0", so

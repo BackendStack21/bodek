@@ -103,6 +103,58 @@ func (c *Client) Models() ([]ModelInfo, error) {
 	return out, nil
 }
 
+// ModelPrice holds per-model token prices (USD per million tokens). A zero
+// field falls back to the flat price in Limits.
+type ModelPrice struct {
+	InputCostPerMillionUSD  float64 `json:"input_cost_per_million_usd,omitempty"`
+	OutputCostPerMillionUSD float64 `json:"output_cost_per_million_usd,omitempty"`
+}
+
+// Limits mirrors odek's budget.Limits as served by /api/limits. odek never
+// hard-codes provider prices, so a zero price means "not configured" — cost
+// display must stay hidden rather than report $0.
+type Limits struct {
+	MaxRuntimeSeconds       int64                 `json:"max_runtime_seconds,omitempty"`
+	MaxToolCalls            int64                 `json:"max_tool_calls,omitempty"`
+	MaxInputTokens          int64                 `json:"max_input_tokens,omitempty"`
+	MaxOutputTokens         int64                 `json:"max_output_tokens,omitempty"`
+	MaxCostUSD              float64               `json:"max_cost_usd,omitempty"`
+	InputCostPerMillionUSD  float64               `json:"input_cost_per_million_usd,omitempty"`
+	OutputCostPerMillionUSD float64               `json:"output_cost_per_million_usd,omitempty"`
+	ModelPrices             map[string]ModelPrice `json:"model_prices,omitempty"`
+}
+
+// ResolvePrices returns the effective per-million token prices for a model:
+// exact per-model overrides win per field over the flat pair, mirroring
+// odek's budget.Limits.ResolvePrices.
+func (l Limits) ResolvePrices(model string) (inputPerMillion, outputPerMillion float64) {
+	inputPerMillion, outputPerMillion = l.InputCostPerMillionUSD, l.OutputCostPerMillionUSD
+	if p, ok := l.ModelPrices[model]; ok {
+		if p.InputCostPerMillionUSD > 0 {
+			inputPerMillion = p.InputCostPerMillionUSD
+		}
+		if p.OutputCostPerMillionUSD > 0 {
+			outputPerMillion = p.OutputCostPerMillionUSD
+		}
+	}
+	return inputPerMillion, outputPerMillion
+}
+
+// LimitsResponse is the /api/limits payload.
+type LimitsResponse struct {
+	Model  string `json:"model"`
+	Limits Limits `json:"limits"`
+}
+
+// Limits fetches the server's budget limits and configured token prices.
+func (c *Client) Limits() (LimitsResponse, error) {
+	var out LimitsResponse
+	if err := c.getJSON(c.baseURL+"/api/limits", "", &out); err != nil {
+		return LimitsResponse{}, err
+	}
+	return out, nil
+}
+
 // Cancel aborts the in-flight prompt for a session (requires its auth token).
 func (c *Client) Cancel(sessionID, token string) error {
 	u := c.baseURL + "/api/cancel?session_id=" + url.QueryEscape(sessionID)

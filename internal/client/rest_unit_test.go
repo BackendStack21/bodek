@@ -20,6 +20,9 @@ func TestRESTRequestErrors(t *testing.T) {
 	if _, err := c.Models(); err == nil {
 		t.Error("Models should error")
 	}
+	if _, err := c.Limits(); err == nil {
+		t.Error("Limits should error")
+	}
 	if _, err := c.Resources("q", 5); err == nil {
 		t.Error("Resources should error")
 	}
@@ -100,6 +103,69 @@ func TestSessionDetailFallbackToken(t *testing.T) {
 	}
 	if tr.Name != "shell" || tr.ToolCallID != "c1" || tr.Content != "out" {
 		t.Errorf("tool result = %+v", tr)
+	}
+}
+
+func TestLimitsDecode(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/limits" {
+			t.Errorf("path = %q, want /api/limits", r.URL.Path)
+		}
+		w.Write([]byte(`{"model":"deepseek-chat","limits":{` +
+			`"max_cost_usd":5,` +
+			`"input_cost_per_million_usd":0.27,` +
+			`"output_cost_per_million_usd":1.10,` +
+			`"model_prices":{"other-model":{"input_cost_per_million_usd":0.5}}` +
+			`}}`))
+	}))
+	defer srv.Close()
+	c := &Client{baseURL: srv.URL, http: &http.Client{Timeout: time.Second}}
+	resp, err := c.Limits()
+	if err != nil {
+		t.Fatalf("Limits: %v", err)
+	}
+	if resp.Model != "deepseek-chat" || resp.Limits.MaxCostUSD != 5 {
+		t.Errorf("response = %+v", resp)
+	}
+	// Flat prices apply to models without an override.
+	in, out := resp.Limits.ResolvePrices("deepseek-chat")
+	if in != 0.27 || out != 1.10 {
+		t.Errorf("flat prices = %v/%v", in, out)
+	}
+	// Per-model overrides win per field; a missing field falls back to flat.
+	in, out = resp.Limits.ResolvePrices("other-model")
+	if in != 0.5 || out != 1.10 {
+		t.Errorf("override prices = %v/%v", in, out)
+	}
+}
+
+func TestResolvePricesOverrideBranches(t *testing.T) {
+	l := Limits{
+		InputCostPerMillionUSD:  1,
+		OutputCostPerMillionUSD: 2,
+		ModelPrices: map[string]ModelPrice{
+			"out-only": {OutputCostPerMillionUSD: 9},
+			"both":     {InputCostPerMillionUSD: 7, OutputCostPerMillionUSD: 9},
+		},
+	}
+	// Output-only override keeps the flat input price.
+	if in, out := l.ResolvePrices("out-only"); in != 1 || out != 9 {
+		t.Errorf("out-only = %v/%v, want 1/9", in, out)
+	}
+	// Both fields overridden.
+	if in, out := l.ResolvePrices("both"); in != 7 || out != 9 {
+		t.Errorf("both = %v/%v, want 7/9", in, out)
+	}
+}
+
+func TestLimitsNon200(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer srv.Close()
+	c := &Client{baseURL: srv.URL, http: &http.Client{Timeout: time.Second}}
+	if _, err := c.Limits(); err == nil {
+		t.Error("Limits should error on 500")
 	}
 }
 

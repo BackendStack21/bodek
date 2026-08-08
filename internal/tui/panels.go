@@ -32,6 +32,11 @@ type modelsMsg struct {
 	err   error
 }
 
+type limitsMsg struct {
+	resp client.LimitsResponse
+	err  error
+}
+
 type sessionDetailMsg struct {
 	sess  client.Session
 	token string
@@ -223,6 +228,16 @@ func (m *Model) handleModelsMsg(msg modelsMsg) {
 	} else {
 		m.panelMsg = ""
 	}
+}
+
+// handleLimitsMsg stores the server's budget limits and token prices. Errors
+// are swallowed: odek never hard-codes prices, so when they are unknown the
+// cost display simply stays hidden rather than reporting $0.
+func (m *Model) handleLimitsMsg(msg limitsMsg) {
+	if msg.err != nil {
+		return
+	}
+	m.limits = msg.resp.Limits
 }
 
 func (m *Model) handleSessionDetail(msg sessionDetailMsg) {
