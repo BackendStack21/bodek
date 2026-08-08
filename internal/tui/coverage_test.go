@@ -38,28 +38,86 @@ func TestStatusBadgeStates(t *testing.T) {
 	m := wired(t)
 	m.runStart = time.Now()
 
+	// Busy progress rides the status line above the input; the header badge
+	// segment stays empty while a turn runs.
 	m.busy, m.lastTool, m.lastArg = true, "shell", "go test"
-	if !strings.Contains(plain(m.statusBadge()), "tests") {
-		t.Error("tool status badge missing")
+	if !strings.Contains(plain(m.statusLine()), "tests") {
+		t.Error("tool status line missing")
+	}
+	if plain(m.statusBadge()) != "" {
+		t.Error("header badge must stay empty while busy")
 	}
 	m.lastTool = ""
 	m.status = "responding"
-	if !strings.Contains(plain(m.statusBadge()), "composing") {
-		t.Error("responding badge missing")
+	if !strings.Contains(plain(m.statusLine()), "composing") {
+		t.Error("responding status line missing")
 	}
 	m.status = "thinking"
-	if plain(m.statusBadge()) == "" {
-		t.Error("thinking badge empty")
+	if plain(m.statusLine()) == "" {
+		t.Error("thinking status line empty")
 	}
-	m.busy = false
+
+	// Approval arrives mid-turn: the panel owns the input area, so the badge
+	// announces it and the status line yields.
 	m.approval = &client.Event{Type: "approval_request"}
 	if !strings.Contains(plain(m.statusBadge()), "approval") {
 		t.Error("approval badge missing")
 	}
+	if m.statusLine() != "" {
+		t.Error("status line must stay hidden behind the approval panel")
+	}
 	m.approval = nil
+	m.busy = false
 	m.disconn = true
 	if !strings.Contains(plain(m.statusBadge()), "disconnected") {
 		t.Error("disconnected badge missing")
+	}
+}
+
+// The busy indicator renders on its own row between the transcript and the
+// input box — right below the last user message — and releases the row when
+// the turn ends.
+func TestStatusLinePlacement(t *testing.T) {
+	m := newTestModel()
+	m.msgs = append(m.msgs,
+		message{role: roleUser, content: "unique-marker prompt"},
+		message{role: roleAsst, streaming: true},
+	)
+	m.curIdx = 1
+	m.busy = true
+	m.status = "thinking"
+	m.runStart = time.Now()
+	m.refresh() // rebuild the viewport, as sendPrompt would
+
+	view := plain(m.View())
+	marker := strings.Index(view, "unique-marker prompt")
+	thinking := strings.Index(view, "🧠 thinking")
+	if thinking < 0 {
+		t.Fatal("busy view missing the thinking status line")
+	}
+	if marker < 0 || thinking < marker {
+		t.Error("status line must render below the last user message")
+	}
+	if strings.Contains(plain(m.header()), "thinking") {
+		t.Error("header must not carry the busy indicator anymore")
+	}
+
+	// The row claims exactly one line of layout; idle releases it, and a
+	// pending approval (which owns the input area) never shows it.
+	if got, want := m.inputAreaHeight(), inputHeight+1; got != want {
+		t.Errorf("busy inputAreaHeight = %d, want %d", got, want)
+	}
+	m.busy = false
+	if m.statusLine() != "" {
+		t.Error("idle model must not render a status line")
+	}
+	if got := m.inputAreaHeight(); got != inputHeight {
+		t.Errorf("idle inputAreaHeight = %d, want %d", got, inputHeight)
+	}
+	m.busy = true
+	m.approval = &client.Event{Type: "approval_request"}
+	if m.statusLineVisible() {
+		t.Error("status line must stay hidden while an approval is pending")
 	}
 }
 

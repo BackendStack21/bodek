@@ -76,7 +76,8 @@ func TestRenderStreamingTurn(t *testing.T) {
 
 // TestEmptyStreamingTurnHidden verifies that while a streamed assistant turn
 // has no content yet, the transcript shows neither a "thinking…" placeholder
-// nor a bare odek block — the top-bar spinner is the only progress signal.
+// nor a bare odek block — the status line above the input is the only
+// progress signal.
 // The turn block appears atomically once the first real content arrives.
 func TestEmptyStreamingTurnHidden(t *testing.T) {
 	m := newTestModel()

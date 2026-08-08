@@ -130,6 +130,7 @@ func (m *Model) handleEvent(ev client.Event) (tea.Model, tea.Cmd) {
 		m.sessOutTok = ev.SessionOutputTokens
 		m.winCtxTok = ev.ContextTokens
 		m.lastLatency = ev.Latency
+		m.relayout() // the busy status line releases its row
 
 	case "usage":
 		// Per-iteration window fill from odek serve: keeps the header gauge
@@ -153,6 +154,7 @@ func (m *Model) handleEvent(ev client.Event) (tea.Model, tea.Cmd) {
 		m.lastTool = ""
 		m.lastArg = ""
 		m.status = "error"
+		m.relayout() // the busy status line releases its row
 
 	case "approval_request":
 		e := ev
@@ -183,6 +185,7 @@ func (m *Model) handleEvent(ev client.Event) (tea.Model, tea.Cmd) {
 		m.disconn = true
 		m.busy = false
 		m.renderPending = false
+		m.relayout() // the busy status line is gone with the socket
 		if cmd := m.scheduleReconnect(0); cmd != nil {
 			m.status = "reconnecting…"
 			m.addNote("connection lost — reconnecting…")

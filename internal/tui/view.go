@@ -9,8 +9,8 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
-// View composes the full screen: header, scrollable transcript, input (or
-// approval prompt), and footer.
+// View composes the full screen: header, scrollable transcript, the busy
+// status line (while a turn runs), input (or approval prompt), and footer.
 func (m *Model) View() string {
 	if !m.ready {
 		return "\n  starting bodek…"
@@ -19,12 +19,11 @@ func (m *Model) View() string {
 	if m.panel != panelNone {
 		body = m.renderPanel(m.width, m.vp.Height)
 	}
-	parts := []string{
-		m.header(),
-		body,
-		m.inputArea(),
-		m.footer(),
+	parts := []string{m.header(), body}
+	if sl := m.statusLine(); sl != "" {
+		parts = append(parts, sl)
 	}
+	parts = append(parts, m.inputArea(), m.footer())
 	return strings.Join(parts, "\n")
 }
 
@@ -72,10 +71,14 @@ func (m *Model) header() string {
 		human(m.sessCtxTok), human(m.sessOutTok)))
 	sep := th.headerMeta.Render("  ·  ")
 	buildRight := func(gauge string) string {
+		right := tokens
 		if gauge != "" {
-			return gauge + sep + tokens + "   " + status
+			right = gauge + sep + right
 		}
-		return tokens + "   " + status
+		if status != "" { // empty while busy — progress rides the status line
+			right += "   " + status
+		}
+		return right
 	}
 
 	// Shed gauge detail under width pressure: full gauge → compact glyph+percent
@@ -173,6 +176,9 @@ func (m *Model) rule() string {
 	return m.gradRule
 }
 
+// statusBadge is the header's session-state segment. In-flight progress no
+// longer lives here — it renders on the status line above the input, next to
+// the user's last message — so a running turn leaves the segment empty.
 func (m *Model) statusBadge() string {
 	th := m.th
 	switch {
@@ -184,24 +190,46 @@ func (m *Model) statusBadge() string {
 	case m.approval != nil:
 		return th.statusBusy.Render("⚠ approval required")
 	case m.busy:
-		var label string
-		switch {
-		case m.lastTool != "":
-			// Context-aware message derived from the running tool + its args.
-			label = toolProgress(m.lastTool, m.lastArg)
-		case m.status == "responding":
-			label = "💬 composing the reply"
-		default: // thinking / pre-tool
-			label = "🧠 thinking"
-		}
-		el := ""
-		if e := m.elapsed(); e != "" {
-			el = th.headerMeta.Render(" · " + e)
-		}
-		return th.spinner.Render(m.sp.View()) + " " + th.statusBusy.Render(label) + el
+		return ""
 	default:
 		return th.statusReady.Render("● " + m.status)
 	}
+}
+
+// statusLine renders the in-flight progress indicator — spinner, a
+// context-aware label for the running tool (or the thinking/composing phase),
+// and the elapsed timer — on its own row directly above the input box. That
+// is right below the user's last message, where the eyes already are after
+// submitting a prompt; the header's top-right badge was too far away. Returns
+// "" when the row is hidden so it costs no height.
+func (m *Model) statusLine() string {
+	if !m.statusLineVisible() {
+		return ""
+	}
+	th := m.th
+	var label string
+	switch {
+	case m.lastTool != "":
+		// Context-aware message derived from the running tool + its args.
+		label = toolProgress(m.lastTool, m.lastArg)
+	case m.status == "responding":
+		label = "💬 composing the reply"
+	default: // thinking / pre-tool
+		label = "🧠 thinking"
+	}
+	el := ""
+	if e := m.elapsed(); e != "" {
+		el = th.headerMeta.Render(" · " + e)
+	}
+	return th.spinner.Render(m.sp.View()) + " " + th.statusBusy.Render(label) + el
+}
+
+// statusLineVisible reports whether the status line occupies a row, keeping
+// View and inputAreaHeight in agreement. While an approval panel owns the
+// input area or the socket is down, the header badge carries the state and
+// the row stays hidden.
+func (m *Model) statusLineVisible() bool {
+	return m.busy && m.approval == nil && !m.disconn
 }
 
 // ── transcript ───────────────────────────────────────────────────────────

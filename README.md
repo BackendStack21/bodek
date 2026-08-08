@@ -203,9 +203,10 @@ When the agent requests approval for a dangerous operation, answer inline:
 - **Live reasoning** — the model's pre-tool thinking streams in dimmed text,
   with a running elapsed timer and cycling status while it works.
 - **Command palette (`/`)** and **file attachments (`@`)** — live, navigable popups.
-- **Context-aware progress** — while the agent works, the status badge shows
-  what it's actually doing (`🧪 running tests`, `📖 reading client.go`,
-  `🚀 pushing`) with a live elapsed timer.
+- **Context-aware progress** — while the agent works, a status line just
+  above the input (right below your last message) shows what it's actually
+  doing (`🧪 running tests`, `📖 reading client.go`, `🚀 pushing`) with a live
+  elapsed timer.
 - **Session browser** (`^R`) — resume, replay, or delete past conversations.
 - **Auto-reconnect** — if the socket drops, bodek redials with backoff
   (500ms → 8s, 5 attempts) and the session resumes transparently on your next
