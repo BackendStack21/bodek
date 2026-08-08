@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -266,6 +267,17 @@ func (m *Model) showStats() {
 			{"✳", th.statThink, "thinking", th.statsValue.Render(fmt.Sprintf("%d of %d turns", thinkN, len(m.turnStats)))},
 			{"◷", th.statsLabel, "active", th.statsValue.Render(formatDuration(time.Since(m.sessionStart)))},
 			{"⬡", th.statThink, "model", th.statsValue.Render(modelID) + th.statsDim.Render(" · think "+think)},
+		}
+
+		// Session cost from cumulative session tokens — correct across
+		// reconnect/resume where turnStats would be incomplete. Hidden unless
+		// odek has both token prices configured.
+		if inPrice, outPrice := m.limits.ResolvePrices(m.model); inPrice > 0 && outPrice > 0 {
+			costVal := th.statsValue.Render(formatUSD(costUSD(m.sessCtxTok, m.sessOutTok, inPrice, outPrice)))
+			if m.limits.MaxCostUSD > 0 {
+				costVal += th.statsDim.Render("  · cap " + formatUSD(m.limits.MaxCostUSD))
+			}
+			rows = slices.Insert(rows, 2, row{"$", th.statCtx, "cost", costVal})
 		}
 	}
 

@@ -17,7 +17,13 @@ import (
 // message in place for stat-line assertions.
 func driveTurn(t *testing.T, done client.Event) *Model {
 	t.Helper()
-	m := newTestModel()
+	return driveTurnWith(t, newTestModel(), done)
+}
+
+// driveTurnWith is driveTurn on a caller-provided model, so tests can preset
+// state (e.g. token prices) before the turn runs.
+func driveTurnWith(t *testing.T, m *Model, done client.Event) *Model {
+	t.Helper()
 	m.msgs = append(m.msgs,
 		message{role: roleUser, content: "do it"},
 		message{role: roleAsst, streaming: true},
