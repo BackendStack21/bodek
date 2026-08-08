@@ -134,6 +134,7 @@ func (m *Model) sendPrompt(text string) tea.Cmd {
 	if m.sessionStart.IsZero() {
 		m.sessionStart = m.runStart
 	}
+	m.relayout() // the busy status line claims a row above the input
 	m.refresh()
 
 	thinking := ""

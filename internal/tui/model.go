@@ -246,6 +246,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.busy = false
 		m.status = "error"
 		m.addNote("error: " + msg.err.Error())
+		m.relayout() // the busy status line releases its row
 		m.refresh()
 		return m, m.sendQueued()
 
@@ -562,8 +563,9 @@ func (m *Model) relayout() {
 	m.vp.Height = vpH
 }
 
-// inputAreaHeight is the number of rows the input area renders, so the
-// viewport shrinks by exactly the right amount and the footer never moves.
+// inputAreaHeight is the number of rows below the transcript viewport — the
+// input area plus the busy status line when it shows — so the viewport
+// shrinks by exactly the right amount and the footer never moves.
 func (m *Model) inputAreaHeight() int {
 	if m.approval != nil {
 		rows := 3 // head + command + keys
@@ -573,6 +575,9 @@ func (m *Model) inputAreaHeight() int {
 		return rows + 2 // panel border
 	}
 	h := inputHeight
+	if m.statusLineVisible() {
+		h++ // busy status line above the input box
+	}
 	if m.ac.open {
 		h += m.ac.height()
 	}
