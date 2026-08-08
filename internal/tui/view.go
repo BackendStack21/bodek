@@ -754,7 +754,7 @@ func (m *Model) footer() string {
 		}
 		seg += th.footerKey.Render("PgUp") + th.footer.Render(" more") +
 			th.footerSep.Render(" · ") +
-			th.footerKey.Render("G") + th.footer.Render(" latest") +
+			th.footerKey.Render("^G") + th.footer.Render(" latest") +
 			th.footerSep.Render(" · ") +
 			th.scroll.Render(fmt.Sprintf("↕ %d%%", int(m.vp.ScrollPercent()*100)))
 		segs = append(segs, seg)

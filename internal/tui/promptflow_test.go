@@ -20,8 +20,8 @@ func busyTurn(m *Model) {
 	m.busy = true
 }
 
-// TestJumpToLatest verifies G/End jump to the bottom with an empty input and
-// never hijack typing.
+// TestJumpToLatest verifies ^G/End jump to the bottom and that a capital G
+// always types — even as the first character of a prompt.
 func TestJumpToLatest(t *testing.T) {
 	m := newTestModel()
 	m.ta.Focus()
@@ -32,31 +32,42 @@ func TestJumpToLatest(t *testing.T) {
 	}
 
 	// Footer advertises the jump while off-bottom.
-	if foot := plain(m.footer()); !strings.Contains(foot, "G") || !strings.Contains(foot, "latest") {
+	if foot := plain(m.footer()); !strings.Contains(foot, "^G") || !strings.Contains(foot, "latest") {
 		t.Errorf("footer missing jump hint: %q", foot)
 	}
 
+	// A capital G types into the empty input instead of jumping.
 	m.Update(key("G"))
-	if !m.vp.AtBottom() {
-		t.Error("G should jump to the latest output")
+	if m.vp.AtBottom() {
+		t.Error("G with an empty input must not jump")
+	}
+	if m.ta.Value() != "G" {
+		t.Errorf("G with an empty input should type, got %q", m.ta.Value())
 	}
 
-	// End behaves the same (real terminals send KeyEnd, not runes).
+	// ^G jumps even with a draft (no textarea conflict).
+	m.Update(tea.KeyMsg{Type: tea.KeyCtrlG})
+	if !m.vp.AtBottom() {
+		t.Error("^G should jump to the latest output")
+	}
+	if m.ta.Value() != "G" {
+		t.Errorf("^G must not disturb the draft, got %q", m.ta.Value())
+	}
+
+	// End jumps only with an empty input (real terminals send KeyEnd, not runes).
+	m.ta.SetValue("")
 	m.vp.GotoTop()
 	m.Update(tea.KeyMsg{Type: tea.KeyEnd})
 	if !m.vp.AtBottom() {
 		t.Error("End should jump to the latest output")
 	}
 
-	// With a draft, G types instead of jumping.
+	// With a draft, End keeps its cursor-movement meaning.
 	m.vp.GotoTop()
 	m.ta.SetValue("draft")
-	m.Update(key("G"))
+	m.Update(tea.KeyMsg{Type: tea.KeyEnd})
 	if m.vp.AtBottom() {
-		t.Error("G with a draft must not jump")
-	}
-	if m.ta.Value() != "draftG" {
-		t.Errorf("G with a draft should type, got %q", m.ta.Value())
+		t.Error("End with a draft must not jump")
 	}
 }
 
