@@ -112,6 +112,7 @@ func (m *Model) submit() tea.Cmd {
 		m.ta.Reset()
 		m.closeAC()
 		m.refresh()
+		m.vp.GotoBottom() // Enter means "show me the latest", even mid-turn
 		return nil
 	}
 	m.ta.Reset()
@@ -136,6 +137,10 @@ func (m *Model) sendPrompt(text string) tea.Cmd {
 	}
 	m.relayout() // the busy status line claims a row above the input
 	m.refresh()
+	// Submitting is an explicit "show me the latest" signal — jump to the
+	// bottom even when the reader was up in the scrollback (refresh alone
+	// only sticks when already at the bottom).
+	m.vp.GotoBottom()
 
 	thinking := ""
 	if m.thinkOn {

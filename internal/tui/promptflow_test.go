@@ -185,6 +185,34 @@ func TestQueuedPromptSendsOnDone(t *testing.T) {
 	}
 }
 
+// TestSubmitJumpsToBottom verifies ⏎ always returns the viewport to the
+// latest output — both for a fresh prompt and when queueing mid-turn — even
+// when the reader was up in the scrollback.
+func TestSubmitJumpsToBottom(t *testing.T) {
+	m := newTestModel()
+	m.ta.Focus()
+	tallTranscript(m)
+
+	// Queueing mid-turn: busy model, scrolled up, ⏎.
+	busyTurn(m)
+	m.vp.GotoTop()
+	m.ta.SetValue("follow up")
+	m.submit()
+	if !m.vp.AtBottom() {
+		t.Error("queueing a prompt should jump to the latest output")
+	}
+
+	// Fresh submit once the turn ended (the returned send cmd is deliberately
+	// not executed — newTestModel has no client).
+	m.busy = false
+	m.vp.GotoTop()
+	m.ta.SetValue("next prompt")
+	m.submit()
+	if !m.vp.AtBottom() {
+		t.Error("submitting a prompt should jump to the latest output")
+	}
+}
+
 // tallTranscript loads a scrollable assistant message into the transcript.
 // (A markdown list survives glamour as one rendered line per item; a plain
 // "x\n" repeat would collapse into a single wrapped paragraph.)
