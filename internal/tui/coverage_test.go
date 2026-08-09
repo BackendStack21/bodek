@@ -244,16 +244,35 @@ func TestSubmitGuards(t *testing.T) {
 	}
 	m.disconn = true
 	m.ta.SetValue("hi")
-	cmd := m.submit()
-	if cmd == nil {
-		t.Error("submit while disconnected should arm the notice expiry")
+	if cmd := m.submit(); cmd != nil {
+		t.Error("submit while disconnected should be nil (the warning is sticky, no expiry to arm)")
 	}
 	if m.ta.Value() != "hi" {
 		t.Error("submit while disconnected must keep the draft")
 	}
-	exec(cmd) // fires the notice-expiry tick safely
 	if len(m.notices) == 0 {
 		t.Error("submit while disconnected should explain why nothing was sent")
+	}
+}
+
+// TestWrapText covers the approval panel's hard-wrap helper: degenerate
+// widths, empty and blank lines, exact fits, and unbreakable words.
+func TestWrapText(t *testing.T) {
+	cases := []struct {
+		in   string
+		n    int
+		want []string
+	}{
+		{"", 5, []string{""}},                             // empty input still claims its row
+		{"hello", 5, []string{"hello"}},                   // exact width
+		{"hello", 0, []string{"h", "e", "l", "l", "o"}},   // width floors at 1
+		{"abcdefghij", 4, []string{"abcd", "efgh", "ij"}}, // unbreakable word chunks
+		{"a\n\nb", 10, []string{"a", "", "b"}},            // blank lines survive
+	}
+	for _, tc := range cases {
+		if got := wrapText(tc.in, tc.n); strings.Join(got, "\n") != strings.Join(tc.want, "\n") {
+			t.Errorf("wrapText(%q, %d) = %q, want %q", tc.in, tc.n, got, tc.want)
+		}
 	}
 }
 

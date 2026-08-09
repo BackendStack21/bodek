@@ -139,8 +139,18 @@ func key(s string) tea.KeyMsg {
 		return tea.KeyMsg{Type: tea.KeyUp}
 	case "down":
 		return tea.KeyMsg{Type: tea.KeyDown}
+	case "left":
+		return tea.KeyMsg{Type: tea.KeyLeft}
+	case "right":
+		return tea.KeyMsg{Type: tea.KeyRight}
 	case "pgup":
 		return tea.KeyMsg{Type: tea.KeyPgUp}
+	case "pgdown":
+		return tea.KeyMsg{Type: tea.KeyPgDown}
+	case "ctrl+d":
+		return tea.KeyMsg{Type: tea.KeyCtrlD}
+	case "ctrl+g":
+		return tea.KeyMsg{Type: tea.KeyCtrlG}
 	case "ctrl+c":
 		return tea.KeyMsg{Type: tea.KeyCtrlC}
 	case "ctrl+r":
@@ -270,13 +280,16 @@ func TestApprovalFlow(t *testing.T) {
 	if !strings.Contains(plain(out), "approval required") {
 		t.Error("approval panel missing")
 	}
-	// Trust, then a fresh approval and deny, then approve.
-	for _, action := range []string{"t", "d", "a"} {
+	// Trust (highlight → enter), then a fresh approval and deny, then approve.
+	for _, keys := range [][]string{{"down", "down", "enter"}, {"down", "enter"}, {"enter"}} {
 		m.handleEvent(client.Event{Type: "approval_request", ID: "id", AllowTrust: true})
-		_, cmd := m.Update(key(action))
+		var cmd tea.Cmd
+		for _, k := range keys {
+			_, cmd = m.Update(key(k))
+		}
 		exec(cmd)
 		if m.approval != nil {
-			t.Errorf("approval not cleared after %q", action)
+			t.Errorf("approval not cleared after %v", keys)
 		}
 	}
 	// ctrl+c during approval quits.

@@ -100,10 +100,16 @@ func (m *Model) submit() tea.Cmd {
 	}
 	if m.disconn {
 		// Keep the draft — swallowing it silently reads as a lost message.
-		prev := m.noticeSeq
-		m.addTransientNote("disconnected — press r to retry, your draft is kept")
+		// Sticky (not transient): the warning must outlive a glance away, so
+		// it stays until newer notices push it out. Deduped, since every
+		// enter re-posts it. Note r only retries with an empty input, which
+		// a preserved draft is not — the hint spells that out.
+		const warn = "disconnected — your draft is kept · clear the input, then r to retry"
+		if n := len(m.notices); n == 0 || m.notices[n-1] != warn {
+			m.addNote(warn)
+		}
 		m.refresh()
-		return m.noticeTimer(prev)
+		return nil
 	}
 	if m.busy {
 		// Queue mid-turn prompts instead of dropping them; the queue drains

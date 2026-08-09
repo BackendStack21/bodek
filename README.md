@@ -178,13 +178,16 @@ untrusted-content boundary), so attachments go through the same security model
 as any other external input — bodek doesn't special-case them. (Saved sessions
 are resumed via `/sessions` or `^R`, not `@`.)
 
-When the agent requests approval for a dangerous operation, answer inline:
+When the agent requests approval for a dangerous operation, pick an outcome
+from the panel and confirm — typing never answers by accident:
 
 | Key | Action |
 |-----|--------|
-| `a` | Approve once |
-| `d` | Deny |
-| `t` | Trust this risk class for the session (when offered) |
+| `↑` / `↓` (or `←` / `→`) | Move the highlight (Approve / Deny / Trust class when offered) |
+| `⏎` | Confirm the highlighted option |
+| `Esc` | Deny (abort) |
+| `Tab` | Expand/collapse the full command & description text |
+| `PgUp` / `PgDn` / `^U` / `^D` | Scroll the transcript while the panel is open |
 
 ---
 

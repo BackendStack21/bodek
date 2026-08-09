@@ -27,8 +27,15 @@ var (
 // bindings — left-aligned with a gentle margin.
 func welcome(th theme, width int, cwd string) string {
 	var b strings.Builder
-	for _, line := range bannerArt {
-		b.WriteString(gradient(line, gradFrom, gradTo))
+	// The block art needs its own width plus the left padding below; narrower
+	// terminals get a one-line wordmark instead of wrapped garbage.
+	if artW := lipgloss.Width(bannerArt[0]); width >= artW+2 {
+		for _, line := range bannerArt {
+			b.WriteString(gradient(line, gradFrom, gradTo))
+			b.WriteByte('\n')
+		}
+	} else {
+		b.WriteString(th.logo.Render(gradient("⬡ bodek", gradFrom, gradTo)))
 		b.WriteByte('\n')
 	}
 	b.WriteByte('\n')
@@ -49,7 +56,7 @@ func welcome(th theme, width int, cwd string) string {
 		{"@ to attach", "attach files, e.g. @main.go"},
 		{"⏎ send", "^J newline  ·  ^T toggle thinking"},
 		{"^L clear", "↑/↓ scroll  ·  PgUp/PgDn page  ·  ^C quit"},
-		{"approvals", "a approve  ·  d deny  ·  t trust"},
+		{"approvals", "↑↓ select  ·  ⏎ confirm  ·  esc deny"},
 		{"tool steps", "^E toggle tool details  ·  --mouse to click-expand"},
 	}
 	const keyW = 11

@@ -304,6 +304,9 @@ func TestUpScrollsEvenWithHistory(t *testing.T) {
 // and cancelRun's draft-prepend branch.
 func TestHistoryEdgeCases(t *testing.T) {
 	m := newTestModel()
+	if m.historyPrev() {
+		t.Error("historyPrev with empty history should return false")
+	}
 	for i := 0; i < maxHistory+10; i++ {
 		m.recordHistory("prompt")
 		m.recordHistory("unique")
@@ -350,5 +353,112 @@ func TestCancelRestoresQueue(t *testing.T) {
 	m.handleEvent(client.Event{Type: "done", Latency: 1})
 	if len(m.msgs) != 2 {
 		t.Error("no turn should start after cancel restored the queue")
+	}
+}
+
+// TestSendFailureFinalizesTurn verifies a failed send closes out the phantom
+// assistant turn sendPrompt opened, with the error inline in the transcript.
+func TestSendFailureFinalizesTurn(t *testing.T) {
+	m := newTestModel()
+	busyTurn(m)
+
+	m.Update(errMsg{err: errors.New("write broke")})
+	if m.busy {
+		t.Error("errMsg should clear busy")
+	}
+	if m.curIdx != -1 {
+		t.Error("errMsg should finalize the in-flight turn")
+	}
+	msg := m.msgs[1]
+	if msg.streaming {
+		t.Error("assistant message should no longer be streaming")
+	}
+	if !strings.Contains(msg.content, "**Error:**") || !strings.Contains(msg.content, "write broke") {
+		t.Errorf("inline error missing from the turn: %q", msg.content)
+	}
+	if out := plain(m.conversation()); !strings.Contains(out, "Error:") {
+		t.Errorf("inline error not rendered in the transcript:\n%s", out)
+	}
+}
+
+// TestDisconnectedFooterHidesRetryWithDraft verifies the r retry hint only
+// shows when it actually works — with an empty input.
+func TestDisconnectedFooterHidesRetryWithDraft(t *testing.T) {
+	m := newTestModel()
+	m.opts.Reconnect = func() (*client.Client, error) { return nil, errors.New("down") }
+	m.disconn = true
+
+	m.ta.SetValue("draft")
+	if foot := plain(m.footer()); strings.Contains(foot, "retry") {
+		t.Errorf("footer offers r retry with a draft present: %q", foot)
+	}
+	m.ta.SetValue("")
+	if foot := plain(m.footer()); !strings.Contains(foot, "retry") {
+		t.Errorf("footer missing r retry with an empty input: %q", foot)
+	}
+}
+
+// TestDisconnectedSubmitWarningSticky verifies the submit-while-disconnected
+// warning is sticky (not a 3s transient), keeps the draft, and does not
+// stack a duplicate on every enter.
+func TestDisconnectedSubmitWarningSticky(t *testing.T) {
+	m := newTestModel()
+	m.disconn = true
+	m.ta.SetValue("hello")
+
+	m.submit()
+	if len(m.notices) == 0 {
+		t.Fatal("no warning posted")
+	}
+	last := len(m.notices) - 1
+	if !strings.Contains(m.notices[last], "draft is kept") {
+		t.Errorf("warning text = %q", m.notices[last])
+	}
+	if !m.noticeExp[last].IsZero() {
+		t.Error("disconnect warning should be sticky (no expiry)")
+	}
+	if m.ta.Value() != "hello" {
+		t.Errorf("draft should be kept, got %q", m.ta.Value())
+	}
+
+	m.submit() // draft still there — must not stack a duplicate
+	if len(m.notices) != last+1 {
+		t.Errorf("duplicate warning posted: %v", m.notices)
+	}
+}
+
+// TestCancelFeedback verifies the cancel path acknowledges itself: a note
+// when there is nothing to cancel, one when queued prompts return to the
+// input, and one when the abort lands.
+func TestCancelFeedback(t *testing.T) {
+	m := newTestModel()
+	hasNote := func(sub string) bool {
+		for _, n := range m.notices {
+			if strings.Contains(n, sub) {
+				return true
+			}
+		}
+		return false
+	}
+
+	// Idle: nothing to cancel.
+	m.cancelRun()
+	if !hasNote("nothing to cancel") {
+		t.Errorf("idle cancel posted no note: %v", m.notices)
+	}
+
+	// Busy with a queue: the draft restore is announced.
+	busyTurn(m)
+	m.sessionID = "s1"
+	m.queue = []string{"held"}
+	m.cancelRun()
+	if !hasNote("returned to the input") {
+		t.Errorf("queue restore posted no note: %v", m.notices)
+	}
+
+	// A successful abort acknowledges itself (the failure path already notes).
+	m.Update(cancelDoneMsg{})
+	if !hasNote("cancelled") {
+		t.Errorf("successful cancel posted no note: %v", m.notices)
 	}
 }

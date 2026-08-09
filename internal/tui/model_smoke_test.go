@@ -9,6 +9,7 @@ import (
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textarea"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 
 	"github.com/BackendStack21/bodek/internal/client"
 )
@@ -145,8 +146,9 @@ func TestApprovalPanelLayoutStable(t *testing.T) {
 	height := func() int { return strings.Count(m.View(), "\n") + 1 }
 	base := height()
 
-	// A description pushes the panel to 6 rendered rows; relayout must shrink
-	// the viewport to match so the footer stays put.
+	// The panel (selectable options + a description) is taller than the
+	// textarea it replaces; relayout must shrink the viewport to match so the
+	// footer stays put.
 	m.handleEvent(client.Event{Type: "approval_request", Risk: "shell_exec",
 		Name: "shell", Command: "rm x", Description: "delete files", AllowTrust: true})
 	if got := height(); got != base {
@@ -161,4 +163,47 @@ func TestApprovalPanelLayoutStable(t *testing.T) {
 	m.resize(6, 12)
 	m.handleEvent(client.Event{Type: "approval_request", Name: "shell", Command: "rm x"})
 	_ = m.View()
+}
+
+// TestHeaderNeverExceedsHeight verifies a long model name truncates instead
+// of wrapping the header past headerHeight rows, at any width — relayout and
+// the mouse offset math assume the header occupies exactly that many rows.
+func TestHeaderNeverExceedsHeight(t *testing.T) {
+	m := newTestModel()
+	m.model = strings.Repeat("very-long-model-id-", 10)
+	for _, w := range []int{10, 24, 40, 72, 100} {
+		m.resize(w, 24)
+		h := m.header()
+		if got := strings.Count(h, "\n") + 1; got != headerHeight {
+			t.Errorf("width %d: header = %d lines, want %d", w, got, headerHeight)
+		}
+		if bar, _, _ := strings.Cut(h, "\n"); lipgloss.Width(bar) > w {
+			t.Errorf("width %d: header bar is %d columns wide", w, lipgloss.Width(bar))
+		}
+	}
+	// Last loop width (100): the model name must carry an ellipsis.
+	bar, _, _ := strings.Cut(m.header(), "\n")
+	if !strings.Contains(plain(bar), "…") {
+		t.Errorf("long model name should truncate with an ellipsis: %q", plain(bar))
+	}
+}
+
+// TestRenderStepTinyWidths verifies step rendering degrades without panics at
+// absurd widths, and that truncated detail lines actually fit the viewport.
+func TestRenderStepTinyWidths(t *testing.T) {
+	m := newTestModel()
+	s := step{name: "shell", arg: strings.Repeat("x", 100), done: true,
+		expanded: true, result: strings.Repeat("y", 200)}
+	for _, w := range []int{4, 8, 12, 24} {
+		m.resize(w, 20)
+		out, _, _ := m.renderStep(s, false, 0, 0, 0) // must not panic
+		if w < 8 {
+			continue // below the tree connector itself, only the panic matters
+		}
+		for _, ln := range strings.Split(plain(out), "\n")[1:] { // detail lines
+			if n := lipgloss.Width(ln); n > w {
+				t.Errorf("width %d: detail line overflows (%d cols): %q", w, n, ln)
+			}
+		}
+	}
 }

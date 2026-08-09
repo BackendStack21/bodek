@@ -7,18 +7,27 @@ import (
 	"github.com/BackendStack21/bodek/internal/client"
 )
 
-func TestApprovalUnmatchedAndNoTrust(t *testing.T) {
+func TestApprovalLettersNeverDecide(t *testing.T) {
 	m := wired(t)
-	// AllowTrust=false: pressing "t" must NOT resolve the approval.
+	// Bare letters — including the old a/d/t/y/n shortcuts — must never
+	// resolve the approval; only arrows + enter or esc do.
 	m.approval = &client.Event{Type: "approval_request", AllowTrust: false}
-	m.Update(key("t"))
-	if m.approval == nil {
-		t.Error("'t' without AllowTrust should not clear approval")
+	for _, k := range []string{"a", "d", "t", "y", "n", "z"} {
+		m.Update(key(k))
+		if m.approval == nil {
+			t.Fatalf("letter %q resolved the approval", k)
+		}
 	}
-	// An unrelated key falls through to a no-op.
-	m.Update(key("z"))
-	if m.approval == nil {
-		t.Error("unrelated key should leave approval pending")
+	// AllowTrust=false: the highlight clamps at "deny" — trust is unreachable.
+	m.Update(key("down"))
+	m.Update(key("down"))
+	if m.apprSel != 1 {
+		t.Errorf("apprSel = %d, want clamped at 1 (deny)", m.apprSel)
+	}
+	_, cmd := m.Update(key("enter"))
+	exec(cmd)
+	if m.approval != nil {
+		t.Error("enter on deny should clear the approval")
 	}
 }
 
