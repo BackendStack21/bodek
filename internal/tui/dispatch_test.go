@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -81,14 +82,43 @@ func TestPanelKeyBoundsAndQuit(t *testing.T) {
 
 func TestCancelRunGuards(t *testing.T) {
 	m := wired(t)
-	// Not busy → nil.
-	if m.cancelRun() != nil {
-		t.Error("cancelRun not busy should be nil")
+	// Not busy → no cancel API call, just the "nothing to cancel" note and
+	// its expiry sweep.
+	if cmd := m.cancelRun(); cmd == nil {
+		t.Error("cancelRun not busy should still return the notice sweep")
 	}
-	// Busy but no session id → nil.
+	if n := len(m.notices); n == 0 || m.notices[n-1] != "nothing to cancel" ||
+		m.noticeExp[n-1].IsZero() {
+		t.Errorf("idle cancelRun should post a transient note, got %v", m.notices)
+	}
+	// Busy but no session id → same note path, no cancel.
 	m.busy = true
-	if m.cancelRun() != nil {
-		t.Error("cancelRun without session should be nil")
+	m.notices = nil
+	m.noticeExp = nil
+	if cmd := m.cancelRun(); cmd == nil {
+		t.Error("cancelRun without session should still return the notice sweep")
+	}
+	if n := len(m.notices); n == 0 || m.notices[n-1] != "nothing to cancel" {
+		t.Errorf("sessionless cancelRun should post the note, got %v", m.notices)
+	}
+}
+
+func TestResumedSessionNoteFades(t *testing.T) {
+	m := wired(t)
+	cmd := m.handleSessionDetail(sessionDetailMsg{sess: client.Session{ID: "20260808-f25bd6fd-9f2a"}})
+	if cmd == nil {
+		t.Fatal("resume should arm the notice expiry sweep")
+	}
+	n := len(m.notices)
+	if n == 0 || !strings.Contains(m.notices[n-1], "resumed session") {
+		t.Fatalf("resume note missing: %v", m.notices)
+	}
+	if m.noticeExp[n-1].IsZero() {
+		t.Fatal("resume note must be transient (expiry set), not sticky")
+	}
+	m.pruneNotices(time.Now().Add(noticeTTL + time.Second))
+	if len(m.notices) != 0 {
+		t.Errorf("resume note should fade after the TTL, got %v", m.notices)
 	}
 }
 
