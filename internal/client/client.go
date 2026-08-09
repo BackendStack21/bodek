@@ -38,9 +38,10 @@ type Event struct {
 	Model     string `json:"model"`
 	Sandbox   bool   `json:"sandbox"`
 
-	// done — token economics for the turn and the session. ContextTokens is the
-	// live window fill for the turn (drops again after history trims); the
-	// Session* pair are cumulative totals that only grow.
+	// done — token economics for the turn and the session. ContextTokens is
+	// cumulative prompt tokens across all LLM calls of the run (the live
+	// window fill is the delta between consecutive reports); the Session*
+	// pair are cumulative totals across runs that only grow.
 	Latency              float64 `json:"latency"`
 	ContextTokens        int     `json:"contextTokens"`
 	OutputTokens         int     `json:"outputTokens"`

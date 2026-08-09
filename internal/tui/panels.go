@@ -265,6 +265,7 @@ func (m *Model) handleSessionDetail(msg sessionDetailMsg) {
 	m.sessCtxTok = 0
 	m.sessOutTok = 0
 	m.winCtxTok = 0
+	m.runCtxCum = 0
 	m.lastLatency = 0
 	m.msgs = m.msgs[:0]
 	m.convCount = -1 // transcript swapped for the resumed one — drop the cache
