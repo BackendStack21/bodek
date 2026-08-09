@@ -128,17 +128,29 @@ func (m *Model) handleEvent(ev client.Event) (tea.Model, tea.Cmd) {
 		m.status = "ready"
 		m.sessCtxTok = ev.SessionContextTokens
 		m.sessOutTok = ev.SessionOutputTokens
-		m.winCtxTok = ev.ContextTokens
+		// ev.ContextTokens is cumulative for the run (sum of prompt tokens
+		// across all LLM calls), so the live window fill is the delta against
+		// the last report — the final request's prompt size.
+		if fill := ev.ContextTokens - m.runCtxCum; ev.ContextTokens > 0 && fill > 0 {
+			m.winCtxTok = fill
+		}
+		m.runCtxCum = 0 // run over — the next run's cumulative restarts at zero
 		m.lastLatency = ev.Latency
 		m.relayout() // the busy status line releases its row
 
 	case "usage":
-		// Per-iteration window fill from odek serve: keeps the header gauge
-		// live during multi-turn runs instead of waiting for "done". A zero
-		// value means the provider reported no usage — keep the last known
-		// fill rather than zeroing the gauge.
+		// Per-iteration report from odek serve: keeps the header gauge live
+		// during multi-turn runs instead of waiting for "done". contextTokens
+		// is cumulative for the run, so the window fill is the delta against
+		// the previous report — the last request's prompt size, which drops
+		// again after odek trims history. A zero value means the provider
+		// reported no usage — keep the last known fill rather than zeroing
+		// the gauge.
 		if ev.ContextTokens > 0 {
-			m.winCtxTok = ev.ContextTokens
+			if fill := ev.ContextTokens - m.runCtxCum; fill > 0 {
+				m.winCtxTok = fill
+			}
+			m.runCtxCum = ev.ContextTokens
 		}
 		stream = true
 

@@ -145,9 +145,11 @@ type Model struct {
 	panelSel int
 	panelMsg string // status/error line inside a panel
 
-	sessCtxTok  int
-	sessOutTok  int
-	winCtxTok   int // live context-window fill: last turn's contextTokens
+	sessCtxTok int
+	sessOutTok int
+	winCtxTok  int // live context-window fill: last request's prompt size
+	runCtxCum  int // last cumulative run contextTokens seen (odek reports per-run
+	// cumulative prompt tokens, so the window fill is the delta between reports)
 	lastLatency float64
 
 	limits       client.Limits // server budget limits + token prices (zero prices → cost hidden)
@@ -463,6 +465,7 @@ func (m *Model) clearConversation() {
 	m.sessCtxTok = 0
 	m.sessOutTok = 0
 	m.winCtxTok = 0
+	m.runCtxCum = 0
 	m.lastLatency = 0
 	m.refresh()
 }

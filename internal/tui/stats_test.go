@@ -85,8 +85,10 @@ func TestNoStatLineWhileStreaming(t *testing.T) {
 }
 
 // TestGaugeFollowsTurnFill is a regression test: the header gauge must track
-// the last turn's contextTokens (the live window fill, which drops after odek
-// trims history), not sessionContextTokens, which is cumulative and only grows.
+// the live window fill (the last request's prompt size, which drops after
+// odek trims history), not sessionContextTokens, which is cumulative and only
+// grows. odek reports contextTokens cumulative per run, so each done event
+// below starts a fresh run with its own cumulative counter.
 func TestGaugeFollowsTurnFill(t *testing.T) {
 	m := driveTurn(t, client.Event{
 		Type: "done", Latency: 1,
@@ -150,6 +152,71 @@ func TestUsageEventRefreshesGaugeMidTurn(t *testing.T) {
 	// The mid-run state must not be disturbed: still busy, still responding.
 	if !m.busy || m.status != "responding" {
 		t.Errorf("usage event must not end the turn: busy=%v status=%q", m.busy, m.status)
+	}
+}
+
+// TestGaugeDerivesFillFromCumulativeDeltas is a regression test: odek serve
+// reports contextTokens cumulative per run (sum of prompt tokens across all
+// LLM calls), so a long multi-iteration run easily exceeds the model's
+// context window (e.g. 2.3M cumulative against a 1.0M window) while the
+// actual window fill stays within budget. The gauge must show the delta
+// between consecutive reports — the last request's prompt size — never the
+// cumulative value.
+func TestGaugeDerivesFillFromCumulativeDeltas(t *testing.T) {
+	m := newTestModel()
+	m.model = "big"
+	m.models = []client.ModelInfo{{ID: "big", MaxContext: 1_000_000}}
+	m.resolveMaxContext()
+	m.msgs = append(m.msgs, message{role: roleAsst, streaming: true})
+	m.curIdx = len(m.msgs) - 1
+	m.busy = true
+	m.status = "responding"
+
+	// Three LLM calls with prompt sizes 600k → 800k → 900k, reported as
+	// run-cumulative 600k → 1.4M → 2.3M.
+	m.handleEvent(client.Event{Type: "usage", ContextTokens: 600_000, OutputTokens: 50})
+	if m.winCtxTok != 600_000 {
+		t.Fatalf("winCtxTok = %d, want 600000 (first report = first prompt)", m.winCtxTok)
+	}
+	m.handleEvent(client.Event{Type: "usage", ContextTokens: 1_400_000, OutputTokens: 100})
+	if m.winCtxTok != 800_000 {
+		t.Fatalf("winCtxTok = %d, want 800000 (delta of cumulative reports)", m.winCtxTok)
+	}
+	m.handleEvent(client.Event{
+		Type: "done", Latency: 1,
+		ContextTokens: 2_300_000, OutputTokens: 150,
+		SessionContextTokens: 2_300_000, SessionOutputTokens: 150,
+	})
+	if m.winCtxTok != 900_000 {
+		t.Fatalf("winCtxTok = %d, want 900000 (delta of cumulative reports)", m.winCtxTok)
+	}
+	out := plain(m.header())
+	if !strings.Contains(out, "90%") {
+		t.Errorf("gauge should show the window fill (90%%), not cumulative overflow:\n%s", out)
+	}
+	if strings.Contains(out, "2.3M/") {
+		t.Errorf("gauge must not render the cumulative total as window fill:\n%s", out)
+	}
+	// The session summary keeps tracking the cumulative total independently.
+	if m.sessCtxTok != 2_300_000 {
+		t.Errorf("sessCtxTok = %d, want 2300000", m.sessCtxTok)
+	}
+
+	// A trim between runs shrinks the next run's prompts; the cumulative
+	// counter restarts, so the gauge drops instead of pinning at 100%.
+	m.msgs = append(m.msgs, message{role: roleAsst, streaming: true})
+	m.curIdx = len(m.msgs) - 1
+	m.busy = true
+	m.handleEvent(client.Event{
+		Type: "done", Latency: 1,
+		ContextTokens: 300_000, OutputTokens: 100,
+		SessionContextTokens: 2_600_000, SessionOutputTokens: 250,
+	})
+	if m.winCtxTok != 300_000 {
+		t.Fatalf("winCtxTok = %d, want 300000 (new run resets the cumulative baseline)", m.winCtxTok)
+	}
+	if out := plain(m.header()); !strings.Contains(out, "30%") {
+		t.Errorf("gauge should drop after a trim (30%%), got:\n%s", out)
 	}
 }
 
