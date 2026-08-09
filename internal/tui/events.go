@@ -395,6 +395,16 @@ func (m *Model) addTransientNote(s string) {
 	m.noticeSeq++
 }
 
+// transientNoteCmd adds a transient note and returns the cmd that sweeps it
+// after noticeTTL. handleEvent arms the sweep itself; every other caller
+// (key handlers, async results) must batch this cmd or the note only fades
+// on the next unrelated render.
+func (m *Model) transientNoteCmd(s string) tea.Cmd {
+	prev := m.noticeSeq
+	m.addTransientNote(s)
+	return m.noticeTimer(prev)
+}
+
 func (m *Model) pushNote(s string, exp time.Time) {
 	m.notices = append(m.notices, sanitize(s))
 	m.noticeExp = append(m.noticeExp, exp)

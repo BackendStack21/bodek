@@ -289,8 +289,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case sessionDetailMsg:
-		m.handleSessionDetail(msg)
-		return m, nil
+		return m, m.handleSessionDetail(msg)
 
 	case sessionDeletedMsg:
 		return m, m.handleSessionDeleted(msg)
@@ -302,8 +301,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else {
 			// The API accepted the abort; the turn's done event settles the
 			// status shortly after. Acknowledge the keypress in the meantime.
-			m.addTransientNote("cancelled")
+			cmd := m.transientNoteCmd("cancelled")
 			m.refresh()
+			return m, cmd
 		}
 		return m, nil
 
@@ -403,9 +403,9 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.thinkOn {
 			state = "on"
 		}
-		m.addTransientNote("thinking " + state)
+		cmd := m.transientNoteCmd("thinking " + state)
 		m.refresh()
-		return m, nil
+		return m, cmd
 	case "ctrl+l":
 		if !m.busy {
 			m.clearConversation()
@@ -419,10 +419,10 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.expandAll {
 			state = "on"
 		}
-		m.addTransientNote("tool details " + state)
+		cmd := m.transientNoteCmd("tool details " + state)
 		m.convCount = -1 // re-render the cached transcript prefix too
 		m.refresh()
-		return m, nil
+		return m, cmd
 	case "ctrl+p":
 		// Prompt-history recall lives on this dedicated readline-style
 		// binding so bare ↑/↓ are free to scroll the transcript — the far

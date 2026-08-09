@@ -179,10 +179,11 @@ func (m *Model) deleteSelected() tea.Cmd {
 // for editing instead of firing them into a cancelled session.
 func (m *Model) cancelRun() tea.Cmd {
 	if !m.busy || m.sessionID == "" {
-		m.addTransientNote("nothing to cancel")
+		cmd := m.transientNoteCmd("nothing to cancel")
 		m.refresh()
-		return nil
+		return cmd
 	}
+	var note tea.Cmd
 	if len(m.queue) > 0 {
 		draft := strings.Join(m.queue, "\n")
 		if cur := m.ta.Value(); cur != "" {
@@ -192,15 +193,15 @@ func (m *Model) cancelRun() tea.Cmd {
 		m.ta.CursorEnd()
 		m.queue = nil
 		// The textarea content just changed out from under the user — say why.
-		m.addTransientNote("queued prompts returned to the input")
+		note = m.transientNoteCmd("queued prompts returned to the input")
 	}
 	m.status = "cancelling"
 	m.refresh()
 	cl := m.cl
 	sid, tok := m.sessionID, m.authToken
-	return func() tea.Msg {
+	return tea.Batch(note, func() tea.Msg {
 		return cancelDoneMsg{err: cl.Cancel(sid, tok)}
-	}
+	})
 }
 
 // ── async result handling ────────────────────────────────────────────────────
@@ -244,10 +245,10 @@ func (m *Model) handleLimitsMsg(msg limitsMsg) {
 	m.limits = msg.resp.Limits
 }
 
-func (m *Model) handleSessionDetail(msg sessionDetailMsg) {
+func (m *Model) handleSessionDetail(msg sessionDetailMsg) tea.Cmd {
 	if msg.err != nil {
 		m.panelMsg = "error: " + msg.err.Error()
-		return
+		return nil
 	}
 	// Replay the saved transcript into the local view and resume server-side
 	// on the next prompt via session_id + auth_token.
@@ -274,8 +275,9 @@ func (m *Model) handleSessionDetail(msg sessionDetailMsg) {
 	m.msgs = m.msgs[:0]
 	m.convCount = -1 // transcript swapped for the resumed one — drop the cache
 	m.replayTranscript(msg.sess.Messages)
-	m.addNote("resumed session " + shortID(msg.sess.ID))
+	note := m.transientNoteCmd("resumed session " + shortID(msg.sess.ID))
 	m.closePanel()
+	return note
 }
 
 // replayTranscript rebuilds a saved transcript turn by turn so a resumed
