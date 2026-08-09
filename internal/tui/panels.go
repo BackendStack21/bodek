@@ -179,6 +179,8 @@ func (m *Model) deleteSelected() tea.Cmd {
 // for editing instead of firing them into a cancelled session.
 func (m *Model) cancelRun() tea.Cmd {
 	if !m.busy || m.sessionID == "" {
+		m.addTransientNote("nothing to cancel")
+		m.refresh()
 		return nil
 	}
 	if len(m.queue) > 0 {
@@ -189,6 +191,8 @@ func (m *Model) cancelRun() tea.Cmd {
 		m.ta.SetValue(draft)
 		m.ta.CursorEnd()
 		m.queue = nil
+		// The textarea content just changed out from under the user — say why.
+		m.addTransientNote("queued prompts returned to the input")
 	}
 	m.status = "cancelling"
 	m.refresh()
@@ -318,8 +322,9 @@ func (m *Model) replayTranscript(msgs []client.SessionMessage) {
 				cur = &message{role: roleAsst}
 			}
 			if rc := sanitize(mm.ReasoningContent); strings.TrimSpace(rc) != "" {
-				cur.items = append(cur.items, turnItem{thinking: true,
-					text: capThinkingText(rc, maxThinkingLen)})
+				// Full text, like live turns — the rendered excerpt is capped
+				// at render time, expandAll unfolds the whole block.
+				cur.items = append(cur.items, turnItem{thinking: true, text: rc})
 			}
 			for _, tc := range mm.ToolCalls {
 				name := tc.Function.Name

@@ -140,3 +140,54 @@ func TestReconnectBackoff(t *testing.T) {
 		t.Errorf("backoff(20) = %v, want the 8s cap", got)
 	}
 }
+
+// The scheduled redial cmd runs the hook after its backoff tick and yields a
+// reconnectMsg with the outcome.
+func TestScheduleReconnectTick(t *testing.T) {
+	m := newTestModel()
+	called := false
+	m.opts.Reconnect = func() (*client.Client, error) { called = true; return nil, errors.New("down") }
+
+	msg := exec(m.scheduleReconnect(0)) // blocks for the 500ms attempt-0 backoff
+	rm, ok := msg.(reconnectMsg)
+	if !ok {
+		t.Fatalf("tick yielded %T, want reconnectMsg", msg)
+	}
+	if !called || rm.err == nil {
+		t.Errorf("hook did not run: called=%v, err=%v", called, rm.err)
+	}
+}
+
+// A disconnect mid-turn closes the turn out with an interrupted marker
+// instead of leaving it streaming forever; a repeat disconnect is a no-op.
+func TestDisconnectFinalizesTurn(t *testing.T) {
+	m := newTestModel()
+	busyTurn(m)
+	m.msgs[1].content = "partial answer"
+
+	m.handleEvent(client.Event{Type: client.EventDisconnected})
+	msg := m.msgs[1]
+	if msg.streaming {
+		t.Error("disconnect should finalize the in-flight turn")
+	}
+	if m.curIdx != -1 {
+		t.Error("disconnect should close the open turn index")
+	}
+	if !strings.Contains(msg.content, "partial answer") || !strings.Contains(msg.content, "**Interrupted:**") {
+		t.Errorf("interrupted marker missing: %q", msg.content)
+	}
+
+	// Idempotent: a second disconnect must not corrupt the finalized turn.
+	m.handleEvent(client.Event{Type: client.EventDisconnected})
+	if strings.Count(m.msgs[1].content, "Interrupted") != 1 {
+		t.Errorf("repeat disconnect corrupted the turn: %q", m.msgs[1].content)
+	}
+
+	// A turn that never streamed anything: the marker is the whole content.
+	m2 := newTestModel()
+	busyTurn(m2)
+	m2.handleEvent(client.Event{Type: client.EventDisconnected})
+	if got := m2.msgs[1].content; got != "**Interrupted:** connection lost" {
+		t.Errorf("empty turn marker = %q", got)
+	}
+}

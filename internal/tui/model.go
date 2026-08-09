@@ -119,9 +119,11 @@ type Model struct {
 	lastTool string
 	lastArg  string
 
-	approval *client.Event // pending approval, nil when none
-	ac       autocomplete  // @-reference completion state
-	queue    []string      // prompts typed mid-turn, sent when the turn ends
+	approval     *client.Event // pending approval, nil when none
+	apprSel      int           // highlighted option in the approval panel
+	apprExpanded bool          // tab: show the full command/description text
+	ac           autocomplete  // @-reference completion state
+	queue        []string      // prompts typed mid-turn, sent when the turn ends
 
 	history   []string // submitted prompts, newest last (recalled with ↑)
 	histNav   bool     // true while ^P/^N is walking the history
@@ -248,6 +250,13 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.busy = false
 		m.status = "error"
 		m.addNote("error: " + msg.err.Error())
+		// Close out the turn sendPrompt opened — otherwise the transcript
+		// keeps a phantom streaming assistant message with no reply. Same
+		// inline styling as a server-side error event.
+		if i := m.cur(); i >= 0 && m.msgs[i].content == "" {
+			m.msgs[i].content = "**Error:** " + msg.err.Error()
+		}
+		m.finalize()
 		m.relayout() // the busy status line releases its row
 		m.refresh()
 		return m, m.sendQueued()
@@ -289,6 +298,11 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case cancelDoneMsg:
 		if msg.err != nil {
 			m.addNote("cancel failed: " + msg.err.Error())
+			m.refresh()
+		} else {
+			// The API accepted the abort; the turn's done event settles the
+			// status shortly after. Acknowledge the keypress in the meantime.
+			m.addTransientNote("cancelled")
 			m.refresh()
 		}
 		return m, nil
@@ -338,7 +352,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	// Approval mode captures the keyboard until answered.
+	// Approval mode captures the keyboard until answered; only the transcript
+	// scroll keys pass through to the viewport.
 	if m.approval != nil {
 		return m.handleApprovalKey(msg)
 	}
@@ -384,6 +399,12 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(cmd, m.syncAC())
 	case "ctrl+t":
 		m.thinkOn = !m.thinkOn
+		state := "off"
+		if m.thinkOn {
+			state = "on"
+		}
+		m.addTransientNote("thinking " + state)
+		m.refresh()
 		return m, nil
 	case "ctrl+l":
 		if !m.busy {
@@ -394,6 +415,11 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// Global details toggle: every step (including in-flight ones) shows
 		// its full output/logs; the per-step mouse toggle still layers on top.
 		m.expandAll = !m.expandAll
+		state := "off"
+		if m.expandAll {
+			state = "on"
+		}
+		m.addTransientNote("tool details " + state)
 		m.convCount = -1 // re-render the cached transcript prefix too
 		m.refresh()
 		return m, nil
@@ -571,11 +597,7 @@ func (m *Model) relayout() {
 // shrinks by exactly the right amount and the footer never moves.
 func (m *Model) inputAreaHeight() int {
 	if m.approval != nil {
-		rows := 3 // head + command + keys
-		if m.approval.Description != "" {
-			rows++
-		}
-		return rows + 2 // panel border
+		return lineCount(m.approvalBody()) + 2 // panel border
 	}
 	h := inputHeight
 	if m.statusLineVisible() {
@@ -677,21 +699,17 @@ func (m *Model) toggleStep(msgIdx, stepIdx int) {
 	m.convCount = -1
 }
 
-// stepAtLine maps a viewport content line to the nearest step header at or
-// above it. Used for mouse click-to-expand.
+// stepAtLine maps a viewport content line to a step for mouse hit-testing,
+// matching only the step's own header line (the chevron row) — a click on
+// detail lines or prose below a step must not toggle it.
 func (m *Model) stepAtLine(line int) (msgIdx, stepIdx int, ok bool) {
-	if len(m.stepLineIndex) == 0 {
-		return
-	}
-	var ref *stepRef
 	for i := range m.stepLineIndex {
 		if m.stepLineIndex[i].line > line {
 			break
 		}
-		ref = &m.stepLineIndex[i]
+		if m.stepLineIndex[i].line == line {
+			return m.stepLineIndex[i].msgIdx, m.stepLineIndex[i].stepIdx, true
+		}
 	}
-	if ref == nil {
-		return
-	}
-	return ref.msgIdx, ref.stepIdx, true
+	return
 }

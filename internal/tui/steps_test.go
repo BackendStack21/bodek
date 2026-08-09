@@ -5,6 +5,8 @@ import (
 	"testing"
 	"time"
 
+	tea "github.com/charmbracelet/bubbletea"
+
 	"github.com/BackendStack21/bodek/internal/client"
 )
 
@@ -261,6 +263,18 @@ func TestToggleStep(t *testing.T) {
 	}
 }
 
+// TestToggleStepGuards verifies out-of-range indices are safe no-ops.
+func TestToggleStepGuards(t *testing.T) {
+	m := newTestModel()
+	m.msgs = append(m.msgs, message{role: roleAsst, steps: []step{{name: "read", done: true}}})
+	for _, idx := range [][2]int{{-1, 0}, {1, 0}, {5, 0}, {0, -1}, {0, 1}} {
+		m.toggleStep(idx[0], idx[1]) // must not panic
+	}
+	if m.msgs[0].steps[0].expanded {
+		t.Error("out-of-range toggleStep should not touch any step")
+	}
+}
+
 // TestKeyCtrlETogglesToolDetails verifies Ctrl+E flips the global details
 // toggle: every step across messages — cached prefix and streaming tail alike —
 // reveals its detail lines, and a second press collapses them again.
@@ -311,6 +325,54 @@ func TestKeyCtrlETogglesToolDetails(t *testing.T) {
 	}
 }
 
+// TestCtrlEIndicator verifies the chrome flags the global details toggle: a
+// transient note acknowledges the keypress and the footer carries a
+// persistent indicator while expandAll holds every step open.
+func TestCtrlEIndicator(t *testing.T) {
+	m := newTestModel()
+	m.Update(key("ctrl+e"))
+	if !m.expandAll {
+		t.Fatal("^E did not enable expandAll")
+	}
+	found := false
+	for _, n := range m.notices {
+		if strings.Contains(n, "tool details on") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("^E posted no acknowledgement note: %v", m.notices)
+	}
+	if !strings.Contains(plain(m.footer()), "details") {
+		t.Error("footer shows no expandAll indicator while enabled")
+	}
+
+	m.Update(key("ctrl+e"))
+	if strings.Contains(plain(m.footer()), "details") {
+		t.Error("footer indicator should clear when expandAll is disabled")
+	}
+
+	// Busy + expandAll: the indicator rides alongside the cancel hint.
+	m.busy = true
+	m.Update(key("ctrl+e"))
+	if foot := plain(m.footer()); !strings.Contains(foot, "cancel") || !strings.Contains(foot, "details") {
+		t.Errorf("busy footer should carry both hints: %q", foot)
+	}
+}
+
+// TestExpandedOutputCap verifies huge tool output is capped with a
+// truncation footer instead of flooding the transcript.
+func TestExpandedOutputCap(t *testing.T) {
+	m := newTestModel()
+	m.msgs = append(m.msgs, message{role: roleAsst, steps: []step{
+		{name: "shell", done: true, result: strings.Repeat("line\n", 250)},
+	}})
+	m.toggleStep(0, 0)
+	if out := plain(m.conversation()); !strings.Contains(out, "… output truncated") {
+		t.Errorf("expanded output should be capped:\n%s", out)
+	}
+}
+
 func TestKeyETypesLetter(t *testing.T) {
 	m := newTestModel()
 	m.ta.Focus()
@@ -347,10 +409,70 @@ func TestStepLineIndex(t *testing.T) {
 	if !ok || msgIdx != 1 || stepIdx != 0 {
 		t.Errorf("stepAtLine second header: got %d,%d,%v", msgIdx, stepIdx, ok)
 	}
-	// A line between the two headers still maps to the first step.
+	// A line between the two headers maps to nothing — only exact header
+	// lines hit.
 	mid := (m.stepLineIndex[0].line + m.stepLineIndex[1].line) / 2
-	msgIdx, stepIdx, ok = m.stepAtLine(mid)
-	if !ok || msgIdx != 0 || stepIdx != 0 {
-		t.Errorf("stepAtLine between headers: got %d,%d,%v", msgIdx, stepIdx, ok)
+	if _, _, ok := m.stepAtLine(mid); ok {
+		t.Errorf("stepAtLine between headers should not match (line %d)", mid)
+	}
+}
+
+// TestStepClickHitTesting verifies only a click on a step's own header line
+// toggles it — clicks on prose below the step no longer reach it.
+func TestStepClickHitTesting(t *testing.T) {
+	m := newTestModel()
+	m.msgs = append(m.msgs, message{role: roleAsst,
+		content: "line a\nline b\nline c\nline d\nline e",
+		steps:   []step{{name: "read", done: true, result: "ok"}},
+	})
+	_ = m.conversation()
+	if len(m.stepLineIndex) != 1 {
+		t.Fatalf("expected 1 step ref, got %+v", m.stepLineIndex)
+	}
+	click := func(line int) {
+		// Viewport content begins below the header (2 rows); see Update.
+		m.Update(tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, Y: 2 + line})
+	}
+
+	// Prose below the header: no toggle.
+	click(m.stepLineIndex[0].line + 3)
+	if m.msgs[0].steps[0].expanded {
+		t.Error("click below the step header should not toggle it")
+	}
+
+	// The header line itself toggles.
+	click(m.stepLineIndex[0].line)
+	if !m.msgs[0].steps[0].expanded {
+		t.Error("click on the step header did not toggle it")
+	}
+}
+
+// TestExpandedOutputPreservesWhitespace verifies the expanded detail view
+// keeps tool output verbatim — indentation and internal spacing intact — so
+// diffs, JSON, and code stay aligned when expanded.
+func TestExpandedOutputPreservesWhitespace(t *testing.T) {
+	m := newTestModel()
+	m.msgs = append(m.msgs, message{role: roleAsst, steps: []step{
+		{name: "shell", arg: "git diff", done: true,
+			result: "line one\n    indented := code\n\tvar x = 1  +  2"},
+	}})
+	m.toggleStep(0, 0)
+	out := plain(m.conversation())
+	// Leading spaces and internal spacing survive verbatim; the tab renders
+	// expanded (the chrome reflows tabs), which keeps alignment intact.
+	for _, want := range []string{"    indented := code", "var x = 1  +  2"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("expanded output lost whitespace %q in:\n%s", want, out)
+		}
+	}
+}
+
+// TestRunningStepChevron verifies an in-flight step advertises the same
+// expand affordance as a finished one — toggleStep works on it too.
+func TestRunningStepChevron(t *testing.T) {
+	m := newTestModel()
+	out, _, _ := m.renderStep(step{name: "shell", arg: "go build"}, true, 0, 0, 0)
+	if !strings.Contains(plain(out), "▶") {
+		t.Errorf("running step should show a collapsed chevron:\n%s", plain(out))
 	}
 }

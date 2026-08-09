@@ -50,20 +50,26 @@ func (m *Model) header() string {
 	if modelName == "" {
 		modelName = "default"
 	}
+
+	// The left cluster, split around the model name: its truncation budget is
+	// computed against everything else once the segments are known.
+	head := logo + "   "
+	tail := ""
+	// A subtle, persistent marker while extended thinking is enabled — the
+	// same ✳ glyph the per-turn stat line uses to flag a thought turn.
+	if m.thinkOn {
+		tail += th.headerMeta.Render(" · ✳ think")
+	}
+	if m.odekVersion != "" {
+		tail += th.headerMeta.Render(" · odek ") + th.headerKey.Render(m.odekVersion)
+	}
 	// Sandbox status, prominently colored: green ● when isolated, amber ▲
 	// when the agent has host access.
-	sandbox := m.sandboxBadge()
-	model := th.headerKey.Render(modelName)
-
-	left := logo + "   " + model
-	if m.odekVersion != "" {
-		left += th.headerMeta.Render(" · odek ") + th.headerKey.Render(m.odekVersion)
-	}
-	left += th.headerMeta.Render("  ·  ") + sandbox
+	tail += th.headerMeta.Render("  ·  ") + m.sandboxBadge()
 	// Session spend rides the left cluster; hidden until odek reports both
 	// token prices (never show a guessed $0).
 	if inPrice, outPrice := m.limits.ResolvePrices(m.model); inPrice > 0 && outPrice > 0 {
-		left += th.headerMeta.Render("  ·  ") + th.headerKey.Render(formatUSD(costUSD(m.sessCtxTok, m.sessOutTok, inPrice, outPrice)))
+		tail += th.headerMeta.Render("  ·  ") + th.headerKey.Render(formatUSD(costUSD(m.sessCtxTok, m.sessOutTok, inPrice, outPrice)))
 	}
 
 	status := m.statusBadge()
@@ -81,9 +87,17 @@ func (m *Model) header() string {
 		return right
 	}
 
+	// The model name carries the slack: truncate it (with ellipsis) to what
+	// the bar can hold against the most-shed right cluster, so a long model
+	// ID can never push the header past headerHeight lines.
+	budget := m.width - lipgloss.Width(head) - lipgloss.Width(tail) - lipgloss.Width(buildRight("")) - 1 // gap
+	if budget < 4 {
+		budget = 4 // keep a few chars; the clamp below covers absurd widths
+	}
+	left := head + th.headerKey.Render(truncate(modelName, budget)) + tail
+
 	// Shed gauge detail under width pressure: full gauge → compact glyph+percent
-	// → no gauge at all. The final gap clamp only prevents a negative pad; the
-	// remaining left/tokens/status overflow (if any) is pre-existing.
+	// → no gauge at all. The final gap clamp only prevents a negative pad.
 	right := buildRight(m.ctxGauge(false))
 	gap := m.width - lipgloss.Width(left) - lipgloss.Width(right)
 	if gap < 1 {
@@ -98,6 +112,12 @@ func (m *Model) header() string {
 		gap = 1
 	}
 	bar := left + strings.Repeat(" ", gap) + right
+	// Absolute guarantee: relayout and the mouse offset math assume the
+	// header occupies exactly headerHeight rows, so clamp any residual
+	// overflow ANSI-safely to one line (a no-op whenever the bar fits).
+	if m.width > 0 && lipgloss.Width(bar) > m.width {
+		bar = lipgloss.NewStyle().MaxWidth(m.width).Render(bar)
+	}
 	return bar + "\n" + m.rule()
 }
 
@@ -394,7 +414,14 @@ func (m *Model) renderMessage(msg message, msgIdx, lineOffset int) (string, []st
 				if t == "" {
 					continue
 				}
-				excerpt := th.thinkStyle.Width(max(m.vp.Width-4, 8)).Render("… " + collapse(t))
+				// Default: a capped one-line excerpt of the thought's head.
+				// expandAll unfolds the full text — but only once the turn is
+				// finalized; a live stream keeps the bounded excerpt.
+				body := collapse(capThinkingText(t, maxThinkingLen))
+				if m.expandAll && !msg.streaming {
+					body = t
+				}
+				excerpt := th.thinkStyle.Width(max(m.vp.Width-4, 8)).Render("… " + body)
 				if b.Len() > 0 {
 					b.WriteString("\n")
 				}
@@ -542,14 +569,10 @@ func max(a, b int) int {
 // count.
 func (m *Model) renderStep(s step, streaming bool, msgIdx, stepIdx, startLine int) (string, stepRef, int) {
 	th := m.th
-	budget := m.vp.Width - 10
-	if budget < 14 {
-		budget = 14
-	}
-	detailBudget := m.vp.Width - 8
-	if detailBudget < 16 {
-		detailBudget = 16
-	}
+	// Floors stay at a few chars so truncation genuinely shrinks with the
+	// viewport instead of overflowing tiny widths (truncate handles the rest).
+	budget := max(m.vp.Width-10, 4)
+	detailBudget := max(m.vp.Width-8, 4)
 	// A step shows its details when toggled individually or via the global
 	// Ctrl+E toggle.
 	expanded := s.expanded || m.expandAll
@@ -565,15 +588,11 @@ func (m *Model) renderStep(s step, streaming bool, msgIdx, stepIdx, startLine in
 	default:
 		icon = th.stepRun.Render("▸")
 	}
-	var chevron string
-	if s.done {
-		if expanded {
-			chevron = th.stepTree.Render("▼")
-		} else {
-			chevron = th.stepTree.Render("▶")
-		}
-	} else {
-		chevron = th.stepTree.Render(" ")
+	// Chevron: the expand affordance — shown on running steps too, since they
+	// toggle just like finished ones.
+	chevron := th.stepTree.Render("▶")
+	if expanded {
+		chevron = th.stepTree.Render("▼")
 	}
 	head := chevron + " " + icon + " " + th.toolIcon.Render(toolGlyph(s.name)) + " " + th.stepName.Render(s.name)
 	if s.subagent {
@@ -591,8 +610,11 @@ func (m *Model) renderStep(s step, streaming bool, msgIdx, stepIdx, startLine in
 	if expanded {
 		details := append([]string{}, s.logs...)
 		for _, ln := range strings.Split(s.result, "\n") {
-			if c := collapse(ln); c != "" {
-				details = append(details, c)
+			// Already sanitized at ingest — keep the line verbatim so
+			// indentation and internal spacing (diffs, JSON, code) survive
+			// expansion; blank lines stay stripped for compactness.
+			if strings.TrimSpace(ln) != "" {
+				details = append(details, ln)
 			}
 		}
 		if len(details) > 200 {
@@ -706,6 +728,15 @@ func (m *Model) acPopup() string {
 }
 
 func (m *Model) approvalPanel() string {
+	return m.th.apprBox.Width(m.width - 2).Render(m.approvalBody())
+}
+
+// approvalBody builds the panel's inner content: head, the command (one
+// collapsed line, or the full wrapped text once expanded via tab), the
+// optional description, the selectable options, and the key hints.
+// inputAreaHeight counts these lines, so every line must be pre-wrapped to
+// fit the box — lipgloss would otherwise reflow them and break layout math.
+func (m *Model) approvalBody() string {
 	th := m.th
 	a := m.approval
 	head := th.apprHead.Render(fmt.Sprintf("⚠ approval required · risk: %s", orDash(a.Risk)))
@@ -720,21 +751,38 @@ func (m *Model) approvalPanel() string {
 	if a.Name != "" {
 		target = a.Name + ": " + target
 	}
-	cmd := th.apprBody.Render(truncate(collapse(target), m.width-8))
 
-	desc := ""
-	if a.Description != "" {
-		desc = th.noticeStyle.Render(truncate(collapse(a.Description), m.width-8)) + "\n"
+	budget := m.width - 8
+	lines := []string{head}
+	if m.apprExpanded {
+		for _, ln := range wrapText(sanitize(target), budget) {
+			lines = append(lines, th.apprBody.Render(ln))
+		}
+		if a.Description != "" {
+			for _, ln := range wrapText(sanitize(a.Description), budget) {
+				lines = append(lines, th.noticeStyle.Render(ln))
+			}
+		}
+	} else {
+		lines = append(lines, th.apprBody.Render(truncate(collapse(target), budget)))
+		if a.Description != "" {
+			lines = append(lines, th.noticeStyle.Render(truncate(collapse(a.Description), budget)))
+		}
 	}
 
-	keys := th.apprKey.Render("a") + th.apprBody.Render(" approve   ") +
-		th.apprKey.Render("d") + th.apprBody.Render(" deny")
-	if a.AllowTrust {
-		keys += th.apprBody.Render("   ") + th.apprKey.Render("t") + th.apprBody.Render(" trust class")
+	for i, o := range m.approvalOptions() {
+		prefix, label := "  ", th.apprBody.Render(o.label)
+		if i == m.apprSel {
+			prefix, label = th.apprKey.Render("› "), th.apprKey.Render(o.label)
+		}
+		lines = append(lines, prefix+label)
 	}
 
-	body := head + "\n" + cmd + "\n" + desc + keys
-	return th.apprBox.Width(m.width - 2).Render(body)
+	keys := th.apprKey.Render("↑↓") + th.apprBody.Render(" select   ") +
+		th.apprKey.Render("⏎") + th.apprBody.Render(" confirm   ") +
+		th.apprKey.Render("tab") + th.apprBody.Render(" expand   ") +
+		th.apprKey.Render("esc") + th.apprBody.Render(" deny")
+	return strings.Join(append(lines, keys), "\n")
 }
 
 // ── footer ─────────────────────────────────────────────────────────────────
@@ -746,7 +794,9 @@ func (m *Model) footer() string {
 	}
 	if m.disconn {
 		hints := []string{th.footer.Render("connection closed")}
-		if m.opts.Reconnect != nil {
+		// r only fires with an empty input (see handleKey) — with a draft
+		// preserved it would just type into it, so don't offer it then.
+		if m.opts.Reconnect != nil && m.ta.Value() == "" {
 			hints = append(hints, th.footerKey.Render("r")+th.footer.Render(" retry"))
 		}
 		hints = append(hints, th.footer.Render("^C to quit"))
@@ -775,6 +825,16 @@ func (m *Model) footer() string {
 		left = "  " + th.footerKey.Render("esc") + th.footer.Render(" cancel")
 		if n := len(m.queue); n > 0 {
 			left += th.footerSep.Render(" · ") + th.scroll.Render(fmt.Sprintf("▸ %d queued", n))
+		}
+	}
+	// Persistent expandAll indicator — while the global toggle holds every
+	// step open, per-step toggles look dead unless the chrome says why.
+	if m.expandAll {
+		ind := th.footerKey.Render("▼") + th.footer.Render(" details")
+		if left == "" {
+			left = "  " + ind
+		} else {
+			left += th.footerSep.Render(" · ") + ind
 		}
 	}
 
@@ -817,6 +877,28 @@ func (m *Model) panelFooter(hints ...string) string {
 }
 
 // ── small helpers ──────────────────────────────────────────────────────────
+
+// wrapText hard-wraps s to n columns by runes, keeping existing line breaks.
+// It always returns at least one line, so an empty input still claims its row.
+func wrapText(s string, n int) []string {
+	if n < 1 {
+		n = 1
+	}
+	var out []string
+	for _, ln := range strings.Split(s, "\n") {
+		r := []rune(ln)
+		if len(r) == 0 {
+			out = append(out, "")
+			continue
+		}
+		for len(r) > n {
+			out = append(out, string(r[:n]))
+			r = r[n:]
+		}
+		out = append(out, string(r))
+	}
+	return out
+}
 
 func orDash(s string) string {
 	if s == "" {

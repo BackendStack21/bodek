@@ -42,14 +42,16 @@ func (m *Model) handleEvent(ev client.Event) (tea.Model, tea.Cmd) {
 
 	case "thinking":
 		// Append to the open reasoning block (the last timeline item when it is
-		// a thinking item), or start a new one after a tool call.
+		// a thinking item), or start a new one after a tool call. The full text
+		// is stored; only the rendered excerpt is capped (see maxThinkingLen),
+		// so expandAll can unfold the complete block once the turn finalizes.
 		if i := m.cur(); i >= 0 {
 			msg := &m.msgs[i]
 			if n := len(msg.items); n > 0 && msg.items[n-1].thinking {
-				msg.items[n-1].text = capThinkingText(msg.items[n-1].text+sanitize(ev.Content), maxThinkingLen)
+				msg.items[n-1].text += sanitize(ev.Content)
 			} else {
 				msg.items = append(msg.items, turnItem{thinking: true,
-					text: capThinkingText(sanitize(ev.Content), maxThinkingLen)})
+					text: sanitize(ev.Content)})
 			}
 		}
 		m.status = "thinking"
@@ -171,6 +173,8 @@ func (m *Model) handleEvent(ev client.Event) (tea.Model, tea.Cmd) {
 	case "approval_request":
 		e := ev
 		m.approval = &e
+		m.apprSel = 0
+		m.apprExpanded = false
 		m.status = "approval required"
 		m.relayout() // the panel is taller than the textarea — shrink the viewport
 
@@ -197,6 +201,18 @@ func (m *Model) handleEvent(ev client.Event) (tea.Model, tea.Cmd) {
 		m.disconn = true
 		m.busy = false
 		m.renderPending = false
+		// A turn in flight when the socket drops will never finish: close it
+		// out with an interrupted marker instead of leaving it streaming
+		// forever. Idempotent — with no open turn this is a no-op, so a
+		// later resume is untouched.
+		if i := m.cur(); i >= 0 {
+			if m.msgs[i].content == "" {
+				m.msgs[i].content = "**Interrupted:** connection lost"
+			} else {
+				m.msgs[i].content += "\n\n**Interrupted:** connection lost"
+			}
+		}
+		m.finalize()
 		m.relayout() // the busy status line is gone with the socket
 		if cmd := m.scheduleReconnect(0); cmd != nil {
 			m.status = "reconnecting…"
@@ -501,12 +517,14 @@ func (m *Model) attachSubLog(i int, line string) bool {
 	return false
 }
 
-// maxThinkingLen caps the live "thinking…" excerpt so a verbose reasoning
-// stream does not push the transcript off-screen.
+// maxThinkingLen caps the rendered "thinking…" excerpt so a verbose reasoning
+// block does not push the transcript off-screen. The full text stays stored on
+// the turn item; expandAll renders it whole (for finalized turns).
 const maxThinkingLen = 240
 
-// capThinkingText trims s to at most n runes, starting at the next whitespace
-// so the visible excerpt does not begin mid-word.
+// capThinkingText trims s to its first n runes, backing off to the last
+// whitespace so the visible excerpt does not stop mid-word. Showing the head
+// orients the reader at the thought's beginning, not its end.
 func capThinkingText(s string, n int) string {
 	if len(s) <= n {
 		return s
@@ -515,10 +533,10 @@ func capThinkingText(s string, n int) string {
 	if len(r) <= n {
 		return s
 	}
-	r = r[len(r)-n:]
-	for i, c := range r {
-		if unicode.IsSpace(c) {
-			r = r[i+1:]
+	r = r[:n]
+	for i := len(r) - 1; i >= 0; i-- {
+		if unicode.IsSpace(r[i]) {
+			r = r[:i]
 			break
 		}
 	}
