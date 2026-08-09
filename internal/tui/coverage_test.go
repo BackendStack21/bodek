@@ -98,13 +98,17 @@ func TestStatusLinePlacement(t *testing.T) {
 	if marker < 0 || thinking < marker {
 		t.Error("status line must render below the last user message")
 	}
+	if !strings.HasPrefix(m.statusLine(), "\n") {
+		t.Error("status line must lead with a blank separator row")
+	}
 	if strings.Contains(plain(m.header()), "thinking") {
 		t.Error("header must not carry the busy indicator anymore")
 	}
 
-	// The row claims exactly one line of layout; idle releases it, and a
-	// pending approval (which owns the input area) never shows it.
-	if got, want := m.inputAreaHeight(), inputHeight+1; got != want {
+	// The indicator claims two rows of layout — a blank separator above it,
+	// then the status row itself; idle releases both, and a pending approval
+	// (which owns the input area) never shows it.
+	if got, want := m.inputAreaHeight(), inputHeight+2; got != want {
 		t.Errorf("busy inputAreaHeight = %d, want %d", got, want)
 	}
 	m.busy = false

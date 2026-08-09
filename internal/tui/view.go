@@ -221,7 +221,9 @@ func (m *Model) statusLine() string {
 	if e := m.elapsed(); e != "" {
 		el = th.headerMeta.Render(" · " + e)
 	}
-	return th.spinner.Render(m.sp.View()) + " " + th.statusBusy.Render(label) + el
+	// A blank row above separates the indicator from the transcript tail —
+	// inputAreaHeight accounts for it so the layout math stays exact.
+	return "\n" + th.spinner.Render(m.sp.View()) + " " + th.statusBusy.Render(label) + el
 }
 
 // statusLineVisible reports whether the status line occupies a row, keeping

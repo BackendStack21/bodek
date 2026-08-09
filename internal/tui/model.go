@@ -579,7 +579,7 @@ func (m *Model) inputAreaHeight() int {
 	}
 	h := inputHeight
 	if m.statusLineVisible() {
-		h++ // busy status line above the input box
+		h += 2 // busy status line + blank separator row above the input box
 	}
 	if m.ac.open {
 		h += m.ac.height()
