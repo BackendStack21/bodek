@@ -171,6 +171,7 @@ command and press `⏎`.
 | `/server` | Cockpit — server, link, budget & session in one card (or click the header) |
 | `/sessions` | Browse, search, pin, rename, export & resume sessions |
 | `/runs` | Headless REST runs — live status, remote approvals, cancel |
+| `/run <prompt>` | Start a headless run (fresh session) and watch it in the runs tab |
 | `/events` | The `odek.event/v1` runtime feed |
 | `/memory` | Facts by target, pending-episode promote, consolidate |
 | `/skills` | Skill provenance badges & promote |
@@ -255,6 +256,12 @@ one `Esc`.
 - **Model switcher** (`^O`) — change the model for the next turn. The picker
   merges the server's configured model with its built-in profile catalog
   (`/api/profiles`), each annotated with its context window.
+- **Skill suggestions** — when odek's learn loop proposes a skill, a passive
+  card above the composer answers on `alt+s` (save) / `alt+x` (skip); it never
+  blocks sending, and auto-save governs real persistence.
+- **Server shutdown** — the config tab's `S` requires typing the literal word
+  `shutdown` (the approval-friction pattern); the socket drop that follows is
+  expected state, with `⏎` starting a fresh instance in spawn mode.
 - **Live server snapshot** — a 25s heartbeat measures WebSocket round-trip
   latency and refreshes server uptime, connection count, and streaming state
   (the ⚡ badge beside the model); `/stats` surfaces the full link row.

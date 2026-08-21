@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -122,6 +123,7 @@ func fakeLLM() http.Handler {
 			"choices": []any{map[string]any{
 				"message": map[string]any{"role": "assistant", "content": "bulk answer"},
 			}},
+			"usage": map[string]any{"prompt_tokens": 42, "completion_tokens": 7},
 		})
 	})
 }
@@ -216,5 +218,66 @@ func TestE2ERealServePrompt(t *testing.T) {
 	}
 	if deltas != "" {
 		t.Errorf("unexpected deltas without --stream: %q", deltas)
+	}
+}
+
+// TestE2ERealServeHeadless runs the REST-only flow against the real server
+// and fake LLM: POST /api/prompt → poll GET /api/runs/{id} → completed with
+// the bulk answer and token accounting.
+func TestE2ERealServeHeadless(t *testing.T) {
+	if os.Getenv("BODEK_E2E") == "" {
+		t.Skip("set BODEK_E2E=true (and optionally ODEK_BIN) to run the live-server E2E")
+	}
+	bin := os.Getenv("ODEK_BIN")
+	if bin == "" {
+		bin = "odek"
+	}
+	llm := httptest.NewServer(fakeLLM())
+	t.Cleanup(llm.Close)
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("ODEK_BASE_URL", llm.URL)
+	t.Setenv("ODEK_API_KEY", "test-key")
+
+	conn, err := server.Connect(server.Options{Bin: bin, Sandbox: false})
+	if err != nil {
+		t.Fatalf("connect: %v", err)
+	}
+	t.Cleanup(conn.Stop)
+	cl, err := Dial(conn.WSURL, conn.Origin, conn.BaseURL, conn.Token)
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	t.Cleanup(func() { _ = cl.Close() })
+
+	run, err := cl.StartRun("summarize the repo", RunOpts{ApprovalTimeoutSeconds: 5})
+	if err != nil {
+		t.Fatalf("StartRun: %v", err)
+	}
+	deadline := time.After(30 * time.Second)
+	for {
+		run, err = cl.RunDetail(run.ID)
+		if err != nil {
+			t.Fatalf("RunDetail: %v", err)
+		}
+		if run.Terminal() {
+			break
+		}
+		select {
+		case <-deadline:
+			t.Fatalf("run never completed: %+v", run)
+		case <-time.After(300 * time.Millisecond):
+		}
+	}
+	if run.Status != "completed" {
+		t.Fatalf("status = %s, err = %q", run.Status, run.Error)
+	}
+	if !strings.Contains(run.Result, "bulk answer") {
+		t.Errorf("result = %q", run.Result)
+	}
+	if run.InputTokens == 0 || run.OutputTokens == 0 {
+		t.Errorf("token accounting missing: %+v", run)
+	}
+	if runs, err := cl.Runs(); err != nil || len(runs) == 0 {
+		t.Errorf("Runs = %+v, %v", runs, err)
 	}
 }
