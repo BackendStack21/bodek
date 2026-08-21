@@ -424,6 +424,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case runActionMsg:
 		return m, m.handleRunAction(msg)
 
+	case runStartedMsg:
+		return m, m.handleRunStarted(msg)
+
 	case mgmtMsg:
 		m.handleMgmtMsg(msg)
 		m.refresh()

@@ -122,6 +122,15 @@ func (m *Model) basePaletteEntries() []palEntry {
 			run: func(m *Model) tea.Cmd { return m.openConfig() }},
 		{title: "cancel the running turn", hint: "esc", kind: "action",
 			run: func(m *Model) tea.Cmd { return m.cancelRun() }},
+		{title: "run headless — sends the composer draft", hint: "/run", kind: "action",
+			run: func(m *Model) tea.Cmd {
+				draft := strings.TrimSpace(m.ta.Value())
+				if draft == "" {
+					return m.transientNoteCmd("type a prompt first — the palette runs your draft headlessly")
+				}
+				m.ta.Reset()
+				return m.startHeadlessRun(draft)
+			}},
 		{title: "toggle tool details", hint: "^E", kind: "action",
 			run: func(m *Model) tea.Cmd { m.expandAll = !m.expandAll; m.convCount = -1; return nil }},
 		{title: "toggle extended thinking", hint: "^T", kind: "action",

@@ -54,6 +54,41 @@ type eventsMsg struct {
 // runActionMsg reports a run cancel / approval-answer outcome.
 type runActionMsg struct{ err error }
 
+// runStartedMsg reports a headless run started via /run or the palette.
+type runStartedMsg struct {
+	run client.Run
+	err error
+}
+
+// startHeadlessRun submits a headless REST run (fresh session — it never
+// races the interactive conversation) and opens the runs tab on success.
+func (m *Model) startHeadlessRun(prompt string) tea.Cmd {
+	prompt = strings.TrimSpace(prompt)
+	if prompt == "" {
+		return m.transientNoteCmd("/run needs a prompt — type one or use the palette with a draft")
+	}
+	cl := m.cl
+	thinking := ""
+	if m.thinkOn {
+		thinking = "enabled"
+	}
+	model := m.pendModel
+	m.pendModel = "" // applied to the run, not held for the next turn
+	return func() tea.Msg {
+		run, err := cl.StartRun(prompt, client.RunOpts{Model: model, Thinking: thinking})
+		return runStartedMsg{run: run, err: err}
+	}
+}
+
+func (m *Model) handleRunStarted(msg runStartedMsg) tea.Cmd {
+	if msg.err != nil {
+		return m.transientNoteCmd("headless run failed: " + msg.err.Error())
+	}
+	note := m.transientNoteCmd("headless run started · " + shortID(msg.run.ID))
+	m.refresh()
+	return tea.Batch(note, m.openRuns())
+}
+
 // drawerTab is one tab of the management drawer.
 type drawerTab struct {
 	name string

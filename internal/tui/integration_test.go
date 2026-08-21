@@ -117,6 +117,16 @@ func standIn(t *testing.T, token string) *Model {
 	mux.HandleFunc("/api/cancel", guard(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
 	}))
+	mux.HandleFunc("/api/prompt", guard(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		w.WriteHeader(http.StatusAccepted)
+		json.NewEncoder(w).Encode(map[string]any{
+			"run_id": "run-9", "session_id": "s-new", "status": "running",
+		})
+	}))
 	mux.HandleFunc("/api/runs", guard(func(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(map[string]any{"runs": []client.Run{
 			{ID: "run-1", SessionID: "s1", Model: "m", Status: "waiting_approval",

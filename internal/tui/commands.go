@@ -46,6 +46,9 @@ func slashCommands() []command {
 		{"runs", "headless runs & remote approvals", func(m *Model, _ string) tea.Cmd {
 			return m.openRuns()
 		}},
+		{"run", "start a headless run — /run <prompt>", func(m *Model, args string) tea.Cmd {
+			return m.startHeadlessRun(args)
+		}},
 		{"events", "runtime event feed", func(m *Model, _ string) tea.Cmd {
 			return m.openEvents()
 		}},
