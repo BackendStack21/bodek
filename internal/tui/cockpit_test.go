@@ -63,3 +63,22 @@ func TestCockpitBudgetEmpty(t *testing.T) {
 		t.Errorf("empty budget card = %q", out)
 	}
 }
+
+// TestCockpitRefresh verifies r inside the popover re-fires the live
+// health+usage fetch — the cockpit is not a one-shot snapshot.
+func TestCockpitRefresh(t *testing.T) {
+	m := wired(t)
+	m.Update(exec(m.openCockpit()))
+	if m.healthSnap == nil || m.usageSnap == nil {
+		t.Fatal("open did not fetch health+usage")
+	}
+	m.healthSnap = nil // simulate staleness
+	_, cmd := m.Update(key("r"))
+	m.Update(exec(cmd))
+	if m.healthSnap == nil {
+		t.Error("r did not re-fetch the cockpit snapshots")
+	}
+	if out := plain(m.View()); !strings.Contains(out, "r refresh") {
+		t.Errorf("refresh hint missing from the card:\n%s", out)
+	}
+}

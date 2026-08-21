@@ -55,6 +55,51 @@ func TestMgmtMemoryTab(t *testing.T) {
 	}
 }
 
+// TestMgmtFactDeleteGate verifies fact deletion is a two-step action: d arms
+// the confirm gate without a request, any other key disarms, y fires.
+func TestMgmtFactDeleteGate(t *testing.T) {
+	m := wired(t)
+	m.Update(exec(m.openMemory()))
+	m.panelSel = 0 // a user fact
+
+	_, cmd := m.Update(key("d"))
+	if cmd != nil {
+		m.Update(exec(cmd))
+	}
+	if standInSaw.factDeletes != 0 {
+		t.Fatal("d alone fired the fact delete — gate missing")
+	}
+	if m.confirm != confirmFactDelete {
+		t.Fatalf("d did not arm the gate: %d", m.confirm)
+	}
+	if !strings.Contains(plain(m.View()), "y confirm") {
+		t.Errorf("armed gate not visible:\n%s", plain(m.View()))
+	}
+
+	// Any other key disarms without firing — even palette chords.
+	m.Update(key("ctrl+k"))
+	if m.confirm != confirmNone || m.pal.open {
+		t.Errorf("ctrl+k should disarm the gate, not open the palette: confirm=%d pal=%v", m.confirm, m.pal.open)
+	}
+	if standInSaw.factDeletes != 0 {
+		t.Error("disarm fired the delete")
+	}
+
+	// Arm again and confirm with y.
+	m.Update(key("d"))
+	if m.confirm != confirmFactDelete {
+		t.Fatal("second d did not re-arm")
+	}
+	_, cmd = m.Update(key("y"))
+	m.Update(exec(cmd)) // mgmtActionMsg
+	if standInSaw.factDeletes != 1 {
+		t.Errorf("y did not fire the fact delete: %d", standInSaw.factDeletes)
+	}
+	if m.confirm != confirmNone {
+		t.Error("gate stayed armed after firing")
+	}
+}
+
 // TestMgmtSkillsTab verifies skill rows carry provenance badges and promote
 // only targets NeedsReview skills.
 func TestMgmtSkillsTab(t *testing.T) {

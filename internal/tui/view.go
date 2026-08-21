@@ -959,6 +959,13 @@ func (m *Model) footer() string {
 				th.footerKey.Render("esc")+th.footer.Render(" cancel"),
 			)
 		}
+		if m.confirm == confirmSessionDelete {
+			return m.panelFooter(
+				th.footerDanger.Render("delete this session?"),
+				th.footerKey.Render("y")+th.footerDanger.Render(" delete"),
+				th.footer.Render("any other key cancels"),
+			)
+		}
 		hints := []string{
 			th.footer.Render("↑↓ select"),
 			th.footer.Render("⏎ resume"),
@@ -967,7 +974,7 @@ func (m *Model) footer() string {
 			th.footerKey.Render("r") + th.footer.Render(" rename"),
 			th.footerKey.Render("e") + th.footer.Render(" export md"),
 			th.footerKey.Render("E") + th.footer.Render(" json"),
-			th.footerDanger.Render("d delete"), // destructive — tinted to telegraph it
+			th.footerDanger.Render("d delete → y confirm"), // two-step by design
 		}
 		if m.sessHasMore {
 			hints = append(hints, th.footerKey.Render("n")+th.footer.Render(" more"))
@@ -989,26 +996,38 @@ func (m *Model) footer() string {
 			th.footerKey.Render("D")+th.footer.Render("eny · "),
 			th.footerKey.Render("T")+th.footer.Render("rust"),
 			th.footerKey.Render("c")+th.footer.Render(" cancel"),
+			th.footerKey.Render("e")+th.footer.Render(" events"),
+			th.footerKey.Render("p")+th.footer.Render(" approvals"),
 			th.footerKey.Render("r")+th.footer.Render(" refresh"),
 			th.footer.Render("esc close"),
 		)
 	}
 	if m.panel == panelEvents {
-		filter := "all sessions"
-		if m.evSessionFilter {
+		filter := "all"
+		if m.evRunFilter != "" {
+			filter = "run " + shortID(m.evRunFilter)
+		} else if m.evSessionFilter {
 			filter = "this session"
 		}
 		return m.panelFooter(
 			th.footerKey.Render("f")+th.footer.Render(" filter: "+filter+" · ]/[ tabs"),
+			th.footerKey.Render("x")+th.footer.Render(" clear filter"),
 			th.footerKey.Render("r")+th.footer.Render(" refresh"),
 			th.footer.Render("esc close"),
 		)
 	}
 	if m.panel == panelMemory {
+		if m.confirm == confirmFactDelete {
+			return m.panelFooter(
+				th.footerDanger.Render("delete this fact?"),
+				th.footerKey.Render("y")+th.footerDanger.Render(" delete"),
+				th.footer.Render("any other key cancels"),
+			)
+		}
 		return m.panelFooter(
 			th.footerKey.Render("a")+th.footer.Render(" add user · "),
 			th.footerKey.Render("A")+th.footer.Render(" add env"),
-			th.footerKey.Render("d")+th.footer.Render(" delete fact"),
+			th.footerKey.Render("d")+th.footer.Render(" delete fact → y confirm"),
 			th.footerKey.Render("p")+th.footer.Render(" promote episode"),
 			th.footerKey.Render("c")+th.footer.Render(" consolidate user · "),
 			th.footerKey.Render("E")+th.footer.Render(" env"),

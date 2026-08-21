@@ -22,6 +22,12 @@ import (
 func (m *Model) openCockpit() tea.Cmd {
 	m.popover = true
 	m.refresh()
+	return m.cockpitFetch()
+}
+
+// cockpitFetch is the live health+usage fetch: fired on open and again on
+// r while the popover stays up.
+func (m *Model) cockpitFetch() tea.Cmd {
 	cl := m.cl
 	if cl == nil {
 		return nil
@@ -50,8 +56,8 @@ func (m *Model) handleCockpitMsg(msg cockpitMsg) tea.Cmd {
 }
 
 // handlePopoverKey drives the cockpit overlay: it never blocks the run (the
-// transcript keeps streaming underneath), scroll keys page the card, and
-// esc/h/q close it.
+// transcript keeps streaming underneath), scroll keys page the card,
+// r re-fires the live fetch, and esc/h/q close it.
 func (m *Model) handlePopoverKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "ctrl+c":
@@ -61,6 +67,8 @@ func (m *Model) handlePopoverKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.popover = false
 		m.refresh()
 		return m, nil
+	case "r":
+		return m, m.cockpitFetch()
 	case "up", "ctrl+p", "k":
 		m.vp.ScrollUp(1)
 	case "down", "ctrl+n", "j":
@@ -92,6 +100,7 @@ func (m *Model) popoverView(w, h int) string {
 	}
 	// The session section renders un-boxed — no nested card inside a card.
 	b.WriteString("\n\n" + m.statsBody())
+	b.WriteString("\n\n" + th.acDetail.Render("r refresh · esc close"))
 
 	return th.acBox.Width(w - 2).Height(h - 2).Render(b.String())
 }

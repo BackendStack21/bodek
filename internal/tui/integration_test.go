@@ -21,6 +21,17 @@ func wired(t *testing.T) *Model {
 	return standIn(t, "tok")
 }
 
+// standInObs records what the stand-in saw, so tests can assert that UI
+// actions actually hit the wire (delete counts, event filters). Package
+// tests run sequentially — no t.Parallel in this package.
+type standInObs struct {
+	sessionDeletes int
+	factDeletes    int
+	lastEventRunID string
+}
+
+var standInSaw standInObs
+
 // standIn builds a Model against an in-process odek-serve stand-in that
 // optionally enforces the per-instance WS token (cookie or X-Odek-Ws-Token
 // header) on /ws and /api/*, mirroring odek serve; an empty token disables
@@ -28,6 +39,7 @@ func wired(t *testing.T) *Model {
 func standIn(t *testing.T, token string) *Model {
 	t.Helper()
 	t.Setenv("HOME", t.TempDir())
+	standInSaw = standInObs{}
 
 	// serveTokenOK mirrors odek serve's validateServeToken: the token is
 	// accepted via the odek_ws_token cookie or the X-Odek-Ws-Token header.
@@ -83,6 +95,7 @@ func standIn(t *testing.T, token string) *Model {
 	mux.HandleFunc("/api/sessions/", guard(func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodDelete:
+			standInSaw.sessionDeletes++
 			w.WriteHeader(http.StatusNoContent)
 			return
 		case http.MethodPost:
@@ -152,6 +165,13 @@ func standIn(t *testing.T, token string) *Model {
 			w.WriteHeader(http.StatusNoContent)
 		case strings.Contains(r.URL.Path, "/approvals/") && r.Method == http.MethodPost:
 			w.WriteHeader(http.StatusOK)
+		case strings.HasSuffix(r.URL.Path, "/approvals") && r.Method == http.MethodGet:
+			json.NewEncoder(w).Encode(map[string]any{
+				"run_id": "run-1",
+				"pending_approvals": []client.RunApproval{
+					{ID: "ap-1", Risk: "shell_exec", Command: "rm -rf build", AllowTrust: true},
+				},
+			})
 		default:
 			json.NewEncoder(w).Encode(client.Run{ID: "run-1", Status: "waiting_approval"})
 		}
@@ -165,6 +185,9 @@ func standIn(t *testing.T, token string) *Model {
 		})
 	}))
 	mux.HandleFunc("/api/memory/facts", guard(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodDelete {
+			standInSaw.factDeletes++
+		}
 		w.WriteHeader(http.StatusOK)
 	}))
 	mux.HandleFunc("/api/memory/episodes/promote", guard(func(w http.ResponseWriter, r *http.Request) {
@@ -221,17 +244,27 @@ func standIn(t *testing.T, token string) *Model {
 	}))
 	mux.HandleFunc("/api/events", guard(func(w http.ResponseWriter, r *http.Request) {
 		evs := []client.RuntimeEvent{
-			{Schema: "odek.event/v1", Type: "run_started", SessionID: "s1",
+			{Schema: "odek.event/v1", Type: "run_started", RunID: "run-1", SessionID: "s1",
 				Timestamp: time.Now()},
-			{Schema: "odek.event/v1", Type: "tool_call_started", Tool: "shell",
+			{Schema: "odek.event/v1", Type: "tool_call_started", RunID: "run-1", Tool: "shell",
 				SessionID: "s1", Iteration: 1, Timestamp: time.Now()},
-			{Schema: "odek.event/v1", Type: "run_started", SessionID: "s-other",
+			{Schema: "odek.event/v1", Type: "run_started", RunID: "run-2", SessionID: "s-other",
 				Timestamp: time.Now()},
 		}
 		if sid := r.URL.Query().Get("session_id"); sid != "" {
 			filtered := evs[:0]
 			for _, ev := range evs {
 				if ev.SessionID == sid {
+					filtered = append(filtered, ev)
+				}
+			}
+			evs = filtered
+		}
+		standInSaw.lastEventRunID = r.URL.Query().Get("run_id")
+		if rid := r.URL.Query().Get("run_id"); rid != "" {
+			filtered := evs[:0]
+			for _, ev := range evs {
+				if ev.RunID == rid {
 					filtered = append(filtered, ev)
 				}
 			}
@@ -509,10 +542,27 @@ func TestSessionsPanel(t *testing.T) {
 		t.Error("resume did not replay transcript")
 	}
 
-	// Reopen and delete.
+	// Reopen and delete: d arms the confirm gate (no request yet), any
+	// other key would disarm, y fires the delete.
 	m.Update(exec(m.openSessions()))
 	_, dcmd := m.Update(key("d"))
-	m.Update(exec(dcmd))
+	if dcmd != nil {
+		m.Update(exec(dcmd))
+	}
+	if standInSaw.sessionDeletes != 0 {
+		t.Error("d alone fired the delete — the confirm gate is missing")
+	}
+	if len(m.sessions) != 1 {
+		t.Errorf("d alone removed the session: %d", len(m.sessions))
+	}
+	if !strings.Contains(plain(m.View()), "y confirm") {
+		t.Errorf("armed gate not shown:\n%s", plain(m.View()))
+	}
+	_, ycmd := m.Update(key("y"))
+	m.Update(exec(ycmd))
+	if standInSaw.sessionDeletes != 1 {
+		t.Errorf("y did not fire the delete: %d", standInSaw.sessionDeletes)
+	}
 	if len(m.sessions) != 0 {
 		t.Errorf("delete did not remove session: %d", len(m.sessions))
 	}

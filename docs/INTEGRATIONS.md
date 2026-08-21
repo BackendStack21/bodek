@@ -15,32 +15,45 @@ update it when either side changes.
 | `GET /api/sessions?q&limit&offset` | `SearchSessions` | sessions tab (search, load-more) |
 | `GET /api/sessions/{id}` | `SessionDetail` | resume (token bootstrap via `X-Session-Token`) |
 | `POST /api/sessions/{id}` | `UpdateSession` | pin (`p`), rename (`r`) |
-| `DELETE /api/sessions/{id}` | `DeleteSession` | sessions tab (`d`) |
+| `DELETE /api/sessions/{id}` | `DeleteSession` | sessions tab (`d` → `y` confirm gate) |
 | `GET /api/sessions/{id}/export` | `ExportSession` | sessions tab (`e` md, `E` json) |
 | `POST /api/cancel` | `Cancel` | cancel REST fallback (WS cancel is primary) |
 | `GET /api/limits` | `Limits` | cost rendering (`PricesFor`), cockpit budget |
-| `GET /api/health` | `Health` | cockpit live snapshot (started-at) |
+| `GET /api/health` | `Health` | cockpit live snapshot (`r` re-fetches) |
 | `POST /api/prompt` | `StartRun` | `/run`, palette "run headless" (draft) |
 | `GET /api/runs` | `Runs` | runs tab (3s poll while visible) |
 | `GET /api/runs/{id}` | `RunDetail` | runs tab enter/refresh |
 | `DELETE /api/runs/{id}` · `POST …/cancel` | `CancelRun` | runs tab (`c`) |
-| `GET /api/runs/{id}/approvals` | — (in list/detail) | runs tab approval badge |
+| `GET /api/runs/{id}/approvals` | `RunApprovals` | runs tab (`p` — light refresh, no event tail) |
 | `POST /api/runs/{id}/approvals/{aid}` | `AnswerRunApproval` | runs tab (`A`/`D`/`T`) |
-| `GET /api/events` | `RuntimeEvents` | events tab (`f` session filter) |
-| `GET /api/usage` | `Usage` | cockpit lifetime, config tab |
+| `GET /api/events` | `RuntimeEvents` | events tab (`f` session filter, `e` run drill-in from runs, `x` clear) |
+| `GET /api/usage` | `Usage` | cockpit lifetime (refreshes with `r`), config tab |
 | `GET /api/connections` | `Connections` | config tab |
 | `DELETE /api/connections/{id}` | `KickConnection` | config tab (`d`) |
 | `GET /api/config` | `ConfigView` | config tab |
 | `GET /api/mcp` | `MCPServers` | tools tab |
 | `GET /api/memory` | `Memory` | memory tab |
 | `POST /api/memory/facts` | `AddMemoryFact` | memory tab (`a` user, `A` env) |
-| `DELETE /api/memory/facts` | `DeleteMemoryFact` | memory tab (`d`) |
+| `DELETE /api/memory/facts` | `DeleteMemoryFact` | memory tab (`d` → `y` confirm gate) |
 | `POST /api/memory/episodes/promote` | `PromoteEpisode` | memory tab (`p`) |
 | `POST /api/memory/consolidate` | `ConsolidateMemory` | memory tab (`c` user, `E` env) |
 | `GET /api/skills` | `Skills` | skills tab (provenance badges) |
 | `POST /api/skills/promote` | `PromoteSkill` | skills tab (`p`, `P` force) |
 | `GET /api/tools` | `Tools` | tools tab |
 | `POST /api/shutdown` | `Shutdown` | config tab (`S` + typed "shutdown" death-gate) |
+
+All seven management surfaces are drawer tabs (sessions · runs · events ·
+memory · skills · tools · config): `]`/`[` cycle, `1–7` jump, `r`/`⏎`
+refresh — one grammar everywhere.
+
+## Not exposed by odek REST (documented gaps)
+
+These workflows have no server endpoint; bodek cannot offer them:
+
+- Memory fact **replace/update** (the Go SDK has `ReplaceFact`; REST does not)
+- Skill delete / enable / disable / import
+- Config mutation (`GET /api/config` is sanitized read-only)
+- MCP server add / remove / enable (listing only)
 
 ## WebSocket protocol (`/ws`)
 

@@ -71,27 +71,65 @@ func TestDrawerEventsTab(t *testing.T) {
 	}
 }
 
-// TestDrawerTabCycling verifies ]/[ and digit jumps move between drawer tabs
-// and esc closes from any of them.
+// TestDrawerTabCycling verifies ]/[ and digit jumps move between ALL seven
+// drawer tabs (management panels included — they are full tabs, not loose
+// overlays) and esc closes from any of them.
 func TestDrawerTabCycling(t *testing.T) {
 	m := wired(t)
 	m.Update(exec(m.openRuns()))
 
-	_, cmd := m.Update(key("]"))
-	m.Update(exec(cmd))
-	if m.panel != panelEvents {
-		t.Errorf("] did not cycle to events: %d", m.panel)
+	// ] walks the full ring: runs → events → memory → skills → tools →
+	// config → sessions.
+	want := []panelMode{panelEvents, panelMemory, panelSkills, panelTools, panelConfig, panelSessions}
+	for _, w := range want {
+		_, cmd := m.Update(key("]"))
+		m.Update(exec(cmd))
+		if m.panel != w {
+			t.Fatalf("] chain: panel = %d, want %d", m.panel, w)
+		}
 	}
-	_, cmd = m.Update(key("1"))
+	// [ wraps back: sessions → config.
+	_, cmd := m.Update(key("["))
 	m.Update(exec(cmd))
-	if m.panel != panelSessions {
-		t.Errorf("digit jump did not reach sessions: %d", m.panel)
+	if m.panel != panelConfig {
+		t.Errorf("[ did not wrap to config: %d", m.panel)
+	}
+	// Digits jump straight to any tab.
+	for d, w := range map[string]panelMode{
+		"1": panelSessions, "2": panelRuns, "3": panelEvents, "4": panelMemory,
+		"5": panelSkills, "6": panelTools, "7": panelConfig,
+	} {
+		_, cmd := m.Update(key(d))
+		m.Update(exec(cmd))
+		if m.panel != w {
+			t.Errorf("digit %s: panel = %d, want %d", d, m.panel, w)
+		}
+	}
+	// The strip renders every tab name, and r/⏎ refresh a management tab
+	// the same as a core tab (they are drawer tabs now).
+	out := plain(m.View())
+	for _, name := range []string{"sessions", "runs", "events", "memory", "skills", "tools", "config"} {
+		if !strings.Contains(out, name) {
+			t.Errorf("tab strip missing %q:\n%s", name, out)
+		}
 	}
 	m.Update(exec(m.fetchSessionsPage("", 0, false)))
-	_, cmd = m.Update(key("["))
+	_, cmd = m.Update(key("4"))
 	m.Update(exec(cmd))
-	if m.panel != panelEvents {
-		t.Errorf("[ did not cycle back to events: %d", m.panel)
+	_, cmd = m.Update(key("r"))
+	if cmd == nil {
+		t.Error("r did not refresh the memory tab")
+	} else {
+		m.Update(exec(cmd))
+	}
+	_, cmd = m.Update(key("enter"))
+	if cmd == nil {
+		t.Error("enter did not refresh the memory tab")
+	} else {
+		m.Update(exec(cmd))
+	}
+	if m.panel != panelMemory {
+		t.Errorf("refresh left the tab: %d", m.panel)
 	}
 	m.Update(key("esc"))
 	if m.panel != panelNone {
@@ -108,5 +146,65 @@ func TestRunsPollStopsOnClose(t *testing.T) {
 	m.closePanel()
 	if cmd := m.handleRunsTick(runsTickMsg{seq: seq}); cmd != nil {
 		t.Error("stale tick after close re-armed the poll")
+	}
+}
+
+// TestRunsEventsDrillIn verifies e on the runs tab jumps to the events tab
+// scoped to that run (the run_id filter reaches the server), the filter is
+// visible in the title, f replaces it with the session filter, and x
+// clears back to the full ring.
+func TestRunsEventsDrillIn(t *testing.T) {
+	m := wired(t)
+	m.Update(exec(m.openRuns()))
+	m.panelSel = 0 // run-1 (waiting_approval)
+
+	_, cmd := m.Update(key("e"))
+	m.Update(exec(cmd)) // eventsMsg
+	if m.panel != panelEvents {
+		t.Fatalf("e did not drill into events: panel = %d", m.panel)
+	}
+	if m.evRunFilter != "run-1" {
+		t.Fatalf("run filter = %q, want run-1", m.evRunFilter)
+	}
+	if standInSaw.lastEventRunID != "run-1" {
+		t.Fatalf("server saw run_id %q, want run-1", standInSaw.lastEventRunID)
+	}
+	if len(m.feed) != 2 { // run-1's two events, run-2 excluded
+		t.Fatalf("filtered feed = %d events, want 2", len(m.feed))
+	}
+	if out := plain(m.View()); !strings.Contains(out, "run run-1") {
+		t.Errorf("run filter not shown in the title:\n%s", out)
+	}
+
+	// f swaps in the session filter (mutually exclusive).
+	_, cmd = m.Update(key("f"))
+	m.Update(exec(cmd))
+	if m.evRunFilter != "" || !m.evSessionFilter {
+		t.Fatalf("f must replace the run filter: run=%q session=%v", m.evRunFilter, m.evSessionFilter)
+	}
+
+	// x clears every filter and refetches the whole ring.
+	_, cmd = m.Update(key("x"))
+	m.Update(exec(cmd))
+	if m.evRunFilter != "" || m.evSessionFilter {
+		t.Fatal("x did not clear the filters")
+	}
+	if len(m.feed) != 3 {
+		t.Fatalf("cleared feed = %d events, want 3", len(m.feed))
+	}
+}
+
+// TestRunsApprovalsRefresh verifies p re-reads the highlighted run's
+// pending approvals through the dedicated endpoint and patches the row.
+func TestRunsApprovalsRefresh(t *testing.T) {
+	m := wired(t)
+	m.Update(exec(m.openRuns()))
+	m.panelSel = 0
+	m.runs[0].PendingApprovals = nil // simulate a stale queue
+
+	_, cmd := m.Update(key("p"))
+	m.Update(exec(cmd)) // runApprovalsMsg
+	if len(m.runs[0].PendingApprovals) != 1 || m.runs[0].PendingApprovals[0].ID != "ap-1" {
+		t.Fatalf("approvals refresh = %+v, want ap-1", m.runs[0].PendingApprovals)
 	}
 }

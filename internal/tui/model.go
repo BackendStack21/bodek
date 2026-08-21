@@ -162,14 +162,16 @@ type Model struct {
 	sessHasMore bool          // last page was full — more may follow
 	panelEdit   panelEditMode // text-entry submode while a panel is open
 	panelDraft  string        // the text being edited (search query / rename)
+	confirm     confirmKind   // armed destructive action: y fires, any other key disarms
 
 	profiles []client.Profile // built-in model catalog (picker + context gauge)
 
 	// Drawer state: runs polling + the events feed.
 	runs            []client.Run
 	feed            []client.RuntimeEvent
-	runsSeq         int  // poll generation; a stale tick after closing is dropped
-	evSessionFilter bool // events tab: filter the ring to the active session
+	runsSeq         int    // poll generation; a stale tick after closing is dropped
+	evSessionFilter bool   // events tab: filter the ring to the active session
+	evRunFilter     string // events tab: drill-in — the ring of one run (wins over session)
 
 	// Management tab state (memory / skills / tools / config).
 	memView     client.MemoryView
@@ -433,6 +435,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case runActionMsg:
 		return m, m.handleRunAction(msg)
 
+	case runApprovalsMsg:
+		return m, m.handleRunApprovals(msg)
+
 	case runStartedMsg:
 		return m, m.handleRunStarted(msg)
 
@@ -543,6 +548,12 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	// An armed destructive confirm captures the keyboard first: y fires the
+	// pending delete, ANY other key — palette chords, navigation, esc —
+	// disarms. Deletes never fire on the keypress that armed them.
+	if m.confirm != confirmNone {
+		return m.handleConfirmKey(msg)
+	}
 	// The palette works from every rung of the modality ladder.
 	if m.pal.open {
 		return m.handlePaletteKey(msg)

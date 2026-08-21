@@ -134,6 +134,20 @@ func (c *Client) RunDetail(id string) (Run, error) {
 	return run, nil
 }
 
+// RunApprovals fetches only the pending approvals of a run — the light
+// refresh while waiting (GET /api/runs/{id}/approvals), without the event
+// tail the full detail response carries.
+func (c *Client) RunApprovals(runID string) ([]RunApproval, error) {
+	var out struct {
+		RunID            string        `json:"run_id"`
+		PendingApprovals []RunApproval `json:"pending_approvals"`
+	}
+	if err := c.getJSON(c.baseURL+"/api/runs/"+url.PathEscape(runID)+"/approvals", "", &out); err != nil {
+		return nil, err
+	}
+	return out.PendingApprovals, nil
+}
+
 // CancelRun aborts a headless run (POST /api/runs/{id}/cancel — the DELETE
 // twin reports idle the same way).
 func (c *Client) CancelRun(id string) error {

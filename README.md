@@ -184,6 +184,25 @@ command and press `⏎`.
 | `/unattach [name]` | Drop staged files (all when no name given) |
 | `/quit` | Exit bodek |
 
+### The management drawer
+
+`/sessions`, `/runs`, `/events`, `/memory`, `/skills`, `/tools`, and
+`/config` all open tabs of **one drawer** with a shared grammar:
+
+- `]` / `[` cycle tabs · `1`–`7` jump · `r` and `⏎` refresh · `esc` closes.
+- **Sessions** — `/` search (server-side), `p` pin, `r` rename, `e`/`E`
+  export md/json, `d` delete (`y` confirms — deletes are always two-step),
+  `⏎` resume.
+- **Runs** — live 3s poll, `A`/`D`/`T` remote approvals, `c` cancel,
+  `p` refresh pending approvals, `e` drill into the run's event trail.
+- **Events** — the `odek.event/v1` ring: `f` filter to this session, `x`
+  clear filters (a runs-tab drill-in scopes it to one run).
+- **Memory** — `a`/`A` add user/env facts, `d` delete fact (`y` confirms),
+  `p` promote a pending episode, `c`/`E` consolidate.
+- **Skills** — provenance badges; `p` promote, `P` force-promote tainted.
+- **Tools/Config** — registry + MCP servers; sanitized config, lifetime
+  usage, `d` kick a connection, `S` typed shutdown death-gate.
+
 ### File attachments (`@`)
 
 Type `@` to attach a file. bodek searches the working tree and shows a

@@ -398,7 +398,11 @@ func (m *Model) memRowsRender(w int) []string {
 		budget := w - 2 - lipgloss.Width(detail)
 		prefix, lab := "  ", th.acItem.Render(truncate(label, budget))
 		if i == m.panelSel {
-			prefix, lab = th.acSel.Render("› "), th.acSel.Render(truncate(label, budget))
+			if m.confirm == confirmFactDelete {
+				prefix, lab = th.badgeDanger.Render("⚠ "), th.badgeDanger.Render(truncate(label, budget))
+			} else {
+				prefix, lab = th.acSel.Render("› "), th.acSel.Render(truncate(label, budget))
+			}
 		}
 		rows = append(rows, prefix+lab+th.acDetail.Render(detail))
 	}

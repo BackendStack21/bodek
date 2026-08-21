@@ -19,17 +19,26 @@ import (
 
 // tabBar renders the drawer's tab strip after the panel title: the active
 // tab in accent, the rest muted, with the digit shortcuts taught inline.
-func (m *Model) tabBar() string {
+// When seven tabs don't fit the given width, the strip collapses to the
+// active tab behind an ellipsis — cycling and digits still reach the rest.
+func (m *Model) tabBar(maxw int) string {
 	var parts []string
+	active := ""
 	for i, t := range drawerTabs() {
 		label := fmt.Sprintf("%d %s", i+1, t.name)
 		if t.mode == m.panel {
-			parts = append(parts, m.th.acSel.Render(label))
+			active = m.th.acSel.Render(label)
+			parts = append(parts, active)
 		} else {
 			parts = append(parts, m.th.acDetail.Render(label))
 		}
 	}
-	return "  " + strings.Join(parts, m.th.footerSep.Render(" · "))
+	sep := m.th.footerSep.Render(" · ")
+	full := "  " + strings.Join(parts, sep)
+	if maxw > 0 && lipgloss.Width(full) > maxw {
+		return "  " + m.th.acDetail.Render("…") + sep + active
+	}
+	return full
 }
 
 // runPollEvery is the runs-tab refresh cadence while visible (spec: poll
@@ -96,13 +105,18 @@ type drawerTab struct {
 	open func(m *Model) tea.Cmd
 }
 
-// drawerTabs lists the drawer's tabs in display order. Phase 3 appends
-// memory/skills/tools/config here — nothing else changes.
+// drawerTabs lists the drawer's tabs in display order. Every management
+// surface is a tab: the same ]/[ cycle, digit jump, strip, and r/⏎ refresh
+// grammar governs all seven.
 func drawerTabs() []drawerTab {
 	return []drawerTab{
 		{"sessions", panelSessions, func(m *Model) tea.Cmd { return m.openSessions() }},
 		{"runs", panelRuns, func(m *Model) tea.Cmd { return m.openRuns() }},
 		{"events", panelEvents, func(m *Model) tea.Cmd { return m.openEvents() }},
+		{"memory", panelMemory, func(m *Model) tea.Cmd { return m.openMemory() }},
+		{"skills", panelSkills, func(m *Model) tea.Cmd { return m.openSkills() }},
+		{"tools", panelTools, func(m *Model) tea.Cmd { return m.openTools() }},
+		{"config", panelConfig, func(m *Model) tea.Cmd { return m.openConfig() }},
 	}
 }
 
@@ -119,6 +133,7 @@ func drawerPanel(p panelMode) bool {
 // switchDrawerTab moves the drawer to another tab, preserving nothing — each
 // tab owns its state and fetches fresh on open.
 func (m *Model) switchDrawerTab(mode panelMode) tea.Cmd {
+	m.confirm = confirmNone // a gate never survives a tab change
 	for _, t := range drawerTabs() {
 		if t.mode == mode {
 			return t.open(m)
@@ -199,6 +214,50 @@ func (m *Model) selectedRun() *client.Run {
 		return &m.runs[m.panelSel]
 	}
 	return nil
+}
+
+// runApprovalsMsg carries a dedicated pending-approvals refresh for one run.
+type runApprovalsMsg struct {
+	runID   string
+	pending []client.RunApproval
+	err     error
+}
+
+// refreshSelectedRunApprovals re-reads the highlighted run's pending
+// approvals through GET /api/runs/{id}/approvals — the light refresh while
+// a run sits in waiting_approval (no run detail, no event tail).
+func (m *Model) refreshSelectedRunApprovals() tea.Cmd {
+	r := m.selectedRun()
+	if r == nil {
+		return nil
+	}
+	cl := m.cl
+	id := r.ID
+	return func() tea.Msg {
+		pending, err := cl.RunApprovals(id)
+		return runApprovalsMsg{runID: id, pending: pending, err: err}
+	}
+}
+
+func (m *Model) handleRunApprovals(msg runApprovalsMsg) tea.Cmd {
+	if msg.err != nil {
+		return m.transientNoteCmd("approvals refresh failed: " + msg.err.Error())
+	}
+	for i := range m.runs {
+		if m.runs[i].ID == msg.runID {
+			m.runs[i].PendingApprovals = msg.pending
+			break
+		}
+	}
+	m.refresh()
+	if n := len(msg.pending); n > 0 {
+		note := fmt.Sprintf("%d pending approval", n)
+		if n > 1 {
+			note += "s"
+		}
+		return m.transientNoteCmd(note + " · " + shortID(msg.runID))
+	}
+	return m.transientNoteCmd("no pending approvals · " + shortID(msg.runID))
 }
 
 // cancelSelectedRun aborts the highlighted headless run.
@@ -311,20 +370,45 @@ func (m *Model) openEvents() tea.Cmd {
 
 func (m *Model) fetchEvents() tea.Cmd {
 	cl := m.cl
-	sid := ""
-	if m.evSessionFilter {
+	rid, sid := "", ""
+	if m.evRunFilter != "" {
+		rid = m.evRunFilter // drill-in wins: one run's trail
+	} else if m.evSessionFilter {
 		sid = m.sessionID
 	}
 	return func() tea.Msg {
-		evs, err := cl.RuntimeEvents(100, "", sid)
+		evs, err := cl.RuntimeEvents(100, rid, sid)
 		return eventsMsg{events: evs, err: err}
 	}
 }
 
-// toggleEventFilter flips the this-session filter and refetches.
+// toggleEventFilter flips the this-session filter (clearing any run
+// drill-in — filters are exclusive) and refetches.
 func (m *Model) toggleEventFilter() tea.Cmd {
 	m.evSessionFilter = !m.evSessionFilter
+	if m.evSessionFilter {
+		m.evRunFilter = ""
+	}
 	return m.fetchEvents()
+}
+
+// clearEventFilters drops every events filter and refetches the whole ring.
+func (m *Model) clearEventFilters() tea.Cmd {
+	m.evRunFilter = ""
+	m.evSessionFilter = false
+	return m.fetchEvents()
+}
+
+// drillIntoRunEvents opens the events tab scoped to the highlighted run —
+// its execution trail from the runtime-event ring.
+func (m *Model) drillIntoRunEvents() tea.Cmd {
+	r := m.selectedRun()
+	if r == nil {
+		return nil
+	}
+	m.evRunFilter = r.ID
+	m.evSessionFilter = false
+	return m.openEvents()
 }
 
 func (m *Model) handleEventsMsg(msg eventsMsg) {

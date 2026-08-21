@@ -37,6 +37,45 @@ const (
 	panelEditRename
 )
 
+// confirmKind arms a destructive action: pressing d/x arms it, y confirms,
+// any other key disarms. Row deletes never fire on a single keypress —
+// the same anti-fatigue discipline as the shutdown death-gate, scaled to
+// row scope.
+type confirmKind int
+
+const (
+	confirmNone confirmKind = iota
+	confirmSessionDelete
+	confirmFactDelete
+)
+
+// handleConfirmKey resolves an armed delete: y fires it against the
+// highlighted row; everything else disarms.
+func (m *Model) handleConfirmKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	kind := m.confirm
+	m.confirm = confirmNone
+	m.panelMsg = ""
+	switch msg.String() {
+	case "y", "Y":
+		switch kind {
+		case confirmSessionDelete:
+			return m, m.deleteSelected()
+		case confirmFactDelete:
+			return m, m.memDeleteSelected()
+		}
+	}
+	m.refresh()
+	return m, nil
+}
+
+// armConfirm arms a row-scoped delete and shows the gate in the panel.
+func (m *Model) armConfirm(kind confirmKind, what string) tea.Cmd {
+	m.confirm = kind
+	m.panelMsg = "delete " + what + "?  y confirm · any other key cancels"
+	m.refresh()
+	return nil
+}
+
 // sessPageSize is the sessions-panel page size (server caps limit at 200).
 const sessPageSize = 50
 
@@ -160,6 +199,7 @@ func (m *Model) closePanel() {
 	m.panel = panelNone
 	m.panelMsg = ""
 	m.panelEdit = panelEditNone
+	m.confirm = confirmNone
 	m.relayout()
 	m.refresh()
 }
@@ -230,11 +270,21 @@ func (m *Model) handlePanelKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case "d", "x":
+		if m.panel == panelEvents {
+			// No deletes here — x doubles as the filter-clear key.
+			return m, m.clearEventFilters()
+		}
 		if m.panel == panelSessions {
-			return m, m.deleteSelected()
+			if m.panelSel < len(m.sessions) {
+				return m, m.armConfirm(confirmSessionDelete, "session "+shortID(m.sessions[m.panelSel].ID))
+			}
+			return m, nil
 		}
 		if m.panel == panelMemory {
-			return m, m.memDeleteSelected()
+			if r := m.memSelected(); r != nil && r.kind != "episode" {
+				return m, m.armConfirm(confirmFactDelete, r.kind+" fact")
+			}
+			return m, nil
 		}
 		if m.panel == panelConfig {
 			return m, m.cfgKickSelected()
@@ -269,6 +319,9 @@ func (m *Model) handlePanelKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.panel == panelSessions {
 			return m, m.togglePinSelected()
 		}
+		if m.panel == panelRuns {
+			return m, m.refreshSelectedRunApprovals()
+		}
 		if m.panel == panelMemory {
 			return m, m.memPromoteSelected()
 		}
@@ -286,6 +339,10 @@ func (m *Model) handlePanelKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "e":
 		if m.panel == panelSessions {
 			return m, m.exportSelected("md")
+		}
+		if m.panel == panelRuns {
+			// Drill into the highlighted run's event trail.
+			return m, m.drillIntoRunEvents()
 		}
 	case "E":
 		if m.panel == panelSessions {
@@ -948,7 +1005,9 @@ func (m *Model) renderPanel(w, h int) string {
 		rows = m.runRows(w - 6)
 	case panelEvents:
 		title = "☰ events"
-		if m.evSessionFilter {
+		if m.evRunFilter != "" {
+			title += th.acDetail.Render("  ·  run " + shortID(m.evRunFilter))
+		} else if m.evSessionFilter {
 			title += th.acDetail.Render("  ·  this session")
 		}
 		rows = m.eventRows(w - 6)
@@ -968,7 +1027,7 @@ func (m *Model) renderPanel(w, h int) string {
 
 	header := th.acTitle.Render(title)
 	if drawerPanel(m.panel) {
-		header += m.tabBar()
+		header += m.tabBar(w - 4 - lipgloss.Width(title))
 	}
 	if m.panel == panelSessions && m.sessQuery != "" {
 		header += th.acDetail.Render("  /" + m.sessQuery)
@@ -1020,7 +1079,11 @@ func (m *Model) sessionRows(w int) []string {
 		task = truncate(collapse(task), budget-lipgloss.Width(meta))
 		prefix, label := "  ", th.acItem.Render(task)
 		if i == m.panelSel {
-			prefix, label = th.acSel.Render("› "), th.acSel.Render(task)
+			if m.confirm == confirmSessionDelete {
+				prefix, label = th.badgeDanger.Render("⚠ "), th.badgeDanger.Render(task)
+			} else {
+				prefix, label = th.acSel.Render("› "), th.acSel.Render(task)
+			}
 		}
 		rows = append(rows, prefix+label+th.acDetail.Render(meta))
 	}
