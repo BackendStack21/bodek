@@ -97,9 +97,9 @@ func (m *Model) submit() tea.Cmd {
 		// a character key can never carry this job without hijacking typing.
 		if m.disconn && m.opts.Reconnect != nil {
 			m.status = "reconnecting"
-			m.addNote("retrying connection…")
+			note := m.transientNoteCmd("retrying connection…")
 			m.refresh()
-			return m.scheduleReconnect(0)
+			return tea.Batch(m.scheduleReconnect(0), note)
 		}
 		return nil
 	}

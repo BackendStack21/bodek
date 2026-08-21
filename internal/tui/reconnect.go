@@ -57,9 +57,9 @@ func (m *Model) handleReconnect(msg reconnectMsg) (tea.Model, tea.Cmd) {
 		// session on the fresh connection (restoring the server-side memory
 		// buffer) without waiting for a prompt, and every prompt still carries
 		// session_id + auth_token as the belt-and-suspenders fallback.
-		m.addNote("reconnected to odek serve — the session resumes on your next prompt")
+		note := m.transientNoteCmd("reconnected to odek serve — the session resumes on your next prompt")
 		m.refresh()
-		return m, tea.Batch(listen(m.events), m.adoptSession(), m.sendQueued())
+		return m, tea.Batch(listen(m.events), m.adoptSession(), m.sendQueued(), note)
 	}
 	if msg.attempt+1 < maxReconnectAttempts {
 		return m, m.scheduleReconnect(msg.attempt + 1)

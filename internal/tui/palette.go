@@ -142,8 +142,7 @@ func (m *Model) basePaletteEntries() []palEntry {
 				m.pendModel = ent.id
 				m.model = ent.id
 				m.resolveMaxContext()
-				m.addNote("model set to " + ent.id + " (applies next turn)")
-				return nil
+				return m.transientNoteCmd("model set to " + ent.id + " (applies next turn)")
 			},
 		})
 	}

@@ -66,9 +66,8 @@ func slashCommands() []command {
 				m.pendModel = args
 				m.model = args
 				m.resolveMaxContext()
-				m.addNote("model set to " + args + " (applies next turn)")
 				m.refresh()
-				return nil
+				return m.transientNoteCmd("model set to " + args + " (applies next turn)")
 			}
 			return m.openModels()
 		}},
@@ -85,9 +84,8 @@ func slashCommands() []command {
 			if m.thinkOn {
 				state = "on"
 			}
-			m.addNote("thinking " + state)
 			m.refresh()
-			return nil
+			return m.transientNoteCmd("thinking " + state)
 		}},
 		{"cancel", "cancel the running turn", func(m *Model, _ string) tea.Cmd {
 			return m.cancelRun()
@@ -137,9 +135,8 @@ func (m *Model) runCommand(name, args string) tea.Cmd {
 			return c.run(m, args)
 		}
 	}
-	m.addNote("unknown command: /" + name + " — try /help")
 	m.refresh()
-	return nil
+	return m.transientNoteCmd("unknown command: /" + name + " — try /help")
 }
 
 // runSelectedCommand executes the command highlighted in the popup.

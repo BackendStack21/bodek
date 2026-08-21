@@ -452,8 +452,9 @@ func (m *Model) panelSelect() tea.Cmd {
 			m.pendModel = e.id
 			m.model = e.id
 			m.resolveMaxContext()
-			m.addNote("model set to " + e.id + " (applies next turn)")
+			note := m.transientNoteCmd("model set to " + e.id + " (applies next turn)")
 			m.closePanel()
+			return note
 		}
 	case panelRuns:
 		// Enter refreshes the highlighted run's detail (result tail and the

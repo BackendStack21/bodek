@@ -279,9 +279,12 @@ func (m *Model) handleEvent(ev client.Event) (tea.Model, tea.Cmd) {
 		m.relayout() // the busy status line is gone with the socket
 		if cmd := m.scheduleReconnect(0); cmd != nil {
 			m.status = "reconnecting…"
-			m.addNote("connection lost — reconnecting…")
+			m.addTransientNote("connection lost — reconnecting…")
 			m.refresh()
-			return m, cmd
+			// The interim note fades via the sweep armed by noticeTimer; the
+			// reconnect outcome (success or the sticky ⏎-retry hint) replaces
+			// it within seconds either way.
+			return m, tea.Batch(cmd, m.noticeTimer(prevSeq))
 		}
 		m.status = "disconnected"
 		m.addNote("disconnected from odek serve")
