@@ -4,6 +4,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/charmbracelet/lipgloss"
+	"github.com/muesli/termenv"
+
 	"github.com/BackendStack21/bodek/internal/client"
 )
 
@@ -87,5 +90,59 @@ func TestAnswerSeparatedFromReasoning(t *testing.T) {
 	}
 	if think, ans := strings.Index(out, "live thought"), strings.Index(out, "live answer"); think > ans {
 		t.Errorf("streamed answer rendered before reasoning:\n%s", out)
+	}
+}
+
+// TestUserTurnCard pins the surface-card treatment: user turns paint an
+// EMBER surface background (the turn boundary the transcript lost with the
+// bars), every theme carries one except high-contrast (pure text), and the
+// fill never leaks into copied text — plain() output is identical with or
+// without the surface.
+func TestUserTurnCard(t *testing.T) {
+	// Assert what each theme PAINTS, not style internals: force TrueColor
+	// for the check and restore the harness profile after.
+	lipgloss.SetColorProfile(termenv.TrueColor)
+	defer lipgloss.SetColorProfile(termenv.Ascii)
+	for name, wantESC := range map[string]string{
+		"ember-dark":    "[48;2;16;19;26m",    // #10131A
+		"ember-light":   "[48;2;239;236;229m", // #EFECE5
+		"classic":       "[48;2;22;22;30m",    // #16161E
+		"high-contrast": "",
+	} {
+		var pal palette
+		switch name {
+		case "ember-dark":
+			pal = emberDark
+		case "ember-light":
+			pal = emberLight
+		case "classic":
+			pal = classic
+		default:
+			pal = emberHighContrast
+		}
+		out := themeFrom(pal).userCard.Render("x")
+		if wantESC == "" {
+			if strings.Contains(out, "[48;") {
+				t.Errorf("%s painted a surface: %q", name, out)
+			}
+			continue
+		}
+		if !strings.Contains(out, wantESC) {
+			t.Errorf("%s surface escape %q missing: %q", name, wantESC, out)
+		}
+	}
+
+	// The card renders the full turn and keeps the text copy-clean.
+	m := newTestModel()
+	m.msgs = append(m.msgs, message{role: roleUser, content: "fix the login bug"})
+	out, _ := m.renderMessage(m.msgs[0], 0, 0)
+	plainOut := plain(out)
+	if !strings.Contains(plainOut, "❯ you") || !strings.Contains(plainOut, "fix the login bug") {
+		t.Errorf("user card lost text:\n%s", plainOut)
+	}
+	for _, bar := range []string{"┃", "▌"} {
+		if strings.ContainsRune(plainOut, []rune(bar)[0]) {
+			t.Errorf("user card drew %q — copied text would not be paste-clean", bar)
+		}
 	}
 }

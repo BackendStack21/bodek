@@ -406,8 +406,14 @@ func (m *Model) renderMessage(msg message, msgIdx, lineOffset int) (string, []st
 		if !msg.sentAt.IsZero() {
 			label += th.acDetail.Render(" · " + ago(msg.sentAt))
 		}
-		body := th.userBar.Width(m.vp.Width - 2).Render(msg.content)
-		return label + "\n" + body, nil
+		// One raised card per user turn: the surface spans the full width so
+		// every colored block in the scrollback marks a turn boundary. The
+		// label sits inside — the card IS the turn.
+		card := label + "\n" + th.userBar.Render(msg.content)
+		if th.userCard.GetBackground() == nil {
+			return card, nil // high-contrast: no surface, plain turn
+		}
+		return th.userCard.Width(m.vp.Width - 2).Render(card), nil
 
 	case roleNote:
 		return th.sysBar.Width(m.vp.Width - 2).Render(msg.content), nil

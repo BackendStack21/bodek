@@ -34,6 +34,12 @@ type palette struct {
 	bodyText lipgloss.Color // machinery output (tool results, reasoning)
 	hairline lipgloss.Color // rules, borders, tree glyphs
 
+	// surface tints the user-turn card — EMBER's layered-surface language
+	// (bg-2 "cards, bubbles, inputs"). Empty = no surface (high-contrast
+	// stays pure text-on-terminal). Backgrounds are copy-safe: selections
+	// carry the text, never the SGR fill.
+	surface lipgloss.Color
+
 	grad [2][3]int // banner gradient endpoints (hi → lo)
 }
 
@@ -53,6 +59,7 @@ var (
 		faint:    "#6B7280",
 		bodyText: "#8B95A8",
 		hairline: "#2E3242",
+		surface:  "#10131A",
 		grad:     [2][3]int{{0xFF, 0xC9, 0x5E}, {0xFF, 0x8A, 0x3D}},
 	}
 
@@ -71,6 +78,7 @@ var (
 		faint:    "#8A8578",
 		bodyText: "#4A4E59",
 		hairline: "#CFC9BD",
+		surface:  "#EFECE5",
 		grad:     [2][3]int{{0xB4, 0x73, 0x00}, {0xE0, 0x70, 0x00}},
 	}
 
@@ -107,6 +115,7 @@ var (
 		faint:    "#6B7280",
 		bodyText: "#8B93A3",
 		hairline: "#3B3B4F",
+		surface:  "#16161E",
 		grad:     [2][3]int{{0xA7, 0x8B, 0xFA}, {0xF4, 0x72, 0xB6}},
 	}
 )
@@ -160,6 +169,7 @@ type theme struct {
 
 	userLabel lipgloss.Style
 	userBar   lipgloss.Style
+	userCard  lipgloss.Style
 	asstLabel lipgloss.Style
 	asstWork  lipgloss.Style
 	sysBar    lipgloss.Style
@@ -264,6 +274,12 @@ func themeFrom(p palette) theme {
 		// is the only full-brightness block, work items sit dimmer.
 		userLabel: lipgloss.NewStyle().Foreground(p.accentLo).Bold(true),
 		userBar:   lipgloss.NewStyle().Foreground(p.text),
+		// The user turn renders as one raised card — the turn boundary the
+		// transcript lost with the bars. Backgrounds never enter selections.
+		// The user turn renders as one raised card. An empty surface
+		// (high-contrast) stays unset rather than Color("") — nil is the
+		// downstream no-surface signal.
+		userCard:  surfaceStyle(p.surface),
 		asstLabel: lipgloss.NewStyle().Foreground(p.muted).Bold(true),
 		asstWork:  lipgloss.NewStyle().PaddingLeft(2),
 		sysBar:    lipgloss.NewStyle().Foreground(p.red).PaddingLeft(1),
@@ -340,6 +356,15 @@ func themeFrom(p palette) theme {
 		diffAdd: lipgloss.NewStyle().Foreground(p.green),
 		diffDel: lipgloss.NewStyle().Foreground(p.red),
 	}
+}
+
+// surfaceStyle builds the user-turn card style; empty means no surface.
+func surfaceStyle(c lipgloss.Color) lipgloss.Style {
+	st := lipgloss.NewStyle().Padding(0, 1)
+	if c != "" {
+		st = st.Background(c)
+	}
+	return st
 }
 
 // gradient colors a string left-to-right by interpolating between two RGB

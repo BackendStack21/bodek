@@ -5,6 +5,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/charmbracelet/lipgloss"
+	"github.com/muesli/termenv"
+
 	"github.com/BackendStack21/bodek/internal/client"
 )
 
@@ -15,9 +18,19 @@ func TestDumpPreview(t *testing.T) {
 	if dir == "" {
 		t.Skip("set BODEK_PREVIEW=<dir> to dump UI previews")
 	}
+	// The test harness runs without a TTY, so lipgloss's detected profile is
+	// ASCII and no color would render. Previews exist to judge color — force
+	// TrueColor for the lifetime of this test (plain()-based assertions in
+	// other tests are unaffected).
+	lipgloss.SetColorProfile(termenv.TrueColor)
 	write := func(name, s string) {
 		_ = os.WriteFile(dir+"/"+name, []byte(s), 0o644)
 	}
+	// glamour's renderer sniffs the terminal on construction (model resize)
+	// and resets the global profile — re-assert TrueColor before each render
+	// so previews judge real colors.
+	forceColor := func() { lipgloss.SetColorProfile(termenv.TrueColor) }
+	_ = forceColor
 
 	// Conversation: two turns with reasoning, steps, answers, telemetry.
 	m := newTestModel()
@@ -50,10 +63,12 @@ func TestDumpPreview(t *testing.T) {
 			stats:   &turnStats{latency: 3.1, ctxTok: 6400, outTok: 210, toolCount: 1, toolGlyphs: []string{"❯"}}},
 	)
 	m.refresh()
+	forceColor()
 	write("conversation.txt", m.View())
 	m.expandAll = true
 	m.convCount = -1
 	m.refresh()
+	forceColor()
 	write("conversation-expanded.txt", m.View())
 	m.expandAll = false
 
@@ -61,6 +76,7 @@ func TestDumpPreview(t *testing.T) {
 	w := newTestModel()
 	w.opts.CWD = "/Users/kyberneees/Work/github/21no.de/bodek"
 	w.refresh()
+	forceColor()
 	write("welcome.txt", w.View())
 
 	// Approval panel (friction + normal).
@@ -69,11 +85,13 @@ func TestDumpPreview(t *testing.T) {
 	a.handleEvent(client.Event{Type: "approval_request", ID: "apr-1", Risk: "shell_exec",
 		Name: "shell", Command: "rm -rf build/ dist/ && make clean", Description: "clean build artifacts", AllowTrust: true})
 	a.refresh()
+	forceColor()
 	write("approval.txt", a.View())
 
 	// Cockpit.
 	m.popover = true
 	m.refresh()
+	forceColor()
 	write("cockpit.txt", m.View())
 	m.popover = false
 
@@ -81,5 +99,6 @@ func TestDumpPreview(t *testing.T) {
 	m.sessions = []client.Session{{ID: "20260821-abcdef", Task: "fix the login bug in the auth module", Turns: 4, UpdatedAt: time.Now().Add(-4 * time.Minute), Pinned: true, InputTokens: 9100, OutputTokens: 1180}}
 	m.panel = panelSessions
 	m.refresh()
+	forceColor()
 	write("drawer-sessions.txt", m.View())
 }
