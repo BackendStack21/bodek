@@ -50,6 +50,11 @@ func (m *Model) header() string {
 	if modelName == "" {
 		modelName = "default"
 	}
+	// The ⚡ badge marks a server streaming token/thinking deltas live (the
+	// same marker the WebUI's top bar carries).
+	if m.serverStream {
+		modelName = "⚡ " + modelName
+	}
 
 	// The left cluster, split around the model name: its truncation budget is
 	// computed against everything else once the segments are known.
@@ -68,7 +73,7 @@ func (m *Model) header() string {
 	tail += th.headerMeta.Render("  ·  ") + m.sandboxBadge()
 	// Session spend rides the left cluster; hidden until odek reports both
 	// token prices (never show a guessed $0).
-	if inPrice, outPrice := m.limits.ResolvePrices(m.model); inPrice > 0 && outPrice > 0 {
+	if inPrice, outPrice := m.prices(); inPrice > 0 && outPrice > 0 {
 		tail += th.headerMeta.Render("  ·  ") + th.headerKey.Render(formatUSD(costUSD(m.sessCtxTok, m.sessOutTok, inPrice, outPrice)))
 	}
 
@@ -504,9 +509,18 @@ func (m *Model) statLine(ts turnStats) string {
 		}
 		add(tools, 1)
 	}
+	// provider cache activity — only when reported (any non-zero field)
+	if ts.cacheWrite > 0 || ts.cacheRead > 0 || ts.cachedTok > 0 {
+		cache := th.statCtx.Render("⛁") + th.statLine.Render(" "+human(ts.cacheWrite)) +
+			th.statGlyph.Render(" w · ") + th.statCtx.Render("r ") + th.statLine.Render(human(ts.cacheRead))
+		if ts.cachedTok > 0 {
+			cache += th.statGlyph.Render(" · ") + th.statCtx.Render("c ") + th.statLine.Render(human(ts.cachedTok))
+		}
+		add(cache, 2)
+	}
 	// turn cost — only when odek has token prices configured (both must be
 	// non-zero, mirroring odek's own cost-enforcement gate)
-	if inPrice, outPrice := m.limits.ResolvePrices(m.model); inPrice > 0 && outPrice > 0 {
+	if inPrice, outPrice := m.prices(); inPrice > 0 && outPrice > 0 {
 		add(th.statCtx.Render("$")+th.statLine.Render(" "+formatUSD(costUSD(ts.ctxTok, ts.outTok, inPrice, outPrice))), 2)
 	}
 	// thinking marker — no value
@@ -770,12 +784,25 @@ func (m *Model) approvalBody() string {
 		}
 	}
 
-	for i, o := range m.approvalOptions() {
-		prefix, label := "  ", th.apprBody.Render(o.label)
-		if i == m.apprSel {
-			prefix, label = th.apprKey.Render("› "), th.apprKey.Render(o.label)
+	if !a.Friction {
+		for i, o := range m.approvalOptions() {
+			prefix, label := "  ", th.apprBody.Render(o.label)
+			if i == m.apprSel {
+				prefix, label = th.apprKey.Render("› "), th.apprKey.Render(o.label)
+			}
+			lines = append(lines, prefix+label)
 		}
-		lines = append(lines, prefix+label)
+	} else {
+		// Friction gate: no selection shortcut — the typed confirmation line
+		// replaces the options and carries its own key hints.
+		// inputAreaHeight measures this method, so the line count must match
+		// exactly.
+		lines = append(lines, m.frictionHint())
+		keys := th.apprKey.Render("abc") + th.apprBody.Render(" type the word   ") +
+			th.apprKey.Render("⏎") + th.apprBody.Render(" confirm   ") +
+			th.apprKey.Render("tab") + th.apprBody.Render(" expand   ") +
+			th.apprKey.Render("esc") + th.apprBody.Render(" deny")
+		return strings.Join(append(lines, keys), "\n")
 	}
 
 	keys := th.apprKey.Render("↑↓") + th.apprBody.Render(" select   ") +
@@ -803,12 +830,35 @@ func (m *Model) footer() string {
 		return "  " + strings.Join(hints, th.footerSep.Render(" · "))
 	}
 	if m.panel == panelSessions {
-		return m.panelFooter(
+		if m.panelEdit == panelEditSearch {
+			return m.panelFooter(
+				th.footer.Render("type to search (server-side)"),
+				th.footerKey.Render("⏎")+th.footer.Render(" apply"),
+				th.footerKey.Render("esc")+th.footer.Render(" keep current"),
+			)
+		}
+		if m.panelEdit == panelEditRename {
+			return m.panelFooter(
+				th.footer.Render("type the new label"),
+				th.footerKey.Render("⏎")+th.footer.Render(" rename"),
+				th.footerKey.Render("esc")+th.footer.Render(" cancel"),
+			)
+		}
+		hints := []string{
 			th.footer.Render("↑↓ select"),
 			th.footer.Render("⏎ resume"),
+			th.footerKey.Render("/") + th.footer.Render(" search"),
+			th.footerKey.Render("p") + th.footer.Render(" pin"),
+			th.footerKey.Render("r") + th.footer.Render(" rename"),
+			th.footerKey.Render("e") + th.footer.Render(" export md"),
+			th.footerKey.Render("E") + th.footer.Render(" json"),
 			th.footerDanger.Render("d delete"), // destructive — tinted to telegraph it
-			th.footer.Render("esc close"),
-		)
+		}
+		if m.sessHasMore {
+			hints = append(hints, th.footerKey.Render("n")+th.footer.Render(" more"))
+		}
+		hints = append(hints, th.footer.Render("esc close"))
+		return m.panelFooter(hints...)
 	}
 	if m.panel == panelModels {
 		return m.panelFooter(

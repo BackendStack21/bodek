@@ -157,11 +157,13 @@ command and press `⏎`.
 |---------|--------|
 | `/help` | Show available commands and key bindings |
 | `/clear` | Clear the conversation |
-| `/stats` | Show session metrics, cost & context-window gauge |
-| `/sessions` | Browse & resume saved sessions |
+| `/stats` | Show session metrics, cost, cache & link status |
+| `/sessions` | Browse, search, pin, rename, export & resume sessions |
 | `/model [name]` | Switch model (opens a picker with no argument) |
 | `/thinking [on\|off]` | Toggle extended thinking for the next turn |
 | `/cancel` | Cancel the running turn |
+| `/attach <path>` | Stage a file to send with the next prompt (5 MB each, 10 MB total) |
+| `/unattach [name]` | Drop staged files (all when no name given) |
 | `/quit` | Exit bodek |
 
 ### File attachments (`@`)
@@ -189,6 +191,12 @@ from the panel and confirm — typing never answers by accident:
 | `Tab` | Expand/collapse the full command & description text |
 | `PgUp` / `PgDn` / `^U` / `^D` | Scroll the transcript while the panel is open |
 
+After three same-class approvals inside a minute the server engages **friction
+mode**: the panel shows the recent-approval count, the trust shortcut is
+withdrawn, and approving requires typing the literal word `approve` and
+pressing `⏎` (a mistyped word resets — retyping is the point). Denying stays
+one `Esc`.
+
 ---
 
 ## What you see
@@ -210,11 +218,19 @@ from the panel and confirm — typing never answers by accident:
   above the input (right below your last message) shows what it's actually
   doing (`🧪 running tests`, `📖 reading client.go`, `🚀 pushing`) with a live
   elapsed timer.
-- **Session browser** (`^R`) — resume, replay, or delete past conversations.
+- **Session browser** (`^R`) — resume, replay, delete, pin (`p`), rename
+  (`r`), export a transcript (`e` markdown, `E` JSON), and search server-side
+  (`/`); `n` loads the next page. Resuming sends a `session_switch` so the
+  server-side memory buffer is restored before you type.
 - **Auto-reconnect** — if the socket drops, bodek redials with backoff
-  (500ms → 8s, 5 attempts) and the session resumes transparently on your next
-  prompt; only a server that stays down leaves the `disconnected` badge.
-- **Model switcher** (`^O`) — change the model for the next turn.
+  (500ms → 8s, 5 attempts) and re-adopts the session over the fresh socket;
+  only a server that stays down leaves the `disconnected` badge.
+- **Model switcher** (`^O`) — change the model for the next turn. The picker
+  merges the server's configured model with its built-in profile catalog
+  (`/api/profiles`), each annotated with its context window.
+- **Live server snapshot** — a 25s heartbeat measures WebSocket round-trip
+  latency and refreshes server uptime, connection count, and streaming state
+  (the ⚡ badge beside the model); `/stats` surfaces the full link row.
 - **Cancellation** (`Esc`) — abort a running turn via odek's cancel API.
 - **Sandbox aware** — the header shows `🛡 sandboxed` or `⚠ host access`; pass
   `--sandbox` to run tool calls inside odek's Docker isolation.

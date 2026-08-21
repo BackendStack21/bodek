@@ -69,6 +69,12 @@ func slashCommands() []command {
 		{"cancel", "cancel the running turn", func(m *Model, _ string) tea.Cmd {
 			return m.cancelRun()
 		}},
+		{"attach", "stage a file for the next prompt — /attach <path>", func(m *Model, args string) tea.Cmd {
+			return m.attachFile(args)
+		}},
+		{"unattach", "drop staged files — /unattach [name]", func(m *Model, args string) tea.Cmd {
+			return m.unattachFile(args)
+		}},
 		{"quit", "exit bodek", func(m *Model, _ string) tea.Cmd {
 			m.quitting = true
 			return tea.Quit
@@ -270,14 +276,47 @@ func (m *Model) showStats() {
 		}
 
 		// Session cost from cumulative session tokens — correct across
-		// reconnect/resume where turnStats would be incomplete. Hidden unless
-		// odek has both token prices configured.
-		if inPrice, outPrice := m.limits.ResolvePrices(m.model); inPrice > 0 && outPrice > 0 {
+		// reconnect/resume where turnStats would be incomplete. The server's
+		// effective_prices apply when the model matches its configuration;
+		// otherwise the client-side twin resolves it. Hidden unless odek has
+		// both token prices configured.
+		if inPrice, outPrice := m.prices(); inPrice > 0 && outPrice > 0 {
 			costVal := th.statsValue.Render(formatUSD(costUSD(m.sessCtxTok, m.sessOutTok, inPrice, outPrice)))
 			if m.limits.MaxCostUSD > 0 {
 				costVal += th.statsDim.Render("  · cap " + formatUSD(m.limits.MaxCostUSD))
 			}
 			rows = slices.Insert(rows, 2, row{"$", th.statCtx, "cost", costVal})
+		}
+
+		// Provider cache activity across turns — only when any was reported.
+		var cacheW, cacheR, cacheC int
+		for _, t := range m.turnStats {
+			cacheW += t.cacheWrite
+			cacheR += t.cacheRead
+			cacheC += t.cachedTok
+		}
+		if cacheW > 0 || cacheR > 0 || cacheC > 0 {
+			cacheVal := th.statsValue.Render(fmt.Sprintf("%s w · %s r", human(cacheW), human(cacheR)))
+			if cacheC > 0 {
+				cacheVal += th.statsDim.Render(fmt.Sprintf(" · %s prefix", human(cacheC)))
+			}
+			rows = append(rows, row{"⛁", th.statCtx, "cache", cacheVal})
+		}
+
+		// Server link from the latest heartbeat snapshot — RTT, uptime, and
+		// the live connection count. Hidden when no snapshot has arrived yet.
+		if m.rtt > 0 || m.srvConns > 0 {
+			link := th.statsValue.Render(fmt.Sprintf("%s rtt", formatStepDur(m.rtt)))
+			if m.srvUptime > 0 {
+				link += th.statsDim.Render(fmt.Sprintf(" · up %s", formatDuration(m.srvUptime)))
+			}
+			if m.srvConns > 0 {
+				link += th.statsDim.Render(fmt.Sprintf(" · %d ws", m.srvConns))
+			}
+			if m.serverStream {
+				link += th.statsDim.Render(" · ⚡ stream")
+			}
+			rows = append(rows, row{"⇄", th.statsLabel, "link", link})
 		}
 	}
 

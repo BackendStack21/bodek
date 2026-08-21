@@ -70,11 +70,23 @@ func standIn(t *testing.T, token string) *Model {
 		}),
 	})
 	mux.HandleFunc("/api/sessions", guard(func(w http.ResponseWriter, r *http.Request) {
-		json.NewEncoder(w).Encode([]client.Session{{ID: "s1", Task: "first task", Turns: 1, UpdatedAt: time.Now()}})
+		sessions := []client.Session{{ID: "s1", Task: "first task", Turns: 1, UpdatedAt: time.Now()}}
+		q := r.URL.Query()
+		// Mirror odek serve: any of q/limit/offset present switches the
+		// response to the pagination envelope; a bare GET stays an array.
+		if q.Has("q") || q.Has("limit") || q.Has("offset") {
+			json.NewEncoder(w).Encode(client.SessionsPage{Sessions: sessions, Count: len(sessions)})
+			return
+		}
+		json.NewEncoder(w).Encode(sessions)
 	}))
 	mux.HandleFunc("/api/sessions/", guard(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == http.MethodDelete {
+		switch r.Method {
+		case http.MethodDelete:
 			w.WriteHeader(http.StatusNoContent)
+			return
+		case http.MethodPost:
+			w.WriteHeader(http.StatusOK)
 			return
 		}
 		w.Header().Set("X-Session-Token", "a1")
@@ -87,8 +99,17 @@ func standIn(t *testing.T, token string) *Model {
 			},
 		})
 	}))
+	mux.HandleFunc("/api/sessions/s1/export", guard(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte("# transcript\n"))
+	}))
 	mux.HandleFunc("/api/models", guard(func(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode([]client.ModelInfo{{ID: "m1", Description: "one", Current: true}})
+	}))
+	mux.HandleFunc("/api/profiles", guard(func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(map[string]any{"profiles": []client.Profile{
+			{ID: "m1", Label: "one", MaxContext: 64000}, // duplicate of configured — deduped
+			{ID: "glm", Label: "GLM", MaxContext: 200000},
+		}})
 	}))
 	mux.HandleFunc("/api/resources", guard(func(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode([]client.Resource{{ID: "@main.go", Type: "file", Label: "main.go", Detail: "1 KB"}})
@@ -165,6 +186,8 @@ func key(s string) tea.KeyMsg {
 		return tea.KeyMsg{Type: tea.KeyCtrlJ}
 	case "ctrl+e":
 		return tea.KeyMsg{Type: tea.KeyCtrlE}
+	case "backspace":
+		return tea.KeyMsg{Type: tea.KeyBackspace}
 	default:
 		return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(s)}
 	}

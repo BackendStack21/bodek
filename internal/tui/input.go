@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"fmt"
 	"regexp"
 	"strings"
 	"time"
@@ -130,12 +131,17 @@ func (m *Model) submit() tea.Cmd {
 // prompt in the history ring, and dispatches it to the server.
 func (m *Model) sendPrompt(text string) tea.Cmd {
 	m.recordHistory(text)
-	m.msgs = append(m.msgs, message{role: roleUser, content: text})
+	shown := text
+	if n := len(m.attachments); n > 0 {
+		shown = fmt.Sprintf("%s  📎×%d", shown, n)
+	}
+	m.msgs = append(m.msgs, message{role: roleUser, content: shown})
 	m.msgs = append(m.msgs, message{role: roleAsst, streaming: true})
 	m.curIdx = len(m.msgs) - 1
 	m.ta.Reset()
 	m.closeAC()
 	m.busy = true
+	m.cancelAck = false // a fresh run's errors are real errors again
 	m.status = "thinking"
 	m.runStart = time.Now()
 	if m.sessionStart.IsZero() {
@@ -153,11 +159,14 @@ func (m *Model) sendPrompt(text string) tea.Cmd {
 		thinking = "enabled"
 	}
 	opts := client.PromptOpts{
-		Thinking:  thinking,
-		Model:     m.pendModel,
-		SessionID: m.sessionID,
-		AuthToken: m.authToken,
+		Thinking:    thinking,
+		Model:       m.pendModel,
+		SessionID:   m.sessionID,
+		AuthToken:   m.authToken,
+		Attachments: m.attachments,
 	}
+	// Attachments are per-prompt by contract; the next send starts clean.
+	m.attachments = nil
 	m.pendModel = "" // applied
 	cl := m.cl
 	return func() tea.Msg {

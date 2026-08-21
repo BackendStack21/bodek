@@ -63,6 +63,9 @@ type turnStats struct {
 	wall       time.Duration // wall-clock from prompt submit to done
 	ctxTok     int           // context tokens consumed this turn
 	outTok     int           // output tokens produced this turn
+	cacheWrite int           // provider cache writes (prompt cache stores)
+	cacheRead  int           // provider cache hits
+	cachedTok  int           // automatic prefix-match cache tokens
 	toolCount  int           // tool invocations this turn
 	toolGlyphs []string      // up to 4 deduped tool glyphs, in first-seen order
 	thought    bool          // the model streamed reasoning this turn
@@ -122,6 +125,7 @@ type Model struct {
 	approval     *client.Event // pending approval, nil when none
 	apprSel      int           // highlighted option in the approval panel
 	apprExpanded bool          // tab: show the full command/description text
+	apprTyped    string        // friction mode: the literal word being typed ("approve")
 	ac           autocomplete  // @-reference completion state
 	queue        []string      // prompts typed mid-turn, sent when the turn ends
 
@@ -147,6 +151,14 @@ type Model struct {
 	panelSel int
 	panelMsg string // status/error line inside a panel
 
+	// Sessions panel state: server-side search plus paged "load more".
+	sessQuery   string        // applied search text (server-side substring match)
+	sessHasMore bool          // last page was full — more may follow
+	panelEdit   panelEditMode // text-entry submode while a panel is open
+	panelDraft  string        // the text being edited (search query / rename)
+
+	profiles []client.Profile // built-in model catalog (picker + context gauge)
+
 	sessCtxTok int
 	sessOutTok int
 	winCtxTok  int // live context-window fill: last request's prompt size
@@ -154,11 +166,24 @@ type Model struct {
 	// cumulative prompt tokens, so the window fill is the delta between reports)
 	lastLatency float64
 
-	limits       client.Limits // server budget limits + token prices (zero prices → cost hidden)
-	maxContext   int           // active model's context window (0 = unknown → gauge hidden)
-	turnStats    []turnStats   // per-turn telemetry retained for the /stats dashboard
-	toolTotal    int           // cumulative tool calls this session
-	sessionStart time.Time     // first-prompt timestamp, for session wall-clock
+	// WS protocol v2 server snapshot (server_info on connect, refreshed by
+	// every pong) plus the heartbeat that measures it.
+	serverStream bool          // server streams token_delta/thinking_delta live
+	rtt          time.Duration // last ping round-trip (0 = never measured)
+	pingSentAt   time.Time     // when the outstanding heartbeat left
+	srvUptime    time.Duration // server uptime at the latest snapshot
+	srvConns     int64         // live WS connections at the latest snapshot
+	cancelAck    bool          // cancelled seen — the run's trailing error event is expected noise
+
+	attachments []client.Attachment // files staged for the next prompt (/attach)
+
+	limits       client.Limits     // server budget limits + token prices (zero prices → cost hidden)
+	serverModel  string            // /api/limits model — effective_prices apply to it
+	effectivePrx client.ModelPrice // server-resolved prices for serverModel
+	maxContext   int               // active model's context window (0 = unknown → gauge hidden)
+	turnStats    []turnStats       // per-turn telemetry retained for the /stats dashboard
+	toolTotal    int               // cumulative tool calls this session
+	sessionStart time.Time         // first-prompt timestamp, for session wall-clock
 
 	status    string
 	notices   []string
@@ -220,7 +245,39 @@ func New(cl *client.Client, opts Options) *Model {
 }
 
 func (m *Model) Init() tea.Cmd {
-	return tea.Batch(textarea.Blink, m.sp.Tick, listen(m.events), m.fetchModels(), m.fetchLimits(), m.checkUpdate())
+	return tea.Batch(textarea.Blink, m.sp.Tick, listen(m.events),
+		m.fetchModels(), m.fetchProfiles(), m.fetchLimits(), m.checkUpdate(),
+		m.armHeartbeat())
+}
+
+// pingEvery is the application-level heartbeat cadence (spec: 25s). The
+// server answers inline — even mid-run — so the ping doubles as a liveness
+// probe and the pong refreshes the server snapshot (RTT, uptime, conns).
+const pingEvery = 25 * time.Second
+
+// heartbeatMsg re-arms the heartbeat loop.
+type heartbeatMsg struct{}
+
+// armHeartbeat schedules the next ping. The send time is stamped in Update
+// when the tick fires (model state must only mutate on the update goroutine);
+// only the socket write itself runs async — the client serializes writes.
+func (m *Model) armHeartbeat() tea.Cmd {
+	return tea.Tick(pingEvery, func(time.Time) tea.Msg {
+		return heartbeatMsg{}
+	})
+}
+
+func (m *Model) handleHeartbeat() tea.Cmd {
+	m.pingSentAt = time.Now()
+	cl := m.cl
+	if cl == nil {
+		return m.armHeartbeat()
+	}
+	send := func() tea.Msg {
+		_ = cl.Ping()
+		return nil
+	}
+	return tea.Batch(send, m.armHeartbeat())
 }
 
 func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -238,6 +295,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.refresh()
 		}
 		return m, cmd
+
+	case heartbeatMsg:
+		return m, m.handleHeartbeat()
 
 	case renderFlushMsg:
 		if msg.seq == m.renderSeq && m.renderPending {
@@ -279,10 +339,41 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.refresh()
 		return m, nil
 
+	case sessionsPageMsg:
+		m.handleSessionsPageMsg(msg)
+		m.refresh()
+		return m, nil
+
 	case modelsMsg:
 		m.handleModelsMsg(msg)
 		m.refresh()
 		return m, nil
+
+	case pickerMsg:
+		// The picker's combined fetch: reuse the per-list handlers so panel
+		// state and the context gauge update exactly as on separate fetches.
+		m.handleModelsMsg(modelsMsg{items: msg.models, err: msg.err})
+		m.handleProfilesMsg(profilesMsg{items: msg.profiles})
+		if m.panel == panelModels {
+			m.refresh()
+		}
+		return m, nil
+
+	case profilesMsg:
+		m.handleProfilesMsg(msg)
+		return m, nil
+
+	case sessionUpdatedMsg:
+		return m, m.handleSessionUpdated(msg)
+
+	case sessionRenamedMsg:
+		return m, m.handleSessionRenamed(msg)
+
+	case sessionExportedMsg:
+		return m, m.handleSessionExported(msg)
+
+	case sessionSwitchMsg:
+		return m, m.handleSessionSwitch(msg)
 
 	case limitsMsg:
 		m.handleLimitsMsg(msg)
@@ -499,13 +590,21 @@ func (m *Model) clearConversation() {
 // ── helpers ────────────────────────────────────────────────────────────────
 
 // resolveMaxContext sets m.maxContext from the active model's advertised
-// context window, or 0 when the model list is unknown or has no match (which
-// hides the header gauge rather than guessing).
+// context window: an exact /api/models match wins; otherwise the first
+// built-in profile whose id prefixes the model id (profiles are prefix
+// entries by contract). No match leaves 0, which hides the gauge rather
+// than guessing.
 func (m *Model) resolveMaxContext() {
 	m.maxContext = 0
 	for _, md := range m.models {
 		if md.ID == m.model {
 			m.maxContext = md.MaxContext
+			return
+		}
+	}
+	for _, p := range m.profiles {
+		if p.MaxContext > 0 && strings.HasPrefix(m.model, p.ID) {
+			m.maxContext = p.MaxContext
 			return
 		}
 	}
@@ -519,6 +618,28 @@ func (m *Model) fetchModels() tea.Cmd {
 		items, err := cl.Models()
 		return modelsMsg{items: items, err: err}
 	}
+}
+
+// fetchProfiles loads the built-in model catalog (id prefixes + context
+// windows) — picker entries beyond the configured model, and the fallback
+// source for the header gauge after a model switch.
+func (m *Model) fetchProfiles() tea.Cmd {
+	cl := m.cl
+	return func() tea.Msg {
+		items, err := cl.Profiles()
+		return profilesMsg{items: items, err: err}
+	}
+}
+
+// prices returns the effective per-million token prices for the active
+// model: the server's effective_prices when it matches, otherwise the
+// client-side resolution twin. Zero prices mean "cost unavailable".
+func (m *Model) prices() (inPerMillion, outPerMillion float64) {
+	return client.LimitsResponse{
+		Model:           m.serverModel,
+		Limits:          m.limits,
+		EffectivePrices: m.effectivePrx,
+	}.PricesFor(m.model)
 }
 
 // fetchLimits loads the server's budget limits and token prices at startup so

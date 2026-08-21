@@ -40,11 +40,13 @@ func (m *Model) handleEvent(ev client.Event) (tea.Model, tea.Cmd) {
 		}
 		m.sandbox = ev.Sandbox
 
-	case "thinking":
-		// Append to the open reasoning block (the last timeline item when it is
-		// a thinking item), or start a new one after a tool call. The full text
-		// is stored; only the rendered excerpt is capped (see maxThinkingLen),
-		// so expandAll can unfold the complete block once the turn finalizes.
+	case "thinking", "thinking_delta":
+		// Bulk reasoning and live streamed fragments (streaming on) share one
+		// path: append to the open reasoning block (the last timeline item
+		// when it is a thinking item), or start a new one after a tool call.
+		// The full text is stored; only the rendered excerpt is capped (see
+		// maxThinkingLen), so expandAll can unfold the complete block once the
+		// turn finalizes.
 		if i := m.cur(); i >= 0 {
 			msg := &m.msgs[i]
 			if n := len(msg.items); n > 0 && msg.items[n-1].thinking {
@@ -57,7 +59,10 @@ func (m *Model) handleEvent(ev client.Event) (tea.Model, tea.Cmd) {
 		m.status = "thinking"
 		stream = true
 
-	case "token":
+	case "token", "token_delta":
+		// token_delta is the live fragment stream (server --stream); with
+		// fragments delivered the server suppresses the bulk token re-send,
+		// so both event types must accumulate the same way.
 		if i := m.cur(); i >= 0 {
 			m.msgs[i].content += sanitize(ev.Content)
 			m.msgs[i].streaming = true
@@ -114,6 +119,9 @@ func (m *Model) handleEvent(ev client.Event) (tea.Model, tea.Cmd) {
 				wall:       wall,
 				ctxTok:     ev.ContextTokens,
 				outTok:     ev.OutputTokens,
+				cacheWrite: ev.CacheCreationTokens,
+				cacheRead:  ev.CacheReadTokens,
+				cachedTok:  ev.CachedTokens,
 				toolCount:  len(m.msgs[i].steps),
 				toolGlyphs: stepGlyphs(m.msgs[i].steps),
 				thought:    thought,
@@ -156,10 +164,57 @@ func (m *Model) handleEvent(ev client.Event) (tea.Model, tea.Cmd) {
 		}
 		stream = true
 
+	case "server_info", "pong":
+		// The connect hello and every heartbeat reply carry the same server
+		// snapshot. Only the pong closes a round trip.
+		if ev.Type == "pong" && !m.pingSentAt.IsZero() {
+			m.rtt = time.Since(m.pingSentAt)
+			m.pingSentAt = time.Time{}
+		}
+		if ev.Version != "" {
+			m.odekVersion = ev.Version
+		}
+		if ev.Model != "" && m.model == "" {
+			m.model = ev.Model // only until the first session/prompt reports the live one
+			m.resolveMaxContext()
+		}
+		m.sandbox = ev.Sandbox
+		m.serverStream = ev.Stream
+		m.srvUptime = time.Duration(ev.UptimeSeconds) * time.Second
+		m.srvConns = ev.WSConnections
+
+	case "cancelled":
+		// The server honored a cancel for a session on this connection. The
+		// aborted run follows with an error event ("context canceled") —
+		// flagged here so that trailing event renders as a clean cancel
+		// marker instead of a scary error bubble.
+		if ev.Idle {
+			m.addTransientNote("cancel: nothing was running")
+			break
+		}
+		m.cancelAck = true
+		m.status = "cancelling"
+
+	case "approval_ack":
+		// The panel already closed when the answer was sent; the ack needs no
+		// UI beyond keeping the transcript quiet.
+
 	case "error":
-		if i := m.cur(); i >= 0 && m.msgs[i].content == "" {
-			m.msgs[i].content = "**Error:** " + ev.Message
-		} else {
+		// A cancel shows up here: the aborted run returns ctx.Err(). When we
+		// saw the cancelled event (or the message is unambiguous context
+		// cancellation — e.g. a REST cancel from elsewhere), close the turn
+		// as cancelled rather than as a failure.
+		cancelled := m.cancelAck || isContextCanceled(ev.Message)
+		m.cancelAck = false
+		if i := m.cur(); i >= 0 {
+			if cancelled {
+				markCancel(&m.msgs[i])
+			} else if m.msgs[i].content == "" {
+				m.msgs[i].content = "**Error:** " + ev.Message
+			} else {
+				m.addNote("error: " + ev.Message)
+			}
+		} else if !cancelled {
 			m.addNote("error: " + ev.Message)
 		}
 		m.renderPending = false
@@ -167,14 +222,17 @@ func (m *Model) handleEvent(ev client.Event) (tea.Model, tea.Cmd) {
 		m.busy = false
 		m.lastTool = ""
 		m.lastArg = ""
-		m.status = "error"
+		if cancelled {
+			m.status = "ready"
+		} else {
+			m.status = "error"
+		}
 		m.relayout() // the busy status line releases its row
 
 	case "approval_request":
 		e := ev
 		m.approval = &e
-		m.apprSel = 0
-		m.apprExpanded = false
+		m.resetApprovalInput()
 		m.status = "approval required"
 		m.relayout() // the panel is taller than the textarea — shrink the viewport
 
@@ -201,6 +259,7 @@ func (m *Model) handleEvent(ev client.Event) (tea.Model, tea.Cmd) {
 		m.disconn = true
 		m.busy = false
 		m.renderPending = false
+		m.cancelAck = false // stale: the error it muted died with the socket
 		// A turn in flight when the socket drops will never finish: close it
 		// out with an interrupted marker instead of leaving it streaming
 		// forever. Idempotent — with no open turn this is a no-op, so a
@@ -363,6 +422,23 @@ func (m *Model) cur() int {
 		return m.curIdx
 	}
 	return -1
+}
+
+// isContextCanceled reports whether an error message is the abort a run's
+// context returns once a cancel is honored ("context canceled", possibly
+// wrapped by the provider client on its way out).
+func isContextCanceled(msg string) bool {
+	return strings.Contains(strings.ToLower(msg), "context cancel")
+}
+
+// markCancel closes out a streaming turn as cancelled — the deliberate
+// sibling of the interrupted marker a disconnect leaves behind.
+func markCancel(msg *message) {
+	if msg.content == "" {
+		msg.content = "**Cancelled.**"
+	} else {
+		msg.content += "\n\n**Cancelled.**"
+	}
 }
 
 // finalize closes out the streaming assistant message, rendering its markdown.

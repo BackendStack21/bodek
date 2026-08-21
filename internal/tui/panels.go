@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
@@ -20,6 +21,19 @@ const (
 	panelModels
 )
 
+// panelEditMode is the text-entry submode a panel can capture: `/` search in
+// the sessions panel, `r` rename.
+type panelEditMode int
+
+const (
+	panelEditNone panelEditMode = iota
+	panelEditSearch
+	panelEditRename
+)
+
+// sessPageSize is the sessions-panel page size (server caps limit at 200).
+const sessPageSize = 50
+
 // ── async results ────────────────────────────────────────────────────────────
 
 type sessionsMsg struct {
@@ -27,8 +41,29 @@ type sessionsMsg struct {
 	err   error
 }
 
+// sessionsPageMsg carries one server-side search/pagination result. append is
+// true for "load more" fetches, false for fresh queries.
+type sessionsPageMsg struct {
+	page   client.SessionsPage
+	append bool
+	err    error
+}
+
 type modelsMsg struct {
 	items []client.ModelInfo
+	err   error
+}
+
+// pickerMsg carries the model picker's combined fetch: the configured model
+// and the built-in profile catalog (profiles failing is soft).
+type pickerMsg struct {
+	models   []client.ModelInfo
+	profiles []client.Profile
+	err      error
+}
+
+type profilesMsg struct {
+	items []client.Profile
 	err   error
 }
 
@@ -48,6 +83,30 @@ type sessionDeletedMsg struct {
 	err error
 }
 
+// sessionUpdatedMsg reports a pin/unpin outcome (pinned is the new state).
+type sessionUpdatedMsg struct {
+	id     string
+	pinned bool
+	err    error
+}
+
+// sessionRenamedMsg reports a rename outcome.
+type sessionRenamedMsg struct {
+	id   string
+	name string
+	err  error
+}
+
+// sessionExportedMsg reports where an exported transcript was written.
+type sessionExportedMsg struct {
+	id   string
+	path string
+	err  error
+}
+
+// sessionSwitchMsg reports a failed session_switch (adopt without prompting).
+type sessionSwitchMsg struct{ err error }
+
 type cancelDoneMsg struct{ err error }
 
 // ── opening panels ───────────────────────────────────────────────────────────
@@ -55,13 +114,22 @@ type cancelDoneMsg struct{ err error }
 func (m *Model) openSessions() tea.Cmd {
 	m.panel = panelSessions
 	m.panelSel = 0
+	m.sessQuery = ""
+	m.panelEdit = panelEditNone
+	m.panelDraft = ""
 	m.panelMsg = "loading sessions…"
 	m.relayout()
 	m.refresh()
+	return m.fetchSessionsPage("", 0, false)
+}
+
+// fetchSessionsPage runs one server-side session search. Query is scoped per
+// call (the search box edits panelDraft until enter applies it).
+func (m *Model) fetchSessionsPage(query string, offset int, appendMode bool) tea.Cmd {
 	cl := m.cl
 	return func() tea.Msg {
-		items, err := cl.Sessions()
-		return sessionsMsg{items: items, err: err}
+		page, err := cl.SearchSessions(query, sessPageSize, offset)
+		return sessionsPageMsg{page: page, append: appendMode, err: err}
 	}
 }
 
@@ -73,14 +141,19 @@ func (m *Model) openModels() tea.Cmd {
 	m.refresh()
 	cl := m.cl
 	return func() tea.Msg {
+		// One picker fetch: the configured model plus the built-in catalog.
+		// A profiles failure is soft — the picker shows the configured model.
 		items, err := cl.Models()
-		return modelsMsg{items: items, err: err}
+		msg := pickerMsg{models: items, err: err}
+		msg.profiles, _ = cl.Profiles()
+		return msg
 	}
 }
 
 func (m *Model) closePanel() {
 	m.panel = panelNone
 	m.panelMsg = ""
+	m.panelEdit = panelEditNone
 	m.relayout()
 	m.refresh()
 }
@@ -88,6 +161,10 @@ func (m *Model) closePanel() {
 // ── key handling ─────────────────────────────────────────────────────────────
 
 func (m *Model) handlePanelKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	// Text-entry submodes capture everything except quit.
+	if m.panelEdit != panelEditNone {
+		return m.handlePanelEditKey(msg)
+	}
 	switch msg.String() {
 	case "ctrl+c":
 		m.quitting = true
@@ -113,8 +190,91 @@ func (m *Model) handlePanelKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.panel == panelSessions {
 			return m, m.deleteSelected()
 		}
+	case "/":
+		if m.panel == panelSessions {
+			m.panelEdit = panelEditSearch
+			m.panelDraft = m.sessQuery
+			m.refresh()
+		}
+		return m, nil
+	case "p":
+		if m.panel == panelSessions {
+			return m, m.togglePinSelected()
+		}
+	case "e":
+		if m.panel == panelSessions {
+			return m, m.exportSelected("md")
+		}
+	case "E":
+		if m.panel == panelSessions {
+			return m, m.exportSelected("json")
+		}
+	case "r":
+		if m.panel == panelSessions {
+			if m.panelSel < len(m.sessions) {
+				m.panelEdit = panelEditRename
+				m.panelDraft = m.sessions[m.panelSel].Task
+				m.refresh()
+			}
+		}
+		return m, nil
+	case "n":
+		if m.panel == panelSessions && m.sessHasMore {
+			m.panelMsg = "loading more…"
+			m.refresh()
+			return m, m.fetchSessionsPage(m.sessQuery, len(m.sessions), true)
+		}
+		return m, nil
 	}
 	return m, nil
+}
+
+// handlePanelEditKey edits the in-panel text draft (search query or rename).
+// Enter applies it; esc abandons the edit keeping any applied state.
+func (m *Model) handlePanelEditKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "ctrl+c":
+		m.quitting = true
+		return m, tea.Quit
+	case "esc":
+		m.panelEdit = panelEditNone
+		m.panelDraft = ""
+		m.refresh()
+		return m, nil
+	case "enter":
+		mode, draft := m.panelEdit, m.panelDraft
+		m.panelEdit = panelEditNone
+		m.panelDraft = ""
+		switch mode {
+		case panelEditSearch:
+			m.sessQuery = strings.TrimSpace(draft)
+			m.panelSel = 0
+			m.panelMsg = "searching…"
+			m.refresh()
+			return m, m.fetchSessionsPage(m.sessQuery, 0, false)
+		case panelEditRename:
+			return m, m.renameSelected(strings.TrimSpace(draft))
+		}
+		return m, nil
+	case "backspace":
+		if n := len(m.panelDraft); n > 0 {
+			m.panelDraft = m.panelDraft[:n-1]
+		}
+		m.refresh()
+		return m, nil
+	case "space":
+		m.panelDraft += " "
+		m.refresh()
+		return m, nil
+	default:
+		// Single printable runes only — ctrl/alt combos must not splice
+		// escape bytes into the draft.
+		if s := msg.String(); len([]rune(s)) == 1 {
+			m.panelDraft += s
+			m.refresh()
+		}
+		return m, nil
+	}
 }
 
 func (m *Model) panelLen() int {
@@ -122,9 +282,60 @@ func (m *Model) panelLen() int {
 	case panelSessions:
 		return len(m.sessions)
 	case panelModels:
-		return len(m.models)
+		return len(m.modelEntries())
 	}
 	return 0
+}
+
+// modelEntry is one row of the model picker: the server's configured model
+// plus the built-in profile catalog (ids are model-id prefixes).
+type modelEntry struct {
+	id      string
+	label   string
+	detail  string
+	current bool
+}
+
+// modelEntries merges /api/models (the configured model, with its window)
+// with /api/profiles (the built-in catalog), configured first, duplicates
+// skipped, each annotated with its context size.
+func (m *Model) modelEntries() []modelEntry {
+	out := make([]modelEntry, 0, len(m.models)+len(m.profiles))
+	for _, md := range m.models {
+		e := modelEntry{id: md.ID, label: md.ID, current: md.Current}
+		if md.MaxContext > 0 {
+			e.detail = fmt.Sprintf("%s ctx", humanCtx(md.MaxContext))
+		}
+		if md.Description != "" {
+			e.detail = strings.TrimSpace(md.Description + "  " + e.detail)
+		}
+		out = append(out, e)
+	}
+	for _, p := range m.profiles {
+		dup := false
+		for _, md := range m.models {
+			if md.ID == p.ID {
+				dup = true
+				break
+			}
+		}
+		if dup {
+			continue
+		}
+		label := p.Label
+		if label == "" {
+			label = p.ID
+		}
+		e := modelEntry{id: p.ID, label: label}
+		if p.MaxContext > 0 {
+			e.detail = fmt.Sprintf("%s ctx", humanCtx(p.MaxContext))
+		}
+		if p.ID == m.model {
+			e.current = true
+		}
+		out = append(out, e)
+	}
+	return out
 }
 
 func (m *Model) panelSelect() tea.Cmd {
@@ -134,11 +345,13 @@ func (m *Model) panelSelect() tea.Cmd {
 			return m.resumeSession(m.sessions[m.panelSel].ID)
 		}
 	case panelModels:
-		if m.panelSel < len(m.models) {
-			m.pendModel = m.models[m.panelSel].ID
-			m.model = m.pendModel
+		entries := m.modelEntries()
+		if m.panelSel < len(entries) {
+			e := entries[m.panelSel]
+			m.pendModel = e.id
+			m.model = e.id
 			m.resolveMaxContext()
-			m.addNote("model set to " + m.pendModel + " (applies next turn)")
+			m.addNote("model set to " + e.id + " (applies next turn)")
 			m.closePanel()
 		}
 	}
@@ -174,9 +387,75 @@ func (m *Model) deleteSelected() tea.Cmd {
 	}
 }
 
-// cancelRun aborts the in-flight prompt via the cancel API. Queued prompts
-// belong to the user, not the cancelled turn: hand them back to the input
-// for editing instead of firing them into a cancelled session.
+// togglePinSelected pins/unpins the highlighted session (POST {pinned}).
+func (m *Model) togglePinSelected() tea.Cmd {
+	if m.panelSel >= len(m.sessions) {
+		return nil
+	}
+	s := m.sessions[m.panelSel]
+	cl := m.cl
+	token := m.tokens.Get(s.ID)
+	id, next := s.ID, !s.Pinned
+	return func() tea.Msg {
+		_, eff, err := cl.SessionDetail(id, token)
+		if err != nil {
+			return sessionUpdatedMsg{id: id, err: err}
+		}
+		return sessionUpdatedMsg{id: id, pinned: next, err: cl.UpdateSession(id, eff, nil, &next)}
+	}
+}
+
+// renameSelected applies a new label to the highlighted session (POST {name}).
+func (m *Model) renameSelected(name string) tea.Cmd {
+	if m.panelSel >= len(m.sessions) || name == "" {
+		return nil
+	}
+	s := m.sessions[m.panelSel]
+	cl := m.cl
+	token := m.tokens.Get(s.ID)
+	id := s.ID
+	return func() tea.Msg {
+		_, eff, err := cl.SessionDetail(id, token)
+		if err != nil {
+			return sessionRenamedMsg{id: id, err: err}
+		}
+		return sessionRenamedMsg{id: id, name: name, err: cl.UpdateSession(id, eff, &name, nil)}
+	}
+}
+
+// exportSelected downloads the highlighted session's transcript and writes it
+// next to the user (markdown by default, raw JSON with shift-E).
+func (m *Model) exportSelected(format string) tea.Cmd {
+	if m.panelSel >= len(m.sessions) {
+		return nil
+	}
+	s := m.sessions[m.panelSel]
+	cl := m.cl
+	token := m.tokens.Get(s.ID)
+	id := s.ID
+	return func() tea.Msg {
+		_, eff, err := cl.SessionDetail(id, token)
+		if err != nil {
+			return sessionExportedMsg{id: id, err: err}
+		}
+		data, err := cl.ExportSession(id, eff, format)
+		if err != nil {
+			return sessionExportedMsg{id: id, err: err}
+		}
+		path := fmt.Sprintf("bodek-%s.%s", id, format)
+		if err := os.WriteFile(path, data, 0o644); err != nil {
+			return sessionExportedMsg{id: id, err: err}
+		}
+		return sessionExportedMsg{id: id, path: path}
+	}
+}
+
+// cancelRun aborts the in-flight prompt: the WebSocket cancel first (the
+// server answers with a cancelled event and the run's trailing error turns
+// into a clean cancel marker), with the REST endpoint as fallback when the
+// socket write itself fails. Queued prompts belong to the user, not the
+// cancelled turn: hand them back to the input for editing instead of firing
+// them into a cancelled session.
 func (m *Model) cancelRun() tea.Cmd {
 	if !m.busy || m.sessionID == "" {
 		cmd := m.transientNoteCmd("nothing to cancel")
@@ -200,8 +479,28 @@ func (m *Model) cancelRun() tea.Cmd {
 	cl := m.cl
 	sid, tok := m.sessionID, m.authToken
 	return tea.Batch(note, func() tea.Msg {
+		if err := cl.SendCancel(sid, tok); err == nil {
+			return nil // the cancelled event settles the turn
+		}
 		return cancelDoneMsg{err: cl.Cancel(sid, tok)}
 	})
+}
+
+// adoptSession switches the live connection to a session (restores the
+// server-side memory buffer) without sending a prompt. The server replies
+// with the standard session event, which re-syncs local state.
+func (m *Model) adoptSession() tea.Cmd {
+	if m.sessionID == "" || m.cl == nil {
+		return nil
+	}
+	cl := m.cl
+	sid, tok := m.sessionID, m.authToken
+	return func() tea.Msg {
+		if err := cl.SessionSwitch(sid, tok); err != nil {
+			return sessionSwitchMsg{err: err}
+		}
+		return nil
+	}
 }
 
 // ── async result handling ────────────────────────────────────────────────────
@@ -216,6 +515,34 @@ func (m *Model) handleSessionsMsg(msg sessionsMsg) {
 	if len(m.sessions) == 0 {
 		m.panelMsg = "no saved sessions yet"
 	} else {
+		m.panelMsg = ""
+	}
+}
+
+// handleSessionsPageMsg applies a search/pagination envelope: replace on
+// fresh queries, append on "load more". A full page means more may follow.
+func (m *Model) handleSessionsPageMsg(msg sessionsPageMsg) {
+	if msg.err != nil {
+		m.panelMsg = "error: " + msg.err.Error()
+		return
+	}
+	if msg.append {
+		m.sessions = append(m.sessions, msg.page.Sessions...)
+	} else {
+		m.sessions = msg.page.Sessions
+		if m.panelSel >= len(m.sessions) {
+			m.panelSel = 0
+		}
+	}
+	m.sessHasMore = msg.page.Count >= msg.page.Limit && msg.page.Count > 0
+	switch {
+	case len(m.sessions) == 0:
+		if m.sessQuery != "" {
+			m.panelMsg = "no matches for “" + m.sessQuery + "”"
+		} else {
+			m.panelMsg = "no saved sessions yet"
+		}
+	default:
 		m.panelMsg = ""
 	}
 }
@@ -235,6 +562,17 @@ func (m *Model) handleModelsMsg(msg modelsMsg) {
 	}
 }
 
+// handleProfilesMsg stores the built-in catalog. Errors are soft: the picker
+// simply lists only the configured model, and the gauge falls back to
+// /api/models.
+func (m *Model) handleProfilesMsg(msg profilesMsg) {
+	if msg.err != nil {
+		return
+	}
+	m.profiles = msg.items
+	m.resolveMaxContext()
+}
+
 // handleLimitsMsg stores the server's budget limits and token prices. Errors
 // are swallowed: odek never hard-codes prices, so when they are unknown the
 // cost display simply stays hidden rather than reporting $0.
@@ -243,6 +581,8 @@ func (m *Model) handleLimitsMsg(msg limitsMsg) {
 		return
 	}
 	m.limits = msg.resp.Limits
+	m.serverModel = msg.resp.Model
+	m.effectivePrx = msg.resp.EffectivePrices
 }
 
 func (m *Model) handleSessionDetail(msg sessionDetailMsg) tea.Cmd {
@@ -250,8 +590,9 @@ func (m *Model) handleSessionDetail(msg sessionDetailMsg) tea.Cmd {
 		m.panelMsg = "error: " + msg.err.Error()
 		return nil
 	}
-	// Replay the saved transcript into the local view and resume server-side
-	// on the next prompt via session_id + auth_token.
+	// Replay the saved transcript into the local view, then adopt the session
+	// on the connection (session_switch restores the server-side memory
+	// buffer; the reply's session event re-syncs state).
 	m.sessionID = msg.sess.ID
 	m.authToken = msg.token
 	m.tokens.Set(msg.sess.ID, msg.token)
@@ -277,7 +618,64 @@ func (m *Model) handleSessionDetail(msg sessionDetailMsg) tea.Cmd {
 	m.replayTranscript(msg.sess.Messages)
 	note := m.transientNoteCmd("resumed session " + shortID(msg.sess.ID))
 	m.closePanel()
-	return note
+	return tea.Batch(note, m.adoptSession())
+}
+
+// handleSessionUpdated applies a pin/unpin outcome to the list in place.
+func (m *Model) handleSessionUpdated(msg sessionUpdatedMsg) tea.Cmd {
+	if msg.err != nil {
+		m.panelMsg = "pin failed: " + msg.err.Error()
+		m.refresh()
+		return nil
+	}
+	for i := range m.sessions {
+		if m.sessions[i].ID == msg.id {
+			m.sessions[i].Pinned = msg.pinned
+			break
+		}
+	}
+	m.refresh()
+	return nil
+}
+
+// handleSessionRenamed applies a rename outcome to the list in place.
+func (m *Model) handleSessionRenamed(msg sessionRenamedMsg) tea.Cmd {
+	if msg.err != nil {
+		m.panelMsg = "rename failed: " + msg.err.Error()
+		m.refresh()
+		return nil
+	}
+	for i := range m.sessions {
+		if m.sessions[i].ID == msg.id {
+			m.sessions[i].Task = msg.name
+			break
+		}
+	}
+	m.refresh()
+	return nil
+}
+
+// handleSessionExported reports where the transcript landed.
+func (m *Model) handleSessionExported(msg sessionExportedMsg) tea.Cmd {
+	if msg.err != nil {
+		m.panelMsg = "export failed: " + msg.err.Error()
+		m.refresh()
+		return nil
+	}
+	cmd := m.transientNoteCmd("exported " + msg.path)
+	m.refresh()
+	return cmd
+}
+
+// handleSessionSwitch surfaces a failed adopt; success stays quiet (the
+// session event reply speaks for itself).
+func (m *Model) handleSessionSwitch(msg sessionSwitchMsg) tea.Cmd {
+	if msg.err != nil {
+		cmd := m.transientNoteCmd("session switch failed: " + msg.err.Error())
+		m.refresh()
+		return cmd
+	}
+	return nil
 }
 
 // replayTranscript rebuilds a saved transcript turn by turn so a resumed
@@ -415,13 +813,27 @@ func (m *Model) renderPanel(w, h int) string {
 	}
 
 	header := th.acTitle.Render(title)
+	if m.panel == panelSessions && m.sessQuery != "" {
+		header += th.acDetail.Render("  /" + m.sessQuery)
+	}
 	body := header
+	if m.panelEdit != panelEditNone {
+		// The live draft line doubles as the panel's status while editing.
+		prompt := "search"
+		if m.panelEdit == panelEditRename {
+			prompt = "rename"
+		}
+		body += "\n" + th.acSel.Render(prompt+": "+m.panelDraft+"▏")
+	}
 	if m.panelMsg != "" {
 		body += "\n" + th.acDim.Render(m.panelMsg)
 	}
 	if len(rows) > 0 {
 		// Window the rows around the selection to fit the available height.
 		visible := h - 4 // border(2) + title(1) + breathing room
+		if m.panelEdit != panelEditNone {
+			visible-- // the draft line claims one
+		}
 		if visible < 1 {
 			visible = 1
 		}
@@ -441,6 +853,12 @@ func (m *Model) sessionRows(w int) []string {
 			task = "(untitled)"
 		}
 		meta := fmt.Sprintf("  %s · %d turns · %s", shortID(s.ID), s.Turns, ago(s.UpdatedAt))
+		if s.InputTokens > 0 || s.OutputTokens > 0 {
+			meta += fmt.Sprintf(" · ⇥%s ↦%s", human(int(s.InputTokens)), human(int(s.OutputTokens)))
+		}
+		if s.Pinned {
+			task = "📌 " + task
+		}
 		budget := w - 2
 		task = truncate(collapse(task), budget-lipgloss.Width(meta))
 		prefix, label := "  ", th.acItem.Render(task)
@@ -454,14 +872,15 @@ func (m *Model) sessionRows(w int) []string {
 
 func (m *Model) modelRows(w int) []string {
 	th := m.th
-	rows := make([]string, 0, len(m.models))
-	for i, md := range m.models {
-		label := md.ID
+	entries := m.modelEntries()
+	rows := make([]string, 0, len(entries))
+	for i, e := range entries {
+		label := e.label
 		detail := ""
-		if md.Description != "" {
-			detail = "  " + md.Description
+		if e.detail != "" {
+			detail = "  " + e.detail
 		}
-		if md.Current {
+		if e.current {
 			detail += "  (current)"
 		}
 		label = truncate(label, w-2-lipgloss.Width(detail))

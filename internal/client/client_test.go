@@ -59,6 +59,82 @@ func TestDecodeEvents(t *testing.T) {
 			},
 		},
 		{
+			name:  "approval_request friction",
+			frame: `{"type":"approval_request","id":"apr-2","risk":"shell_exec","command":"rm -rf x","friction":true,"friction_approvals":4}`,
+			check: func(t *testing.T, e Event) {
+				if !e.Friction || e.FrictionApprovals != 4 || e.AllowTrust {
+					t.Fatalf("bad friction decode: %+v", e)
+				}
+			},
+		},
+		{
+			name:  "approval_ack",
+			frame: `{"type":"approval_ack","id":"apr-1","action":"approve"}`,
+			check: func(t *testing.T, e Event) {
+				if e.Type != "approval_ack" || e.Action != "approve" {
+					t.Fatalf("bad approval_ack decode: %+v", e)
+				}
+			},
+		},
+		{
+			name:  "token_delta",
+			frame: `{"type":"token_delta","content":"hel"}`,
+			check: func(t *testing.T, e Event) {
+				if e.Type != "token_delta" || e.Content != "hel" {
+					t.Fatalf("bad token_delta decode: %+v", e)
+				}
+			},
+		},
+		{
+			name:  "thinking_delta",
+			frame: `{"type":"thinking_delta","content":"hmm"}`,
+			check: func(t *testing.T, e Event) {
+				if e.Type != "thinking_delta" || e.Content != "hmm" {
+					t.Fatalf("bad thinking_delta decode: %+v", e)
+				}
+			},
+		},
+		{
+			name:  "done with cache metrics",
+			frame: `{"type":"done","latency":2.5,"contextTokens":900,"outputTokens":120,"cacheCreationTokens":800,"cacheReadTokens":40,"cachedTokens":10,"sessionContextTokens":900,"sessionOutputTokens":120}`,
+			check: func(t *testing.T, e Event) {
+				if e.CacheCreationTokens != 800 || e.CacheReadTokens != 40 || e.CachedTokens != 10 {
+					t.Fatalf("bad done cache decode: %+v", e)
+				}
+				if e.ContextTokens != 900 || e.OutputTokens != 120 {
+					t.Fatalf("bad done token decode: %+v", e)
+				}
+			},
+		},
+		{
+			name:  "cancelled",
+			frame: `{"type":"cancelled","session_id":"s1","idle":true}`,
+			check: func(t *testing.T, e Event) {
+				if e.Type != "cancelled" || !e.Idle || e.SessionID != "s1" {
+					t.Fatalf("bad cancelled decode: %+v", e)
+				}
+			},
+		},
+		{
+			name:  "server_info",
+			frame: `{"type":"server_info","version":"1.24.0","model":"glm-5.3","sandbox":true,"stream":true,"uptime_seconds":1903,"ws_connections":2}`,
+			check: func(t *testing.T, e Event) {
+				if e.Version != "1.24.0" || e.Model != "glm-5.3" || !e.Sandbox || !e.Stream ||
+					e.UptimeSeconds != 1903 || e.WSConnections != 2 {
+					t.Fatalf("bad server_info decode: %+v", e)
+				}
+			},
+		},
+		{
+			name:  "pong",
+			frame: `{"type":"pong","t":1755768000000,"stream":false,"ws_connections":1}`,
+			check: func(t *testing.T, e Event) {
+				if e.Type != "pong" || e.T == 0 || e.Stream || e.WSConnections != 1 {
+					t.Fatalf("bad pong decode: %+v", e)
+				}
+			},
+		},
+		{
 			name:  "memory_event",
 			frame: `{"type":"memory_event","event":"merge","target":"user","count":3}`,
 			check: func(t *testing.T, e Event) {
