@@ -82,7 +82,7 @@ var (
 		accentLo: "#FFB224",
 		steel:    "#B8C4E0",
 		green:    "#4ADE80",
-		yellow:  "#FBBF24",
+		yellow:   "#FBBF24",
 		red:      "#FF6B6B",
 		text:     "#FFFFFF",
 		muted:    "#C0C0C0",

@@ -757,6 +757,9 @@ func (m *Model) inputArea() string {
 		return m.approvalPanel()
 	}
 	box := m.th.inputBox.Width(m.width - 2).Render(m.ta.View())
+	if m.pal.open {
+		return m.palPopup() + "\n" + box
+	}
 	if m.ac.open {
 		return m.acPopup() + "\n" + box
 	}

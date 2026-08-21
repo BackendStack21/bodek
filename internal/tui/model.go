@@ -125,12 +125,13 @@ type Model struct {
 	lastTool string
 	lastArg  string
 
-	approvals   []client.Event // pending approval queue — odek runs parallel tools, so requests FIFO
-	apprSel     int            // highlighted option in the approval panel
-	apprExpanded bool          // tab: show the full command/description text
-	apprTyped    string        // friction mode: the literal word being typed ("approve")
-	ac           autocomplete  // @-reference completion state
-	queue        []string      // prompts typed mid-turn, sent when the turn ends
+	approvals    []client.Event // pending approval queue — odek runs parallel tools, so requests FIFO
+	apprSel      int            // highlighted option in the approval panel
+	apprExpanded bool           // tab: show the full command/description text
+	apprTyped    string         // friction mode: the literal word being typed ("approve")
+	ac           autocomplete   // @-reference completion state
+	pal          palState       // ⌘K command palette — the navigation spine
+	queue        []string       // prompts typed mid-turn, sent when the turn ends
 
 	history   []string // submitted prompts, newest last (recalled with ↑)
 	histNav   bool     // true while ^P/^N is walking the history
@@ -386,6 +387,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case sessionSwitchMsg:
 		return m, m.handleSessionSwitch(msg)
 
+	case palSessionsMsg:
+		return m, m.handlePalSessions(msg)
+
 	case limitsMsg:
 		m.handleLimitsMsg(msg)
 		return m, nil
@@ -471,6 +475,14 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	// The palette works from every rung of the modality ladder.
+	if m.pal.open {
+		return m.handlePaletteKey(msg)
+	}
+	if msg.String() == "ctrl+k" {
+		return m, m.togglePalette()
+	}
+
 	// Approval mode captures the keyboard until answered; only the transcript
 	// scroll keys pass through to the viewport.
 	if m.curApproval() != nil {
@@ -783,6 +795,9 @@ func (m *Model) inputAreaHeight() int {
 	h := inputHeight
 	if m.statusLineVisible() {
 		h += 2 // busy status line + blank separator row above the input box
+	}
+	if m.pal.open {
+		h += m.palHeight()
 	}
 	if m.ac.open {
 		h += m.ac.height()
