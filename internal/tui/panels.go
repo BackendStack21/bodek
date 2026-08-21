@@ -21,6 +21,10 @@ const (
 	panelModels
 	panelRuns
 	panelEvents
+	panelMemory
+	panelSkills
+	panelTools
+	panelConfig
 )
 
 // panelEditMode is the text-entry submode a panel can capture: `/` search in
@@ -203,13 +207,37 @@ func (m *Model) handlePanelKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case "enter":
 		return m, m.panelSelect()
-	case "a", "A":
+	case "a":
 		if m.panel == panelRuns {
 			return m, m.answerSelectedRunApproval("approve")
 		}
+		if m.panel == panelMemory {
+			m.panelEdit = panelEditFact
+			m.memTarget = "user"
+			m.panelDraft = ""
+			m.refresh()
+		}
+		return m, nil
+	case "A":
+		if m.panel == panelRuns {
+			return m, m.answerSelectedRunApproval("approve")
+		}
+		if m.panel == panelMemory {
+			m.panelEdit = panelEditFact
+			m.memTarget = "env"
+			m.panelDraft = ""
+			m.refresh()
+		}
+		return m, nil
 	case "d", "x":
 		if m.panel == panelSessions {
 			return m, m.deleteSelected()
+		}
+		if m.panel == panelMemory {
+			return m, m.memDeleteSelected()
+		}
+		if m.panel == panelConfig {
+			return m, m.cfgKickSelected()
 		}
 	case "D":
 		if m.panel == panelRuns {
@@ -223,6 +251,9 @@ func (m *Model) handlePanelKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.panel == panelRuns {
 			return m, m.cancelSelectedRun()
 		}
+		if m.panel == panelMemory {
+			return m, m.memConsolidate()
+		}
 	case "/":
 		if m.panel == panelSessions {
 			m.panelEdit = panelEditSearch
@@ -233,6 +264,16 @@ func (m *Model) handlePanelKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "p":
 		if m.panel == panelSessions {
 			return m, m.togglePinSelected()
+		}
+		if m.panel == panelMemory {
+			return m, m.memPromoteSelected()
+		}
+		if m.panel == panelSkills {
+			return m, m.skillPromote(false)
+		}
+	case "P":
+		if m.panel == panelSkills {
+			return m, m.skillPromote(true)
 		}
 	case "e":
 		if m.panel == panelSessions {
@@ -251,13 +292,17 @@ func (m *Model) handlePanelKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 			return m, nil
 		}
-		if m.panel == panelRuns || m.panel == panelEvents {
+		if drawerPanel(m.panel) {
 			m.panelMsg = "refreshing…"
 			m.refresh()
-			if m.panel == panelRuns {
+			switch m.panel {
+			case panelRuns:
 				return m, m.fetchRuns()
+			case panelEvents:
+				return m, m.fetchEvents()
+			default:
+				return m, m.switchDrawerTab(m.panel)
 			}
-			return m, m.fetchEvents()
 		}
 		return m, nil
 	case "n":
@@ -296,6 +341,9 @@ func (m *Model) handlePanelEditKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, m.fetchSessionsPage(m.sessQuery, 0, false)
 		case panelEditRename:
 			return m, m.renameSelected(strings.TrimSpace(draft))
+		case panelEditFact:
+			m.memTarget = m.memTarget
+			return m, m.memFactDraft()
 		}
 		return m, nil
 	case "backspace":
@@ -329,6 +377,14 @@ func (m *Model) panelLen() int {
 		return len(m.runs)
 	case panelEvents:
 		return len(m.feed)
+	case panelMemory:
+		return len(m.memRows)
+	case panelSkills:
+		return len(m.skills)
+	case panelTools:
+		return len(m.toolRows)
+	case panelConfig:
+		return len(m.cfgRows)
 	}
 	return 0
 }
@@ -410,6 +466,9 @@ func (m *Model) panelSelect() tea.Cmd {
 		}
 	case panelEvents:
 		return m.fetchEvents()
+	case panelMemory, panelSkills, panelTools, panelConfig:
+		// Enter on management tabs refreshes the visible list.
+		return m.switchDrawerTab(m.panel)
 	}
 	return nil
 }
@@ -872,6 +931,18 @@ func (m *Model) renderPanel(w, h int) string {
 	case panelEvents:
 		title = "☰ events"
 		rows = m.eventRows(w - 6)
+	case panelMemory:
+		title = "❖ memory"
+		rows = m.memRowsRender(w - 6)
+	case panelSkills:
+		title = "✦ skills"
+		rows = m.skillRowsRender(w - 6)
+	case panelTools:
+		title = "⚒ tools"
+		rows = m.toolRowsRender(w - 6)
+	case panelConfig:
+		title = "⚙ config"
+		rows = m.cfgRowsRender(w - 6)
 	}
 
 	header := th.acTitle.Render(title)

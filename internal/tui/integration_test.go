@@ -139,6 +139,63 @@ func standIn(t *testing.T, token string) *Model {
 			json.NewEncoder(w).Encode(client.Run{ID: "run-1", Status: "waiting_approval"})
 		}
 	}))
+	mux.HandleFunc("/api/memory", guard(func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(map[string]any{
+			"facts": map[string][]string{"user": {"prefers vim"}, "env": {"go 1.25"}},
+			"episodes": map[string]any{"total": 2, "pending": []map[string]any{
+				{"session_id": "s1", "summary": "fixed the login bug"},
+			}},
+		})
+	}))
+	mux.HandleFunc("/api/memory/facts", guard(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	mux.HandleFunc("/api/memory/episodes/promote", guard(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	mux.HandleFunc("/api/memory/consolidate", guard(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	mux.HandleFunc("/api/skills", guard(func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(map[string]any{"skills": []client.Skill{
+			{Name: "deploy-helper", Description: "deploys", UsageCount: 3, Source: "~/.odek/skills"},
+			{Name: "tainted-thing", NeedsReview: true, Untrusted: true, Source: "./.odek/skills"},
+		}})
+	}))
+	mux.HandleFunc("/api/skills/promote", guard(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	mux.HandleFunc("/api/tools", guard(func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(map[string]any{
+			"tools":       []client.Tool{{Name: "shell", Enabled: true}, {Name: "read_file", Enabled: true}},
+			"mcp_servers": 1,
+		})
+	}))
+	mux.HandleFunc("/api/mcp", guard(func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(map[string]any{"servers": []client.MCPServer{
+			{Name: "fs", Command: "mcp-fs", Args: []string{"--ro"}},
+		}, "count": 1})
+	}))
+	mux.HandleFunc("/api/config", guard(func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(map[string]any{
+			"model": "m", "stream": true, "max_iterations": 90, "sandbox": map[string]any{"enabled": true},
+		})
+	}))
+	mux.HandleFunc("/api/usage", guard(func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(map[string]any{
+			"prompts_started": 4, "prompts_completed": 3, "tokens_in": 1000, "tokens_out": 200,
+			"prices_configured": false, "ws_connections": 1,
+		})
+	}))
+	mux.HandleFunc("/api/connections", guard(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodDelete {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		json.NewEncoder(w).Encode(map[string]any{"connections": []client.Connection{
+			{ID: "conn-1", RemoteAddr: "127.0.0.1:9", Prompts: 2},
+		}})
+	}))
 	mux.HandleFunc("/api/events", guard(func(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(map[string]any{"events": []client.RuntimeEvent{
 			{Schema: "odek.event/v1", Type: "run_started", SessionID: "s1",

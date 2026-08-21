@@ -169,6 +169,14 @@ type Model struct {
 	feed    []client.RuntimeEvent
 	runsSeq int // poll generation; a stale tick after closing is dropped
 
+	// Management tab state (memory / skills / tools / config).
+	memView   client.MemoryView
+	memRows   []memRow
+	memTarget string // add-fact editor target ("user" | "env")
+	skills    []client.Skill
+	toolRows  []toolRow
+	cfgRows   []cfgRow
+
 	sessCtxTok int
 	sessOutTok int
 	winCtxTok  int // live context-window fill: last request's prompt size
@@ -415,6 +423,17 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case runActionMsg:
 		return m, m.handleRunAction(msg)
+
+	case mgmtMsg:
+		m.handleMgmtMsg(msg)
+		m.refresh()
+		return m, nil
+
+	case mgmtActionMsg:
+		if m.panel == msg.tab {
+			return m, m.afterMgmtAction(msg)
+		}
+		return m, nil
 
 	case limitsMsg:
 		m.handleLimitsMsg(msg)

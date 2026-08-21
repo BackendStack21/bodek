@@ -321,13 +321,23 @@ func (c *Client) postJSON(u, sessionToken string, body []byte) (*http.Response, 
 		return nil, err
 	}
 	req.Header.Set("Content-Type", "application/json")
+	c.authHeaders(req, sessionToken)
+	return c.http.Do(req)
+}
+
+// jsonBody wraps a JSON payload for arbitrary-method request bodies.
+func jsonBody(payload []byte) *bytes.Reader {
+	return bytes.NewReader(payload)
+}
+
+// authHeaders stamps the instance (and optional session) tokens on a request.
+func (c *Client) authHeaders(req *http.Request, sessionToken string) {
 	if c.serveToken != "" {
 		req.Header.Set("X-Odek-Ws-Token", c.serveToken)
 	}
 	if sessionToken != "" {
 		req.Header.Set("X-Session-Token", sessionToken)
 	}
-	return c.http.Do(req)
 }
 
 func (c *Client) getJSON(u, sessionToken string, dst interface{}) error {

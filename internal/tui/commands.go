@@ -49,6 +49,18 @@ func slashCommands() []command {
 		{"events", "runtime event feed", func(m *Model, _ string) tea.Cmd {
 			return m.openEvents()
 		}},
+		{"memory", "facts, pending episodes, consolidate", func(m *Model, _ string) tea.Cmd {
+			return m.openMemory()
+		}},
+		{"skills", "skill provenance & promote", func(m *Model, _ string) tea.Cmd {
+			return m.openSkills()
+		}},
+		{"tools", "tool registry & MCP servers", func(m *Model, _ string) tea.Cmd {
+			return m.openTools()
+		}},
+		{"config", "server config, usage & connections", func(m *Model, _ string) tea.Cmd {
+			return m.openConfig()
+		}},
 		{"model", "switch model — /model [name]", func(m *Model, args string) tea.Cmd {
 			if args != "" {
 				m.pendModel = args
