@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/charmbracelet/glamour"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/muesli/termenv"
 
@@ -161,4 +162,38 @@ func TestAnswerCard(t *testing.T) {
 		t.Errorf("work section missing from the turn:\n%s", plain(asstOut))
 	}
 	lipgloss.SetColorProfile(termenv.Ascii)
+}
+
+// TestAnswerTextIsThemeBright pins the answer card's text color: glamour's
+// stock dark preset paints body text ANSI-252 gray, which reads dimmed on
+// the surface card. Every theme's answer body must paint the palette's
+// full-brightness text color instead of the stock gray.
+func TestAnswerTextIsThemeBright(t *testing.T) {
+	for name, wantSGR := range map[string]string{
+		"ember-dark":    "38;2;231;233;238", // #E7E9EE
+		"ember-light":   "38;2;34;36;44",    // #22252C (glamour quantizes g−1)
+		"classic":       "38;2;229;231;235", // #E5E7EB
+		"high-contrast": "38;2;255;255;255", // #FFFFFF
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Setenv("BODEK_THEME", name)
+			r, err := glamour.NewTermRenderer(
+				glamour.WithStyles(answerGlamourStyle()),
+				glamour.WithWordWrap(80),
+			)
+			if err != nil {
+				t.Fatal(err)
+			}
+			out, err := r.Render("plain answer body")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !strings.Contains(out, wantSGR) {
+				t.Errorf("%s answer body missing text color %q:\n%q", name, wantSGR, out)
+			}
+			if strings.Contains(out, "38;5;252") {
+				t.Errorf("%s answer body still painted stock glamour gray 252:\n%q", name, out)
+			}
+		})
+	}
 }

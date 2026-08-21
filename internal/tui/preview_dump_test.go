@@ -62,6 +62,10 @@ func TestDumpPreview(t *testing.T) {
 			content: "One test still fails — `TestLogin` mocks the old cookie. Updating the mock next.",
 			stats:   &turnStats{latency: 3.1, ctxTok: 6400, outTok: 210, toolCount: 1, toolGlyphs: []string{"❯"}}},
 	)
+	// Route the answers through the production renderer (resize re-renders
+	// finalized assistant turns), so previews judge real glamour output —
+	// headings, emphasis, and the answer text's theme color on the card.
+	m.resize(m.width, m.height)
 	m.refresh()
 	forceColor()
 	write("conversation.txt", m.View())

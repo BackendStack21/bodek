@@ -5,6 +5,8 @@ import (
 	"os"
 	"strings"
 
+	"github.com/charmbracelet/glamour/ansi"
+	"github.com/charmbracelet/glamour/styles"
 	"github.com/charmbracelet/lipgloss"
 )
 
@@ -151,6 +153,24 @@ func paletteByName(name string) palette {
 	default:
 		return emberDark
 	}
+}
+
+// answerGlamourStyle brands the markdown renderer for answer bodies.
+// Glamour's stock "dark" preset paints every paragraph ANSI-252 gray —
+// fine on a bare terminal, but it reads dimmed on the answer card's
+// surface. The document text instead takes the palette's full-brightness
+// body color; the light theme builds on glamour's light preset so code
+// blocks and highlights stay tuned for a light background.
+func answerGlamourStyle() ansi.StyleConfig {
+	name := themeName()
+	cfg := styles.DarkStyleConfig
+	if name == "ember-light" {
+		cfg = styles.LightStyleConfig
+	}
+	// Assign a fresh pointer — the preset is a package-level shared value.
+	c := string(paletteByName(name).text)
+	cfg.Document.Color = &c
+	return cfg
 }
 
 // Layout — fixed heights for the chrome around the scrollable transcript.

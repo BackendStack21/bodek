@@ -830,7 +830,7 @@ func (m *Model) resize(w, h int) tea.Cmd {
 		wrap = 20
 	}
 	if r, err := glamour.NewTermRenderer(
-		glamour.WithStandardStyle("dark"),
+		glamour.WithStyles(answerGlamourStyle()),
 		glamour.WithWordWrap(wrap),
 	); err == nil {
 		m.glam = r
