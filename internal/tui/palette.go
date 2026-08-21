@@ -107,7 +107,7 @@ func (m *Model) basePaletteEntries() []palEntry {
 		{title: "models", hint: "^O", kind: "view",
 			run: func(m *Model) tea.Cmd { return m.openModels() }},
 		{title: "cockpit — server & budget", hint: "/server", kind: "view",
-			run: func(m *Model) tea.Cmd { m.popover = true; return nil }},
+			run: func(m *Model) tea.Cmd { return m.openCockpit() }},
 		{title: "runs — headless & approvals", hint: "/runs", kind: "view",
 			run: func(m *Model) tea.Cmd { return m.openRuns() }},
 		{title: "events — runtime feed", hint: "/events", kind: "view",

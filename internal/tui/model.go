@@ -179,6 +179,10 @@ type Model struct {
 	cfgRows     []cfgRow
 	shutdownReq bool // shutdown sent — the socket drop is expected, not a failure
 
+	// Cockpit live snapshots (one-shot fetch on open).
+	healthSnap *client.Health
+	usageSnap  *client.Usage
+
 	sessCtxTok int
 	sessOutTok int
 	winCtxTok  int // live context-window fill: last request's prompt size
@@ -429,6 +433,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case runStartedMsg:
 		return m, m.handleRunStarted(msg)
 
+	case cockpitMsg:
+		return m, m.handleCockpitMsg(msg)
+
 	case shutdownDoneMsg:
 		if msg.err != nil {
 			m.addNote("shutdown failed: " + msg.err.Error())
@@ -496,10 +503,11 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// server/budget/session popover — WebUI health-popover parity.
 			if msg.Y >= 0 && msg.Y < headerHeight {
 				if !m.popover {
-					m.popover = true
-				} else {
-					m.popover = false
+					cmd := m.openCockpit()
+					m.refresh()
+					return m, cmd
 				}
+				m.popover = false
 				m.refresh()
 				return m, nil
 			}

@@ -198,6 +198,12 @@ func standIn(t *testing.T, token string) *Model {
 			"model": "m", "stream": true, "max_iterations": 90, "sandbox": map[string]any{"enabled": true},
 		})
 	}))
+	mux.HandleFunc("/api/health", guard(func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(map[string]any{
+			"status": "ok", "version": "vtest", "started_at": time.Now().Add(-time.Hour),
+			"uptime_seconds": 3600, "model": "m", "sandbox": false, "stream": true, "ws_connections": 1,
+		})
+	}))
 	mux.HandleFunc("/api/usage", guard(func(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(map[string]any{
 			"prompts_started": 4, "prompts_completed": 3, "tokens_in": 1000, "tokens_out": 200,

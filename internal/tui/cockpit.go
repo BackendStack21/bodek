@@ -6,6 +6,8 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+
+	"github.com/BackendStack21/bodek/internal/client"
 )
 
 // The cockpit popover (h, or /server) is the single place to read server,
@@ -13,6 +15,39 @@ import (
 // am I connected, on what model, how full is my context, what has this cost,
 // and what are the caps. Everything renders from state the heartbeat,
 // /api/limits, and the turn stream already keep live.
+
+// openCockpit shows the popover and fires a one-shot live fetch of the
+// authoritative /api/health and /api/usage snapshots — the heartbeat-derived
+// fields render immediately; these fill in a moment later.
+func (m *Model) openCockpit() tea.Cmd {
+	m.popover = true
+	m.refresh()
+	cl := m.cl
+	if cl == nil {
+		return nil
+	}
+	return func() tea.Msg {
+		msg := cockpitMsg{}
+		msg.health, _ = cl.Health()
+		msg.usage, _ = cl.Usage()
+		return msg
+	}
+}
+
+// cockpitMsg carries the popover's live fetch (either half may fail soft).
+type cockpitMsg struct {
+	health client.Health
+	usage  client.Usage
+}
+
+func (m *Model) handleCockpitMsg(msg cockpitMsg) tea.Cmd {
+	h, u := msg.health, msg.usage
+	m.healthSnap, m.usageSnap = &h, &u
+	if m.popover {
+		m.refresh()
+	}
+	return nil
+}
 
 // handlePopoverKey drives the cockpit overlay: it never blocks the run (the
 // transcript keeps streaming underneath), scroll keys page the card, and
@@ -50,6 +85,9 @@ func (m *Model) popoverView(w, h int) string {
 
 	b.WriteString("\n" + m.cockpitServerSection())
 	b.WriteString("\n" + m.cockpitBudgetSection())
+	if m.usageSnap != nil {
+		b.WriteString("\n" + m.cockpitLifetimeSection())
+	}
 	b.WriteString("\n\n" + m.statsCardBody())
 
 	return th.acBox.Width(w - 2).Height(h - 2).Render(b.String())
@@ -75,6 +113,9 @@ func (m *Model) cockpitServerSection() string {
 	}
 	if id := shortID(m.sessionID); id != "" {
 		rows = append(rows, [2]string{"session", id})
+	}
+	if m.healthSnap != nil && !m.healthSnap.StartedAt.IsZero() {
+		rows = append(rows, [2]string{"since", m.healthSnap.StartedAt.Format("Jan 2 15:04")})
 	}
 	return m.cockpitRows("server", rows)
 }
@@ -102,6 +143,24 @@ func (m *Model) cockpitBudgetSection() string {
 		return m.cockpitRows("budget", [][2]string{{"caps", "none configured"}})
 	}
 	return m.cockpitRows("budget", rows)
+}
+
+// cockpitLifetimeSection is the server-lifetime card from /api/usage.
+func (m *Model) cockpitLifetimeSection() string {
+	u := m.usageSnap
+	rows := [][2]string{
+		{"prompts", fmt.Sprintf("%d started · %d completed", u.PromptsStarted, u.PromptsCompleted)},
+		{"tokens", fmt.Sprintf("⇥%s ↦%s", human(int(u.TokensIn)), human(int(u.TokensOut)))},
+	}
+	if u.PricesConfigured {
+		rows = append(rows, [2]string{"lifetime cost", formatUSD(u.EstimatedCostUSD)})
+	} else {
+		rows = append(rows, [2]string{"lifetime cost", "unavailable (no prices)"})
+	}
+	if u.RunsActive > 0 {
+		rows = append(rows, [2]string{"active runs", fmt.Sprintf("%d", u.RunsActive)})
+	}
+	return m.cockpitRows("lifetime", rows)
 }
 
 // cockpitRows renders one titled section as aligned label→value rows.

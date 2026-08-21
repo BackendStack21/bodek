@@ -39,9 +39,7 @@ func slashCommands() []command {
 			return m.openSessions()
 		}},
 		{"server", "cockpit — server, link, budget & session", func(m *Model, _ string) tea.Cmd {
-			m.popover = true
-			m.refresh()
-			return nil
+			return m.openCockpit()
 		}},
 		{"runs", "headless runs & remote approvals", func(m *Model, _ string) tea.Cmd {
 			return m.openRuns()
