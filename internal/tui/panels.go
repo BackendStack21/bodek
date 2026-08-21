@@ -19,6 +19,8 @@ const (
 	panelNone panelMode = iota
 	panelSessions
 	panelModels
+	panelRuns
+	panelEvents
 )
 
 // panelEditMode is the text-entry submode a panel can capture: `/` search in
@@ -165,6 +167,21 @@ func (m *Model) handlePanelKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.panelEdit != panelEditNone {
 		return m.handlePanelEditKey(msg)
 	}
+	// Drawer-level keys: tab cycling and digit jumps work on every drawer tab.
+	if drawerPanel(m.panel) {
+		tabs := drawerTabs()
+		switch msg.String() {
+		case "]", "right":
+			return m, m.cycleDrawerTab(1)
+		case "[", "left":
+			return m, m.cycleDrawerTab(-1)
+		}
+		if d := msg.String(); len(d) == 1 && d[0] >= '1' && d[0] <= '9' {
+			if idx := int(d[0] - '1'); idx < len(tabs) {
+				return m, m.switchDrawerTab(tabs[idx].mode)
+			}
+		}
+	}
 	switch msg.String() {
 	case "ctrl+c":
 		m.quitting = true
@@ -186,9 +203,25 @@ func (m *Model) handlePanelKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case "enter":
 		return m, m.panelSelect()
+	case "a", "A":
+		if m.panel == panelRuns {
+			return m, m.answerSelectedRunApproval("approve")
+		}
 	case "d", "x":
 		if m.panel == panelSessions {
 			return m, m.deleteSelected()
+		}
+	case "D":
+		if m.panel == panelRuns {
+			return m, m.answerSelectedRunApproval("deny")
+		}
+	case "t", "T":
+		if m.panel == panelRuns {
+			return m, m.answerSelectedRunApproval("trust")
+		}
+	case "c":
+		if m.panel == panelRuns {
+			return m, m.cancelSelectedRun()
 		}
 	case "/":
 		if m.panel == panelSessions {
@@ -216,6 +249,15 @@ func (m *Model) handlePanelKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.panelDraft = m.sessions[m.panelSel].Task
 				m.refresh()
 			}
+			return m, nil
+		}
+		if m.panel == panelRuns || m.panel == panelEvents {
+			m.panelMsg = "refreshing…"
+			m.refresh()
+			if m.panel == panelRuns {
+				return m, m.fetchRuns()
+			}
+			return m, m.fetchEvents()
 		}
 		return m, nil
 	case "n":
@@ -283,6 +325,10 @@ func (m *Model) panelLen() int {
 		return len(m.sessions)
 	case panelModels:
 		return len(m.modelEntries())
+	case panelRuns:
+		return len(m.runs)
+	case panelEvents:
+		return len(m.feed)
 	}
 	return 0
 }
@@ -354,6 +400,16 @@ func (m *Model) panelSelect() tea.Cmd {
 			m.addNote("model set to " + e.id + " (applies next turn)")
 			m.closePanel()
 		}
+	case panelRuns:
+		// Enter refreshes the highlighted run's detail (result tail and the
+		// pending-approval queue).
+		if r := m.selectedRun(); r != nil {
+			m.panelMsg = "refreshing…"
+			m.refresh()
+			return m.fetchRuns()
+		}
+	case panelEvents:
+		return m.fetchEvents()
 	}
 	return nil
 }
@@ -805,14 +861,23 @@ func (m *Model) renderPanel(w, h int) string {
 
 	switch m.panel {
 	case panelSessions:
-		title = "⟳ resume a session"
+		title = "⟳ sessions"
 		rows = m.sessionRows(w - 6)
 	case panelModels:
 		title = "✦ choose a model"
 		rows = m.modelRows(w - 6)
+	case panelRuns:
+		title = "▶ headless runs"
+		rows = m.runRows(w - 6)
+	case panelEvents:
+		title = "☰ events"
+		rows = m.eventRows(w - 6)
 	}
 
 	header := th.acTitle.Render(title)
+	if drawerPanel(m.panel) {
+		header += m.tabBar()
+	}
 	if m.panel == panelSessions && m.sessQuery != "" {
 		header += th.acDetail.Render("  /" + m.sessQuery)
 	}

@@ -164,6 +164,11 @@ type Model struct {
 
 	profiles []client.Profile // built-in model catalog (picker + context gauge)
 
+	// Drawer state: runs polling + the events feed.
+	runs    []client.Run
+	feed    []client.RuntimeEvent
+	runsSeq int // poll generation; a stale tick after closing is dropped
+
 	sessCtxTok int
 	sessOutTok int
 	winCtxTok  int // live context-window fill: last request's prompt size
@@ -389,6 +394,27 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case palSessionsMsg:
 		return m, m.handlePalSessions(msg)
+
+	case runsMsg:
+		if m.panel == panelRuns {
+			m.handleRunsMsg(msg)
+			m.refresh()
+			return m, m.armRunPoll() // keeps the 3s chain alive while visible
+		}
+		return m, nil
+
+	case eventsMsg:
+		if m.panel == panelEvents {
+			m.handleEventsMsg(msg)
+			m.refresh()
+		}
+		return m, nil
+
+	case runsTickMsg:
+		return m, m.handleRunsTick(msg)
+
+	case runActionMsg:
+		return m, m.handleRunAction(msg)
 
 	case limitsMsg:
 		m.handleLimitsMsg(msg)

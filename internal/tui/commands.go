@@ -43,6 +43,12 @@ func slashCommands() []command {
 			m.refresh()
 			return nil
 		}},
+		{"runs", "headless runs & remote approvals", func(m *Model, _ string) tea.Cmd {
+			return m.openRuns()
+		}},
+		{"events", "runtime event feed", func(m *Model, _ string) tea.Cmd {
+			return m.openEvents()
+		}},
 		{"model", "switch model — /model [name]", func(m *Model, args string) tea.Cmd {
 			if args != "" {
 				m.pendModel = args

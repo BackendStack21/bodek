@@ -117,6 +117,36 @@ func standIn(t *testing.T, token string) *Model {
 	mux.HandleFunc("/api/cancel", guard(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
 	}))
+	mux.HandleFunc("/api/runs", guard(func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(map[string]any{"runs": []client.Run{
+			{ID: "run-1", SessionID: "s1", Model: "m", Status: "waiting_approval",
+				StartedAt: time.Now().Add(-time.Minute),
+				PendingApprovals: []client.RunApproval{
+					{ID: "ap-1", Risk: "shell_exec", Command: "rm -rf build", AllowTrust: true},
+				}},
+			{ID: "run-2", SessionID: "s1", Model: "m", Status: "completed",
+				StartedAt: time.Now().Add(-time.Hour), EndedAt: time.Now().Add(-time.Hour).Add(time.Second),
+				InputTokens: 100, OutputTokens: 20, Result: "did the thing"},
+		}, "active": 1})
+	}))
+	mux.HandleFunc("/api/runs/", guard(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/cancel") && r.Method == http.MethodPost:
+			w.WriteHeader(http.StatusNoContent)
+		case strings.Contains(r.URL.Path, "/approvals/") && r.Method == http.MethodPost:
+			w.WriteHeader(http.StatusOK)
+		default:
+			json.NewEncoder(w).Encode(client.Run{ID: "run-1", Status: "waiting_approval"})
+		}
+	}))
+	mux.HandleFunc("/api/events", guard(func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(map[string]any{"events": []client.RuntimeEvent{
+			{Schema: "odek.event/v1", Type: "run_started", SessionID: "s1",
+				Timestamp: time.Now()},
+			{Schema: "odek.event/v1", Type: "tool_call_started", Tool: "shell",
+				SessionID: "s1", Iteration: 1, Timestamp: time.Now()},
+		}, "count": 2})
+	}))
 
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)

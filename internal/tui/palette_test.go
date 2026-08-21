@@ -46,11 +46,22 @@ func TestPaletteOpenFilterRun(t *testing.T) {
 	if len(m.pal.items) == 0 {
 		t.Fatal("palette has no entries")
 	}
+	// The default page leads with the navigation spine and teaches chords;
+	// slash commands sit behind it (still present in the full list).
 	out := plain(m.palPopup())
-	for _, want := range []string{"everything", "/help", "sessions", "^R"} {
+	for _, want := range []string{"everything", "sessions", "^R", "runs"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("palette missing %q:\n%s", want, out)
 		}
+	}
+	hasHelp := false
+	for _, e := range m.pal.all {
+		if e.title == "/help" {
+			hasHelp = true
+		}
+	}
+	if !hasHelp {
+		t.Error("slash commands missing from the palette source")
 	}
 
 	// Typing filters to the session resume entry; its hint teaches ^R.
