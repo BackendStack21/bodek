@@ -164,6 +164,53 @@ func TestAnswerCard(t *testing.T) {
 	lipgloss.SetColorProfile(termenv.Ascii)
 }
 
+// TestSurfaceWeave pins the card's background continuity: glamour resets
+// styling after every span (and paints margin fillers unstyled), so the
+// card must re-assert its surface after each embedded reset — otherwise
+// the text sits on the terminal's own background and the card breaks up
+// into padding-only blue.
+func TestSurfaceWeave(t *testing.T) {
+	lipgloss.SetColorProfile(termenv.TrueColor)
+	defer lipgloss.SetColorProfile(termenv.Ascii)
+
+	// weaveSurface is the exact transformation: reset → reset + surface.
+	bg := "\x1b[48;2;16;19;26m"
+	woven := weaveSurface("\x1b[38;2;231;233;238mspan1\x1b[0m gap \x1b[38;2;231;233;238;1mspan2\x1b[0m", bg)
+	want := "\x1b[38;2;231;233;238mspan1\x1b[0m" + bg + " gap \x1b[38;2;231;233;238;1mspan2\x1b[0m" + bg
+	if woven != want {
+		t.Errorf("weave mismatch:\n got %q\nwant %q", woven, want)
+	}
+	// No surface sequence — no weaving (high-contrast stays pure text).
+	if got := weaveSurface("a\x1b[0mb", ""); got != "a\x1b[0mb" {
+		t.Errorf("empty surface must no-op, got %q", got)
+	}
+	// surfaceSGR reads the escape the style really paints — the ember-dark
+	// card's own blue — and returns nothing when a style paints none.
+	if got := surfaceSGR(themeFrom(emberDark).answerCard); got != bg {
+		t.Errorf("ember-dark surface escape = %q, want %q", got, bg)
+	}
+	if got := surfaceSGR(themeFrom(emberHighContrast).answerCard); got != "" {
+		t.Errorf("high-contrast must paint no surface, got %q", got)
+	}
+
+	// End to end: a finalized answer with glamour-style span resets keeps
+	// the surface under every gap inside the card.
+	m := newTestModel()
+	m.msgs = append(m.msgs, message{role: roleAsst,
+		rendered: "\x1b[38;2;231;233;238mspan1\x1b[0m \x1b[38;2;231;233;238;1mspan2\x1b[0m tail",
+		items:    []turnItem{{thinking: true, text: "hmm"}}})
+	out, _ := m.renderMessage(m.msgs[0], 0, 0)
+	// Every embedded reset inside the card region is followed by the
+	// surface re-assert (before the card's own line-end resets, which may
+	// legitimately trail) — count re-asserts, not blanket adjacency.
+	if n := strings.Count(out, "\x1b[0m"+bg); n < 2 {
+		t.Errorf("card re-asserts surface %d times, want >= 2:\n%q", n, out)
+	}
+	if !strings.Contains(plain(out), "span1 span2 tail") {
+		t.Errorf("weave lost answer text:\n%s", plain(out))
+	}
+}
+
 // TestAnswerTextIsThemeBright pins the answer card's text color: glamour's
 // stock dark preset paints body text ANSI-252 gray, which reads dimmed on
 // the surface card. Every theme's answer body must paint the palette's

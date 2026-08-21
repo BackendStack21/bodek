@@ -173,6 +173,37 @@ func answerGlamourStyle() ansi.StyleConfig {
 	return cfg
 }
 
+// surfaceSGR extracts the background escape a style actually paints, by
+// rendering a probe cell and reading it back. Deriving the sequence from
+// the style itself (instead of formatting the hex) keeps it consistent
+// with lipgloss's active color profile; "" when the style paints none.
+func surfaceSGR(st lipgloss.Style) string {
+	out := st.Render(" ")
+	i := strings.Index(out, "\x1b[48")
+	if i < 0 {
+		return ""
+	}
+	j := strings.IndexByte(out[i:], 'm')
+	if j < 0 {
+		return ""
+	}
+	return out[i : i+j+1]
+}
+
+// weaveSurface re-asserts the card background after every embedded SGR
+// reset in glamour output. Glamour resets styling after each span and
+// paints its margin fillers with parent styles, so span gaps and margin
+// spaces otherwise fall back to the terminal's own background — the card
+// breaks up into padding-only blue with the text sitting on bare
+// terminal. Re-asserting after each reset keeps the surface continuous
+// under every span, whatever block produced it.
+func weaveSurface(s, bgSeq string) string {
+	if bgSeq == "" {
+		return s
+	}
+	return strings.ReplaceAll(s, "\x1b[0m", "\x1b[0m"+bgSeq)
+}
+
 // Layout — fixed heights for the chrome around the scrollable transcript.
 const (
 	headerHeight = 2 // cockpit bar + hairline rule

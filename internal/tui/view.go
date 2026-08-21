@@ -503,7 +503,11 @@ func (m *Model) renderMessage(msg message, msgIdx, lineOffset int) (string, []st
 			if th.answerCard.GetBackground() == nil {
 				out.WriteString(content)
 			} else {
-				out.WriteString(th.answerCard.Width(m.vp.Width - 2).Render(content))
+				// Glamour resets styling after each span; without re-asserting
+				// the surface after every reset, the text would sit on the
+				// terminal's own background instead of the card.
+				card := th.answerCard.Width(m.vp.Width - 2)
+				out.WriteString(card.Render(weaveSurface(content, surfaceSGR(th.answerCard))))
 			}
 		}
 		return out.String(), refs
