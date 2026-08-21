@@ -1,8 +1,10 @@
 package client
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"time"
@@ -30,14 +32,27 @@ type SessionToolCall struct {
 
 // Session is a saved conversation, as returned by the session API.
 type Session struct {
-	ID        string           `json:"id"`
-	Model     string           `json:"model"`
-	Turns     int              `json:"turns"`
-	Task      string           `json:"task"`
-	Sandbox   bool             `json:"sandbox"`
-	CreatedAt time.Time        `json:"created_at"`
-	UpdatedAt time.Time        `json:"updated_at"`
-	Messages  []SessionMessage `json:"messages"`
+	ID           string           `json:"id"`
+	Model        string           `json:"model"`
+	Turns        int              `json:"turns"`
+	Task         string           `json:"task"`
+	Sandbox      bool             `json:"sandbox"`
+	Pinned       bool             `json:"pinned"`
+	InputTokens  int64            `json:"input_tokens"`
+	OutputTokens int64            `json:"output_tokens"`
+	CreatedAt    time.Time        `json:"created_at"`
+	UpdatedAt    time.Time        `json:"updated_at"`
+	Messages     []SessionMessage `json:"messages"`
+}
+
+// SessionsPage is the /api/sessions envelope returned whenever q, limit, or
+// offset is present (a bare GET keeps the legacy array shape).
+type SessionsPage struct {
+	Sessions []Session `json:"sessions"`
+	Offset   int       `json:"offset"`
+	Limit    int       `json:"limit"`
+	Count    int       `json:"count"`
+	Query    string    `json:"query"`
 }
 
 // ModelInfo describes an available model from the models API.
@@ -53,6 +68,104 @@ func (c *Client) Sessions() ([]Session, error) {
 	var out []Session
 	if err := c.getJSON(c.baseURL+"/api/sessions", "", &out); err != nil {
 		return nil, err
+	}
+	return out, nil
+}
+
+// SearchSessions runs the server-side session search: case-insensitive
+// substring match over task, model, and id, pinned sessions first. An empty
+// query with offset 0 still uses the envelope (limit present → envelope
+// shape by contract). count < limit means the listing is exhausted.
+func (c *Client) SearchSessions(query string, limit, offset int) (SessionsPage, error) {
+	u := fmt.Sprintf("%s/api/sessions?q=%s&limit=%d&offset=%d",
+		c.baseURL, url.QueryEscape(query), limit, offset)
+	var out SessionsPage
+	if err := c.getJSON(u, "", &out); err != nil {
+		return SessionsPage{}, err
+	}
+	return out, nil
+}
+
+// UpdateSession renames and/or pins a session via POST /api/sessions/{id}.
+// nil leaves a field unchanged; both nil is a 400 server-side.
+func (c *Client) UpdateSession(id, token string, name *string, pinned *bool) error {
+	body := map[string]any{}
+	if name != nil {
+		body["name"] = *name
+	}
+	if pinned != nil {
+		body["pinned"] = *pinned
+	}
+	payload, err := json.Marshal(body)
+	if err != nil {
+		return err
+	}
+	resp, err := c.postJSON(c.baseURL+"/api/sessions/"+url.PathEscape(id), token, payload)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNoContent {
+		return fmt.Errorf("update session: status %s", resp.Status)
+	}
+	return nil
+}
+
+// ExportSession downloads a session transcript ("md" renders a standalone
+// markdown document, "json" the raw session record).
+func (c *Client) ExportSession(id, token, format string) ([]byte, error) {
+	u := fmt.Sprintf("%s/api/sessions/%s/export?format=%s",
+		c.baseURL, url.PathEscape(id), url.QueryEscape(format))
+	resp, err := c.do(http.MethodGet, u, token)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("export: status %s", resp.Status)
+	}
+	return io.ReadAll(io.LimitReader(resp.Body, maxExportBytes))
+}
+
+// maxExportBytes bounds an exported transcript read into memory.
+const maxExportBytes = 64 << 20
+
+// Profile is a built-in model profile from /api/profiles — the known-model
+// catalog for pickers (ID is a model-id prefix).
+type Profile struct {
+	ID         string `json:"id"`
+	Label      string `json:"label"`
+	MaxContext int    `json:"max_context"`
+}
+
+// Profiles lists the server's built-in model profiles.
+func (c *Client) Profiles() ([]Profile, error) {
+	var out struct {
+		Profiles []Profile `json:"profiles"`
+	}
+	if err := c.getJSON(c.baseURL+"/api/profiles", "", &out); err != nil {
+		return nil, err
+	}
+	return out.Profiles, nil
+}
+
+// Health is the /api/health server snapshot (never carries secrets).
+type Health struct {
+	Status        string    `json:"status"`
+	Version       string    `json:"version"`
+	StartedAt     time.Time `json:"started_at"`
+	UptimeSeconds int64     `json:"uptime_seconds"`
+	Model         string    `json:"model"`
+	Sandbox       bool      `json:"sandbox"`
+	Stream        bool      `json:"stream"`
+	WSConnections int64     `json:"ws_connections"`
+}
+
+// Health fetches the server snapshot.
+func (c *Client) Health() (Health, error) {
+	var out Health
+	if err := c.getJSON(c.baseURL+"/api/health", "", &out); err != nil {
+		return Health{}, err
 	}
 	return out, nil
 }
@@ -142,8 +255,24 @@ func (l Limits) ResolvePrices(model string) (inputPerMillion, outputPerMillion f
 
 // LimitsResponse is the /api/limits payload.
 type LimitsResponse struct {
-	Model  string `json:"model"`
-	Limits Limits `json:"limits"`
+	Model           string     `json:"model"`
+	Limits          Limits     `json:"limits"`
+	EffectivePrices ModelPrice `json:"effective_prices"`
+}
+
+// PricesFor returns the effective per-million prices for a model per the
+// spec: the server's effective_prices apply to its configured model; any
+// other model resolves through model_prices with the flat pair as per-field
+// fallback (the client-side twin of odek's limits.ResolvePrices). Zero
+// prices mean "costs unavailable" — cost display stays hidden.
+func (r LimitsResponse) PricesFor(model string) (inputPerMillion, outputPerMillion float64) {
+	if model != "" && model == r.Model {
+		if in, out := r.EffectivePrices.InputCostPerMillionUSD,
+			r.EffectivePrices.OutputCostPerMillionUSD; in > 0 || out > 0 {
+			return in, out
+		}
+	}
+	return r.Limits.ResolvePrices(model)
 }
 
 // Limits fetches the server's budget limits and configured token prices.
@@ -183,6 +312,32 @@ func (c *Client) do(method, u, sessionToken string) (*http.Response, error) {
 		req.Header.Set("X-Session-Token", sessionToken)
 	}
 	return c.http.Do(req)
+}
+
+// postJSON issues a JSON POST with the standard token headers attached.
+func (c *Client) postJSON(u, sessionToken string, body []byte) (*http.Response, error) {
+	req, err := http.NewRequest(http.MethodPost, u, bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	c.authHeaders(req, sessionToken)
+	return c.http.Do(req)
+}
+
+// jsonBody wraps a JSON payload for arbitrary-method request bodies.
+func jsonBody(payload []byte) *bytes.Reader {
+	return bytes.NewReader(payload)
+}
+
+// authHeaders stamps the instance (and optional session) tokens on a request.
+func (c *Client) authHeaders(req *http.Request, sessionToken string) {
+	if c.serveToken != "" {
+		req.Header.Set("X-Odek-Ws-Token", c.serveToken)
+	}
+	if sessionToken != "" {
+		req.Header.Set("X-Session-Token", sessionToken)
+	}
 }
 
 func (c *Client) getJSON(u, sessionToken string, dst interface{}) error {

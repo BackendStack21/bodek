@@ -18,6 +18,8 @@ func (m *Model) View() string {
 	body := m.vp.View()
 	if m.panel != panelNone {
 		body = m.renderPanel(m.width, m.vp.Height)
+	} else if m.popover {
+		body = m.popoverView(m.width, m.vp.Height)
 	}
 	parts := []string{m.header(), body}
 	if sl := m.statusLine(); sl != "" {
@@ -34,7 +36,7 @@ func (m *Model) header() string {
 	// The logo gradient is width-independent, so render it once and cache it
 	// (like gradRule) instead of re-interpolating every frame.
 	if m.logoCache == "" {
-		m.logoCache = th.logo.Render(gradient("⬡ bodek", gradFrom, gradTo))
+		m.logoCache = th.logo.Render(gradient("⬡ bodek", th.grad[0], th.grad[1]))
 	}
 	logo := m.logoCache
 	// bodek's own version rides next to the logo; bare numbers get a v prefix
@@ -49,6 +51,11 @@ func (m *Model) header() string {
 	modelName := m.model
 	if modelName == "" {
 		modelName = "default"
+	}
+	// The ⚡ badge marks a server streaming token/thinking deltas live (the
+	// same marker the WebUI's top bar carries).
+	if m.serverStream {
+		modelName = "⚡ " + modelName
 	}
 
 	// The left cluster, split around the model name: its truncation budget is
@@ -68,7 +75,7 @@ func (m *Model) header() string {
 	tail += th.headerMeta.Render("  ·  ") + m.sandboxBadge()
 	// Session spend rides the left cluster; hidden until odek reports both
 	// token prices (never show a guessed $0).
-	if inPrice, outPrice := m.limits.ResolvePrices(m.model); inPrice > 0 && outPrice > 0 {
+	if inPrice, outPrice := m.prices(); inPrice > 0 && outPrice > 0 {
 		tail += th.headerMeta.Render("  ·  ") + th.headerKey.Render(formatUSD(costUSD(m.sessCtxTok, m.sessOutTok, inPrice, outPrice)))
 	}
 
@@ -175,22 +182,24 @@ func (m *Model) sandboxBadge() string {
 
 // gaugeGlyph mirrors the gaugeColor bands (0.75 / 0.90) so fill and hue tell
 // the same story: open while comfortable, half when warm, full when hot.
+// gaugeGlyph renders the context gauge as a five-cell fill bar — the
+// WebUI's documented `ctx ▓▓▓░░ 40%` idiom.
 func gaugeGlyph(r float64) string {
-	switch {
-	case r >= 0.90:
-		return "●"
-	case r >= 0.75:
-		return "◐"
-	default:
-		return "○"
+	if r < 0 {
+		r = 0
 	}
+	if r > 1 {
+		r = 1
+	}
+	filled := int(r*5 + 0.5)
+	return strings.Repeat("▓", filled) + strings.Repeat("░", 5-filled)
 }
 
 // rule returns a full-width gradient hairline, cached per width.
 func (m *Model) rule() string {
 	w := max(m.width, 1)
 	if m.gradRule == "" || m.gradRuleW != w {
-		m.gradRule = gradient(strings.Repeat("─", w), gradFrom, gradTo)
+		m.gradRule = gradient(strings.Repeat("─", w), m.th.grad[0], m.th.grad[1])
 		m.gradRuleW = w
 	}
 	return m.gradRule
@@ -207,7 +216,10 @@ func (m *Model) statusBadge() string {
 			return th.statusBusy.Render("● reconnecting…")
 		}
 		return th.badgeDanger.Render("● disconnected")
-	case m.approval != nil:
+	case m.curApproval() != nil:
+		if n := len(m.approvals); n > 1 {
+			return th.statusBusy.Render(fmt.Sprintf("⚠ approval %d/%d", 1, n))
+		}
 		return th.statusBusy.Render("⚠ approval required")
 	case m.busy:
 		return ""
@@ -251,7 +263,7 @@ func (m *Model) statusLine() string {
 // input area or the socket is down, the header badge carries the state and
 // the row stays hidden.
 func (m *Model) statusLineVisible() bool {
-	return m.busy && m.approval == nil && !m.disconn
+	return m.busy && m.curApproval() == nil && !m.disconn
 }
 
 // ── transcript ───────────────────────────────────────────────────────────
@@ -298,6 +310,7 @@ func (m *Model) refresh() {
 func (m *Model) conversation() string {
 	if len(m.msgs) == 0 {
 		m.stepLineIndex = nil
+		m.turnLineIndex = nil
 		return welcome(m.th, m.vp.Width, m.opts.CWD)
 	}
 	// Everything before the in-flight streaming message is stable, so cache its
@@ -310,10 +323,17 @@ func (m *Model) conversation() string {
 		tail = i
 	}
 	var refs []stepRef
+	var turns []stepRef
+	collectTurn := func(i, line int) {
+		if m.msgs[i].role == roleAsst && !m.msgs[i].raw {
+			turns = append(turns, stepRef{msgIdx: i, stepIdx: -1, line: line})
+		}
+	}
 	lineOffset := 0
 	if m.convCount != tail {
 		blocks := make([]string, 0, tail)
 		for i := 0; i < tail; i++ {
+			collectTurn(i, lineOffset)
 			s, r := m.renderMessage(m.msgs[i], i, lineOffset)
 			blocks = append(blocks, s)
 			refs = append(refs, r...)
@@ -321,9 +341,11 @@ func (m *Model) conversation() string {
 		}
 		m.convPrefix = strings.Join(blocks, "\n\n")
 		m.convPrefixRefs = refs
+		m.convPrefixTurn = turns
 		m.convCount = tail
 	} else {
 		refs = append(refs, m.convPrefixRefs...)
+		turns = append(turns, m.convPrefixTurn...)
 		if m.convPrefix != "" {
 			lineOffset = lineCount(m.convPrefix) + 1
 		}
@@ -338,6 +360,7 @@ func (m *Model) conversation() string {
 			// progress signal — no bare odek block, no placeholder.
 			continue
 		}
+		collectTurn(i, lineOffset)
 		s, r := m.renderMessage(m.msgs[i], i, lineOffset)
 		blocks = append(blocks, s)
 		refs = append(refs, r...)
@@ -349,6 +372,7 @@ func (m *Model) conversation() string {
 		}
 	}
 	m.stepLineIndex = refs
+	m.turnLineIndex = turns
 	return strings.Join(blocks, "\n\n")
 }
 
@@ -379,6 +403,9 @@ func (m *Model) renderMessage(msg message, msgIdx, lineOffset int) (string, []st
 	switch msg.role {
 	case roleUser:
 		label := th.userLabel.Render("❯ you")
+		if !msg.sentAt.IsZero() {
+			label += th.acDetail.Render(" · " + ago(msg.sentAt))
+		}
 		body := th.userBar.Width(m.vp.Width - 2).Render(msg.content)
 		return label + "\n" + body, nil
 
@@ -386,7 +413,20 @@ func (m *Model) renderMessage(msg message, msgIdx, lineOffset int) (string, []st
 		return th.sysBar.Width(m.vp.Width - 2).Render(msg.content), nil
 
 	default: // assistant
+		// The turn head carries the telemetry (WebUI parity: what a turn cost
+		// reads before its content, so long sessions scan top-down). The
+		// segments shed in priority order under width pressure, exactly like
+		// the old foot line.
 		label := th.asstLabel.Render("⬡ odek")
+		if msg.stats != nil {
+			limit := m.vp.Width - lipgloss.Width(label) - 4
+			if s := m.joinStatSegs(m.statSegments(*msg.stats), limit); s != "" {
+				label += "  " + s
+			}
+		}
+		if msg.collapsed {
+			return label + "\n" + th.statsDim.Render(m.collapseSummary(msg)), nil
+		}
 		// Resolve the markdown body (finalized or streaming) first.
 		content := msg.content
 		if !msg.streaming && msg.rendered != "" {
@@ -408,17 +448,18 @@ func (m *Model) renderMessage(msg message, msgIdx, lineOffset int) (string, []st
 		var b strings.Builder
 		var refs []stepRef
 		line := lineOffset + 1 // body starts one line below the label
-		for _, it := range items {
-			if it.thinking {
-				t := strings.TrimSpace(it.text)
+		for it := range items {
+			if items[it].thinking {
+				t := strings.TrimSpace(items[it].text)
 				if t == "" {
 					continue
 				}
-				// Default: a capped one-line excerpt of the thought's head.
-				// expandAll unfolds the full text — but only once the turn is
-				// finalized; a live stream keeps the bounded excerpt.
+				// Accordion: the live stream renders the full block
+				// (auto-follow while its turn runs); finalized turns show a
+				// capped excerpt unless the user opened the block (or ^E).
 				body := collapse(capThinkingText(t, maxThinkingLen))
-				if m.expandAll && !msg.streaming {
+				full := msg.streaming || items[it].open || m.expandAll
+				if full {
 					body = t
 				}
 				excerpt := th.thinkStyle.Width(max(m.vp.Width-4, 8)).Render("… " + body)
@@ -429,10 +470,10 @@ func (m *Model) renderMessage(msg message, msgIdx, lineOffset int) (string, []st
 				line += lineCount(excerpt)
 				continue
 			}
-			if it.stepIdx < 0 || it.stepIdx >= len(msg.steps) {
+			if items[it].stepIdx < 0 || items[it].stepIdx >= len(msg.steps) {
 				continue
 			}
-			block, ref, n := m.renderStep(msg.steps[it.stepIdx], msg.streaming, msgIdx, it.stepIdx, line)
+			block, ref, n := m.renderStep(msg.steps[items[it].stepIdx], msg.streaming, msgIdx, items[it].stepIdx, line)
 			if b.Len() > 0 {
 				b.WriteString("\n")
 			}
@@ -440,21 +481,42 @@ func (m *Model) renderMessage(msg message, msgIdx, lineOffset int) (string, []st
 			refs = append(refs, ref)
 			line += n
 		}
+		// The work section (reasoning + steps) and the final answer are
+		// separate blocks: the answer renders bare at column zero — full
+		// brightness, and copy-paste-clean — separated from the dimmer,
+		// indented work items by a blank line.
+		var out strings.Builder
+		out.WriteString(label)
+		if b.Len() > 0 {
+			out.WriteString("\n")
+			out.WriteString(th.asstWork.Render(strings.TrimRight(b.String(), "\n")))
+		}
 		if strings.TrimSpace(content) != "" {
 			if b.Len() > 0 {
-				b.WriteString("\n")
+				out.WriteString("\n\n")
+			} else {
+				out.WriteString("\n")
 			}
-			b.WriteString(content)
+			out.WriteString(content)
 		}
-		body := th.asstBar.Width(m.vp.Width - 2).Render(strings.TrimRight(b.String(), "\n"))
-		out := label + "\n" + body
-		if msg.stats != nil {
-			if line := m.statLine(*msg.stats); line != "" {
-				out += "\n" + line
-			}
-		}
-		return out, refs
+		return out.String(), refs
 	}
+}
+
+// collapseSummary describes what a folded turn card hides, so the collapsed
+// form stays informative: steps, reasoning, and a reply preview.
+func (m *Model) collapseSummary(msg message) string {
+	parts := []string{"⋯ collapsed"}
+	if n := len(msg.steps); n > 0 {
+		parts = append(parts, fmt.Sprintf("%d tool steps", n))
+	}
+	if strings.TrimSpace(msg.thinking) != "" {
+		parts = append(parts, "reasoning")
+	}
+	if c := strings.TrimSpace(msg.content); c != "" {
+		parts = append(parts, "reply: "+truncate(collapse(c), 60))
+	}
+	return strings.Join(parts, " · ")
 }
 
 // lineCount returns the number of newline-terminated lines in a rendered block.
@@ -474,25 +536,28 @@ func lineCount(s string) int {
 // thinking, then wall-clock); the result is then hard-clamped to the viewport
 // width so the row never wraps, even when the essentials alone overflow a very
 // narrow terminal.
-func (m *Model) statLine(ts turnStats) string {
+// statSeg is one telemetry segment of a turn head; drop orders which segments
+// shed first under width pressure (higher goes sooner).
+type statSeg struct {
+	text string
+	drop int
+}
+
+// statSegments builds the per-turn telemetry: latency, wall-clock, tokens,
+// tools, cache activity, cost, thinking marker. Segments self-suppress when
+// empty.
+func (m *Model) statSegments(ts turnStats) []statSeg {
 	th := m.th
-	type seg struct {
-		text string
-		drop int // higher = dropped sooner under width pressure
-	}
-	var segs []seg
+	var segs []statSeg
 	add := func(text string, drop int) {
 		if text != "" {
-			segs = append(segs, seg{text, drop})
+			segs = append(segs, statSeg{text, drop})
 		}
 	}
 
 	// latency — always present
 	add(th.statTime.Render("⚡")+th.statLine.Render(" "+fmt.Sprintf("%.1fs", ts.latency)), 0)
-	// wall-clock — only when it diverges meaningfully from model latency
-	if ts.wall > 0 && absSec(ts.wall.Seconds()-ts.latency) > 0.3 {
-		add(th.statTime.Render("⊙")+th.statLine.Render(" "+formatDuration(ts.wall)), 3)
-	}
+	// wall-clock lives on the /stats card — the head stays quiet
 	// context + output tokens — always present
 	add(th.statCtx.Render("⌂")+th.statLine.Render(" "+human(ts.ctxTok)), 0)
 	add(th.statCtx.Render("⎇")+th.statLine.Render(" "+human(ts.outTok)), 0)
@@ -504,31 +569,42 @@ func (m *Model) statLine(ts turnStats) string {
 		}
 		add(tools, 1)
 	}
+	// provider cache activity as one total — the breakdown lives on the
+	// stats card; the head reports scale, not bookkeeping.
+	if total := ts.cacheWrite + ts.cacheRead + ts.cachedTok; total > 0 {
+		add(th.statCtx.Render("⛁")+th.statLine.Render(" "+human(total)), 2)
+	}
 	// turn cost — only when odek has token prices configured (both must be
 	// non-zero, mirroring odek's own cost-enforcement gate)
-	if inPrice, outPrice := m.limits.ResolvePrices(m.model); inPrice > 0 && outPrice > 0 {
+	if inPrice, outPrice := m.prices(); inPrice > 0 && outPrice > 0 {
 		add(th.statCtx.Render("$")+th.statLine.Render(" "+formatUSD(costUSD(ts.ctxTok, ts.outTok, inPrice, outPrice))), 2)
 	}
 	// thinking marker — no value
 	if ts.thought {
 		add(th.statThink.Render("✳"), 2)
 	}
+	return segs
+}
 
+// joinStatSegs assembles segments with separators, dropping droppable
+// segments in priority order until the line fits limit columns, then
+// clamping. Pure layout helper shared by the turn head and any statline use.
+func (m *Model) joinStatSegs(segs []statSeg, limit int) string {
+	th := m.th
 	sep := th.statSep.Render(" · ")
-	render := func(keep []seg) string {
+	render := func(keep []statSeg) string {
 		parts := make([]string, len(keep))
 		for i, s := range keep {
 			parts[i] = s.text
 		}
-		return "  " + strings.Join(parts, sep)
+		return strings.Join(parts, sep)
 	}
 
-	limit := m.vp.Width - 2
 	line := render(segs)
 	// Under width pressure, drop droppable segments in priority order: tools
-	// (1), then thinking (2), then wall-clock (3). drop==0 segments always stay.
+	// (1), then cost/cache/thinking (2), then wall-clock (3). drop==0 stays.
 	for _, maxDrop := range []int{1, 2, 3} {
-		if lipgloss.Width(line) <= limit {
+		if limit > 0 && lipgloss.Width(line) <= limit {
 			break
 		}
 		kept := segs[:0:0]
@@ -547,12 +623,11 @@ func (m *Model) statLine(ts turnStats) string {
 	return line
 }
 
-// absSec returns the absolute value of a float (seconds delta).
-func absSec(f float64) float64 {
-	if f < 0 {
-		return -f
-	}
-	return f
+// statLine renders the telemetry row for a turn — the pre-head foot line,
+// kept as the turn head's segment source and for callers that want the row
+// alone.
+func (m *Model) statLine(ts turnStats) string {
+	return m.joinStatSegs(m.statSegments(ts), m.vp.Width-2)
 }
 
 func max(a, b int) int {
@@ -571,7 +646,6 @@ func (m *Model) renderStep(s step, streaming bool, msgIdx, stepIdx, startLine in
 	th := m.th
 	// Floors stay at a few chars so truncation genuinely shrinks with the
 	// viewport instead of overflowing tiny widths (truncate handles the rest).
-	budget := max(m.vp.Width-10, 4)
 	detailBudget := max(m.vp.Width-8, 4)
 	// A step shows its details when toggled individually or via the global
 	// Ctrl+E toggle.
@@ -594,39 +668,60 @@ func (m *Model) renderStep(s step, streaming bool, msgIdx, stepIdx, startLine in
 	if expanded {
 		chevron = th.stepTree.Render("▼")
 	}
-	head := chevron + " " + icon + " " + th.toolIcon.Render(toolGlyph(s.name)) + " " + th.stepName.Render(s.name)
+	left := chevron + " " + icon + " " + th.toolIcon.Render(toolGlyph(s.name)) + " " + th.stepName.Render(s.name)
 	if s.subagent {
-		head += th.stepArg.Render(" · sub-agent")
+		left += th.stepArg.Render(" · sub-agent")
 	}
-	if s.arg != "" {
-		head += th.stepArg.Render("  " + truncate(s.arg, budget))
-	}
-	// Response time appears only once the call lands — while running, the
-	// spinner already conveys that.
+	// Right rail: response time once the call lands, plus the typed chip
+	// (diffstat / test verdict) — right-aligned so durations read as a
+	// column down the step list instead of floating mid-line.
+	right := ""
 	if s.done && s.dur > 0 {
-		head += th.stepArg.Render("  " + formatStepDur(s.dur))
+		right = th.stepArg.Render(formatStepDur(s.dur))
 	}
+	if s.done {
+		if chip := stepHeadSuffix(s.name, s.result, th); chip != "" {
+			if right != "" {
+				right += th.stepArg.Render("  ")
+			}
+			right += chip
+		}
+	}
+	// The left side yields to the right rail, then the pair pads to the
+	// full step width; ANSI-safe width math throughout.
+	rightW := lipgloss.Width(right)
+	budget := max(m.vp.Width-4-rightW-2, 4)
+	if s.arg != "" {
+		left += th.stepArg.Render("  " + truncate(s.arg, budget-lipgloss.Width(chevron+" "+icon+" "+toolGlyph(s.name)+" "+s.name)-2))
+	}
+	gap := max(m.vp.Width-4-lipgloss.Width(left)-rightW, 1)
+	head := left + strings.Repeat(" ", gap) + right
 	lines := []string{head}
 	if expanded {
-		details := append([]string{}, s.logs...)
-		for _, ln := range strings.Split(s.result, "\n") {
-			// Already sanitized at ingest — keep the line verbatim so
-			// indentation and internal spacing (diffs, JSON, code) survive
-			// expansion; blank lines stay stripped for compactness.
-			if strings.TrimSpace(ln) != "" {
-				details = append(details, ln)
+		// Sub-agent logs are plain text — style and truncate here. Tool
+		// output goes through the typed renderers, which return fully
+		// styled, already-truncated lines (truncating styled text would
+		// corrupt ANSI sequences) — append those verbatim.
+		var details []string
+		for _, lg := range s.logs {
+			if strings.TrimSpace(lg) != "" {
+				details = append(details, th.stepRes.Render(truncate(lg, detailBudget)))
 			}
 		}
+		details = append(details, stepDetail(s.name, s.result, m.vp.Width, th)...)
 		if len(details) > 200 {
 			details = details[:200]
-			details = append(details, "… output truncated")
+			details = append(details, th.stepArg.Render("… output truncated"))
 		}
 		for i, d := range details {
 			conn := "    "
 			if i == 0 {
 				conn = "  ⎿ "
 			}
-			lines = append(lines, th.stepTree.Render(conn)+th.stepRes.Render(truncate(d, detailBudget)))
+			// MaxWidth clamps ANSI-safely — styled renderer output must never
+			// be rune-truncated (that would cut escape sequences mid-way).
+			lines = append(lines, th.stepTree.Render(conn)+
+				lipgloss.NewStyle().MaxWidth(detailBudget).Render(d))
 		}
 	}
 	return strings.Join(lines, "\n"), stepRef{msgIdx: msgIdx, stepIdx: stepIdx, line: startLine}, len(lines)
@@ -666,12 +761,18 @@ func (m *Model) renderNotices() string {
 // ── input / approval area ──────────────────────────────────────────────────
 
 func (m *Model) inputArea() string {
-	if m.approval != nil {
+	if m.curApproval() != nil {
 		return m.approvalPanel()
 	}
 	box := m.th.inputBox.Width(m.width - 2).Render(m.ta.View())
+	if m.pal.open {
+		return m.palPopup() + "\n" + box
+	}
 	if m.ac.open {
 		return m.acPopup() + "\n" + box
+	}
+	if card := m.suggestionCard(); card != "" {
+		return card + "\n" + box
 	}
 	return box
 }
@@ -738,8 +839,14 @@ func (m *Model) approvalPanel() string {
 // fit the box — lipgloss would otherwise reflow them and break layout math.
 func (m *Model) approvalBody() string {
 	th := m.th
-	a := m.approval
+	a := m.curApproval()
+	if a == nil {
+		return ""
+	}
 	head := th.apprHead.Render(fmt.Sprintf("⚠ approval required · risk: %s", orDash(a.Risk)))
+	if n := len(m.approvals); n > 1 {
+		head += th.apprBody.Render(fmt.Sprintf(" · 1 of %d queued", n))
+	}
 	if a.IsOperation {
 		head += th.apprBody.Render(" · ") + th.opChip.Render("⚙ operation")
 	}
@@ -770,12 +877,25 @@ func (m *Model) approvalBody() string {
 		}
 	}
 
-	for i, o := range m.approvalOptions() {
-		prefix, label := "  ", th.apprBody.Render(o.label)
-		if i == m.apprSel {
-			prefix, label = th.apprKey.Render("› "), th.apprKey.Render(o.label)
+	if !a.Friction {
+		for i, o := range m.approvalOptions() {
+			prefix, label := "  ", th.apprBody.Render(o.label)
+			if i == m.apprSel {
+				prefix, label = th.apprKey.Render("› "), th.apprKey.Render(o.label)
+			}
+			lines = append(lines, prefix+label)
 		}
-		lines = append(lines, prefix+label)
+	} else {
+		// Friction gate: no selection shortcut — the typed confirmation line
+		// replaces the options and carries its own key hints.
+		// inputAreaHeight measures this method, so the line count must match
+		// exactly.
+		lines = append(lines, m.frictionHint())
+		keys := th.apprKey.Render("abc") + th.apprBody.Render(" type the word   ") +
+			th.apprKey.Render("⏎") + th.apprBody.Render(" confirm   ") +
+			th.apprKey.Render("tab") + th.apprBody.Render(" expand   ") +
+			th.apprKey.Render("esc") + th.apprBody.Render(" deny")
+		return strings.Join(append(lines, keys), "\n")
 	}
 
 	keys := th.apprKey.Render("↑↓") + th.apprBody.Render(" select   ") +
@@ -789,31 +909,127 @@ func (m *Model) approvalBody() string {
 
 func (m *Model) footer() string {
 	th := m.th
-	if m.approval != nil {
-		return th.footer.Render("  answer the approval prompt to continue")
+	if a := m.curApproval(); a != nil {
+		if a.Friction {
+			return th.footer.Render("  type the word approve + ⏎ · esc denies")
+		}
+		hints := th.footerKey.Render("A") + th.footer.Render("pprove · ") +
+			th.footerKey.Render("D") + th.footer.Render("eny")
+		if a.AllowTrust {
+			hints += " · " + th.footerKey.Render("T") + th.footer.Render("rust")
+		}
+		if n := len(m.approvals); n > 1 {
+			hints += th.footerSep.Render(" · ") + th.footer.Render(fmt.Sprintf("%d more queued", n-1))
+		}
+		return "  " + hints
 	}
 	if m.disconn {
 		hints := []string{th.footer.Render("connection closed")}
-		// r only fires with an empty input (see handleKey) — with a draft
-		// preserved it would just type into it, so don't offer it then.
+		// Retry rides ⏎ on an empty input — a character key would hijack
+		// typing, and a preserved draft must keep typing normally.
 		if m.opts.Reconnect != nil && m.ta.Value() == "" {
-			hints = append(hints, th.footerKey.Render("r")+th.footer.Render(" retry"))
+			hints = append(hints, th.footerKey.Render("⏎")+th.footer.Render(" retry"))
 		}
 		hints = append(hints, th.footer.Render("^C to quit"))
 		return "  " + strings.Join(hints, th.footerSep.Render(" · "))
 	}
 	if m.panel == panelSessions {
-		return m.panelFooter(
+		if m.panelEdit == panelEditSearch {
+			return m.panelFooter(
+				th.footer.Render("type to search (server-side)"),
+				th.footerKey.Render("⏎")+th.footer.Render(" apply"),
+				th.footerKey.Render("esc")+th.footer.Render(" keep current"),
+			)
+		}
+		if m.panelEdit == panelEditRename {
+			return m.panelFooter(
+				th.footer.Render("type the new label"),
+				th.footerKey.Render("⏎")+th.footer.Render(" rename"),
+				th.footerKey.Render("esc")+th.footer.Render(" cancel"),
+			)
+		}
+		hints := []string{
 			th.footer.Render("↑↓ select"),
 			th.footer.Render("⏎ resume"),
+			th.footerKey.Render("/") + th.footer.Render(" search"),
+			th.footerKey.Render("p") + th.footer.Render(" pin"),
+			th.footerKey.Render("r") + th.footer.Render(" rename"),
+			th.footerKey.Render("e") + th.footer.Render(" export md"),
+			th.footerKey.Render("E") + th.footer.Render(" json"),
 			th.footerDanger.Render("d delete"), // destructive — tinted to telegraph it
-			th.footer.Render("esc close"),
-		)
+		}
+		if m.sessHasMore {
+			hints = append(hints, th.footerKey.Render("n")+th.footer.Render(" more"))
+		}
+		hints = append(hints, th.footer.Render("esc close"))
+		return m.panelFooter(hints...)
 	}
 	if m.panel == panelModels {
 		return m.panelFooter(
 			th.footer.Render("↑↓ select"),
 			th.footer.Render("⏎ use"),
+			th.footer.Render("esc close"),
+		)
+	}
+	if m.panel == panelRuns {
+		return m.panelFooter(
+			th.footer.Render("↑↓ select · ]/[ tabs"),
+			th.footerKey.Render("A")+th.footer.Render("pprove · "),
+			th.footerKey.Render("D")+th.footer.Render("eny · "),
+			th.footerKey.Render("T")+th.footer.Render("rust"),
+			th.footerKey.Render("c")+th.footer.Render(" cancel"),
+			th.footerKey.Render("r")+th.footer.Render(" refresh"),
+			th.footer.Render("esc close"),
+		)
+	}
+	if m.panel == panelEvents {
+		filter := "all sessions"
+		if m.evSessionFilter {
+			filter = "this session"
+		}
+		return m.panelFooter(
+			th.footerKey.Render("f")+th.footer.Render(" filter: "+filter+" · ]/[ tabs"),
+			th.footerKey.Render("r")+th.footer.Render(" refresh"),
+			th.footer.Render("esc close"),
+		)
+	}
+	if m.panel == panelMemory {
+		return m.panelFooter(
+			th.footerKey.Render("a")+th.footer.Render(" add user · "),
+			th.footerKey.Render("A")+th.footer.Render(" add env"),
+			th.footerKey.Render("d")+th.footer.Render(" delete fact"),
+			th.footerKey.Render("p")+th.footer.Render(" promote episode"),
+			th.footerKey.Render("c")+th.footer.Render(" consolidate user · "),
+			th.footerKey.Render("E")+th.footer.Render(" env"),
+			th.footer.Render("]/[ tabs · esc close"),
+		)
+	}
+	if m.panel == panelSkills {
+		return m.panelFooter(
+			th.footer.Render("↑↓ select · ]/[ tabs"),
+			th.footerKey.Render("p")+th.footer.Render(" promote"),
+			th.footerKey.Render("P")+th.footer.Render(" force-promote"),
+			th.footer.Render("esc close"),
+		)
+	}
+	if m.panel == panelTools {
+		return m.panelFooter(
+			th.footer.Render("↑↓ browse · ]/[ tabs · esc close"),
+		)
+	}
+	if m.panel == panelConfig {
+		if m.panelEdit == panelEditShutdown {
+			return m.panelFooter(
+				th.footerDanger.Render("this stops odek serve"),
+				th.footerKey.Render("shutdown")+th.footer.Render(" + ⏎"),
+				th.footerKey.Render("esc")+th.footer.Render(" cancels"),
+			)
+		}
+		return m.panelFooter(
+			th.footer.Render("↑↓ browse · ]/[ tabs"),
+			th.footerKey.Render("d")+th.footer.Render(" kick connection"),
+			th.footerKey.Render("S")+th.footerDanger.Render(" shutdown server"),
+			th.footerKey.Render("r")+th.footer.Render(" refresh"),
 			th.footer.Render("esc close"),
 		)
 	}
@@ -859,10 +1075,10 @@ func (m *Model) footer() string {
 			th.scroll.Render(fmt.Sprintf("↕ %d%%", int(m.vp.ScrollPercent()*100)))
 		segs = append(segs, seg)
 	}
-	right := ""
-	if len(segs) > 0 {
-		right = strings.Join(segs, th.footerSep.Render("  ·  ")) + "  "
-	}
+	// The persistent teaching pair: help and the palette, always one chord away.
+	segs = append(segs, th.footerKey.Render("F1")+th.footer.Render(" help · ")+
+		th.footerKey.Render("^K")+th.footer.Render(" everything"))
+	right := strings.Join(segs, th.footerSep.Render("  ·  ")) + "  "
 	gap := m.width - lipgloss.Width(left) - lipgloss.Width(right)
 	if gap < 1 {
 		gap = 1
@@ -909,11 +1125,15 @@ func orDash(s string) string {
 
 // human formats a token count compactly (e.g. 1234 → "1.2k").
 func human(n int) string {
+	trim := func(s string) string {
+		// 420.0k reads as noise — whole values drop the decimal.
+		return strings.Replace(strings.Replace(s, ".0k", "k", 1), ".0M", "M", 1)
+	}
 	switch {
 	case n >= 999_500: // promote to M once one-decimal k rounding would reach 1000.0k
-		return fmt.Sprintf("%.1fM", float64(n)/1_000_000)
+		return trim(fmt.Sprintf("%.1fM", float64(n)/1_000_000))
 	case n >= 1_000:
-		return fmt.Sprintf("%.1fk", float64(n)/1_000)
+		return trim(fmt.Sprintf("%.1fk", float64(n)/1_000))
 	default:
 		return fmt.Sprintf("%d", n)
 	}

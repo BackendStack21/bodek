@@ -2,32 +2,153 @@ package tui
 
 import (
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
 )
 
-// Palette — a cohesive, Charm-inspired dark theme. Purple/pink brand accents
-// over soft greys, with semantic colors for status and tool activity.
+// ── design tokens ──────────────────────────────────────────────────────────
+//
+// bodek speaks EMBER — the same design language as odek's WebUI — mapped to
+// the terminal: electric amber over blue-charcoal, hairline structure, and
+// semantic color reserved for meaning (risk, failure, budget pressure).
+// "steel" is EMBER's cool blue-grey (the --line hue family) and plays the
+// machine voice: tool names, keys, metrics.
+
+// palette is one named theme's color set. Themes differ only in these values;
+// every style is derived mechanically, so adding a theme is a struct literal.
+type palette struct {
+	accent   lipgloss.Color // primary brand — amber
+	accentHi lipgloss.Color // gradient top / highlights
+	accentLo lipgloss.Color // gradient bottom / user-turn warmth
+	steel    lipgloss.Color // machine elements (tool names, keys, metrics)
+
+	green  lipgloss.Color
+	yellow lipgloss.Color
+	red    lipgloss.Color
+
+	text     lipgloss.Color // answers, values — the only full-brightness body
+	muted    lipgloss.Color // labels, secondary text
+	faint    lipgloss.Color // chrome only — too dim for body text
+	bodyText lipgloss.Color // machinery output (tool results, reasoning)
+	hairline lipgloss.Color // rules, borders, tree glyphs
+
+	grad [2][3]int // banner gradient endpoints (hi → lo)
+}
+
 var (
-	colBrand    = lipgloss.Color("#A78BFA") // primary purple
-	colBrand2   = lipgloss.Color("#F472B6") // pink (gradient end / user)
-	colCyan     = lipgloss.Color("#67E8F9")
-	colGreen    = lipgloss.Color("#34D399")
-	colYellow   = lipgloss.Color("#FBBF24")
-	colRed      = lipgloss.Color("#F87171")
-	colFg       = lipgloss.Color("#E5E7EB")
-	colMuted    = lipgloss.Color("#9CA3AF")
-	colFaint    = lipgloss.Color("#6B7280") // chrome only — too dim for body text
-	colBodyText = lipgloss.Color("#8B93A3") // brighter faint for content text
-	colHairline = lipgloss.Color("#3B3B4F")
+	// emberDark is the default: EMBER's dark tokens on a transparent
+	// terminal background.
+	emberDark = palette{
+		accent:   "#FFB224",
+		accentHi: "#FFC95E",
+		accentLo: "#FF8A3D",
+		steel:    "#98AAC8",
+		green:    "#34D399",
+		yellow:   "#FBBF24",
+		red:      "#F87171",
+		text:     "#E7E9EE",
+		muted:    "#9AA0AE",
+		faint:    "#6B7280",
+		bodyText: "#8B95A8",
+		hairline: "#2E3242",
+		grad:     [2][3]int{{0xFF, 0xC9, 0x5E}, {0xFF, 0x8A, 0x3D}},
+	}
+
+	// emberLight mirrors the WebUI light theme (parchment base, deeper amber
+	// for contrast on light terminals).
+	emberLight = palette{
+		accent:   "#D98E00",
+		accentHi: "#B47300",
+		accentLo: "#E07000",
+		steel:    "#6B7A99",
+		green:    "#0E9F6E",
+		yellow:   "#B45309",
+		red:      "#C22B2B",
+		text:     "#22252C",
+		muted:    "#5A5F6D",
+		faint:    "#8A8578",
+		bodyText: "#4A4E59",
+		hairline: "#CFC9BD",
+		grad:     [2][3]int{{0xB4, 0x73, 0x00}, {0xE0, 0x70, 0x00}},
+	}
+
+	// emberHighContrast is pure neutrals plus amber, for low-vision and
+	// washed-out displays.
+	emberHighContrast = palette{
+		accent:   "#FFD24A",
+		accentHi: "#FFE08A",
+		accentLo: "#FFB224",
+		steel:    "#B8C4E0",
+		green:    "#4ADE80",
+		yellow:   "#FBBF24",
+		red:      "#FF6B6B",
+		text:     "#FFFFFF",
+		muted:    "#C0C0C0",
+		faint:    "#909090",
+		bodyText: "#E0E0E0",
+		hairline: "#707070",
+		grad:     [2][3]int{{0xFF, 0xE0, 0x8A}, {0xFF, 0xB2, 0x24}},
+	}
+
+	// classic is the pre-EMBER Charm-inspired palette, kept for muscle memory
+	// (BODEK_THEME=classic).
+	classic = palette{
+		accent:   "#A78BFA",
+		accentHi: "#A78BFA",
+		accentLo: "#F472B6",
+		steel:    "#67E8F9",
+		green:    "#34D399",
+		yellow:   "#FBBF24",
+		red:      "#F87171",
+		text:     "#E5E7EB",
+		muted:    "#9CA3AF",
+		faint:    "#6B7280",
+		bodyText: "#8B93A3",
+		hairline: "#3B3B4F",
+		grad:     [2][3]int{{0xA7, 0x8B, 0xFA}, {0xF4, 0x72, 0xB6}},
+	}
 )
+
+// motionEnabled gates every animation (spinner, gauge flash). NO_MOTION=1
+// freezes the UI to static glyphs — a calm-terminal guarantee, not a
+// reduced-functionality mode.
+var motionEnabled = os.Getenv("NO_MOTION") != "1"
+
+// themeName resolves the configured palette. BODEK_THEME selects
+// ember-dark (default) · ember-light · high-contrast · classic.
+func themeName() string {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv("BODEK_THEME"))) {
+	case "classic":
+		return "classic"
+	case "ember-light", "light":
+		return "ember-light"
+	case "high-contrast", "contrast":
+		return "high-contrast"
+	default:
+		return "ember-dark"
+	}
+}
+
+func paletteByName(name string) palette {
+	switch name {
+	case "classic":
+		return classic
+	case "ember-light":
+		return emberLight
+	case "high-contrast":
+		return emberHighContrast
+	default:
+		return emberDark
+	}
+}
 
 // Layout — fixed heights for the chrome around the scrollable transcript.
 const (
-	headerHeight = 2 // logo bar + hairline rule
+	headerHeight = 2 // cockpit bar + hairline rule
 	inputHeight  = 5 // bordered textarea (3 rows + top/bottom border)
-	footerHeight = 1 // keybinding / status line
+	footerHeight = 1 // status bar
 )
 
 // theme holds every reusable style. Built once and shared by the model.
@@ -40,7 +161,7 @@ type theme struct {
 	userLabel lipgloss.Style
 	userBar   lipgloss.Style
 	asstLabel lipgloss.Style
-	asstBar   lipgloss.Style
+	asstWork  lipgloss.Style
 	sysBar    lipgloss.Style
 
 	stepName lipgloss.Style
@@ -111,89 +232,113 @@ type theme struct {
 	acDim    lipgloss.Style
 	acDetail lipgloss.Style
 	acIcon   lipgloss.Style
+
+	// typed renderer tints (+/- diff lines)
+	diffAdd lipgloss.Style
+	diffDel lipgloss.Style
+
+	grad [2][3]int // banner gradient endpoints for this theme
 }
 
+// newTheme builds the configured theme.
 func newTheme() theme {
+	return themeFrom(paletteByName(themeName()))
+}
+
+// themeFrom derives every style from one palette — the single mapping from
+// EMBER tokens to component styles.
+func themeFrom(p palette) theme {
 	return theme{
-		logo:       lipgloss.NewStyle().Bold(true),
-		headerMeta: lipgloss.NewStyle().Foreground(colMuted),
-		headerKey:  lipgloss.NewStyle().Foreground(colCyan),
-		rule:       lipgloss.NewStyle().Foreground(colHairline),
+		grad: p.grad,
 
-		userLabel: lipgloss.NewStyle().Foreground(colBrand2).Bold(true),
-		userBar:   lipgloss.NewStyle().Foreground(colFg).Border(lipgloss.ThickBorder(), false, false, false, true).BorderForeground(colBrand2).PaddingLeft(1),
-		asstLabel: lipgloss.NewStyle().Foreground(colBrand).Bold(true),
-		asstBar:   lipgloss.NewStyle().Border(lipgloss.ThickBorder(), false, false, false, true).BorderForeground(colBrand).PaddingLeft(1),
-		sysBar:    lipgloss.NewStyle().Foreground(colRed).Border(lipgloss.ThickBorder(), false, false, false, true).BorderForeground(colRed).PaddingLeft(1),
+		logo:       lipgloss.NewStyle().Bold(true).Foreground(p.accent),
+		headerMeta: lipgloss.NewStyle().Foreground(p.muted),
+		headerKey:  lipgloss.NewStyle().Foreground(p.steel),
+		rule:       lipgloss.NewStyle().Foreground(p.hairline),
 
-		stepName: lipgloss.NewStyle().Foreground(colCyan),
-		stepArg:  lipgloss.NewStyle().Foreground(colFaint),
-		stepRun:  lipgloss.NewStyle().Foreground(colYellow),
-		stepDone: lipgloss.NewStyle().Foreground(colGreen),
-		stepErr:  lipgloss.NewStyle().Foreground(colRed).Bold(true),
-		stepRes:  lipgloss.NewStyle().Foreground(colBodyText).Italic(true),
-		stepTree: lipgloss.NewStyle().Foreground(colHairline),
+		// The user speaks in amber-warm; odek answers in neutral bright —
+		// the accent belongs to the human, the answer owns the brightness.
+		// No left-border bars anywhere in the transcript: text copied out of
+		// the terminal must be paste-clean. Turn structure reads through the
+		// head row, indentation, and the brightness hierarchy — the answer
+		// is the only full-brightness block, work items sit dimmer.
+		userLabel: lipgloss.NewStyle().Foreground(p.accentLo).Bold(true),
+		userBar:   lipgloss.NewStyle().Foreground(p.text),
+		asstLabel: lipgloss.NewStyle().Foreground(p.muted).Bold(true),
+		asstWork:  lipgloss.NewStyle().PaddingLeft(2),
+		sysBar:    lipgloss.NewStyle().Foreground(p.red).PaddingLeft(1),
 
-		spinner: lipgloss.NewStyle().Foreground(colBrand),
+		stepName: lipgloss.NewStyle().Foreground(p.steel),
+		stepArg:  lipgloss.NewStyle().Foreground(p.faint),
+		stepRun:  lipgloss.NewStyle().Foreground(p.yellow),
+		stepDone: lipgloss.NewStyle().Foreground(p.green),
+		stepErr:  lipgloss.NewStyle().Foreground(p.red).Bold(true),
+		stepRes:  lipgloss.NewStyle().Foreground(p.bodyText),
+		stepTree: lipgloss.NewStyle().Foreground(p.hairline),
+
+		spinner: lipgloss.NewStyle().Foreground(p.accent),
 
 		taCursorLine: lipgloss.NewStyle(),
-		inputBox:     lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(colHairline).Padding(0, 1),
+		inputBox:     lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(p.hairline).Padding(0, 1),
 
-		noticeStyle: lipgloss.NewStyle().Foreground(colBodyText).Italic(true),
-		thinkStyle:  lipgloss.NewStyle().Foreground(colBodyText).Italic(true),
+		noticeStyle: lipgloss.NewStyle().Foreground(p.bodyText).Italic(true),
+		thinkStyle:  lipgloss.NewStyle().Foreground(p.bodyText).Italic(true),
 
-		apprBox:  lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(colYellow).Padding(0, 1),
-		apprHead: lipgloss.NewStyle().Foreground(colYellow).Bold(true),
-		apprBody: lipgloss.NewStyle().Foreground(colFg),
-		apprKey:  lipgloss.NewStyle().Foreground(colGreen).Bold(true),
+		apprBox:  lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(p.yellow).Padding(0, 1),
+		apprHead: lipgloss.NewStyle().Foreground(p.yellow).Bold(true),
+		apprBody: lipgloss.NewStyle().Foreground(p.text),
+		apprKey:  lipgloss.NewStyle().Foreground(p.green).Bold(true),
 
-		statusReady: lipgloss.NewStyle().Foreground(colGreen),
-		statusBusy:  lipgloss.NewStyle().Foreground(colYellow),
+		statusReady: lipgloss.NewStyle().Foreground(p.green),
+		statusBusy:  lipgloss.NewStyle().Foreground(p.yellow),
 
-		badgeOK:     lipgloss.NewStyle().Foreground(colGreen),
-		badgeWarn:   lipgloss.NewStyle().Foreground(colYellow),
-		badgeDanger: lipgloss.NewStyle().Foreground(colRed),
+		badgeOK:     lipgloss.NewStyle().Foreground(p.green),
+		badgeWarn:   lipgloss.NewStyle().Foreground(p.yellow),
+		badgeDanger: lipgloss.NewStyle().Foreground(p.red),
 
-		toolIcon: lipgloss.NewStyle().Foreground(colCyan),
-		scroll:   lipgloss.NewStyle().Foreground(colFaint),
+		toolIcon: lipgloss.NewStyle().Foreground(p.steel),
+		scroll:   lipgloss.NewStyle().Foreground(p.faint),
 
 		// Per-turn stat line: glyphs carry the hue, numbers recede in faint so
 		// the row sits quietly beneath the prose.
-		statLine:  lipgloss.NewStyle().Foreground(colFaint),
-		statSep:   lipgloss.NewStyle().Foreground(colHairline),
-		statTime:  lipgloss.NewStyle().Foreground(colYellow),
-		statCtx:   lipgloss.NewStyle().Foreground(colMuted),
-		statTool:  lipgloss.NewStyle().Foreground(colCyan),
-		statThink: lipgloss.NewStyle().Foreground(colBrand),
-		statGlyph: lipgloss.NewStyle().Foreground(colFaint),
+		statLine:  lipgloss.NewStyle().Foreground(p.faint),
+		statSep:   lipgloss.NewStyle().Foreground(p.hairline),
+		statTime:  lipgloss.NewStyle().Foreground(p.accent),
+		statCtx:   lipgloss.NewStyle().Foreground(p.steel),
+		statTool:  lipgloss.NewStyle().Foreground(p.steel),
+		statThink: lipgloss.NewStyle().Foreground(p.accent),
+		statGlyph: lipgloss.NewStyle().Foreground(p.faint),
 
-		gaugeOK:   lipgloss.NewStyle().Foreground(colGreen),
-		gaugeWarn: lipgloss.NewStyle().Foreground(colYellow),
-		gaugeHot:  lipgloss.NewStyle().Foreground(colRed),
+		gaugeOK:   lipgloss.NewStyle().Foreground(p.green),
+		gaugeWarn: lipgloss.NewStyle().Foreground(p.yellow),
+		gaugeHot:  lipgloss.NewStyle().Foreground(p.red),
 
-		statsLabel: lipgloss.NewStyle().Foreground(colMuted),
-		statsValue: lipgloss.NewStyle().Foreground(colFg),
-		statsDim:   lipgloss.NewStyle().Foreground(colFaint).Italic(true),
+		statsLabel: lipgloss.NewStyle().Foreground(p.muted),
+		statsValue: lipgloss.NewStyle().Foreground(p.text),
+		statsDim:   lipgloss.NewStyle().Foreground(p.faint).Italic(true),
 
-		opChip:       lipgloss.NewStyle().Foreground(colCyan),
-		untrustedTag: lipgloss.NewStyle().Foreground(colYellow),
+		opChip:       lipgloss.NewStyle().Foreground(p.steel),
+		untrustedTag: lipgloss.NewStyle().Foreground(p.yellow),
 
-		footer:       lipgloss.NewStyle().Foreground(colFaint),
-		footerKey:    lipgloss.NewStyle().Foreground(colMuted).Bold(true),
-		footerSep:    lipgloss.NewStyle().Foreground(colHairline),
-		footerDanger: lipgloss.NewStyle().Foreground(colRed),
+		footer:       lipgloss.NewStyle().Foreground(p.faint),
+		footerKey:    lipgloss.NewStyle().Foreground(p.muted).Bold(true),
+		footerSep:    lipgloss.NewStyle().Foreground(p.hairline),
+		footerDanger: lipgloss.NewStyle().Foreground(p.red),
 
-		tagline: lipgloss.NewStyle().Foreground(colMuted).Italic(true),
-		tipKey:  lipgloss.NewStyle().Foreground(colCyan).Bold(true),
-		tipText: lipgloss.NewStyle().Foreground(colMuted),
+		tagline: lipgloss.NewStyle().Foreground(p.muted).Italic(true),
+		tipKey:  lipgloss.NewStyle().Foreground(p.steel).Bold(true),
+		tipText: lipgloss.NewStyle().Foreground(p.muted),
 
-		acBox:    lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(colBrand).Padding(0, 1),
-		acTitle:  lipgloss.NewStyle().Foreground(colBrand).Bold(true),
-		acItem:   lipgloss.NewStyle().Foreground(colFg),
-		acSel:    lipgloss.NewStyle().Foreground(colBrand2).Bold(true),
-		acDim:    lipgloss.NewStyle().Foreground(colFaint).Italic(true),
-		acDetail: lipgloss.NewStyle().Foreground(colFaint),
-		acIcon:   lipgloss.NewStyle().Foreground(colCyan),
+		acBox:    lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(p.accent).Padding(0, 1),
+		acTitle:  lipgloss.NewStyle().Foreground(p.accent).Bold(true),
+		acItem:   lipgloss.NewStyle().Foreground(p.text),
+		acSel:    lipgloss.NewStyle().Foreground(p.accent).Bold(true),
+		acDim:    lipgloss.NewStyle().Foreground(p.faint).Italic(true),
+		acDetail: lipgloss.NewStyle().Foreground(p.faint),
+		acIcon:   lipgloss.NewStyle().Foreground(p.steel),
+
+		diffAdd: lipgloss.NewStyle().Foreground(p.green),
+		diffDel: lipgloss.NewStyle().Foreground(p.red),
 	}
 }
 

@@ -85,7 +85,8 @@ func TestNewOutputIndicator(t *testing.T) {
 }
 
 // TestDisconnectedRetry verifies the dead-connection state offers a manual
-// redial on r, and that typing r into a draft is never hijacked.
+// redial on ⏎ with an empty input, and that every character — including the
+// letters that once carried actions — keeps typing while disconnected.
 func TestDisconnectedRetry(t *testing.T) {
 	m := newTestModel()
 	m.ta.Focus()
@@ -93,24 +94,32 @@ func TestDisconnectedRetry(t *testing.T) {
 	m.disconn = true
 	m.status = "disconnected"
 
-	if foot := plain(m.footer()); !strings.Contains(foot, "r") || !strings.Contains(foot, "retry") {
+	if foot := plain(m.footer()); !strings.Contains(foot, "⏎") || !strings.Contains(foot, "retry") {
 		t.Errorf("disconnected footer missing retry hint: %q", foot)
 	}
 
-	_, cmd := m.Update(key("r"))
+	// ⏎ on an empty input schedules the redial.
+	_, cmd := m.Update(key("enter"))
 	if cmd == nil {
-		t.Fatal("r while disconnected should schedule a redial")
+		t.Fatal("enter while disconnected with empty input should schedule a redial")
 	}
 	if m.status != "reconnecting" {
 		t.Errorf("status = %q, want reconnecting", m.status)
 	}
 
-	// A non-empty draft keeps r as plain typing.
+	// r types like any other character while disconnected.
 	m.status = "disconnected"
-	m.ta.SetValue("draft")
-	m.Update(key("r"))
-	if m.ta.Value() != "draftr" {
-		t.Errorf("r with a draft should type, got %q", m.ta.Value())
+	m.ta.Reset()
+	for _, r := range "reboot" {
+		m.Update(key(string(r)))
+	}
+	if m.ta.Value() != "reboot" {
+		t.Errorf("r must type while disconnected, got %q", m.ta.Value())
+	}
+	// ⏎ with a draft is submit (kept-draft warning), not a redial.
+	m.Update(key("enter"))
+	if m.status == "reconnecting" {
+		t.Error("enter with a draft triggered a redial instead of submit")
 	}
 }
 

@@ -70,11 +70,23 @@ func standIn(t *testing.T, token string) *Model {
 		}),
 	})
 	mux.HandleFunc("/api/sessions", guard(func(w http.ResponseWriter, r *http.Request) {
-		json.NewEncoder(w).Encode([]client.Session{{ID: "s1", Task: "first task", Turns: 1, UpdatedAt: time.Now()}})
+		sessions := []client.Session{{ID: "s1", Task: "first task", Turns: 1, UpdatedAt: time.Now()}}
+		q := r.URL.Query()
+		// Mirror odek serve: any of q/limit/offset present switches the
+		// response to the pagination envelope; a bare GET stays an array.
+		if q.Has("q") || q.Has("limit") || q.Has("offset") {
+			json.NewEncoder(w).Encode(client.SessionsPage{Sessions: sessions, Count: len(sessions)})
+			return
+		}
+		json.NewEncoder(w).Encode(sessions)
 	}))
 	mux.HandleFunc("/api/sessions/", guard(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == http.MethodDelete {
+		switch r.Method {
+		case http.MethodDelete:
 			w.WriteHeader(http.StatusNoContent)
+			return
+		case http.MethodPost:
+			w.WriteHeader(http.StatusOK)
 			return
 		}
 		w.Header().Set("X-Session-Token", "a1")
@@ -87,14 +99,145 @@ func standIn(t *testing.T, token string) *Model {
 			},
 		})
 	}))
+	mux.HandleFunc("/api/sessions/s1/export", guard(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte("# transcript\n"))
+	}))
 	mux.HandleFunc("/api/models", guard(func(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode([]client.ModelInfo{{ID: "m1", Description: "one", Current: true}})
+	}))
+	mux.HandleFunc("/api/profiles", guard(func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(map[string]any{"profiles": []client.Profile{
+			{ID: "m1", Label: "one", MaxContext: 64000}, // duplicate of configured — deduped
+			{ID: "glm", Label: "GLM", MaxContext: 200000},
+		}})
 	}))
 	mux.HandleFunc("/api/resources", guard(func(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode([]client.Resource{{ID: "@main.go", Type: "file", Label: "main.go", Detail: "1 KB"}})
 	}))
 	mux.HandleFunc("/api/cancel", guard(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
+	}))
+	mux.HandleFunc("/api/shutdown", guard(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		json.NewEncoder(w).Encode(map[string]any{"status": "shutting_down"})
+	}))
+	mux.HandleFunc("/api/prompt", guard(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		w.WriteHeader(http.StatusAccepted)
+		json.NewEncoder(w).Encode(map[string]any{
+			"run_id": "run-9", "session_id": "s-new", "status": "running",
+		})
+	}))
+	mux.HandleFunc("/api/runs", guard(func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(map[string]any{"runs": []client.Run{
+			{ID: "run-1", SessionID: "s1", Model: "m", Status: "waiting_approval",
+				StartedAt: time.Now().Add(-time.Minute),
+				PendingApprovals: []client.RunApproval{
+					{ID: "ap-1", Risk: "shell_exec", Command: "rm -rf build", AllowTrust: true},
+				}},
+			{ID: "run-2", SessionID: "s1", Model: "m", Status: "completed",
+				StartedAt: time.Now().Add(-time.Hour), EndedAt: time.Now().Add(-time.Hour).Add(time.Second),
+				InputTokens: 100, OutputTokens: 20, Result: "did the thing"},
+		}, "active": 1})
+	}))
+	mux.HandleFunc("/api/runs/", guard(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/cancel") && r.Method == http.MethodPost:
+			w.WriteHeader(http.StatusNoContent)
+		case strings.Contains(r.URL.Path, "/approvals/") && r.Method == http.MethodPost:
+			w.WriteHeader(http.StatusOK)
+		default:
+			json.NewEncoder(w).Encode(client.Run{ID: "run-1", Status: "waiting_approval"})
+		}
+	}))
+	mux.HandleFunc("/api/memory", guard(func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(map[string]any{
+			"facts": map[string][]string{"user": {"prefers vim"}, "env": {"go 1.25"}},
+			"episodes": map[string]any{"total": 2, "pending": []map[string]any{
+				{"session_id": "s1", "summary": "fixed the login bug"},
+			}},
+		})
+	}))
+	mux.HandleFunc("/api/memory/facts", guard(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	mux.HandleFunc("/api/memory/episodes/promote", guard(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	mux.HandleFunc("/api/memory/consolidate", guard(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	mux.HandleFunc("/api/skills", guard(func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(map[string]any{"skills": []client.Skill{
+			{Name: "deploy-helper", Description: "deploys", UsageCount: 3, Source: "~/.odek/skills"},
+			{Name: "tainted-thing", NeedsReview: true, Untrusted: true, Source: "./.odek/skills"},
+		}})
+	}))
+	mux.HandleFunc("/api/skills/promote", guard(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	mux.HandleFunc("/api/tools", guard(func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(map[string]any{
+			"tools":       []client.Tool{{Name: "shell", Enabled: true}, {Name: "read_file", Enabled: true}},
+			"mcp_servers": 1,
+		})
+	}))
+	mux.HandleFunc("/api/mcp", guard(func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(map[string]any{"servers": []client.MCPServer{
+			{Name: "fs", Command: "mcp-fs", Args: []string{"--ro"}},
+		}, "count": 1})
+	}))
+	mux.HandleFunc("/api/config", guard(func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(map[string]any{
+			"model": "m", "stream": true, "max_iterations": 90, "sandbox": map[string]any{"enabled": true},
+		})
+	}))
+	mux.HandleFunc("/api/health", guard(func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(map[string]any{
+			"status": "ok", "version": "vtest", "started_at": time.Now().Add(-time.Hour),
+			"uptime_seconds": 3600, "model": "m", "sandbox": false, "stream": true, "ws_connections": 1,
+		})
+	}))
+	mux.HandleFunc("/api/usage", guard(func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(map[string]any{
+			"prompts_started": 4, "prompts_completed": 3, "tokens_in": 1000, "tokens_out": 200,
+			"prices_configured": false, "ws_connections": 1,
+		})
+	}))
+	mux.HandleFunc("/api/connections", guard(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodDelete {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		json.NewEncoder(w).Encode(map[string]any{"connections": []client.Connection{
+			{ID: "conn-1", RemoteAddr: "127.0.0.1:9", Prompts: 2},
+		}})
+	}))
+	mux.HandleFunc("/api/events", guard(func(w http.ResponseWriter, r *http.Request) {
+		evs := []client.RuntimeEvent{
+			{Schema: "odek.event/v1", Type: "run_started", SessionID: "s1",
+				Timestamp: time.Now()},
+			{Schema: "odek.event/v1", Type: "tool_call_started", Tool: "shell",
+				SessionID: "s1", Iteration: 1, Timestamp: time.Now()},
+			{Schema: "odek.event/v1", Type: "run_started", SessionID: "s-other",
+				Timestamp: time.Now()},
+		}
+		if sid := r.URL.Query().Get("session_id"); sid != "" {
+			filtered := evs[:0]
+			for _, ev := range evs {
+				if ev.SessionID == sid {
+					filtered = append(filtered, ev)
+				}
+			}
+			evs = filtered
+		}
+		json.NewEncoder(w).Encode(map[string]any{"events": evs, "count": len(evs)})
 	}))
 
 	srv := httptest.NewServer(mux)
@@ -165,6 +308,14 @@ func key(s string) tea.KeyMsg {
 		return tea.KeyMsg{Type: tea.KeyCtrlJ}
 	case "ctrl+e":
 		return tea.KeyMsg{Type: tea.KeyCtrlE}
+	case "ctrl+k":
+		return tea.KeyMsg{Type: tea.KeyCtrlK}
+	case "backspace":
+		return tea.KeyMsg{Type: tea.KeyBackspace}
+	case "alt+s":
+		return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("s"), Alt: true}
+	case "alt+x":
+		return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("x"), Alt: true}
 	default:
 		return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(s)}
 	}
@@ -273,13 +424,17 @@ func TestApprovalFlow(t *testing.T) {
 	m.busy = true
 	m.handleEvent(client.Event{Type: "approval_request", ID: "apr-1", Risk: "shell_exec",
 		Name: "shell", Command: "rm x", Description: "delete", AllowTrust: true})
-	if m.approval == nil {
+	if m.curApproval() == nil {
 		t.Fatal("approval not set")
 	}
 	out := m.View()
 	if !strings.Contains(plain(out), "approval required") {
 		t.Error("approval panel missing")
 	}
+	// The queue keeps the initial request; each key-sequence case below
+	// starts fresh.
+	m.approvals = nil
+	m.relayout()
 	// Trust (highlight → enter), then a fresh approval and deny, then approve.
 	for _, keys := range [][]string{{"down", "down", "enter"}, {"down", "enter"}, {"enter"}} {
 		m.handleEvent(client.Event{Type: "approval_request", ID: "id", AllowTrust: true})
@@ -288,7 +443,7 @@ func TestApprovalFlow(t *testing.T) {
 			_, cmd = m.Update(key(k))
 		}
 		exec(cmd)
-		if m.approval != nil {
+		if m.curApproval() != nil {
 			t.Errorf("approval not cleared after %v", keys)
 		}
 	}

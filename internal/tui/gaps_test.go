@@ -7,27 +7,87 @@ import (
 	"github.com/BackendStack21/bodek/internal/client"
 )
 
-func TestApprovalLettersNeverDecide(t *testing.T) {
+func TestApprovalDecisionLetters(t *testing.T) {
 	m := wired(t)
-	// Bare letters — including the old a/d/t/y/n shortcuts — must never
-	// resolve the approval; only arrows + enter or esc do.
-	m.approval = &client.Event{Type: "approval_request", AllowTrust: false}
-	for _, k := range []string{"a", "d", "t", "y", "n", "z"} {
-		m.Update(key(k))
-		if m.approval == nil {
-			t.Fatalf("letter %q resolved the approval", k)
-		}
+	// Redesign policy: the composer is hidden while an approval is pending,
+	// so the dedicated decision letters a/d/t (WebUI parity) resolve it.
+	// Every other letter — including y/n — still must never decide.
+	m.approvals = []client.Event{{Type: "approval_request", AllowTrust: false}}
+	m.Update(key("y"))
+	m.Update(key("n"))
+	m.Update(key("z"))
+	if m.curApproval() == nil {
+		t.Fatal("a non-decision letter resolved the approval")
 	}
-	// AllowTrust=false: the highlight clamps at "deny" — trust is unreachable.
+	_, cmd := m.Update(key("a")) // approve
+	exec(cmd)
+	if m.curApproval() != nil {
+		t.Fatal("a did not approve")
+	}
+
+	m.approvals = []client.Event{{Type: "approval_request", AllowTrust: false}}
+	_, cmd = m.Update(key("d")) // deny
+	exec(cmd)
+	if m.curApproval() != nil {
+		t.Fatal("d did not deny")
+	}
+
+	// AllowTrust=false: t does nothing, and the highlight clamps at "deny" —
+	// trust is unreachable both ways.
+	m.approvals = []client.Event{{Type: "approval_request", AllowTrust: false}}
+	m.Update(key("t"))
+	if m.curApproval() == nil {
+		t.Fatal("t decided without allow_trust")
+	}
 	m.Update(key("down"))
 	m.Update(key("down"))
 	if m.apprSel != 1 {
 		t.Errorf("apprSel = %d, want clamped at 1 (deny)", m.apprSel)
 	}
-	_, cmd := m.Update(key("enter"))
+	_, cmd = m.Update(key("enter"))
 	exec(cmd)
-	if m.approval != nil {
+	if m.curApproval() != nil {
 		t.Error("enter on deny should clear the approval")
+	}
+}
+
+// TestApprovalQueueFIFO pins the parallel-approval contract: requests are
+// answered in arrival order and the panel surfaces the queue depth.
+func TestApprovalQueueFIFO(t *testing.T) {
+	m, actions, _ := approvalRecorder(t)
+	m.handleEvent(client.Event{Type: "approval_request", ID: "apr-1", Command: "rm a"})
+	m.handleEvent(client.Event{Type: "approval_request", ID: "apr-2", Command: "rm b"})
+	if len(m.approvals) != 2 {
+		t.Fatalf("queue = %d", len(m.approvals))
+	}
+	out := plain(m.View())
+	if !strings.Contains(out, "1 of 2") {
+		t.Errorf("queue position missing from panel:\n%s", out)
+	}
+	// Deny answers apr-1; apr-2 becomes the head with its own input state.
+	_, cmd := m.Update(key("esc"))
+	exec(cmd)
+	if got := awaitAction(t, actions); got != "deny" {
+		t.Fatalf("first answer = %q", got)
+	}
+	if len(m.approvals) != 1 || m.approvals[0].ID != "apr-2" {
+		t.Fatalf("queue after first answer = %+v", m.approvals)
+	}
+	if m.apprTyped != "" || m.apprSel != 0 {
+		t.Error("input state not reset for the new head")
+	}
+	// A queued friction request engages friction once it reaches the head —
+	// letters feed the typed buffer, not decisions.
+	_, cmd = m.Update(key("esc")) // deny apr-2 → queue drains
+	exec(cmd)
+	m.handleEvent(client.Event{Type: "approval_request", ID: "apr-3", Friction: true, FrictionApprovals: 3})
+	_, cmd = m.Update(key("d"))
+	exec(cmd)
+	if m.apprTyped != "d" {
+		t.Fatalf("friction head consumed a letter as decision: typed=%q", m.apprTyped)
+	}
+	if len(m.approvals) != 1 {
+		t.Fatal("letter decided a friction approval")
 	}
 }
 

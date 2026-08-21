@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"fmt"
 	"regexp"
 	"strings"
 	"time"
@@ -92,6 +93,14 @@ type acResultMsg struct {
 func (m *Model) submit() tea.Cmd {
 	text := strings.TrimSpace(m.ta.Value())
 	if text == "" {
+		// Enter with an empty input is the manual retry while disconnected —
+		// a character key can never carry this job without hijacking typing.
+		if m.disconn && m.opts.Reconnect != nil {
+			m.status = "reconnecting"
+			note := m.transientNoteCmd("retrying connection…")
+			m.refresh()
+			return tea.Batch(m.scheduleReconnect(0), note)
+		}
 		return nil
 	}
 	// Slash commands run locally and are allowed even mid-turn (e.g. /cancel).
@@ -102,9 +111,9 @@ func (m *Model) submit() tea.Cmd {
 		// Keep the draft — swallowing it silently reads as a lost message.
 		// Sticky (not transient): the warning must outlive a glance away, so
 		// it stays until newer notices push it out. Deduped, since every
-		// enter re-posts it. Note r only retries with an empty input, which
-		// a preserved draft is not — the hint spells that out.
-		const warn = "disconnected — your draft is kept · clear the input, then r to retry"
+		// enter re-posts it. Retry is ⏎ on an empty input — the hint spells
+		// that out.
+		const warn = "disconnected — your draft is kept · clear the input, then ⏎ to retry"
 		if n := len(m.notices); n == 0 || m.notices[n-1] != warn {
 			m.addNote(warn)
 		}
@@ -130,12 +139,18 @@ func (m *Model) submit() tea.Cmd {
 // prompt in the history ring, and dispatches it to the server.
 func (m *Model) sendPrompt(text string) tea.Cmd {
 	m.recordHistory(text)
-	m.msgs = append(m.msgs, message{role: roleUser, content: text})
+	shown := text
+	if n := len(m.attachments); n > 0 {
+		shown = fmt.Sprintf("%s  📎×%d", shown, n)
+	}
+	m.msgs = append(m.msgs, message{role: roleUser, content: shown, sentAt: time.Now()})
 	m.msgs = append(m.msgs, message{role: roleAsst, streaming: true})
 	m.curIdx = len(m.msgs) - 1
 	m.ta.Reset()
 	m.closeAC()
 	m.busy = true
+	m.cancelAck = false  // a fresh run's errors are real errors again
+	m.skillSuggest = nil // the suggestion's window closed with the turn
 	m.status = "thinking"
 	m.runStart = time.Now()
 	if m.sessionStart.IsZero() {
@@ -153,11 +168,14 @@ func (m *Model) sendPrompt(text string) tea.Cmd {
 		thinking = "enabled"
 	}
 	opts := client.PromptOpts{
-		Thinking:  thinking,
-		Model:     m.pendModel,
-		SessionID: m.sessionID,
-		AuthToken: m.authToken,
+		Thinking:    thinking,
+		Model:       m.pendModel,
+		SessionID:   m.sessionID,
+		AuthToken:   m.authToken,
+		Attachments: m.attachments,
 	}
+	// Attachments are per-prompt by contract; the next send starts clean.
+	m.attachments = nil
 	m.pendModel = "" // applied
 	cl := m.cl
 	return func() tea.Msg {

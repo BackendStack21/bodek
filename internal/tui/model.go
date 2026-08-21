@@ -53,6 +53,7 @@ type turnItem struct {
 	thinking bool   // false = tool step
 	text     string // thinking excerpt when thinking (capped per block)
 	stepIdx  int    // index into msg.steps when !thinking
+	open     bool   // reasoning: user wants the full block (live turns auto-open)
 }
 
 // turnStats is the telemetry of one finalized assistant turn, captured from the
@@ -63,6 +64,9 @@ type turnStats struct {
 	wall       time.Duration // wall-clock from prompt submit to done
 	ctxTok     int           // context tokens consumed this turn
 	outTok     int           // output tokens produced this turn
+	cacheWrite int           // provider cache writes (prompt cache stores)
+	cacheRead  int           // provider cache hits
+	cachedTok  int           // automatic prefix-match cache tokens
 	toolCount  int           // tool invocations this turn
 	toolGlyphs []string      // up to 4 deduped tool glyphs, in first-seen order
 	thought    bool          // the model streamed reasoning this turn
@@ -79,6 +83,8 @@ type message struct {
 	streaming bool
 	stats     *turnStats // finalized-turn telemetry; nil while streaming / for history
 	raw       bool       // content is pre-styled; render verbatim, never re-render
+	sentAt    time.Time  // user turns: when the prompt was submitted (drives the head's age)
+	collapsed bool       // turn card folded to its head + summary line (c)
 }
 
 // Options carries startup display info into the model.
@@ -119,11 +125,14 @@ type Model struct {
 	lastTool string
 	lastArg  string
 
-	approval     *client.Event // pending approval, nil when none
-	apprSel      int           // highlighted option in the approval panel
-	apprExpanded bool          // tab: show the full command/description text
-	ac           autocomplete  // @-reference completion state
-	queue        []string      // prompts typed mid-turn, sent when the turn ends
+	approvals    []client.Event // pending approval queue — odek runs parallel tools, so requests FIFO
+	apprSel      int            // highlighted option in the approval panel
+	apprExpanded bool           // tab: show the full command/description text
+	apprTyped    string         // friction mode: the literal word being typed ("approve")
+	ac           autocomplete   // @-reference completion state
+	pal          palState       // ⌘K command palette — the navigation spine
+	skillSuggest *client.Event  // pending skill suggestion card (skill_event "suggested")
+	queue        []string       // prompts typed mid-turn, sent when the turn ends
 
 	history   []string // submitted prompts, newest last (recalled with ↑)
 	histNav   bool     // true while ^P/^N is walking the history
@@ -146,6 +155,34 @@ type Model struct {
 	models   []client.ModelInfo
 	panelSel int
 	panelMsg string // status/error line inside a panel
+	popover  bool   // cockpit overlay (h): server/link/budget/session consolidation
+
+	// Sessions panel state: server-side search plus paged "load more".
+	sessQuery   string        // applied search text (server-side substring match)
+	sessHasMore bool          // last page was full — more may follow
+	panelEdit   panelEditMode // text-entry submode while a panel is open
+	panelDraft  string        // the text being edited (search query / rename)
+
+	profiles []client.Profile // built-in model catalog (picker + context gauge)
+
+	// Drawer state: runs polling + the events feed.
+	runs            []client.Run
+	feed            []client.RuntimeEvent
+	runsSeq         int  // poll generation; a stale tick after closing is dropped
+	evSessionFilter bool // events tab: filter the ring to the active session
+
+	// Management tab state (memory / skills / tools / config).
+	memView     client.MemoryView
+	memRows     []memRow
+	memTarget   string // add-fact editor target ("user" | "env")
+	skills      []client.Skill
+	toolRows    []toolRow
+	cfgRows     []cfgRow
+	shutdownReq bool // shutdown sent — the socket drop is expected, not a failure
+
+	// Cockpit live snapshots (one-shot fetch on open).
+	healthSnap *client.Health
+	usageSnap  *client.Usage
 
 	sessCtxTok int
 	sessOutTok int
@@ -154,11 +191,24 @@ type Model struct {
 	// cumulative prompt tokens, so the window fill is the delta between reports)
 	lastLatency float64
 
-	limits       client.Limits // server budget limits + token prices (zero prices → cost hidden)
-	maxContext   int           // active model's context window (0 = unknown → gauge hidden)
-	turnStats    []turnStats   // per-turn telemetry retained for the /stats dashboard
-	toolTotal    int           // cumulative tool calls this session
-	sessionStart time.Time     // first-prompt timestamp, for session wall-clock
+	// WS protocol v2 server snapshot (server_info on connect, refreshed by
+	// every pong) plus the heartbeat that measures it.
+	serverStream bool          // server streams token_delta/thinking_delta live
+	rtt          time.Duration // last ping round-trip (0 = never measured)
+	pingSentAt   time.Time     // when the outstanding heartbeat left
+	srvUptime    time.Duration // server uptime at the latest snapshot
+	srvConns     int64         // live WS connections at the latest snapshot
+	cancelAck    bool          // cancelled seen — the run's trailing error event is expected noise
+
+	attachments []client.Attachment // files staged for the next prompt (/attach)
+
+	limits       client.Limits     // server budget limits + token prices (zero prices → cost hidden)
+	serverModel  string            // /api/limits model — effective_prices apply to it
+	effectivePrx client.ModelPrice // server-resolved prices for serverModel
+	maxContext   int               // active model's context window (0 = unknown → gauge hidden)
+	turnStats    []turnStats       // per-turn telemetry retained for the /stats dashboard
+	toolTotal    int               // cumulative tool calls this session
+	sessionStart time.Time         // first-prompt timestamp, for session wall-clock
 
 	status    string
 	notices   []string
@@ -173,8 +223,10 @@ type Model struct {
 
 	convPrefix     string    // cached rendering of the finalized transcript prefix
 	convPrefixRefs []stepRef // step header line index for the cached prefix
+	convPrefixTurn []stepRef // turn-head line index for the cached prefix (stepIdx -1)
 	convCount      int       // messages the prefix covers (-1 = invalidated)
 	stepLineIndex  []stepRef // full transcript step index for mouse hit-testing
+	turnLineIndex  []stepRef // full transcript turn-head index (stepIdx -1) for jump/collapse
 
 	renderPending bool // a coalesced streaming render is scheduled
 	renderSeq     int  // bumped per scheduled flush, to drop stale ticks
@@ -186,7 +238,9 @@ func New(cl *client.Client, opts Options) *Model {
 
 	ta := textarea.New()
 	ta.Placeholder = "Ask odek to build, fix, explore… (⏎ send · ^J newline · ↑ scroll · ^P history)"
-	ta.Prompt = th.asstLabel.Render("┃ ")
+	// No per-line prompt glyphs: the rounded box frames the composer, and
+	// bubbles repeats the prompt on every row — a stacked ❯❯❯ reads as noise.
+	ta.Prompt = " "
 	ta.ShowLineNumbers = false
 	ta.CharLimit = 0
 	ta.SetHeight(3)
@@ -194,10 +248,15 @@ func New(cl *client.Client, opts Options) *Model {
 	ta.Focus()
 
 	sp := spinner.New()
-	// A smooth braille spinner reads as fluid motion at small size.
+	// A smooth braille spinner reads as fluid motion at small size. With
+	// motion disabled (NO_MOTION=1) a single static frame replaces it — same
+	// footprint, zero animation.
 	sp.Spinner = spinner.Spinner{
 		Frames: []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"},
 		FPS:    time.Second / 12,
+	}
+	if !motionEnabled {
+		sp.Spinner = spinner.Spinner{Frames: []string{"⠿"}, FPS: time.Second}
 	}
 	sp.Style = th.spinner
 
@@ -220,7 +279,39 @@ func New(cl *client.Client, opts Options) *Model {
 }
 
 func (m *Model) Init() tea.Cmd {
-	return tea.Batch(textarea.Blink, m.sp.Tick, listen(m.events), m.fetchModels(), m.fetchLimits(), m.checkUpdate())
+	return tea.Batch(textarea.Blink, m.sp.Tick, listen(m.events),
+		m.fetchModels(), m.fetchProfiles(), m.fetchLimits(), m.checkUpdate(),
+		m.armHeartbeat())
+}
+
+// pingEvery is the application-level heartbeat cadence (spec: 25s). The
+// server answers inline — even mid-run — so the ping doubles as a liveness
+// probe and the pong refreshes the server snapshot (RTT, uptime, conns).
+const pingEvery = 25 * time.Second
+
+// heartbeatMsg re-arms the heartbeat loop.
+type heartbeatMsg struct{}
+
+// armHeartbeat schedules the next ping. The send time is stamped in Update
+// when the tick fires (model state must only mutate on the update goroutine);
+// only the socket write itself runs async — the client serializes writes.
+func (m *Model) armHeartbeat() tea.Cmd {
+	return tea.Tick(pingEvery, func(time.Time) tea.Msg {
+		return heartbeatMsg{}
+	})
+}
+
+func (m *Model) handleHeartbeat() tea.Cmd {
+	m.pingSentAt = time.Now()
+	cl := m.cl
+	if cl == nil {
+		return m.armHeartbeat()
+	}
+	send := func() tea.Msg {
+		_ = cl.Ping()
+		return nil
+	}
+	return tea.Batch(send, m.armHeartbeat())
 }
 
 func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -238,6 +329,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.refresh()
 		}
 		return m, cmd
+
+	case heartbeatMsg:
+		return m, m.handleHeartbeat()
 
 	case renderFlushMsg:
 		if msg.seq == m.renderSeq && m.renderPending {
@@ -279,9 +373,88 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.refresh()
 		return m, nil
 
+	case sessionsPageMsg:
+		m.handleSessionsPageMsg(msg)
+		m.refresh()
+		return m, nil
+
 	case modelsMsg:
 		m.handleModelsMsg(msg)
 		m.refresh()
+		return m, nil
+
+	case pickerMsg:
+		// The picker's combined fetch: reuse the per-list handlers so panel
+		// state and the context gauge update exactly as on separate fetches.
+		m.handleModelsMsg(modelsMsg{items: msg.models, err: msg.err})
+		m.handleProfilesMsg(profilesMsg{items: msg.profiles})
+		if m.panel == panelModels {
+			m.refresh()
+		}
+		return m, nil
+
+	case profilesMsg:
+		m.handleProfilesMsg(msg)
+		return m, nil
+
+	case sessionUpdatedMsg:
+		return m, m.handleSessionUpdated(msg)
+
+	case sessionRenamedMsg:
+		return m, m.handleSessionRenamed(msg)
+
+	case sessionExportedMsg:
+		return m, m.handleSessionExported(msg)
+
+	case sessionSwitchMsg:
+		return m, m.handleSessionSwitch(msg)
+
+	case palSessionsMsg:
+		return m, m.handlePalSessions(msg)
+
+	case runsMsg:
+		if m.panel == panelRuns {
+			m.handleRunsMsg(msg)
+			m.refresh()
+			return m, m.armRunPoll() // keeps the 3s chain alive while visible
+		}
+		return m, nil
+
+	case eventsMsg:
+		if m.panel == panelEvents {
+			m.handleEventsMsg(msg)
+			m.refresh()
+		}
+		return m, nil
+
+	case runsTickMsg:
+		return m, m.handleRunsTick(msg)
+
+	case runActionMsg:
+		return m, m.handleRunAction(msg)
+
+	case runStartedMsg:
+		return m, m.handleRunStarted(msg)
+
+	case cockpitMsg:
+		return m, m.handleCockpitMsg(msg)
+
+	case shutdownDoneMsg:
+		if msg.err != nil {
+			m.addNote("shutdown failed: " + msg.err.Error())
+			m.refresh()
+		}
+		return m, nil
+
+	case mgmtMsg:
+		m.handleMgmtMsg(msg)
+		m.refresh()
+		return m, nil
+
+	case mgmtActionMsg:
+		if m.panel == msg.tab {
+			return m, m.afterMgmtAction(msg)
+		}
 		return m, nil
 
 	case limitsMsg:
@@ -329,10 +502,28 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tea.MouseMsg:
 		if msg.Action == tea.MouseActionPress && msg.Button == tea.MouseButtonLeft && m.panel == panelNone && !m.ac.open {
+			// Clicking the cockpit (the header's top rows) toggles the
+			// server/budget/session popover — WebUI health-popover parity.
+			if msg.Y >= 0 && msg.Y < headerHeight {
+				if !m.popover {
+					cmd := m.openCockpit()
+					m.refresh()
+					return m, cmd
+				}
+				m.popover = false
+				m.refresh()
+				return m, nil
+			}
 			// Viewport content begins below the header (2 rows).
 			top := 2
 			if msg.Y >= top && msg.Y < top+m.vp.Height {
 				line := msg.Y - top + m.vp.YOffset
+				// Turn heads toggle their card; step heads toggle details.
+				if msgIdx, ok := m.turnAtLine(line); ok {
+					m.toggleCollapseAt(msgIdx)
+					m.refresh()
+					return m, nil
+				}
 				if msgIdx, stepIdx, ok := m.stepAtLine(line); ok {
 					m.toggleStep(msgIdx, stepIdx)
 					m.refresh()
@@ -352,9 +543,17 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	// The palette works from every rung of the modality ladder.
+	if m.pal.open {
+		return m.handlePaletteKey(msg)
+	}
+	if msg.String() == "ctrl+k" {
+		return m, m.togglePalette()
+	}
+
 	// Approval mode captures the keyboard until answered; only the transcript
 	// scroll keys pass through to the viewport.
-	if m.approval != nil {
+	if m.curApproval() != nil {
 		return m.handleApprovalKey(msg)
 	}
 
@@ -363,19 +562,26 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handlePanelKey(msg)
 	}
 
+	// The cockpit popover pages its card; the run keeps streaming underneath.
+	if m.popover {
+		return m.handlePopoverKey(msg)
+	}
+
 	// The @-reference popup captures navigation keys while open.
 	if m.ac.open {
 		return m.handleACKey(msg)
 	}
 
-	// A dead connection offers a manual retry on r — only with an empty
-	// input, so a drafted prompt is never disturbed.
-	if m.disconn && m.opts.Reconnect != nil && msg.String() == "r" && m.ta.Value() == "" {
-		m.status = "reconnecting"
-		m.addNote("retrying connection…")
-		m.refresh()
-		return m, m.scheduleReconnect(0)
+	// A pending skill suggestion answers on alt-chords — never bare keys or
+	// ⏎/esc, which belong to the composer.
+	if mm, cmd, handled := m.handleSuggestKeys(msg.String()); handled {
+		return mm, cmd
 	}
+
+	// No bare character keys are ever bound in the composer context — every
+	// printable rune must reach the textarea, so prompts can start with any
+	// character ("?why", "[TODO]", "reboot…"). Help, jumps, and the
+	// disconnected retry live on non-character keys (F1, alt+arrows, ⏎).
 
 	switch msg.String() {
 	case "ctrl+c":
@@ -385,6 +591,9 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.busy {
 			return m, m.cancelRun()
 		}
+		return m, nil
+	case "f1":
+		m.showHelp()
 		return m, nil
 	case "ctrl+r":
 		return m, m.openSessions()
@@ -454,6 +663,28 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// (even as the first character of a prompt) is never hijacked.
 		m.vp.GotoBottom()
 		return m, nil
+	case "alt+up":
+		// Turn-to-turn navigation on arrow chords — never characters, so
+		// prompts like "[TODO] fix" or array literals always type.
+		m.jumpTurn(false)
+		return m, nil
+	case "alt+down":
+		m.jumpTurn(true)
+		return m, nil
+	case "ctrl+f":
+		// Fold/unfold the most recent turn card — long sessions scan top-down
+		// when the noisy turns collapse to their telemetry head. A chord: bare
+		// letters belong to the composer.
+		m.toggleCollapseLast()
+		return m, nil
+	case "tab":
+		// Open/close the most recent reasoning accordion block (the textarea
+		// ignores tab, and the completion popups capture it while open).
+		if !m.ac.open {
+			m.toggleThinkingLast()
+			m.refresh()
+		}
+		return m, nil
 	case "end":
 		// End doubles as jump-to-latest — only with an empty input, so its
 		// cursor-movement meaning inside a draft keeps working.
@@ -496,16 +727,32 @@ func (m *Model) clearConversation() {
 	m.refresh()
 }
 
+// curApproval returns the head of the approval queue, or nil when empty.
+func (m *Model) curApproval() *client.Event {
+	if len(m.approvals) == 0 {
+		return nil
+	}
+	return &m.approvals[0]
+}
+
 // ── helpers ────────────────────────────────────────────────────────────────
 
 // resolveMaxContext sets m.maxContext from the active model's advertised
-// context window, or 0 when the model list is unknown or has no match (which
-// hides the header gauge rather than guessing).
+// context window: an exact /api/models match wins; otherwise the first
+// built-in profile whose id prefixes the model id (profiles are prefix
+// entries by contract). No match leaves 0, which hides the gauge rather
+// than guessing.
 func (m *Model) resolveMaxContext() {
 	m.maxContext = 0
 	for _, md := range m.models {
 		if md.ID == m.model {
 			m.maxContext = md.MaxContext
+			return
+		}
+	}
+	for _, p := range m.profiles {
+		if p.MaxContext > 0 && strings.HasPrefix(m.model, p.ID) {
+			m.maxContext = p.MaxContext
 			return
 		}
 	}
@@ -519,6 +766,28 @@ func (m *Model) fetchModels() tea.Cmd {
 		items, err := cl.Models()
 		return modelsMsg{items: items, err: err}
 	}
+}
+
+// fetchProfiles loads the built-in model catalog (id prefixes + context
+// windows) — picker entries beyond the configured model, and the fallback
+// source for the header gauge after a model switch.
+func (m *Model) fetchProfiles() tea.Cmd {
+	cl := m.cl
+	return func() tea.Msg {
+		items, err := cl.Profiles()
+		return profilesMsg{items: items, err: err}
+	}
+}
+
+// prices returns the effective per-million token prices for the active
+// model: the server's effective_prices when it matches, otherwise the
+// client-side resolution twin. Zero prices mean "cost unavailable".
+func (m *Model) prices() (inPerMillion, outPerMillion float64) {
+	return client.LimitsResponse{
+		Model:           m.serverModel,
+		Limits:          m.limits,
+		EffectivePrices: m.effectivePrx,
+	}.PricesFor(m.model)
 }
 
 // fetchLimits loads the server's budget limits and token prices at startup so
@@ -596,13 +865,17 @@ func (m *Model) relayout() {
 // input area plus the busy status line when it shows — so the viewport
 // shrinks by exactly the right amount and the footer never moves.
 func (m *Model) inputAreaHeight() int {
-	if m.approval != nil {
+	if m.curApproval() != nil {
 		return lineCount(m.approvalBody()) + 2 // panel border
 	}
 	h := inputHeight
 	if m.statusLineVisible() {
 		h += 2 // busy status line + blank separator row above the input box
 	}
+	if m.pal.open {
+		h += m.palHeight()
+	}
+	h += m.suggestionCardHeight()
 	if m.ac.open {
 		h += m.ac.height()
 	}
@@ -697,6 +970,101 @@ func (m *Model) toggleStep(msgIdx, stepIdx int) {
 	}
 	steps[stepIdx].expanded = !steps[stepIdx].expanded
 	m.convCount = -1
+}
+
+// toggleCollapseLast folds/unfolds the most recent assistant turn card — the
+// one the reader is most likely looking at.
+func (m *Model) toggleCollapseLast() {
+	for i := len(m.msgs) - 1; i >= 0; i-- {
+		msg := m.msgs[i]
+		if msg.role != roleAsst || msg.raw || msg.streaming {
+			continue
+		}
+		if len(msg.steps) == 0 && strings.TrimSpace(msg.content) == "" && strings.TrimSpace(msg.thinking) == "" {
+			continue // nothing to fold
+		}
+		m.msgs[i].collapsed = !m.msgs[i].collapsed
+		m.convCount = -1
+		m.refresh()
+		return
+	}
+}
+
+// toggleCollapseAt folds/unfolds the turn card at a transcript message index
+// (mouse click on a turn head).
+func (m *Model) toggleCollapseAt(msgIdx int) {
+	if msgIdx < 0 || msgIdx >= len(m.msgs) || m.msgs[msgIdx].raw || m.msgs[msgIdx].streaming {
+		return
+	}
+	m.msgs[msgIdx].collapsed = !m.msgs[msgIdx].collapsed
+	m.convCount = -1
+}
+
+// toggleThinkingLast opens/closes the most recent reasoning accordion block
+// (tab): manual opens persist across the renderer's auto-collapse.
+func (m *Model) toggleThinkingLast() {
+	for i := len(m.msgs) - 1; i >= 0; i-- {
+		if m.msgs[i].role != roleAsst {
+			continue
+		}
+		for j := len(m.msgs[i].items) - 1; j >= 0; j-- {
+			if m.msgs[i].items[j].thinking && strings.TrimSpace(m.msgs[i].items[j].text) != "" {
+				m.msgs[i].items[j].open = !m.msgs[i].items[j].open
+				m.convCount = -1
+				return
+			}
+		}
+		return
+	}
+}
+
+// jumpTurn scrolls to the previous ([) or next (]) assistant turn head, so
+// long sessions read turn-by-turn instead of line-by-line.
+func (m *Model) jumpTurn(next bool) {
+	if len(m.turnLineIndex) == 0 {
+		return
+	}
+	cur := m.vp.YOffset
+	var target = -1
+	if next {
+		// +1: a previous jump parks the view one line above a head — that
+		// head must not count as "next" again, or the jump is a no-op.
+		for _, r := range m.turnLineIndex {
+			if r.line > cur+1 {
+				target = r.line
+				break
+			}
+		}
+		if target < 0 {
+			return // already at the last turn
+		}
+	} else {
+		for i := len(m.turnLineIndex) - 1; i >= 0; i-- {
+			if m.turnLineIndex[i].line < cur {
+				target = m.turnLineIndex[i].line
+				break
+			}
+		}
+		if target < 0 {
+			m.vp.GotoTop()
+			return
+		}
+	}
+	if target > 0 {
+		target-- // land with one line of context above the head
+	}
+	m.vp.SetYOffset(target)
+	m.refresh()
+}
+
+// turnAtLine maps a viewport content line to a turn head (stepIdx -1).
+func (m *Model) turnAtLine(line int) (msgIdx int, ok bool) {
+	for _, r := range m.turnLineIndex {
+		if r.line == line {
+			return r.msgIdx, true
+		}
+	}
+	return 0, false
 }
 
 // stepAtLine maps a viewport content line to a step for mouse hit-testing,

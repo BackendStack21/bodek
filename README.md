@@ -125,8 +125,12 @@ by `odek serve` from its usual chain — `~/.odek/config.json` → `./odek.json`
 | Key | Action |
 |-----|--------|
 | `⏎` | Send the prompt (queues it while a turn is running) |
+| `^K` | **The palette** — everything: commands, sessions, models, drawer tabs |
 | `/` | Open the command palette (see below) |
 | `@` | Attach a file (see below) |
+| `alt+↑` / `alt+↓` | Jump to the previous / next turn |
+| `^F` | Fold/unfold the most recent turn card (click any turn head with `--mouse`) |
+| `tab` | Open/close the latest reasoning block (live turns auto-expand) |
 | `^R` | Browse & resume saved sessions |
 | `^O` | Switch the model |
 | `^T` | Toggle extended thinking for the next turn |
@@ -136,8 +140,9 @@ by `odek serve` from its usual chain — `~/.odek/config.json` → `./odek.json`
 | `↑` / `↓` / `PgUp` / `PgDn` / `^U` / `^D` | Scroll the transcript (arrows at the input's edge lines) |
 | `^P` / `^N` | Recall previous prompts (prompt history) |
 | `^G` / `End` (empty input) | Jump to the latest output |
-| `wheel` (with `--mouse`) | Scroll the transcript |
-| `r` (when disconnected) | Retry the connection |
+| `F1` | Show the help card |
+| `wheel` (with `--mouse`) | Scroll the transcript · click tool rows, turn heads, and the cockpit |
+| `⏎` (disconnected, empty input) | Retry the connection |
 | `^C` | Quit |
 
 Prompts sent while a turn is running are **queued** and sent automatically
@@ -145,7 +150,12 @@ when the turn ends — the footer shows how many are waiting. While the
 transcript is scrolled up mid-run, the footer flags `↓ new output`; press
 `^G` to jump to the latest. If the connection drops, bodek retries with
 backoff and, after giving up, keeps your draft and offers a manual retry
-on `r`.
+on `⏎` with an empty input.
+
+**Every printable character always types.** No bare letter, digit, or
+punctuation key is ever bound in the composer — actions live on chords and
+non-character keys (`^K` palette, `alt+↑↓` turn jumps, `F1` help), so a
+prompt can start with `?`, `[`, or any other character.
 
 ### Commands (`/`)
 
@@ -157,11 +167,21 @@ command and press `⏎`.
 |---------|--------|
 | `/help` | Show available commands and key bindings |
 | `/clear` | Clear the conversation |
-| `/stats` | Show session metrics, cost & context-window gauge |
-| `/sessions` | Browse & resume saved sessions |
+| `/stats` | Session metrics card (cost, cache, context gauge) |
+| `/server` | Cockpit — server, link, budget & session in one card (or click the header) |
+| `/sessions` | Browse, search, pin, rename, export & resume sessions |
+| `/runs` | Headless REST runs — live status, remote approvals, cancel |
+| `/run <prompt>` | Start a headless run (fresh session) and watch it in the runs tab |
+| `/events` | The `odek.event/v1` runtime feed |
+| `/memory` | Facts by target, pending-episode promote, consolidate |
+| `/skills` | Skill provenance badges & promote |
+| `/tools` | Tool registry with enabled state & MCP servers |
+| `/config` | Sanitized config, lifetime usage, connections (kick) |
 | `/model [name]` | Switch model (opens a picker with no argument) |
 | `/thinking [on\|off]` | Toggle extended thinking for the next turn |
 | `/cancel` | Cancel the running turn |
+| `/attach <path>` | Stage a file to send with the next prompt (5 MB each, 10 MB total) |
+| `/unattach [name]` | Drop staged files (all when no name given) |
 | `/quit` | Exit bodek |
 
 ### File attachments (`@`)
@@ -189,10 +209,26 @@ from the panel and confirm — typing never answers by accident:
 | `Tab` | Expand/collapse the full command & description text |
 | `PgUp` / `PgDn` / `^U` / `^D` | Scroll the transcript while the panel is open |
 
+After three same-class approvals inside a minute the server engages **friction
+mode**: the panel shows the recent-approval count, the trust shortcut is
+withdrawn, and approving requires typing the literal word `approve` and
+pressing `⏎` (a mistyped word resets — retyping is the point). Denying stays
+one `Esc`.
+
 ---
 
 ## What you see
 
+- **EMBER Terminal** — the WebUI's design language (electric amber on
+  blue-charcoal) as terminal tokens; `BODEK_THEME=ember-light|high-contrast|classic`
+  and `NO_MOTION=1` for a fully static UI.
+- **The palette (`^K`)** — every surface one fuzzy search away, every row
+  teaching its chord.
+- **Turn cards** — telemetry rides the turn head, `^F` folds noisy turns,
+  `[`/`]` jump turn-to-turn, reasoning accordions auto-expand live and
+  collapse on the next turn.
+- **Typed tool renderers** — diffs tint with diffstats, file reads get line
+  numbers, JSON indents, test runs show pass/fail verdicts.
 - **Streaming answers** rendered as Markdown ([glamour](https://github.com/charmbracelet/glamour)).
 - **Tool activity** — every `tool_call`/`tool_result` shown live with a glyph
   per tool, a spinner, an argument preview, and a result excerpt rendered as a
@@ -210,11 +246,25 @@ from the panel and confirm — typing never answers by accident:
   above the input (right below your last message) shows what it's actually
   doing (`🧪 running tests`, `📖 reading client.go`, `🚀 pushing`) with a live
   elapsed timer.
-- **Session browser** (`^R`) — resume, replay, or delete past conversations.
+- **Session browser** (`^R`) — resume, replay, delete, pin (`p`), rename
+  (`r`), export a transcript (`e` markdown, `E` JSON), and search server-side
+  (`/`); `n` loads the next page. Resuming sends a `session_switch` so the
+  server-side memory buffer is restored before you type.
 - **Auto-reconnect** — if the socket drops, bodek redials with backoff
-  (500ms → 8s, 5 attempts) and the session resumes transparently on your next
-  prompt; only a server that stays down leaves the `disconnected` badge.
-- **Model switcher** (`^O`) — change the model for the next turn.
+  (500ms → 8s, 5 attempts) and re-adopts the session over the fresh socket;
+  only a server that stays down leaves the `disconnected` badge.
+- **Model switcher** (`^O`) — change the model for the next turn. The picker
+  merges the server's configured model with its built-in profile catalog
+  (`/api/profiles`), each annotated with its context window.
+- **Skill suggestions** — when odek's learn loop proposes a skill, a passive
+  card above the composer answers on `alt+s` (save) / `alt+x` (skip); it never
+  blocks sending, and auto-save governs real persistence.
+- **Server shutdown** — the config tab's `S` requires typing the literal word
+  `shutdown` (the approval-friction pattern); the socket drop that follows is
+  expected state, with `⏎` starting a fresh instance in spawn mode.
+- **Live server snapshot** — a 25s heartbeat measures WebSocket round-trip
+  latency and refreshes server uptime, connection count, and streaming state
+  (the ⚡ badge beside the model); `/stats` surfaces the full link row.
 - **Cancellation** (`Esc`) — abort a running turn via odek's cancel API.
 - **Sandbox aware** — the header shows `🛡 sandboxed` or `⚠ host access`; pass
   `--sandbox` to run tool calls inside odek's Docker isolation.

@@ -16,12 +16,6 @@ var bannerArt = []string{
 	"██████   ██████  ██████  ███████ ██   ██",
 }
 
-// purple → pink gradient endpoints for the wordmark.
-var (
-	gradFrom = [3]int{0xA7, 0x8B, 0xFA}
-	gradTo   = [3]int{0xF4, 0x72, 0xB6}
-)
-
 // welcome renders the splash shown in the conversation area before the first
 // prompt: the wordmark, a tagline, the working directory, and a few key
 // bindings — left-aligned with a gentle margin.
@@ -31,11 +25,11 @@ func welcome(th theme, width int, cwd string) string {
 	// terminals get a one-line wordmark instead of wrapped garbage.
 	if artW := lipgloss.Width(bannerArt[0]); width >= artW+2 {
 		for _, line := range bannerArt {
-			b.WriteString(gradient(line, gradFrom, gradTo))
+			b.WriteString(gradient(line, th.grad[0], th.grad[1]))
 			b.WriteByte('\n')
 		}
 	} else {
-		b.WriteString(th.logo.Render(gradient("⬡ bodek", gradFrom, gradTo)))
+		b.WriteString(th.logo.Render(gradient("⬡ bodek", th.grad[0], th.grad[1])))
 		b.WriteByte('\n')
 	}
 	b.WriteByte('\n')
@@ -51,13 +45,13 @@ func welcome(th theme, width int, cwd string) string {
 	// descriptions line up on a flush left edge.
 	tips := [][2]string{
 		{"type a task", "and press enter to run the agent"},
-		{"/ commands", "type / for commands, e.g. /help /sessions /model"},
-		{"/stats", "session metrics & live context-window gauge"},
-		{"@ to attach", "attach files, e.g. @main.go"},
-		{"⏎ send", "^J newline  ·  ^T toggle thinking"},
+		{"^K palette", "everything: commands, sessions, models, drawer tabs"},
+		{"alt+↑↓", "jump turn-to-turn · ^F folds the last turn"},
+		{"/ commands", "/server cockpit · /runs · /memory · /skills · /events"},
+		{"@ to attach", "attach files, e.g. @main.go — or /attach <path>"},
+		{"⏎ send", "^J newline  ·  ^T toggle thinking  ·  tab opens reasoning"},
 		{"^L clear", "↑/↓ scroll  ·  PgUp/PgDn page  ·  ^C quit"},
-		{"approvals", "↑↓ select  ·  ⏎ confirm  ·  esc deny"},
-		{"tool steps", "^E toggle tool details  ·  --mouse to click-expand"},
+		{"approvals", "A approve · D deny · T trust — typing never decides"},
 	}
 	const keyW = 11
 	for _, t := range tips {

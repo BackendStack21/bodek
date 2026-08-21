@@ -17,11 +17,12 @@ import (
 // approvalRecorder builds a Model against a stand-in that records every
 // approval_response action it receives, so tests can assert the exact
 // protocol reply a key sequence produced.
-func approvalRecorder(t *testing.T) (*Model, chan string) {
+func approvalRecorder(t *testing.T) (*Model, chan string, chan string) {
 	t.Helper()
 	t.Setenv("HOME", t.TempDir())
 
 	actions := make(chan string, 4)
+	skills := make(chan string, 4)
 	mux := http.NewServeMux()
 	mux.Handle("/ws", ws.Handler(func(c *ws.Conn) {
 		for {
@@ -33,8 +34,14 @@ func approvalRecorder(t *testing.T) (*Model, chan string) {
 				Type   string `json:"type"`
 				Action string `json:"action"`
 			}
-			if json.Unmarshal(d, &msg) == nil && msg.Type == "approval_response" {
+			if json.Unmarshal(d, &msg) != nil {
+				continue
+			}
+			switch msg.Type {
+			case "approval_response":
 				actions <- msg.Action
+			case "skill_prompt_response":
+				skills <- msg.Action
 			}
 		}
 	}))
@@ -48,7 +55,7 @@ func approvalRecorder(t *testing.T) (*Model, chan string) {
 
 	m := New(cl, Options{Model: "m"})
 	m.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
-	return m, actions
+	return m, actions, skills
 }
 
 // awaitAction reads the next recorded approval_response action.
@@ -67,7 +74,7 @@ func awaitAction(t *testing.T, actions chan string) string {
 // highlighted option answers the approval, with the same protocol replies as
 // before (approve / deny / trust).
 func TestApprovalEnterConfirmsHighlight(t *testing.T) {
-	m, actions := approvalRecorder(t)
+	m, actions, _ := approvalRecorder(t)
 	cases := []struct {
 		name       string
 		allowTrust bool
@@ -87,7 +94,7 @@ func TestApprovalEnterConfirmsHighlight(t *testing.T) {
 				_, cmd = m.Update(key(k))
 			}
 			exec(cmd)
-			if m.approval != nil {
+			if m.curApproval() != nil {
 				t.Fatal("approval still pending after enter")
 			}
 			if got := awaitAction(t, actions); got != tc.want {
@@ -100,12 +107,12 @@ func TestApprovalEnterConfirmsHighlight(t *testing.T) {
 // TestApprovalEscDenies verifies esc is the abort path: it denies even when
 // the highlight sits on another option.
 func TestApprovalEscDenies(t *testing.T) {
-	m, actions := approvalRecorder(t)
+	m, actions, _ := approvalRecorder(t)
 	m.handleEvent(client.Event{Type: "approval_request", ID: "apr", AllowTrust: true})
 	m.Update(key("down")) // highlight elsewhere — esc must not confirm it
 	_, cmd := m.Update(key("esc"))
 	exec(cmd)
-	if m.approval != nil {
+	if m.curApproval() != nil {
 		t.Fatal("approval still pending after esc")
 	}
 	if got := awaitAction(t, actions); got != "deny" {
@@ -158,7 +165,7 @@ func TestApprovalScrollWhilePending(t *testing.T) {
 		t.Fatal("test transcript should be taller than the viewport")
 	}
 	m.handleEvent(client.Event{Type: "approval_request", ID: "apr", Command: "rm x"})
-	if m.approval == nil {
+	if m.curApproval() == nil {
 		t.Fatal("approval not set")
 	}
 
@@ -181,7 +188,7 @@ func TestApprovalScrollWhilePending(t *testing.T) {
 	if !m.vp.AtBottom() {
 		t.Errorf("pgdown did not return to the bottom: yoffset=%d", m.vp.YOffset)
 	}
-	if m.approval == nil {
+	if m.curApproval() == nil {
 		t.Error("scrolling must not answer the approval")
 	}
 }

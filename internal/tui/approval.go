@@ -1,6 +1,8 @@
 package tui
 
 import (
+	"fmt"
+
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -11,24 +13,40 @@ type approvalOption struct {
 	action string
 }
 
-// approvalOptions lists the panel's outcomes in display order; trust is only
-// offered when the server allows it.
+// approvalOptions lists the panel's outcomes in display order. Trust is only
+// offered when the server allows it for the risk class, and is withdrawn in
+// friction mode — a burst of same-class approvals must not widen into a
+// class-trust shortcut (mirrors the TTY approver policy).
 func (m *Model) approvalOptions() []approvalOption {
 	opts := []approvalOption{
 		{"approve", "approve"},
 		{"deny", "deny"},
 	}
-	if m.approval.AllowTrust {
+	if a := m.curApproval(); a != nil && a.AllowTrust && !a.Friction {
 		opts = append(opts, approvalOption{"trust class", "trust"})
 	}
 	return opts
 }
 
-// handleApprovalKey drives the pending approval: arrows move the highlight,
-// enter confirms it, esc denies, tab expands the full command/description,
-// and the transcript scroll keys keep working. Bare letters never decide — a
-// prompt typed mid-approval must not leak into a decision.
+// handleApprovalKey drives the head of the approval queue: arrows move the
+// highlight, enter confirms, esc denies, tab expands the full
+// command/description, and the transcript scroll keys keep working. The
+// composer is replaced while an approval is pending, so bare decision keys
+// (a/d/t) are safe — no prompt can leak into a decision.
+//
+// Friction mode (server flag: 3+ same-class approvals inside 60s) replaces
+// the selection UI entirely: the literal word "approve" must be typed and
+// confirmed with enter before an approval is forwarded — no highlight
+// shortcut. Denial stays one keypress (esc): friction slows approving, not
+// refusing.
 func (m *Model) handleApprovalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	a := m.curApproval()
+	if a == nil {
+		return m, nil
+	}
+	if a.Friction {
+		return m.handleFrictionKey(msg)
+	}
 	switch msg.String() {
 	case "up", "left":
 		if m.apprSel > 0 {
@@ -40,6 +58,14 @@ func (m *Model) handleApprovalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	case "enter":
 		return m, m.answer(m.approvalOptions()[m.apprSel].action)
+	case "a", "A":
+		return m, m.answer("approve")
+	case "d", "D":
+		return m, m.answer("deny")
+	case "t", "T":
+		if a.AllowTrust {
+			return m, m.answer("trust")
+		}
 	case "esc":
 		return m, m.answer("deny")
 	case "tab":
@@ -59,12 +85,93 @@ func (m *Model) handleApprovalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m *Model) answer(action string) tea.Cmd {
-	id := m.approval.ID
-	m.approval = nil
+// frictionWord is the literal confirmation the friction gate demands.
+const frictionWord = "approve"
+
+// handleFrictionKey edits the typed confirmation. Enter approves only on an
+// exact match (a mismatch resets the buffer — retyping is the point); esc
+// still denies; tab still expands; scrolling still works.
+func (m *Model) handleFrictionKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "enter":
+		if m.apprTyped == frictionWord {
+			return m, m.answer("approve")
+		}
+		m.apprTyped = ""
+	case "esc":
+		return m, m.answer("deny")
+	case "backspace":
+		if n := len(m.apprTyped); n > 0 {
+			m.apprTyped = m.apprTyped[:n-1]
+		}
+	case "tab":
+		m.apprExpanded = !m.apprExpanded
+		m.relayout()
+	case "pgup", "pgdown", "ctrl+u", "ctrl+d":
+		var cmd tea.Cmd
+		m.vp, cmd = m.vp.Update(msg)
+		return m, cmd
+	case "ctrl+g":
+		m.vp.GotoBottom()
+		return m, nil
+	case "ctrl+c":
+		m.quitting = true
+		return m, tea.Quit
+	default:
+		// Single printable runes only — modifiers (ctrl+X, alt+X) must not
+		// splice escape bytes into the confirmation buffer.
+		if s := msg.String(); len([]rune(s)) == 1 {
+			m.apprTyped += s
+		}
+	}
+	m.refresh()
+	return m, nil
+}
+
+// frictionHint renders the friction line: the recent-approval count the
+// server insists the user sees, plus the typed confirmation buffer.
+func (m *Model) frictionHint() string {
+	a := m.curApproval()
+	if a == nil {
+		return ""
+	}
+	n := a.FrictionApprovals
+	if n < 1 {
+		n = 1 // gate engaged but the count was omitted — don't print "0"
+	}
+	typed := m.apprTyped
+	if typed == "" {
+		typed = "…"
+	}
+	return m.th.noticeStyle.Render(fmt.Sprintf(
+		"⏳ friction: %d approvals in the last 60s — type %q + ⏎ (esc denies)   %s",
+		n, frictionWord, typed))
+}
+
+// resetApprovalInput clears the selection/typed-confirmation state when a
+// new approval_request becomes the queue head or one is answered.
+func (m *Model) resetApprovalInput() {
 	m.apprSel = 0
 	m.apprExpanded = false
-	m.status = "thinking"
+	m.apprTyped = ""
+}
+
+// answer sends the decision for the queue head and reopens the run. The
+// approval_ack the server sends in reply needs no further UI — the panel is
+// already on the next request (or gone).
+func (m *Model) answer(action string) tea.Cmd {
+	a := m.curApproval()
+	if a == nil {
+		return nil
+	}
+	id := a.ID
+	m.approvals = m.approvals[1:]
+	m.resetApprovalInput()
+	if len(m.approvals) > 0 {
+		m.status = "approval required"
+	} else {
+		m.status = "thinking"
+	}
 	m.relayout()
 	m.refresh()
 	cl := m.cl

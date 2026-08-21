@@ -53,18 +53,19 @@ func (m *Model) handleReconnect(msg reconnectMsg) (tea.Model, tea.Cmd) {
 		m.events = msg.cl.Events
 		m.disconn = false
 		m.status = "ready"
-		// Session continuity survives the drop: every prompt already carries
-		// session_id + auth_token, so the next send restores the session
-		// (including the server-side memory buffer) transparently.
-		m.addNote("reconnected to odek serve — the session resumes on your next prompt")
+		// Session continuity survives the drop: session_switch adopts the
+		// session on the fresh connection (restoring the server-side memory
+		// buffer) without waiting for a prompt, and every prompt still carries
+		// session_id + auth_token as the belt-and-suspenders fallback.
+		note := m.transientNoteCmd("reconnected to odek serve — the session resumes on your next prompt")
 		m.refresh()
-		return m, tea.Batch(listen(m.events), m.sendQueued())
+		return m, tea.Batch(listen(m.events), m.adoptSession(), m.sendQueued(), note)
 	}
 	if msg.attempt+1 < maxReconnectAttempts {
 		return m, m.scheduleReconnect(msg.attempt + 1)
 	}
 	m.status = "disconnected"
-	m.addNote("reconnect failed — " + msg.err.Error() + " · press r to retry")
+	m.addNote("reconnect failed — " + msg.err.Error() + " · press ⏎ to retry")
 	if m.opts.LogPath != "" {
 		m.addNote("server log · " + m.opts.LogPath)
 	}

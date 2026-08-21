@@ -38,14 +38,37 @@ func slashCommands() []command {
 		{"sessions", "browse & resume saved sessions", func(m *Model, _ string) tea.Cmd {
 			return m.openSessions()
 		}},
+		{"server", "cockpit — server, link, budget & session", func(m *Model, _ string) tea.Cmd {
+			return m.openCockpit()
+		}},
+		{"runs", "headless runs & remote approvals", func(m *Model, _ string) tea.Cmd {
+			return m.openRuns()
+		}},
+		{"run", "start a headless run — /run <prompt>", func(m *Model, args string) tea.Cmd {
+			return m.startHeadlessRun(args)
+		}},
+		{"events", "runtime event feed", func(m *Model, _ string) tea.Cmd {
+			return m.openEvents()
+		}},
+		{"memory", "facts, pending episodes, consolidate", func(m *Model, _ string) tea.Cmd {
+			return m.openMemory()
+		}},
+		{"skills", "skill provenance & promote", func(m *Model, _ string) tea.Cmd {
+			return m.openSkills()
+		}},
+		{"tools", "tool registry & MCP servers", func(m *Model, _ string) tea.Cmd {
+			return m.openTools()
+		}},
+		{"config", "server config, usage & connections", func(m *Model, _ string) tea.Cmd {
+			return m.openConfig()
+		}},
 		{"model", "switch model — /model [name]", func(m *Model, args string) tea.Cmd {
 			if args != "" {
 				m.pendModel = args
 				m.model = args
 				m.resolveMaxContext()
-				m.addNote("model set to " + args + " (applies next turn)")
 				m.refresh()
-				return nil
+				return m.transientNoteCmd("model set to " + args + " (applies next turn)")
 			}
 			return m.openModels()
 		}},
@@ -62,12 +85,17 @@ func slashCommands() []command {
 			if m.thinkOn {
 				state = "on"
 			}
-			m.addNote("thinking " + state)
 			m.refresh()
-			return nil
+			return m.transientNoteCmd("thinking " + state)
 		}},
 		{"cancel", "cancel the running turn", func(m *Model, _ string) tea.Cmd {
 			return m.cancelRun()
+		}},
+		{"attach", "stage a file for the next prompt — /attach <path>", func(m *Model, args string) tea.Cmd {
+			return m.attachFile(args)
+		}},
+		{"unattach", "drop staged files — /unattach [name]", func(m *Model, args string) tea.Cmd {
+			return m.unattachFile(args)
 		}},
 		{"quit", "exit bodek", func(m *Model, _ string) tea.Cmd {
 			m.quitting = true
@@ -108,9 +136,8 @@ func (m *Model) runCommand(name, args string) tea.Cmd {
 			return c.run(m, args)
 		}
 	}
-	m.addNote("unknown command: /" + name + " — try /help")
 	m.refresh()
-	return nil
+	return m.transientNoteCmd("unknown command: /" + name + " — try /help")
 }
 
 // runSelectedCommand executes the command highlighted in the popup.
@@ -172,6 +199,9 @@ func (m *Model) showHelp() {
 		{"^J", "newline in the input"},
 		{"@", "attach files"},
 		{"↑↓", "scroll the transcript"},
+		{"alt+↑↓", "jump to the previous/next turn"},
+		{"^F", "fold/unfold the latest turn card"},
+		{"tab", "open/close the latest reasoning block"},
 		{"Pg↑↓", "page the transcript"},
 		{"^P^N", "recall prompts"},
 		{"^G", "jump to the latest output"},
@@ -182,8 +212,10 @@ func (m *Model) showHelp() {
 		{"^E", "toggle tool details"},
 		{"esc", "cancel the running turn"},
 		{"r", "retry a lost connection"},
+		{"/server", "cockpit — server, link, budget, session"},
+		{"F1", "this help card"},
 		{"^C", "quit"},
-		{"--mouse", "wheel scroll · click tool rows"},
+		{"--mouse", "wheel scroll · click tool rows & turn heads"},
 	} {
 		b.WriteString("\n" + th.tipKey.Render(padRight(k[0], keyW)) + " " + th.tipText.Render(k[1]))
 	}
@@ -193,11 +225,27 @@ func (m *Model) showHelp() {
 	m.refresh()
 }
 
-// showStats appends a session dashboard card: context-window usage, token and
+// showStats appends a session dashboard card to the transcript.
+func (m *Model) showStats() {
+	card := m.statsCardBody()
+	m.msgs = append(m.msgs, message{role: roleAsst, content: card, rendered: card, raw: true})
+	m.refresh()
+}
+
+// statsCardBody builds the session dashboard: context-window usage, token and
 // tool totals, latency, thinking ratio, session age, and model/sandbox. It is
 // built as pre-styled lines (raw) so its colors and column alignment are exact
 // and survive width changes untouched.
-func (m *Model) showStats() {
+func (m *Model) statsCardBody() string {
+	card := m.statsBody()
+	// Same box math the card always used — changing it re-wraps the
+	// pre-styled rows at narrow widths.
+	return m.th.acBox.Width(max(min(m.vp.Width-2, 60), 28) - 2).Render(card)
+}
+
+// statsBody renders the session dashboard content without a frame — the
+// cockpit embeds it directly; /stats wraps it in its card.
+func (m *Model) statsBody() string {
 	th := m.th
 	// boxW is the total rendered width (incl. border). lipgloss .Width(w) makes
 	// the text content w-2 wide (padding) and adds 2 for the border, so passing
@@ -270,14 +318,47 @@ func (m *Model) showStats() {
 		}
 
 		// Session cost from cumulative session tokens — correct across
-		// reconnect/resume where turnStats would be incomplete. Hidden unless
-		// odek has both token prices configured.
-		if inPrice, outPrice := m.limits.ResolvePrices(m.model); inPrice > 0 && outPrice > 0 {
+		// reconnect/resume where turnStats would be incomplete. The server's
+		// effective_prices apply when the model matches its configuration;
+		// otherwise the client-side twin resolves it. Hidden unless odek has
+		// both token prices configured.
+		if inPrice, outPrice := m.prices(); inPrice > 0 && outPrice > 0 {
 			costVal := th.statsValue.Render(formatUSD(costUSD(m.sessCtxTok, m.sessOutTok, inPrice, outPrice)))
 			if m.limits.MaxCostUSD > 0 {
 				costVal += th.statsDim.Render("  · cap " + formatUSD(m.limits.MaxCostUSD))
 			}
 			rows = slices.Insert(rows, 2, row{"$", th.statCtx, "cost", costVal})
+		}
+
+		// Provider cache activity across turns — only when any was reported.
+		var cacheW, cacheR, cacheC int
+		for _, t := range m.turnStats {
+			cacheW += t.cacheWrite
+			cacheR += t.cacheRead
+			cacheC += t.cachedTok
+		}
+		if cacheW > 0 || cacheR > 0 || cacheC > 0 {
+			cacheVal := th.statsValue.Render(fmt.Sprintf("%s w · %s r", human(cacheW), human(cacheR)))
+			if cacheC > 0 {
+				cacheVal += th.statsDim.Render(fmt.Sprintf(" · %s prefix", human(cacheC)))
+			}
+			rows = append(rows, row{"⛁", th.statCtx, "cache", cacheVal})
+		}
+
+		// Server link from the latest heartbeat snapshot — RTT, uptime, and
+		// the live connection count. Hidden when no snapshot has arrived yet.
+		if m.rtt > 0 || m.srvConns > 0 {
+			link := th.statsValue.Render(fmt.Sprintf("%s rtt", formatStepDur(m.rtt)))
+			if m.srvUptime > 0 {
+				link += th.statsDim.Render(fmt.Sprintf(" · up %s", formatDuration(m.srvUptime)))
+			}
+			if m.srvConns > 0 {
+				link += th.statsDim.Render(fmt.Sprintf(" · %d ws", m.srvConns))
+			}
+			if m.serverStream {
+				link += th.statsDim.Render(" · ⚡ stream")
+			}
+			rows = append(rows, row{"⇄", th.statsLabel, "link", link})
 		}
 	}
 
@@ -317,7 +398,6 @@ func (m *Model) showStats() {
 		b.WriteString("\n" + idline)
 	}
 
-	card := th.acBox.Width(boxW - 2).Render(b.String())
-	m.msgs = append(m.msgs, message{role: roleAsst, content: card, rendered: card, raw: true})
-	m.refresh()
+	_ = boxW
+	return b.String()
 }
