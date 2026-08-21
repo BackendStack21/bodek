@@ -60,7 +60,7 @@ func TestDrawerEventsTab(t *testing.T) {
 	if m.panel != panelEvents {
 		t.Fatalf("panel = %d, want events", m.panel)
 	}
-	if len(m.feed) != 2 {
+	if len(m.feed) != 3 {
 		t.Fatalf("feed = %d", len(m.feed))
 	}
 	out := plain(m.View())

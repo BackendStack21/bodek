@@ -220,12 +220,24 @@ func standIn(t *testing.T, token string) *Model {
 		}})
 	}))
 	mux.HandleFunc("/api/events", guard(func(w http.ResponseWriter, r *http.Request) {
-		json.NewEncoder(w).Encode(map[string]any{"events": []client.RuntimeEvent{
+		evs := []client.RuntimeEvent{
 			{Schema: "odek.event/v1", Type: "run_started", SessionID: "s1",
 				Timestamp: time.Now()},
 			{Schema: "odek.event/v1", Type: "tool_call_started", Tool: "shell",
 				SessionID: "s1", Iteration: 1, Timestamp: time.Now()},
-		}, "count": 2})
+			{Schema: "odek.event/v1", Type: "run_started", SessionID: "s-other",
+				Timestamp: time.Now()},
+		}
+		if sid := r.URL.Query().Get("session_id"); sid != "" {
+			filtered := evs[:0]
+			for _, ev := range evs {
+				if ev.SessionID == sid {
+					filtered = append(filtered, ev)
+				}
+			}
+			evs = filtered
+		}
+		json.NewEncoder(w).Encode(map[string]any{"events": evs, "count": len(evs)})
 	}))
 
 	srv := httptest.NewServer(mux)

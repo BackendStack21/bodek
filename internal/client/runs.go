@@ -166,9 +166,16 @@ func (c *Client) AnswerRunApproval(runID, approvalID, action string) error {
 	return nil
 }
 
-// Events reads the recent runtime-event ring (oldest-first, filtered).
-func (c *Client) RuntimeEvents(limit int) ([]RuntimeEvent, error) {
+// RuntimeEvents reads the recent runtime-event ring (oldest-first), with
+// optional run and session filters (empty string = no filter).
+func (c *Client) RuntimeEvents(limit int, runID, sessionID string) ([]RuntimeEvent, error) {
 	u := fmt.Sprintf("%s/api/events?limit=%d", c.baseURL, limit)
+	if runID != "" {
+		u += "&run_id=" + url.QueryEscape(runID)
+	}
+	if sessionID != "" {
+		u += "&session_id=" + url.QueryEscape(sessionID)
+	}
 	var out struct {
 		Events []RuntimeEvent `json:"events"`
 		Count  int            `json:"count"`

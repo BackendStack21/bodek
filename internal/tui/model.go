@@ -166,9 +166,10 @@ type Model struct {
 	profiles []client.Profile // built-in model catalog (picker + context gauge)
 
 	// Drawer state: runs polling + the events feed.
-	runs    []client.Run
-	feed    []client.RuntimeEvent
-	runsSeq int // poll generation; a stale tick after closing is dropped
+	runs            []client.Run
+	feed            []client.RuntimeEvent
+	runsSeq         int  // poll generation; a stale tick after closing is dropped
+	evSessionFilter bool // events tab: filter the ring to the active session
 
 	// Management tab state (memory / skills / tools / config).
 	memView     client.MemoryView

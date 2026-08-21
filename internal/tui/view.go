@@ -974,6 +974,68 @@ func (m *Model) footer() string {
 			th.footer.Render("esc close"),
 		)
 	}
+	if m.panel == panelRuns {
+		return m.panelFooter(
+			th.footer.Render("↑↓ select · ]/[ tabs"),
+			th.footerKey.Render("A")+th.footer.Render("pprove · "),
+			th.footerKey.Render("D")+th.footer.Render("eny · "),
+			th.footerKey.Render("T")+th.footer.Render("rust"),
+			th.footerKey.Render("c")+th.footer.Render(" cancel"),
+			th.footerKey.Render("r")+th.footer.Render(" refresh"),
+			th.footer.Render("esc close"),
+		)
+	}
+	if m.panel == panelEvents {
+		filter := "all sessions"
+		if m.evSessionFilter {
+			filter = "this session"
+		}
+		return m.panelFooter(
+			th.footerKey.Render("f")+th.footer.Render(" filter: "+filter+" · ]/[ tabs"),
+			th.footerKey.Render("r")+th.footer.Render(" refresh"),
+			th.footer.Render("esc close"),
+		)
+	}
+	if m.panel == panelMemory {
+		return m.panelFooter(
+			th.footerKey.Render("a")+th.footer.Render(" add user · "),
+			th.footerKey.Render("A")+th.footer.Render(" add env"),
+			th.footerKey.Render("d")+th.footer.Render(" delete fact"),
+			th.footerKey.Render("p")+th.footer.Render(" promote episode"),
+			th.footerKey.Render("c")+th.footer.Render(" consolidate user · "),
+			th.footerKey.Render("E")+th.footer.Render(" env"),
+			th.footer.Render("]/[ tabs · esc close"),
+		)
+	}
+	if m.panel == panelSkills {
+		return m.panelFooter(
+			th.footer.Render("↑↓ select · ]/[ tabs"),
+			th.footerKey.Render("p")+th.footer.Render(" promote"),
+			th.footerKey.Render("P")+th.footer.Render(" force-promote"),
+			th.footer.Render("esc close"),
+		)
+	}
+	if m.panel == panelTools {
+		return m.panelFooter(
+			th.footer.Render("↑↓ browse · ]/[ tabs · esc close"),
+		)
+	}
+	if m.panel == panelConfig {
+		if m.panelEdit == panelEditShutdown {
+			return m.panelFooter(
+				th.footerDanger.Render("this stops odek serve"),
+				th.footerKey.Render("shutdown")+th.footer.Render(" + ⏎"),
+				th.footerKey.Render("esc")+th.footer.Render(" cancels"),
+			)
+		}
+		return m.panelFooter(
+			th.footer.Render("↑↓ browse · ]/[ tabs"),
+			th.footerKey.Render("d")+th.footer.Render(" kick connection"),
+			th.footerKey.Render("S")+th.footerDanger.Render(" shutdown server"),
+			th.footerKey.Render("r")+th.footer.Render(" refresh"),
+			th.footer.Render("esc close"),
+		)
+	}
 	// The status bar carries no static key cheatsheet (the welcome splash and
 	// /help cover that) — only the live run state: a cancel hint while busy on
 	// the left, and latency / scroll position on the right.

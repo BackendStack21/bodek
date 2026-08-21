@@ -252,7 +252,11 @@ func (m *Model) handlePanelKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, m.cancelSelectedRun()
 		}
 		if m.panel == panelMemory {
-			return m, m.memConsolidate()
+			return m, m.memConsolidate("user")
+		}
+	case "f", "F":
+		if m.panel == panelEvents {
+			return m, m.toggleEventFilter()
 		}
 	case "/":
 		if m.panel == panelSessions {
@@ -286,6 +290,9 @@ func (m *Model) handlePanelKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "E":
 		if m.panel == panelSessions {
 			return m, m.exportSelected("json")
+		}
+		if m.panel == panelMemory {
+			return m, m.memConsolidate("env")
 		}
 	case "r":
 		if m.panel == panelSessions {
@@ -941,6 +948,9 @@ func (m *Model) renderPanel(w, h int) string {
 		rows = m.runRows(w - 6)
 	case panelEvents:
 		title = "☰ events"
+		if m.evSessionFilter {
+			title += th.acDetail.Render("  ·  this session")
+		}
 		rows = m.eventRows(w - 6)
 	case panelMemory:
 		title = "❖ memory"

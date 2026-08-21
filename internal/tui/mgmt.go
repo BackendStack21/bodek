@@ -311,9 +311,9 @@ func (m *Model) memPromoteSelected() tea.Cmd {
 	return func() tea.Msg { return mgmtActionMsg{tab: panelMemory, err: cl.PromoteEpisode(sid)} }
 }
 
-func (m *Model) memConsolidate() tea.Cmd {
+func (m *Model) memConsolidate(target string) tea.Cmd {
 	cl := m.cl
-	return func() tea.Msg { return mgmtActionMsg{tab: panelMemory, err: cl.ConsolidateMemory("user")} }
+	return func() tea.Msg { return mgmtActionMsg{tab: panelMemory, err: cl.ConsolidateMemory(target)} }
 }
 
 // memFactDraft submits the add-fact editor (panelDraft → target).

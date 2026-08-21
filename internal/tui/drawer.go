@@ -311,10 +311,20 @@ func (m *Model) openEvents() tea.Cmd {
 
 func (m *Model) fetchEvents() tea.Cmd {
 	cl := m.cl
+	sid := ""
+	if m.evSessionFilter {
+		sid = m.sessionID
+	}
 	return func() tea.Msg {
-		evs, err := cl.RuntimeEvents(100)
+		evs, err := cl.RuntimeEvents(100, "", sid)
 		return eventsMsg{events: evs, err: err}
 	}
+}
+
+// toggleEventFilter flips the this-session filter and refetches.
+func (m *Model) toggleEventFilter() tea.Cmd {
+	m.evSessionFilter = !m.evSessionFilter
+	return m.fetchEvents()
 }
 
 func (m *Model) handleEventsMsg(msg eventsMsg) {
