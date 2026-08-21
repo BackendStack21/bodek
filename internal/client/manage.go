@@ -213,6 +213,12 @@ func (c *Client) ConfigView() (map[string]any, error) {
 	return out, nil
 }
 
+// Shutdown triggers the server's graceful drain (stop accepting → close
+// WebSockets → sandbox cleanup). The socket bodek rides drops moments later.
+func (c *Client) Shutdown() error {
+	return c.postAction("/api/shutdown", map[string]string{})
+}
+
 // ── helpers ─────────────────────────────────────────────────────────────────
 
 func (c *Client) postAction(path string, body any) error {

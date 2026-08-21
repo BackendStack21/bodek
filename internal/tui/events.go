@@ -264,6 +264,17 @@ func (m *Model) handleEvent(ev client.Event) (tea.Model, tea.Cmd) {
 		m.busy = false
 		m.renderPending = false
 		m.cancelAck = false // stale: the error it muted died with the socket
+		if m.shutdownReq {
+			// The user asked for this drop: no reconnect spiral, just the
+			// fresh-start affordance (⏎ respawns in spawn mode).
+			m.shutdownReq = false
+			m.finalize()
+			m.relayout()
+			m.status = "server shut down"
+			m.addNote("server shut down · ⏎ starts a fresh instance")
+			m.refresh()
+			return m, nil
+		}
 		// A turn in flight when the socket drops will never finish: close it
 		// out with an interrupted marker instead of leaving it streaming
 		// forever. Idempotent — with no open turn this is a no-op, so a

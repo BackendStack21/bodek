@@ -275,6 +275,10 @@ func (m *Model) handlePanelKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.panel == panelSkills {
 			return m, m.skillPromote(true)
 		}
+	case "s", "S":
+		if m.panel == panelConfig {
+			return m, m.startShutdownConfirm()
+		}
 	case "e":
 		if m.panel == panelSessions {
 			return m, m.exportSelected("md")
@@ -329,6 +333,11 @@ func (m *Model) handlePanelEditKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.refresh()
 		return m, nil
 	case "enter":
+		// The shutdown gate manages its own lifecycle: a mistyped word must
+		// hold the gate open (retyping is the point), not exit the editor.
+		if m.panelEdit == panelEditShutdown {
+			return m, m.confirmShutdown()
+		}
 		mode, draft := m.panelEdit, m.panelDraft
 		m.panelEdit = panelEditNone
 		m.panelDraft = ""
@@ -343,6 +352,8 @@ func (m *Model) handlePanelEditKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, m.renameSelected(strings.TrimSpace(draft))
 		case panelEditFact:
 			return m, m.memFactDraft()
+		case panelEditShutdown:
+			return m, m.confirmShutdown()
 		}
 		return m, nil
 	case "backspace":

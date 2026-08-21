@@ -170,12 +170,13 @@ type Model struct {
 	runsSeq int // poll generation; a stale tick after closing is dropped
 
 	// Management tab state (memory / skills / tools / config).
-	memView   client.MemoryView
-	memRows   []memRow
-	memTarget string // add-fact editor target ("user" | "env")
-	skills    []client.Skill
-	toolRows  []toolRow
-	cfgRows   []cfgRow
+	memView     client.MemoryView
+	memRows     []memRow
+	memTarget   string // add-fact editor target ("user" | "env")
+	skills      []client.Skill
+	toolRows    []toolRow
+	cfgRows     []cfgRow
+	shutdownReq bool // shutdown sent — the socket drop is expected, not a failure
 
 	sessCtxTok int
 	sessOutTok int
@@ -426,6 +427,13 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case runStartedMsg:
 		return m, m.handleRunStarted(msg)
+
+	case shutdownDoneMsg:
+		if msg.err != nil {
+			m.addNote("shutdown failed: " + msg.err.Error())
+			m.refresh()
+		}
+		return m, nil
 
 	case mgmtMsg:
 		m.handleMgmtMsg(msg)

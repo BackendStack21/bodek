@@ -64,6 +64,38 @@ type mgmtActionMsg struct {
 // panelEditMode for the memory add-fact editor.
 const panelEditFact panelEditMode = 3
 
+// panelEditShutdown is the typed death-gate for POST /api/shutdown — the
+// literal word "shutdown", exactly like the approval friction gate: killing
+// the server (possibly the one bodek spawned and rides) must never be one
+// accidental keypress away.
+const panelEditShutdown panelEditMode = 4
+
+// shutdownDoneMsg reports the shutdown request outcome.
+type shutdownDoneMsg struct{ err error }
+
+// startShutdownConfirm opens the typed confirmation on the config tab.
+func (m *Model) startShutdownConfirm() tea.Cmd {
+	m.panelEdit = panelEditShutdown
+	m.panelDraft = ""
+	m.refresh()
+	return nil
+}
+
+// confirmShutdown fires the request once the typed word matches.
+func (m *Model) confirmShutdown() tea.Cmd {
+	if strings.TrimSpace(m.panelDraft) != "shutdown" {
+		m.panelDraft = "" // a mistyped word resets — retyping is the point
+		m.refresh()
+		return nil
+	}
+	m.panelEdit = panelEditNone
+	m.panelDraft = ""
+	m.shutdownReq = true // the socket drop that follows is expected
+	m.refresh()
+	cl := m.cl
+	return func() tea.Msg { return shutdownDoneMsg{err: cl.Shutdown()} }
+}
+
 func (m *Model) openMemory() tea.Cmd {
 	m.panel = panelMemory
 	m.panelSel = 0

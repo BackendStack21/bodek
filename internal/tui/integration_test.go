@@ -117,6 +117,13 @@ func standIn(t *testing.T, token string) *Model {
 	mux.HandleFunc("/api/cancel", guard(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
 	}))
+	mux.HandleFunc("/api/shutdown", guard(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		json.NewEncoder(w).Encode(map[string]any{"status": "shutting_down"})
+	}))
 	mux.HandleFunc("/api/prompt", guard(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			w.WriteHeader(http.StatusMethodNotAllowed)
