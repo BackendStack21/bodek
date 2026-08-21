@@ -342,7 +342,6 @@ func (m *Model) handlePanelEditKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case panelEditRename:
 			return m, m.renameSelected(strings.TrimSpace(draft))
 		case panelEditFact:
-			m.memTarget = m.memTarget
 			return m, m.memFactDraft()
 		}
 		return m, nil

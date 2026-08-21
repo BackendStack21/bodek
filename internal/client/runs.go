@@ -12,17 +12,17 @@ import (
 
 // Run is one headless REST run (POST /api/prompt → poll GET /api/runs/{id}).
 type Run struct {
-	ID                string         `json:"id"`
-	SessionID         string         `json:"session_id"`
-	Model             string         `json:"model"`
-	Status            string         `json:"status"` // running | waiting_approval | completed | failed | cancelled
-	StartedAt         time.Time      `json:"started_at"`
-	EndedAt           time.Time      `json:"ended_at,omitempty"`
-	InputTokens       int64          `json:"input_tokens,omitempty"`
-	OutputTokens      int64          `json:"output_tokens,omitempty"`
-	Result            string         `json:"result,omitempty"`
-	Error             string         `json:"error,omitempty"`
-	PendingApprovals  []RunApproval  `json:"pending_approvals"`
+	ID               string        `json:"id"`
+	SessionID        string        `json:"session_id"`
+	Model            string        `json:"model"`
+	Status           string        `json:"status"` // running | waiting_approval | completed | failed | cancelled
+	StartedAt        time.Time     `json:"started_at"`
+	EndedAt          time.Time     `json:"ended_at,omitempty"`
+	InputTokens      int64         `json:"input_tokens,omitempty"`
+	OutputTokens     int64         `json:"output_tokens,omitempty"`
+	Result           string        `json:"result,omitempty"`
+	Error            string        `json:"error,omitempty"`
+	PendingApprovals []RunApproval `json:"pending_approvals"`
 }
 
 // Terminal reports whether the run has settled (no further polling needed).

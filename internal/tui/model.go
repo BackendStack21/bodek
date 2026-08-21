@@ -567,6 +567,13 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, m.cancelRun()
 		}
 		return m, nil
+	case "?":
+		// Help — only with an empty input, so a question mark inside a draft
+		// prompt is never hijacked.
+		if m.ta.Value() == "" {
+			m.showHelp()
+		}
+		return m, nil
 	case "ctrl+r":
 		return m, m.openSessions()
 	case "ctrl+o":

@@ -27,13 +27,13 @@ func (m *Model) handlePopoverKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.refresh()
 		return m, nil
 	case "up", "ctrl+p", "k":
-		m.vp.LineUp(1)
+		m.vp.ScrollUp(1)
 	case "down", "ctrl+n", "j":
-		m.vp.LineDown(1)
+		m.vp.ScrollDown(1)
 	case "pgup", "ctrl+u":
-		m.vp.HalfViewUp()
+		m.vp.HalfPageUp()
 	case "pgdown", "ctrl+d":
-		m.vp.HalfViewDown()
+		m.vp.HalfPageDown()
 	case "ctrl+g":
 		m.vp.GotoBottom()
 	}

@@ -1002,10 +1002,10 @@ func (m *Model) footer() string {
 			th.scroll.Render(fmt.Sprintf("↕ %d%%", int(m.vp.ScrollPercent()*100)))
 		segs = append(segs, seg)
 	}
-	right := ""
-	if len(segs) > 0 {
-		right = strings.Join(segs, th.footerSep.Render("  ·  ")) + "  "
-	}
+	// The persistent teaching pair: help and the palette, always one chord away.
+	segs = append(segs, th.footerKey.Render("?")+th.footer.Render(" help · ")+
+		th.footerKey.Render("^K")+th.footer.Render(" everything"))
+	right := strings.Join(segs, th.footerSep.Render("  ·  ")) + "  "
 	gap := m.width - lipgloss.Width(left) - lipgloss.Width(right)
 	if gap < 1 {
 		gap = 1

@@ -17,7 +17,7 @@ type MemoryView struct {
 	// Episodes.Pending entries carry the stored episode; the promote action
 	// only needs the session id.
 	Episodes struct {
-		Total   int             `json:"total"`
+		Total   int              `json:"total"`
 		Pending []PendingEpisode `json:"pending"`
 	} `json:"episodes"`
 }
@@ -147,16 +147,16 @@ func (c *Client) MCPServers() ([]MCPServer, error) {
 
 // Usage is the server-lifetime aggregate.
 type Usage struct {
-	PromptsStarted    int64   `json:"prompts_started"`
-	PromptsCompleted  int64   `json:"prompts_completed"`
-	PromptsFailed     int64   `json:"prompts_failed"`
-	TokensIn          int64   `json:"tokens_in"`
-	TokensOut         int64   `json:"tokens_out"`
-	EstimatedCostUSD  float64 `json:"estimated_cost_usd"`
-	PricesConfigured  bool    `json:"prices_configured"`
-	Model             string  `json:"model"`
-	WSConnections     int64   `json:"ws_connections"`
-	RunsActive        int     `json:"runs_active"`
+	PromptsStarted   int64   `json:"prompts_started"`
+	PromptsCompleted int64   `json:"prompts_completed"`
+	PromptsFailed    int64   `json:"prompts_failed"`
+	TokensIn         int64   `json:"tokens_in"`
+	TokensOut        int64   `json:"tokens_out"`
+	EstimatedCostUSD float64 `json:"estimated_cost_usd"`
+	PricesConfigured bool    `json:"prices_configured"`
+	Model            string  `json:"model"`
+	WSConnections    int64   `json:"ws_connections"`
+	RunsActive       int     `json:"runs_active"`
 }
 
 // Usage fetches the lifetime aggregate.

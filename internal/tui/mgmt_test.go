@@ -34,7 +34,7 @@ func TestMgmtMemoryTab(t *testing.T) {
 		m.Update(key(string(r)))
 	}
 	_, cmd := m.Update(key("enter"))
-	m.Update(exec(cmd))      // mgmtActionMsg
+	m.Update(exec(cmd))            // mgmtActionMsg
 	m.Update(exec(m.openMemory())) // refetch
 	found := false
 	for _, r := range m.memRows {

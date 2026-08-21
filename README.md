@@ -125,8 +125,12 @@ by `odek serve` from its usual chain — `~/.odek/config.json` → `./odek.json`
 | Key | Action |
 |-----|--------|
 | `⏎` | Send the prompt (queues it while a turn is running) |
+| `^K` | **The palette** — everything: commands, sessions, models, drawer tabs |
 | `/` | Open the command palette (see below) |
 | `@` | Attach a file (see below) |
+| `[` / `]` | Jump to the previous / next turn |
+| `^F` | Fold/unfold the most recent turn card (click any turn head with `--mouse`) |
+| `tab` | Open/close the latest reasoning block (live turns auto-expand) |
 | `^R` | Browse & resume saved sessions |
 | `^O` | Switch the model |
 | `^T` | Toggle extended thinking for the next turn |
@@ -136,7 +140,8 @@ by `odek serve` from its usual chain — `~/.odek/config.json` → `./odek.json`
 | `↑` / `↓` / `PgUp` / `PgDn` / `^U` / `^D` | Scroll the transcript (arrows at the input's edge lines) |
 | `^P` / `^N` | Recall previous prompts (prompt history) |
 | `^G` / `End` (empty input) | Jump to the latest output |
-| `wheel` (with `--mouse`) | Scroll the transcript |
+| `?` (empty input) | Show the help card |
+| `wheel` (with `--mouse`) | Scroll the transcript · click tool rows, turn heads, and the cockpit |
 | `r` (when disconnected) | Retry the connection |
 | `^C` | Quit |
 
@@ -157,8 +162,15 @@ command and press `⏎`.
 |---------|--------|
 | `/help` | Show available commands and key bindings |
 | `/clear` | Clear the conversation |
-| `/stats` | Show session metrics, cost, cache & link status |
+| `/stats` | Session metrics card (cost, cache, context gauge) |
+| `/server` | Cockpit — server, link, budget & session in one card (or click the header) |
 | `/sessions` | Browse, search, pin, rename, export & resume sessions |
+| `/runs` | Headless REST runs — live status, remote approvals, cancel |
+| `/events` | The `odek.event/v1` runtime feed |
+| `/memory` | Facts by target, pending-episode promote, consolidate |
+| `/skills` | Skill provenance badges & promote |
+| `/tools` | Tool registry with enabled state & MCP servers |
+| `/config` | Sanitized config, lifetime usage, connections (kick) |
 | `/model [name]` | Switch model (opens a picker with no argument) |
 | `/thinking [on\|off]` | Toggle extended thinking for the next turn |
 | `/cancel` | Cancel the running turn |
@@ -201,6 +213,16 @@ one `Esc`.
 
 ## What you see
 
+- **EMBER Terminal** — the WebUI's design language (electric amber on
+  blue-charcoal) as terminal tokens; `BODEK_THEME=ember-light|high-contrast|classic`
+  and `NO_MOTION=1` for a fully static UI.
+- **The palette (`^K`)** — every surface one fuzzy search away, every row
+  teaching its chord.
+- **Turn cards** — telemetry rides the turn head, `^F` folds noisy turns,
+  `[`/`]` jump turn-to-turn, reasoning accordions auto-expand live and
+  collapse on the next turn.
+- **Typed tool renderers** — diffs tint with diffstats, file reads get line
+  numbers, JSON indents, test runs show pass/fail verdicts.
 - **Streaming answers** rendered as Markdown ([glamour](https://github.com/charmbracelet/glamour)).
 - **Tool activity** — every `tool_call`/`tool_result` shown live with a glyph
   per tool, a spinner, an argument preview, and a result excerpt rendered as a

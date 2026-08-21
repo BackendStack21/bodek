@@ -45,13 +45,13 @@ func welcome(th theme, width int, cwd string) string {
 	// descriptions line up on a flush left edge.
 	tips := [][2]string{
 		{"type a task", "and press enter to run the agent"},
-		{"/ commands", "type / for commands, e.g. /help /sessions /model"},
-		{"/stats", "session metrics & live context-window gauge"},
-		{"@ to attach", "attach files, e.g. @main.go"},
-		{"⏎ send", "^J newline  ·  ^T toggle thinking"},
+		{"^K palette", "everything: commands, sessions, models, drawer tabs"},
+		{"[ ] jumps", "turn-to-turn navigation · ^F folds the last turn"},
+		{"/ commands", "/server cockpit · /runs · /memory · /skills · /events"},
+		{"@ to attach", "attach files, e.g. @main.go — or /attach <path>"},
+		{"⏎ send", "^J newline  ·  ^T toggle thinking  ·  tab opens reasoning"},
 		{"^L clear", "↑/↓ scroll  ·  PgUp/PgDn page  ·  ^C quit"},
-		{"approvals", "↑↓ select  ·  ⏎ confirm  ·  esc deny"},
-		{"tool steps", "^E toggle tool details  ·  --mouse to click-expand"},
+		{"approvals", "A approve · D deny · T trust — typing never decides"},
 	}
 	const keyW = 11
 	for _, t := range tips {
