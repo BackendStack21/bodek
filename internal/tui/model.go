@@ -53,6 +53,7 @@ type turnItem struct {
 	thinking bool   // false = tool step
 	text     string // thinking excerpt when thinking (capped per block)
 	stepIdx  int    // index into msg.steps when !thinking
+	open     bool   // reasoning: user wants the full block (live turns auto-open)
 }
 
 // turnStats is the telemetry of one finalized assistant turn, captured from the
@@ -82,6 +83,8 @@ type message struct {
 	streaming bool
 	stats     *turnStats // finalized-turn telemetry; nil while streaming / for history
 	raw       bool       // content is pre-styled; render verbatim, never re-render
+	sentAt    time.Time  // user turns: when the prompt was submitted (drives the head's age)
+	collapsed bool       // turn card folded to its head + summary line (c)
 }
 
 // Options carries startup display info into the model.
@@ -198,8 +201,10 @@ type Model struct {
 
 	convPrefix     string    // cached rendering of the finalized transcript prefix
 	convPrefixRefs []stepRef // step header line index for the cached prefix
+	convPrefixTurn []stepRef // turn-head line index for the cached prefix (stepIdx -1)
 	convCount      int       // messages the prefix covers (-1 = invalidated)
 	stepLineIndex  []stepRef // full transcript step index for mouse hit-testing
+	turnLineIndex  []stepRef // full transcript turn-head index (stepIdx -1) for jump/collapse
 
 	renderPending bool // a coalesced streaming render is scheduled
 	renderSeq     int  // bumped per scheduled flush, to drop stale ticks
@@ -429,6 +434,12 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			top := 2
 			if msg.Y >= top && msg.Y < top+m.vp.Height {
 				line := msg.Y - top + m.vp.YOffset
+				// Turn heads toggle their card; step heads toggle details.
+				if msgIdx, ok := m.turnAtLine(line); ok {
+					m.toggleCollapseAt(msgIdx)
+					m.refresh()
+					return m, nil
+				}
 				if msgIdx, stepIdx, ok := m.stepAtLine(line); ok {
 					m.toggleStep(msgIdx, stepIdx)
 					m.refresh()
@@ -549,6 +560,25 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// Jump to the latest output. A ctrl binding, so typing a capital G
 		// (even as the first character of a prompt) is never hijacked.
 		m.vp.GotoBottom()
+		return m, nil
+	case "[", "]":
+		// Turn-to-turn navigation: jump to the previous/next assistant turn
+		// head. Bracket keys never begin a prompt sentence.
+		m.jumpTurn(msg.String() == "]")
+		return m, nil
+	case "ctrl+f":
+		// Fold/unfold the most recent turn card — long sessions scan top-down
+		// when the noisy turns collapse to their telemetry head. A chord: bare
+		// letters belong to the composer.
+		m.toggleCollapseLast()
+		return m, nil
+	case "tab":
+		// Open/close the most recent reasoning accordion block (the textarea
+		// ignores tab, and the completion popups capture it while open).
+		if !m.ac.open {
+			m.toggleThinkingLast()
+			m.refresh()
+		}
 		return m, nil
 	case "end":
 		// End doubles as jump-to-latest — only with an empty input, so its
@@ -831,6 +861,99 @@ func (m *Model) toggleStep(msgIdx, stepIdx int) {
 	}
 	steps[stepIdx].expanded = !steps[stepIdx].expanded
 	m.convCount = -1
+}
+
+// toggleCollapseLast folds/unfolds the most recent assistant turn card — the
+// one the reader is most likely looking at.
+func (m *Model) toggleCollapseLast() {
+	for i := len(m.msgs) - 1; i >= 0; i-- {
+		msg := m.msgs[i]
+		if msg.role != roleAsst || msg.raw || msg.streaming {
+			continue
+		}
+		if len(msg.steps) == 0 && strings.TrimSpace(msg.content) == "" && strings.TrimSpace(msg.thinking) == "" {
+			continue // nothing to fold
+		}
+		m.msgs[i].collapsed = !m.msgs[i].collapsed
+		m.convCount = -1
+		m.refresh()
+		return
+	}
+}
+
+// toggleCollapseAt folds/unfolds the turn card at a transcript message index
+// (mouse click on a turn head).
+func (m *Model) toggleCollapseAt(msgIdx int) {
+	if msgIdx < 0 || msgIdx >= len(m.msgs) || m.msgs[msgIdx].raw || m.msgs[msgIdx].streaming {
+		return
+	}
+	m.msgs[msgIdx].collapsed = !m.msgs[msgIdx].collapsed
+	m.convCount = -1
+}
+
+// toggleThinkingLast opens/closes the most recent reasoning accordion block
+// (tab): manual opens persist across the renderer's auto-collapse.
+func (m *Model) toggleThinkingLast() {
+	for i := len(m.msgs) - 1; i >= 0; i-- {
+		if m.msgs[i].role != roleAsst {
+			continue
+		}
+		for j := len(m.msgs[i].items) - 1; j >= 0; j-- {
+			if m.msgs[i].items[j].thinking && strings.TrimSpace(m.msgs[i].items[j].text) != "" {
+				m.msgs[i].items[j].open = !m.msgs[i].items[j].open
+				m.convCount = -1
+				return
+			}
+		}
+		return
+	}
+}
+
+// jumpTurn scrolls to the previous ([) or next (]) assistant turn head, so
+// long sessions read turn-by-turn instead of line-by-line.
+func (m *Model) jumpTurn(next bool) {
+	if len(m.turnLineIndex) == 0 {
+		return
+	}
+	cur := m.vp.YOffset
+	var target = -1
+	if next {
+		for _, r := range m.turnLineIndex {
+			if r.line > cur {
+				target = r.line
+				break
+			}
+		}
+		if target < 0 {
+			return // already at the last turn
+		}
+	} else {
+		for i := len(m.turnLineIndex) - 1; i >= 0; i-- {
+			if m.turnLineIndex[i].line < cur {
+				target = m.turnLineIndex[i].line
+				break
+			}
+		}
+		if target < 0 {
+			m.vp.GotoTop()
+			return
+		}
+	}
+	if target > 0 {
+		target-- // land with one line of context above the head
+	}
+	m.vp.SetYOffset(target)
+	m.refresh()
+}
+
+// turnAtLine maps a viewport content line to a turn head (stepIdx -1).
+func (m *Model) turnAtLine(line int) (msgIdx int, ok bool) {
+	for _, r := range m.turnLineIndex {
+		if r.line == line {
+			return r.msgIdx, true
+		}
+	}
+	return 0, false
 }
 
 // stepAtLine maps a viewport content line to a step for mouse hit-testing,

@@ -7,11 +7,11 @@ import (
 	"github.com/BackendStack21/bodek/internal/client"
 )
 
-// TestThinkingCap verifies that a long reasoning stream is stored in full but
-// rendered as an excerpt capped at maxThinkingLen from the HEAD of the block,
-// so it cannot push the transcript off-screen and orients the reader at the
-// thought's beginning.
-func TestThinkingCap(t *testing.T) {
+// TestThinkingAccordion verifies the reasoning accordion contract: a LIVE
+// stream renders the full block (auto-follow — thinking models read as they
+// generate), the block is stored in full, and finalizing collapses it back to
+// a capped head-oriented excerpt.
+func TestThinkingAccordion(t *testing.T) {
 	m := newTestModel()
 	m.msgs = append(m.msgs, message{role: roleAsst, streaming: true})
 	m.curIdx = 0
@@ -28,57 +28,78 @@ func TestThinkingCap(t *testing.T) {
 		t.Errorf("thinking block should be stored in full, got %d of %d bytes", len(block), len(chunk))
 	}
 
-	// The rendered excerpt is capped and shows the head, not the tail.
+	// LIVE: the full block renders — both head and tail are visible.
 	rendered, _ := m.renderMessage(m.msgs[0], 0, 0)
 	out := plain(rendered)
-	if !strings.Contains(out, "head-marker") {
-		t.Errorf("excerpt lost the head:\n%s", out)
-	}
-	if strings.Contains(out, "tail-marker") {
-		t.Errorf("excerpt should be capped before the tail:\n%s", out)
+	if !strings.Contains(out, "head-marker") || !strings.Contains(out, "tail-marker") {
+		t.Errorf("live stream should render the full reasoning block:\n%s", out[:200])
 	}
 
-	// A subsequent event extends the same block.
-	m.handleEvent(client.Event{Type: "thinking", Content: " final thought"})
-	if len(m.msgs[0].items) != 1 {
-		t.Fatalf("thinking delta opened a new block: %+v", m.msgs[0].items)
+	// Finalize: the renderer closes the block — a capped excerpt showing the
+	// head, not the tail.
+	m.handleEvent(client.Event{Type: "done", Latency: 0.5, ContextTokens: 10, OutputTokens: 1})
+	rendered, _ = m.renderMessage(m.msgs[0], 0, 0)
+	out = plain(rendered)
+	if !strings.Contains(out, "head-marker") {
+		t.Errorf("finalized excerpt lost the head:\n%s", out)
 	}
-	if !strings.HasSuffix(m.msgs[0].items[0].text, "final thought") {
-		t.Errorf("latest thinking not retained: %q", m.msgs[0].items[0].text)
+	if strings.Contains(out, "tail-marker") {
+		t.Errorf("finalized excerpt should collapse before the tail:\n%s", out)
+	}
+	if m.msgs[0].items[0].open {
+		t.Error("finalize should close the renderer-opened block")
+	}
+
+	// A subsequent event extends the same block (checked live, above).
+	m2 := newTestModel()
+	m2.msgs = append(m2.msgs, message{role: roleAsst, streaming: true})
+	m2.curIdx = 0
+	m2.busy = true
+	m2.handleEvent(client.Event{Type: "thinking", Content: chunk})
+	m2.handleEvent(client.Event{Type: "thinking", Content: " final thought"})
+	if len(m2.msgs[0].items) != 1 {
+		t.Fatalf("thinking delta opened a new block: %+v", m2.msgs[0].items)
+	}
+	if !strings.HasSuffix(m2.msgs[0].items[0].text, "final thought") {
+		t.Errorf("latest thinking not retained: %q", m2.msgs[0].items[0].text)
 	}
 }
 
-// TestExpandAllFullThinking verifies ^E unfolds the complete thinking text
-// past the excerpt cap once the turn is finalized, while a live stream keeps
-// the bounded excerpt.
-func TestExpandAllFullThinking(t *testing.T) {
+// TestThinkingManualOpenPersists verifies tab opens the most recent finalized
+// block and the manual open survives the renderer's auto-collapse (it stays
+// open; reopening after a later turn does not re-close it).
+func TestThinkingManualOpenPersists(t *testing.T) {
 	m := newTestModel()
 	m.msgs = append(m.msgs, message{role: roleAsst, streaming: true})
 	m.curIdx = 0
 	m.busy = true
-
 	thought := "head-marker" + strings.Repeat(" filler", 100) + " tail-marker"
 	m.handleEvent(client.Event{Type: "thinking", Content: thought})
+	m.handleEvent(client.Event{Type: "done", Latency: 0.5, ContextTokens: 10, OutputTokens: 1})
 
-	// Streaming + expandAll: still the capped excerpt, never the unbounded stream.
-	m.expandAll = true
+	// Tab opens the block — the full text renders.
+	m.toggleThinkingLast()
+	if !m.msgs[0].items[0].open {
+		t.Fatal("tab did not open the reasoning block")
+	}
 	rendered, _ := m.renderMessage(m.msgs[0], 0, 0)
-	if out := plain(rendered); strings.Contains(out, "tail-marker") {
-		t.Errorf("streaming render should keep the capped excerpt under expandAll:\n%s", out)
+	if out := plain(rendered); !strings.Contains(out, "tail-marker") {
+		t.Errorf("manually opened block should render in full:\n%s", out[:200])
 	}
 
-	// Finalized + expandAll: the full text renders, wrapped in thinkStyle.
-	m.handleEvent(client.Event{Type: "done", Latency: 0.5, ContextTokens: 10, OutputTokens: 1})
+	// ^E (expandAll) also unfolds finalized blocks.
+	m.msgs[0].items[0].open = false
+	m.expandAll = true
 	rendered, _ = m.renderMessage(m.msgs[0], 0, 0)
-	if out := plain(rendered); !strings.Contains(out, "head-marker") || !strings.Contains(out, "tail-marker") {
-		t.Errorf("expandAll should render the full thinking text:\n%s", out)
+	if out := plain(rendered); !strings.Contains(out, "tail-marker") {
+		t.Errorf("expandAll should render the full thinking text:\n%s", out[:200])
 	}
 
 	// Collapsed again: back to the capped head excerpt.
 	m.expandAll = false
 	rendered, _ = m.renderMessage(m.msgs[0], 0, 0)
 	if out := plain(rendered); !strings.Contains(out, "head-marker") || strings.Contains(out, "tail-marker") {
-		t.Errorf("collapsed render should show the capped head excerpt:\n%s", out)
+		t.Errorf("collapsed render should show the capped head excerpt:\n%s", out[:200])
 	}
 }
 

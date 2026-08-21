@@ -135,7 +135,7 @@ func (m *Model) sendPrompt(text string) tea.Cmd {
 	if n := len(m.attachments); n > 0 {
 		shown = fmt.Sprintf("%s  📎×%d", shown, n)
 	}
-	m.msgs = append(m.msgs, message{role: roleUser, content: shown})
+	m.msgs = append(m.msgs, message{role: roleUser, content: shown, sentAt: time.Now()})
 	m.msgs = append(m.msgs, message{role: roleAsst, streaming: true})
 	m.curIdx = len(m.msgs) - 1
 	m.ta.Reset()

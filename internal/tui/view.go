@@ -306,6 +306,7 @@ func (m *Model) refresh() {
 func (m *Model) conversation() string {
 	if len(m.msgs) == 0 {
 		m.stepLineIndex = nil
+		m.turnLineIndex = nil
 		return welcome(m.th, m.vp.Width, m.opts.CWD)
 	}
 	// Everything before the in-flight streaming message is stable, so cache its
@@ -318,10 +319,17 @@ func (m *Model) conversation() string {
 		tail = i
 	}
 	var refs []stepRef
+	var turns []stepRef
+	collectTurn := func(i, line int) {
+		if m.msgs[i].role == roleAsst && !m.msgs[i].raw {
+			turns = append(turns, stepRef{msgIdx: i, stepIdx: -1, line: line})
+		}
+	}
 	lineOffset := 0
 	if m.convCount != tail {
 		blocks := make([]string, 0, tail)
 		for i := 0; i < tail; i++ {
+			collectTurn(i, lineOffset)
 			s, r := m.renderMessage(m.msgs[i], i, lineOffset)
 			blocks = append(blocks, s)
 			refs = append(refs, r...)
@@ -329,9 +337,11 @@ func (m *Model) conversation() string {
 		}
 		m.convPrefix = strings.Join(blocks, "\n\n")
 		m.convPrefixRefs = refs
+		m.convPrefixTurn = turns
 		m.convCount = tail
 	} else {
 		refs = append(refs, m.convPrefixRefs...)
+		turns = append(turns, m.convPrefixTurn...)
 		if m.convPrefix != "" {
 			lineOffset = lineCount(m.convPrefix) + 1
 		}
@@ -346,6 +356,7 @@ func (m *Model) conversation() string {
 			// progress signal — no bare odek block, no placeholder.
 			continue
 		}
+		collectTurn(i, lineOffset)
 		s, r := m.renderMessage(m.msgs[i], i, lineOffset)
 		blocks = append(blocks, s)
 		refs = append(refs, r...)
@@ -357,6 +368,7 @@ func (m *Model) conversation() string {
 		}
 	}
 	m.stepLineIndex = refs
+	m.turnLineIndex = turns
 	return strings.Join(blocks, "\n\n")
 }
 
@@ -387,6 +399,9 @@ func (m *Model) renderMessage(msg message, msgIdx, lineOffset int) (string, []st
 	switch msg.role {
 	case roleUser:
 		label := th.userLabel.Render("❯ you")
+		if !msg.sentAt.IsZero() {
+			label += th.acDetail.Render(" · " + ago(msg.sentAt))
+		}
 		body := th.userBar.Width(m.vp.Width - 2).Render(msg.content)
 		return label + "\n" + body, nil
 
@@ -394,7 +409,20 @@ func (m *Model) renderMessage(msg message, msgIdx, lineOffset int) (string, []st
 		return th.sysBar.Width(m.vp.Width - 2).Render(msg.content), nil
 
 	default: // assistant
+		// The turn head carries the telemetry (WebUI parity: what a turn cost
+		// reads before its content, so long sessions scan top-down). The
+		// segments shed in priority order under width pressure, exactly like
+		// the old foot line.
 		label := th.asstLabel.Render("⬡ odek")
+		if msg.stats != nil {
+			limit := m.vp.Width - lipgloss.Width(label) - 4
+			if s := m.joinStatSegs(m.statSegments(*msg.stats), limit); s != "" {
+				label += "  " + s
+			}
+		}
+		if msg.collapsed {
+			return label + "\n" + th.statsDim.Render(m.collapseSummary(msg)), nil
+		}
 		// Resolve the markdown body (finalized or streaming) first.
 		content := msg.content
 		if !msg.streaming && msg.rendered != "" {
@@ -416,17 +444,18 @@ func (m *Model) renderMessage(msg message, msgIdx, lineOffset int) (string, []st
 		var b strings.Builder
 		var refs []stepRef
 		line := lineOffset + 1 // body starts one line below the label
-		for _, it := range items {
-			if it.thinking {
-				t := strings.TrimSpace(it.text)
+		for it := range items {
+			if items[it].thinking {
+				t := strings.TrimSpace(items[it].text)
 				if t == "" {
 					continue
 				}
-				// Default: a capped one-line excerpt of the thought's head.
-				// expandAll unfolds the full text — but only once the turn is
-				// finalized; a live stream keeps the bounded excerpt.
+				// Accordion: the live stream renders the full block
+				// (auto-follow while its turn runs); finalized turns show a
+				// capped excerpt unless the user opened the block (or ^E).
 				body := collapse(capThinkingText(t, maxThinkingLen))
-				if m.expandAll && !msg.streaming {
+				full := msg.streaming || items[it].open || m.expandAll
+				if full {
 					body = t
 				}
 				excerpt := th.thinkStyle.Width(max(m.vp.Width-4, 8)).Render("… " + body)
@@ -437,10 +466,10 @@ func (m *Model) renderMessage(msg message, msgIdx, lineOffset int) (string, []st
 				line += lineCount(excerpt)
 				continue
 			}
-			if it.stepIdx < 0 || it.stepIdx >= len(msg.steps) {
+			if items[it].stepIdx < 0 || items[it].stepIdx >= len(msg.steps) {
 				continue
 			}
-			block, ref, n := m.renderStep(msg.steps[it.stepIdx], msg.streaming, msgIdx, it.stepIdx, line)
+			block, ref, n := m.renderStep(msg.steps[items[it].stepIdx], msg.streaming, msgIdx, items[it].stepIdx, line)
 			if b.Len() > 0 {
 				b.WriteString("\n")
 			}
@@ -455,14 +484,24 @@ func (m *Model) renderMessage(msg message, msgIdx, lineOffset int) (string, []st
 			b.WriteString(content)
 		}
 		body := th.asstBar.Width(m.vp.Width - 2).Render(strings.TrimRight(b.String(), "\n"))
-		out := label + "\n" + body
-		if msg.stats != nil {
-			if line := m.statLine(*msg.stats); line != "" {
-				out += "\n" + line
-			}
-		}
-		return out, refs
+		return label + "\n" + body, refs
 	}
+}
+
+// collapseSummary describes what a folded turn card hides, so the collapsed
+// form stays informative: steps, reasoning, and a reply preview.
+func (m *Model) collapseSummary(msg message) string {
+	parts := []string{"⋯ collapsed"}
+	if n := len(msg.steps); n > 0 {
+		parts = append(parts, fmt.Sprintf("%d tool steps", n))
+	}
+	if strings.TrimSpace(msg.thinking) != "" {
+		parts = append(parts, "reasoning")
+	}
+	if c := strings.TrimSpace(msg.content); c != "" {
+		parts = append(parts, "reply: "+truncate(collapse(c), 60))
+	}
+	return strings.Join(parts, " · ")
 }
 
 // lineCount returns the number of newline-terminated lines in a rendered block.
@@ -482,16 +521,22 @@ func lineCount(s string) int {
 // thinking, then wall-clock); the result is then hard-clamped to the viewport
 // width so the row never wraps, even when the essentials alone overflow a very
 // narrow terminal.
-func (m *Model) statLine(ts turnStats) string {
+// statSeg is one telemetry segment of a turn head; drop orders which segments
+// shed first under width pressure (higher goes sooner).
+type statSeg struct {
+	text string
+	drop int
+}
+
+// statSegments builds the per-turn telemetry: latency, wall-clock, tokens,
+// tools, cache activity, cost, thinking marker. Segments self-suppress when
+// empty.
+func (m *Model) statSegments(ts turnStats) []statSeg {
 	th := m.th
-	type seg struct {
-		text string
-		drop int // higher = dropped sooner under width pressure
-	}
-	var segs []seg
+	var segs []statSeg
 	add := func(text string, drop int) {
 		if text != "" {
-			segs = append(segs, seg{text, drop})
+			segs = append(segs, statSeg{text, drop})
 		}
 	}
 
@@ -530,22 +575,28 @@ func (m *Model) statLine(ts turnStats) string {
 	if ts.thought {
 		add(th.statThink.Render("✳"), 2)
 	}
+	return segs
+}
 
+// joinStatSegs assembles segments with separators, dropping droppable
+// segments in priority order until the line fits limit columns, then
+// clamping. Pure layout helper shared by the turn head and any statline use.
+func (m *Model) joinStatSegs(segs []statSeg, limit int) string {
+	th := m.th
 	sep := th.statSep.Render(" · ")
-	render := func(keep []seg) string {
+	render := func(keep []statSeg) string {
 		parts := make([]string, len(keep))
 		for i, s := range keep {
 			parts[i] = s.text
 		}
-		return "  " + strings.Join(parts, sep)
+		return strings.Join(parts, sep)
 	}
 
-	limit := m.vp.Width - 2
 	line := render(segs)
 	// Under width pressure, drop droppable segments in priority order: tools
-	// (1), then thinking (2), then wall-clock (3). drop==0 segments always stay.
+	// (1), then cost/cache/thinking (2), then wall-clock (3). drop==0 stays.
 	for _, maxDrop := range []int{1, 2, 3} {
-		if lipgloss.Width(line) <= limit {
+		if limit > 0 && lipgloss.Width(line) <= limit {
 			break
 		}
 		kept := segs[:0:0]
@@ -562,6 +613,13 @@ func (m *Model) statLine(ts turnStats) string {
 		line = lipgloss.NewStyle().MaxWidth(limit).Render(line)
 	}
 	return line
+}
+
+// statLine renders the telemetry row for a turn — the pre-head foot line,
+// kept as the turn head's segment source and for callers that want the row
+// alone.
+func (m *Model) statLine(ts turnStats) string {
+	return m.joinStatSegs(m.statSegments(ts), m.vp.Width-2)
 }
 
 // absSec returns the absolute value of a float (seconds delta).

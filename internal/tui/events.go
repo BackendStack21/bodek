@@ -446,18 +446,22 @@ func markCancel(msg *message) {
 }
 
 // finalize closes out the streaming assistant message, rendering its markdown.
+// Reasoning blocks the renderer auto-opened for the live stream collapse here
+// (the WebUI's accordion rule): the next turn starts with history folded, and
+// only blocks the user opened themselves stay open.
 func (m *Model) finalize() {
 	if i := m.cur(); i >= 0 {
 		m.msgs[i].streaming = false
 		m.msgs[i].rendered = m.render(m.msgs[i].content)
-		// Keep the turn's reasoning concatenated on the message for
-		// compatibility; the timeline (items) drives the actual rendering.
 		var thoughts []string
-		for _, it := range m.msgs[i].items {
-			if it.thinking {
-				thoughts = append(thoughts, it.text)
+		for j := range m.msgs[i].items {
+			if m.msgs[i].items[j].thinking {
+				thoughts = append(thoughts, m.msgs[i].items[j].text)
+				m.msgs[i].items[j].open = false
 			}
 		}
+		// Keep the turn's reasoning concatenated on the message for
+		// compatibility; the timeline (items) drives the actual rendering.
 		m.msgs[i].thinking = strings.Join(thoughts, "\n")
 	}
 	m.curIdx = -1
