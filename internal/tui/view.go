@@ -479,14 +479,25 @@ func (m *Model) renderMessage(msg message, msgIdx, lineOffset int) (string, []st
 			refs = append(refs, ref)
 			line += n
 		}
+		// The work section (reasoning + steps) and the final answer are
+		// separate blocks: the answer renders bare at column zero — full
+		// brightness, and copy-paste-clean — separated from the dimmer,
+		// indented work items by a blank line.
+		var out strings.Builder
+		out.WriteString(label)
+		if b.Len() > 0 {
+			out.WriteString("\n")
+			out.WriteString(th.asstWork.Render(strings.TrimRight(b.String(), "\n")))
+		}
 		if strings.TrimSpace(content) != "" {
 			if b.Len() > 0 {
-				b.WriteString("\n")
+				out.WriteString("\n\n")
+			} else {
+				out.WriteString("\n")
 			}
-			b.WriteString(content)
+			out.WriteString(content)
 		}
-		body := th.asstBar.Width(m.vp.Width - 2).Render(strings.TrimRight(b.String(), "\n"))
-		return label + "\n" + body, refs
+		return out.String(), refs
 	}
 }
 

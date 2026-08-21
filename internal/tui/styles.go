@@ -161,7 +161,7 @@ type theme struct {
 	userLabel lipgloss.Style
 	userBar   lipgloss.Style
 	asstLabel lipgloss.Style
-	asstBar   lipgloss.Style
+	asstWork  lipgloss.Style
 	sysBar    lipgloss.Style
 
 	stepName lipgloss.Style
@@ -258,11 +258,15 @@ func themeFrom(p palette) theme {
 
 		// The user speaks in amber-warm; odek answers in neutral bright —
 		// the accent belongs to the human, the answer owns the brightness.
+		// No left-border bars anywhere in the transcript: text copied out of
+		// the terminal must be paste-clean. Turn structure reads through the
+		// head row, indentation, and the brightness hierarchy — the answer
+		// is the only full-brightness block, work items sit dimmer.
 		userLabel: lipgloss.NewStyle().Foreground(p.accentLo).Bold(true),
-		userBar:   lipgloss.NewStyle().Foreground(p.text).Border(lipgloss.ThickBorder(), false, false, false, true).BorderForeground(p.accentLo).PaddingLeft(1),
+		userBar:   lipgloss.NewStyle().Foreground(p.text).PaddingLeft(1),
 		asstLabel: lipgloss.NewStyle().Foreground(p.muted).Bold(true),
-		asstBar:   lipgloss.NewStyle().Border(lipgloss.ThickBorder(), false, false, false, true).BorderForeground(p.hairline).PaddingLeft(1),
-		sysBar:    lipgloss.NewStyle().Foreground(p.red).Border(lipgloss.ThickBorder(), false, false, false, true).BorderForeground(p.red).PaddingLeft(1),
+		asstWork:  lipgloss.NewStyle().PaddingLeft(1),
+		sysBar:    lipgloss.NewStyle().Foreground(p.red).PaddingLeft(1),
 
 		stepName: lipgloss.NewStyle().Foreground(p.steel),
 		stepArg:  lipgloss.NewStyle().Foreground(p.faint),

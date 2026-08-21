@@ -997,8 +997,10 @@ func (m *Model) jumpTurn(next bool) {
 	cur := m.vp.YOffset
 	var target = -1
 	if next {
+		// +1: a previous jump parks the view one line above a head — that
+		// head must not count as "next" again, or the jump is a no-op.
 		for _, r := range m.turnLineIndex {
-			if r.line > cur {
+			if r.line > cur+1 {
 				target = r.line
 				break
 			}
