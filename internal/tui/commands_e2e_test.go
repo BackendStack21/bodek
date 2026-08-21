@@ -64,13 +64,13 @@ func timeReArm(msg tea.Msg) bool {
 }
 
 // typeLine enters text exactly as a user does — rune by rune, then enter —
-// returning the cmd the submission produced.
+// returning the cmd the submission produced. Intermediate cmds from plain
+// typing (cursor blinks, popup refresh) are the runtime's business.
 func typeLine(m *Model, text string) tea.Cmd {
-	var cmd tea.Cmd
 	for _, r := range text {
-		_, cmd = m.Update(key(string(r)))
+		m.Update(key(string(r)))
 	}
-	_, cmd = m.Update(key("enter"))
+	_, cmd := m.Update(key("enter"))
 	return cmd
 }
 
