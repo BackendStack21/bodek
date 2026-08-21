@@ -24,10 +24,12 @@ func TestHuman(t *testing.T) {
 	}{
 		{0, "0"},
 		{42, "42"},
+		{1000, "1k"}, // whole values drop the decimal — 1.0k reads as noise
 		{1234, "1.2k"},
 		{999_499, "999.5k"}, // just under the rounding seam
-		{999_500, "1.0M"},   // one-decimal k rounding would reach 1000.0k → promote
+		{999_500, "1M"},     // one-decimal k rounding would reach 1000.0k → promote
 		{2_500_000, "2.5M"},
+		{420_000, "420k"},
 	}
 	for _, c := range cases {
 		if got := human(c.in); got != c.want {

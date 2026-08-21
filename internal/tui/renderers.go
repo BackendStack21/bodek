@@ -245,11 +245,12 @@ func stepHeadSuffix(name, result string, th theme) string {
 			th.diffDel.Render(fmt.Sprintf(" −%d", dels))
 	}
 	if s, ok := testSummary(result); ok {
-		style := th.stepDone
 		if strings.HasPrefix(s, "✗") {
-			style = th.stepErr
+			// The step's status icon already flags the failure — the chip
+			// names what failed, without a second ✗.
+			return th.stepErr.Render(strings.TrimPrefix(s, "✗ "))
 		}
-		return style.Render("  " + s)
+		return th.stepDone.Render(s)
 	}
 	return ""
 }

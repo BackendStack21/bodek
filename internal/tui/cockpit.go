@@ -81,14 +81,17 @@ func (m *Model) popoverView(w, h int) string {
 	th := m.th
 	var b strings.Builder
 	b.WriteString(th.acTitle.Render("⬡ cockpit"))
-	b.WriteString("\n" + th.rule.Render(strings.Repeat("─", max(w-6, 8))))
+	// acBox adds border(2) + padding(2): Width(w-2) leaves w-4 of text —
+	// the rule fills it exactly so the card's right edge stays flush.
+	b.WriteString("\n" + th.rule.Render(strings.Repeat("─", max(w-4, 8))))
 
 	b.WriteString("\n" + m.cockpitServerSection())
 	b.WriteString("\n" + m.cockpitBudgetSection())
 	if m.usageSnap != nil {
 		b.WriteString("\n" + m.cockpitLifetimeSection())
 	}
-	b.WriteString("\n\n" + m.statsCardBody())
+	// The session section renders un-boxed — no nested card inside a card.
+	b.WriteString("\n\n" + m.statsBody())
 
 	return th.acBox.Width(w - 2).Height(h - 2).Render(b.String())
 }
@@ -97,7 +100,7 @@ func (m *Model) popoverView(w, h int) string {
 // the server_info/pong snapshot plus the heartbeat round-trip.
 func (m *Model) cockpitServerSection() string {
 	rows := [][2]string{
-		{"server", orDash(prefixVersion("odek ", m.odekVersion))},
+		{"version", orDash(prefixVersion("odek ", m.odekVersion))},
 		{"model", orDash(m.model)},
 		{"stream", boolDash(m.serverStream, "⚡ live deltas", "buffered")},
 		{"sandbox", boolDash(m.sandbox, "isolated", "host access")},

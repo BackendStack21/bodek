@@ -238,7 +238,9 @@ func New(cl *client.Client, opts Options) *Model {
 
 	ta := textarea.New()
 	ta.Placeholder = "Ask odek to build, fix, explore… (⏎ send · ^J newline · ↑ scroll · ^P history)"
-	ta.Prompt = th.asstLabel.Render("┃ ")
+	// No per-line prompt glyphs: the rounded box frames the composer, and
+	// bubbles repeats the prompt on every row — a stacked ❯❯❯ reads as noise.
+	ta.Prompt = " "
 	ta.ShowLineNumbers = false
 	ta.CharLimit = 0
 	ta.SetHeight(3)

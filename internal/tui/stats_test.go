@@ -232,18 +232,18 @@ func TestContextGauge(t *testing.T) {
 	m.winCtxTok = 380
 
 	out := plain(m.header())
-	for _, want := range []string{"○", "38%", "380/1k"} {
+	for _, want := range []string{"▓▓░░░", "38%", "380/1k"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("header gauge missing %q in:\n%s", want, out)
 		}
 	}
 
-	// Fill glyph and color band move together: half past 75%, full past 90%.
-	if g := gaugeGlyph(0.80); g != "◐" {
-		t.Errorf("gaugeGlyph(0.80) = %q, want ◐", g)
+	// The five-cell fill bar tracks the ratio (the WebUI's ctx ▓▓▓░░ idiom).
+	if g := gaugeGlyph(0.80); g != "▓▓▓▓░" {
+		t.Errorf("gaugeGlyph(0.80) = %q, want ▓▓▓▓░", g)
 	}
-	if g := gaugeGlyph(0.95); g != "●" {
-		t.Errorf("gaugeGlyph(0.95) = %q, want ●", g)
+	if g := gaugeGlyph(0.95); g != "▓▓▓▓▓" {
+		t.Errorf("gaugeGlyph(0.95) = %q, want ▓▓▓▓▓", g)
 	}
 
 	// Unknown budget hides the gauge entirely (no percent sign in the header).

@@ -263,9 +263,9 @@ func themeFrom(p palette) theme {
 		// head row, indentation, and the brightness hierarchy — the answer
 		// is the only full-brightness block, work items sit dimmer.
 		userLabel: lipgloss.NewStyle().Foreground(p.accentLo).Bold(true),
-		userBar:   lipgloss.NewStyle().Foreground(p.text).PaddingLeft(1),
+		userBar:   lipgloss.NewStyle().Foreground(p.text),
 		asstLabel: lipgloss.NewStyle().Foreground(p.muted).Bold(true),
-		asstWork:  lipgloss.NewStyle().PaddingLeft(1),
+		asstWork:  lipgloss.NewStyle().PaddingLeft(2),
 		sysBar:    lipgloss.NewStyle().Foreground(p.red).PaddingLeft(1),
 
 		stepName: lipgloss.NewStyle().Foreground(p.steel),

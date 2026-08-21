@@ -25,6 +25,10 @@ func plain(s string) string { return ansiRe.ReplaceAllString(s, "") }
 func newTestModel() *Model {
 	ta := textarea.New()
 	ta.SetHeight(3) // match New(), so inputHeight row math holds
+	// Mirror New()'s composer configuration so previews and layout tests
+	// render the production input box.
+	ta.Prompt = " "
+	ta.ShowLineNumbers = false
 	m := &Model{
 		th:     newTheme(),
 		ta:     ta,

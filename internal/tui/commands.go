@@ -225,8 +225,7 @@ func (m *Model) showHelp() {
 	m.refresh()
 }
 
-// showStats appends a session dashboard card to the transcript. The cockpit
-// popover (h) reuses the same body; this remains the /stats quick view.
+// showStats appends a session dashboard card to the transcript.
 func (m *Model) showStats() {
 	card := m.statsCardBody()
 	m.msgs = append(m.msgs, message{role: roleAsst, content: card, rendered: card, raw: true})
@@ -238,6 +237,15 @@ func (m *Model) showStats() {
 // built as pre-styled lines (raw) so its colors and column alignment are exact
 // and survive width changes untouched.
 func (m *Model) statsCardBody() string {
+	card := m.statsBody()
+	// Same box math the card always used — changing it re-wraps the
+	// pre-styled rows at narrow widths.
+	return m.th.acBox.Width(max(min(m.vp.Width-2, 60), 28) - 2).Render(card)
+}
+
+// statsBody renders the session dashboard content without a frame — the
+// cockpit embeds it directly; /stats wraps it in its card.
+func (m *Model) statsBody() string {
 	th := m.th
 	// boxW is the total rendered width (incl. border). lipgloss .Width(w) makes
 	// the text content w-2 wide (padding) and adds 2 for the border, so passing
@@ -390,6 +398,6 @@ func (m *Model) statsCardBody() string {
 		b.WriteString("\n" + idline)
 	}
 
-	card := th.acBox.Width(boxW - 2).Render(b.String())
-	return card
+	_ = boxW
+	return b.String()
 }

@@ -129,7 +129,7 @@ func TestStepHeadSuffix(t *testing.T) {
 	if got := plain(stepHeadSuffix("diff", diffFixture, th)); got != "  +2 −1" {
 		t.Errorf("diffstat chip = %q", got)
 	}
-	if got := plain(stepHeadSuffix("shell", "--- PASS: TestY\nok  \tpkg", th)); got != "  ✓ tests pass" {
+	if got := plain(stepHeadSuffix("shell", "--- PASS: TestY\nok  \tpkg", th)); got != "✓ tests pass" {
 		t.Errorf("tests chip = %q", got)
 	}
 	if got := stepHeadSuffix("shell", "ordinary output", th); got != "" {

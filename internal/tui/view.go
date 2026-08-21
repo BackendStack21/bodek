@@ -182,15 +182,17 @@ func (m *Model) sandboxBadge() string {
 
 // gaugeGlyph mirrors the gaugeColor bands (0.75 / 0.90) so fill and hue tell
 // the same story: open while comfortable, half when warm, full when hot.
+// gaugeGlyph renders the context gauge as a five-cell fill bar — the
+// WebUI's documented `ctx ▓▓▓░░ 40%` idiom.
 func gaugeGlyph(r float64) string {
-	switch {
-	case r >= 0.90:
-		return "●"
-	case r >= 0.75:
-		return "◐"
-	default:
-		return "○"
+	if r < 0 {
+		r = 0
 	}
+	if r > 1 {
+		r = 1
+	}
+	filled := int(r*5 + 0.5)
+	return strings.Repeat("▓", filled) + strings.Repeat("░", 5-filled)
 }
 
 // rule returns a full-width gradient hairline, cached per width.
@@ -555,10 +557,7 @@ func (m *Model) statSegments(ts turnStats) []statSeg {
 
 	// latency — always present
 	add(th.statTime.Render("⚡")+th.statLine.Render(" "+fmt.Sprintf("%.1fs", ts.latency)), 0)
-	// wall-clock — only when it diverges meaningfully from model latency
-	if ts.wall > 0 && absSec(ts.wall.Seconds()-ts.latency) > 0.3 {
-		add(th.statTime.Render("⊙")+th.statLine.Render(" "+formatDuration(ts.wall)), 3)
-	}
+	// wall-clock lives on the /stats card — the head stays quiet
 	// context + output tokens — always present
 	add(th.statCtx.Render("⌂")+th.statLine.Render(" "+human(ts.ctxTok)), 0)
 	add(th.statCtx.Render("⎇")+th.statLine.Render(" "+human(ts.outTok)), 0)
@@ -570,14 +569,10 @@ func (m *Model) statSegments(ts turnStats) []statSeg {
 		}
 		add(tools, 1)
 	}
-	// provider cache activity — only when reported (any non-zero field)
-	if ts.cacheWrite > 0 || ts.cacheRead > 0 || ts.cachedTok > 0 {
-		cache := th.statCtx.Render("⛁") + th.statLine.Render(" "+human(ts.cacheWrite)) +
-			th.statGlyph.Render(" w · ") + th.statCtx.Render("r ") + th.statLine.Render(human(ts.cacheRead))
-		if ts.cachedTok > 0 {
-			cache += th.statGlyph.Render(" · ") + th.statCtx.Render("c ") + th.statLine.Render(human(ts.cachedTok))
-		}
-		add(cache, 2)
+	// provider cache activity as one total — the breakdown lives on the
+	// stats card; the head reports scale, not bookkeeping.
+	if total := ts.cacheWrite + ts.cacheRead + ts.cachedTok; total > 0 {
+		add(th.statCtx.Render("⛁")+th.statLine.Render(" "+human(total)), 2)
 	}
 	// turn cost — only when odek has token prices configured (both must be
 	// non-zero, mirroring odek's own cost-enforcement gate)
@@ -635,14 +630,6 @@ func (m *Model) statLine(ts turnStats) string {
 	return m.joinStatSegs(m.statSegments(ts), m.vp.Width-2)
 }
 
-// absSec returns the absolute value of a float (seconds delta).
-func absSec(f float64) float64 {
-	if f < 0 {
-		return -f
-	}
-	return f
-}
-
 func max(a, b int) int {
 	if a > b {
 		return a
@@ -659,7 +646,6 @@ func (m *Model) renderStep(s step, streaming bool, msgIdx, stepIdx, startLine in
 	th := m.th
 	// Floors stay at a few chars so truncation genuinely shrinks with the
 	// viewport instead of overflowing tiny widths (truncate handles the rest).
-	budget := max(m.vp.Width-10, 4)
 	detailBudget := max(m.vp.Width-8, 4)
 	// A step shows its details when toggled individually or via the global
 	// Ctrl+E toggle.
@@ -682,23 +668,34 @@ func (m *Model) renderStep(s step, streaming bool, msgIdx, stepIdx, startLine in
 	if expanded {
 		chevron = th.stepTree.Render("▼")
 	}
-	head := chevron + " " + icon + " " + th.toolIcon.Render(toolGlyph(s.name)) + " " + th.stepName.Render(s.name)
+	left := chevron + " " + icon + " " + th.toolIcon.Render(toolGlyph(s.name)) + " " + th.stepName.Render(s.name)
 	if s.subagent {
-		head += th.stepArg.Render(" · sub-agent")
+		left += th.stepArg.Render(" · sub-agent")
 	}
-	if s.arg != "" {
-		head += th.stepArg.Render("  " + truncate(s.arg, budget))
-	}
-	// Response time appears only once the call lands — while running, the
-	// spinner already conveys that.
+	// Right rail: response time once the call lands, plus the typed chip
+	// (diffstat / test verdict) — right-aligned so durations read as a
+	// column down the step list instead of floating mid-line.
+	right := ""
 	if s.done && s.dur > 0 {
-		head += th.stepArg.Render("  " + formatStepDur(s.dur))
+		right = th.stepArg.Render(formatStepDur(s.dur))
 	}
-	// Typed chip: diffstat for diffs, pass/fail for test runs — the shape's
-	// verdict visible without expanding.
 	if s.done {
-		head += stepHeadSuffix(s.name, s.result, th)
+		if chip := stepHeadSuffix(s.name, s.result, th); chip != "" {
+			if right != "" {
+				right += th.stepArg.Render("  ")
+			}
+			right += chip
+		}
 	}
+	// The left side yields to the right rail, then the pair pads to the
+	// full step width; ANSI-safe width math throughout.
+	rightW := lipgloss.Width(right)
+	budget := max(m.vp.Width-4-rightW-2, 4)
+	if s.arg != "" {
+		left += th.stepArg.Render("  " + truncate(s.arg, budget-lipgloss.Width(chevron+" "+icon+" "+toolGlyph(s.name)+" "+s.name)-2))
+	}
+	gap := max(m.vp.Width-4-lipgloss.Width(left)-rightW, 1)
+	head := left + strings.Repeat(" ", gap) + right
 	lines := []string{head}
 	if expanded {
 		// Sub-agent logs are plain text — style and truncate here. Tool
@@ -1128,11 +1125,15 @@ func orDash(s string) string {
 
 // human formats a token count compactly (e.g. 1234 → "1.2k").
 func human(n int) string {
+	trim := func(s string) string {
+		// 420.0k reads as noise — whole values drop the decimal.
+		return strings.Replace(strings.Replace(s, ".0k", "k", 1), ".0M", "M", 1)
+	}
 	switch {
 	case n >= 999_500: // promote to M once one-decimal k rounding would reach 1000.0k
-		return fmt.Sprintf("%.1fM", float64(n)/1_000_000)
+		return trim(fmt.Sprintf("%.1fM", float64(n)/1_000_000))
 	case n >= 1_000:
-		return fmt.Sprintf("%.1fk", float64(n)/1_000)
+		return trim(fmt.Sprintf("%.1fk", float64(n)/1_000))
 	default:
 		return fmt.Sprintf("%d", n)
 	}

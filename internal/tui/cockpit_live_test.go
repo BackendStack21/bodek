@@ -18,7 +18,7 @@ func TestCockpitLiveFetch(t *testing.T) {
 	m.Update(exec(cmd)) // cockpitMsg
 
 	out := plain(m.popoverView(100, 30))
-	for _, want := range []string{"lifetime", "4 started · 3 completed", "⇥1.0k ↦200", "unavailable (no prices)", "since"} {
+	for _, want := range []string{"lifetime", "4 started · 3 completed", "⇥1k ↦200", "unavailable (no prices)", "since"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("cockpit missing %q:\n%s", want, out)
 		}
