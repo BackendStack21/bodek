@@ -87,7 +87,7 @@ func TestApprovalEnterConfirmsHighlight(t *testing.T) {
 				_, cmd = m.Update(key(k))
 			}
 			exec(cmd)
-			if m.approval != nil {
+			if m.curApproval() != nil {
 				t.Fatal("approval still pending after enter")
 			}
 			if got := awaitAction(t, actions); got != tc.want {
@@ -105,7 +105,7 @@ func TestApprovalEscDenies(t *testing.T) {
 	m.Update(key("down")) // highlight elsewhere — esc must not confirm it
 	_, cmd := m.Update(key("esc"))
 	exec(cmd)
-	if m.approval != nil {
+	if m.curApproval() != nil {
 		t.Fatal("approval still pending after esc")
 	}
 	if got := awaitAction(t, actions); got != "deny" {
@@ -158,7 +158,7 @@ func TestApprovalScrollWhilePending(t *testing.T) {
 		t.Fatal("test transcript should be taller than the viewport")
 	}
 	m.handleEvent(client.Event{Type: "approval_request", ID: "apr", Command: "rm x"})
-	if m.approval == nil {
+	if m.curApproval() == nil {
 		t.Fatal("approval not set")
 	}
 
@@ -181,7 +181,7 @@ func TestApprovalScrollWhilePending(t *testing.T) {
 	if !m.vp.AtBottom() {
 		t.Errorf("pgdown did not return to the bottom: yoffset=%d", m.vp.YOffset)
 	}
-	if m.approval == nil {
+	if m.curApproval() == nil {
 		t.Error("scrolling must not answer the approval")
 	}
 }

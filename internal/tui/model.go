@@ -122,8 +122,8 @@ type Model struct {
 	lastTool string
 	lastArg  string
 
-	approval     *client.Event // pending approval, nil when none
-	apprSel      int           // highlighted option in the approval panel
+	approvals   []client.Event // pending approval queue — odek runs parallel tools, so requests FIFO
+	apprSel     int            // highlighted option in the approval panel
 	apprExpanded bool          // tab: show the full command/description text
 	apprTyped    string        // friction mode: the literal word being typed ("approve")
 	ac           autocomplete  // @-reference completion state
@@ -219,10 +219,15 @@ func New(cl *client.Client, opts Options) *Model {
 	ta.Focus()
 
 	sp := spinner.New()
-	// A smooth braille spinner reads as fluid motion at small size.
+	// A smooth braille spinner reads as fluid motion at small size. With
+	// motion disabled (NO_MOTION=1) a single static frame replaces it — same
+	// footprint, zero animation.
 	sp.Spinner = spinner.Spinner{
 		Frames: []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"},
 		FPS:    time.Second / 12,
+	}
+	if !motionEnabled {
+		sp.Spinner = spinner.Spinner{Frames: []string{"⠿"}, FPS: time.Second}
 	}
 	sp.Style = th.spinner
 
@@ -445,7 +450,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// Approval mode captures the keyboard until answered; only the transcript
 	// scroll keys pass through to the viewport.
-	if m.approval != nil {
+	if m.curApproval() != nil {
 		return m.handleApprovalKey(msg)
 	}
 
@@ -587,6 +592,14 @@ func (m *Model) clearConversation() {
 	m.refresh()
 }
 
+// curApproval returns the head of the approval queue, or nil when empty.
+func (m *Model) curApproval() *client.Event {
+	if len(m.approvals) == 0 {
+		return nil
+	}
+	return &m.approvals[0]
+}
+
 // ── helpers ────────────────────────────────────────────────────────────────
 
 // resolveMaxContext sets m.maxContext from the active model's advertised
@@ -717,7 +730,7 @@ func (m *Model) relayout() {
 // input area plus the busy status line when it shows — so the viewport
 // shrinks by exactly the right amount and the footer never moves.
 func (m *Model) inputAreaHeight() int {
-	if m.approval != nil {
+	if m.curApproval() != nil {
 		return lineCount(m.approvalBody()) + 2 // panel border
 	}
 	h := inputHeight

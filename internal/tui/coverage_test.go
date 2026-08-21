@@ -59,14 +59,14 @@ func TestStatusBadgeStates(t *testing.T) {
 
 	// Approval arrives mid-turn: the panel owns the input area, so the badge
 	// announces it and the status line yields.
-	m.approval = &client.Event{Type: "approval_request"}
+	m.approvals = []client.Event{{Type: "approval_request"}}
 	if !strings.Contains(plain(m.statusBadge()), "approval") {
 		t.Error("approval badge missing")
 	}
 	if m.statusLine() != "" {
 		t.Error("status line must stay hidden behind the approval panel")
 	}
-	m.approval = nil
+	m.approvals = nil
 	m.busy = false
 	m.disconn = true
 	if !strings.Contains(plain(m.statusBadge()), "disconnected") {
@@ -119,7 +119,7 @@ func TestStatusLinePlacement(t *testing.T) {
 		t.Errorf("idle inputAreaHeight = %d, want %d", got, inputHeight)
 	}
 	m.busy = true
-	m.approval = &client.Event{Type: "approval_request"}
+	m.approvals = []client.Event{{Type: "approval_request"}}
 	if m.statusLineVisible() {
 		t.Error("status line must stay hidden while an approval is pending")
 	}

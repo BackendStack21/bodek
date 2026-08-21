@@ -230,9 +230,13 @@ func (m *Model) handleEvent(ev client.Event) (tea.Model, tea.Cmd) {
 		m.relayout() // the busy status line releases its row
 
 	case "approval_request":
-		e := ev
-		m.approval = &e
-		m.resetApprovalInput()
+		// odek runs parallel tools, so several requests can be in flight at
+		// once — queue them FIFO; the panel answers the head and shows the
+		// remaining count. Input state resets only when the head changes.
+		if len(m.approvals) == 0 {
+			m.resetApprovalInput()
+		}
+		m.approvals = append(m.approvals, ev)
 		m.status = "approval required"
 		m.relayout() // the panel is taller than the textarea — shrink the viewport
 

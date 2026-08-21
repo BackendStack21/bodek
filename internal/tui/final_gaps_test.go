@@ -136,7 +136,7 @@ func TestSubmitAndAnswerSendErrors(t *testing.T) {
 		t.Errorf("submit error = %T, want errMsg", msg)
 	}
 
-	m.approval = &client.Event{ID: "x"}
+	m.approvals = []client.Event{{ID: "x"}}
 	if msg := exec(m.answer("approve")); msg == nil {
 		t.Error("answer cmd should yield an errMsg when the socket is closed")
 	}

@@ -296,13 +296,17 @@ func TestApprovalFlow(t *testing.T) {
 	m.busy = true
 	m.handleEvent(client.Event{Type: "approval_request", ID: "apr-1", Risk: "shell_exec",
 		Name: "shell", Command: "rm x", Description: "delete", AllowTrust: true})
-	if m.approval == nil {
+	if m.curApproval() == nil {
 		t.Fatal("approval not set")
 	}
 	out := m.View()
 	if !strings.Contains(plain(out), "approval required") {
 		t.Error("approval panel missing")
 	}
+	// The queue keeps the initial request; each key-sequence case below
+	// starts fresh.
+	m.approvals = nil
+	m.relayout()
 	// Trust (highlight → enter), then a fresh approval and deny, then approve.
 	for _, keys := range [][]string{{"down", "down", "enter"}, {"down", "enter"}, {"enter"}} {
 		m.handleEvent(client.Event{Type: "approval_request", ID: "id", AllowTrust: true})
@@ -311,7 +315,7 @@ func TestApprovalFlow(t *testing.T) {
 			_, cmd = m.Update(key(k))
 		}
 		exec(cmd)
-		if m.approval != nil {
+		if m.curApproval() != nil {
 			t.Errorf("approval not cleared after %v", keys)
 		}
 	}

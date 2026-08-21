@@ -319,10 +319,10 @@ func TestEventTailNotices(t *testing.T) {
 
 func TestApprovalOperationTags(t *testing.T) {
 	m := newTestModel()
-	m.approval = &client.Event{
+	m.approvals = []client.Event{{
 		Type: "approval_request", Risk: "shell_exec", Name: "shell",
 		Command: "rm -rf x", IsOperation: true, Untrusted: true,
-	}
+	}}
 	out := plain(m.approvalPanel())
 	for _, want := range []string{"⚙ operation", "⚠ untrusted"} {
 		if !strings.Contains(out, want) {

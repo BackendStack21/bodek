@@ -172,7 +172,7 @@ func TestApprovalFriction(t *testing.T) {
 
 	// Enter on a partial/absent word does not approve.
 	m.Update(key("enter"))
-	if m.approval == nil {
+	if m.curApproval() == nil {
 		t.Fatal("partial word approved")
 	}
 	// Typing the literal word + enter approves.
@@ -180,7 +180,7 @@ func TestApprovalFriction(t *testing.T) {
 		m.Update(key(string(r)))
 	}
 	_, cmd := m.Update(key("enter"))
-	if m.approval != nil {
+	if m.curApproval() != nil {
 		t.Fatal("typed confirmation did not approve")
 	}
 	exec(cmd)
@@ -191,7 +191,7 @@ func TestApprovalFriction(t *testing.T) {
 		m.Update(key(string(r)))
 	}
 	m.Update(key("enter"))
-	if m.approval == nil {
+	if m.curApproval() == nil {
 		t.Fatal("wrong word approved")
 	}
 	if m.apprTyped != "" {
@@ -199,7 +199,7 @@ func TestApprovalFriction(t *testing.T) {
 	}
 	// Esc still denies in one keypress.
 	m.Update(key("esc"))
-	if m.approval != nil {
+	if m.curApproval() != nil {
 		t.Fatal("esc did not deny")
 	}
 }

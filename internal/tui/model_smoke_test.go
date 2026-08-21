@@ -110,12 +110,12 @@ func TestEmptyStreamingTurnHidden(t *testing.T) {
 func TestApprovalAndAutocompleteRender(t *testing.T) {
 	m := newTestModel()
 
-	m.approval = &client.Event{Type: "approval_request", Risk: "network_egress",
-		Name: "shell", Command: "curl https://example.com", Description: "fetch", AllowTrust: true}
+	m.approvals = []client.Event{{Type: "approval_request", Risk: "network_egress",
+		Name: "shell", Command: "curl https://example.com", Description: "fetch", AllowTrust: true}}
 	if out := plain(m.View()); !strings.Contains(out, "approval required") {
 		t.Error("approval panel not rendered")
 	}
-	m.approval = nil
+	m.approvals = nil
 
 	m.ac = autocomplete{open: true, query: "cli", items: []client.Resource{
 		{ID: "@internal/client/client.go", Type: "file", Label: "internal/client/client.go", Detail: "5.5 KB"},

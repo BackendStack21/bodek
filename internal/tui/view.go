@@ -34,7 +34,7 @@ func (m *Model) header() string {
 	// The logo gradient is width-independent, so render it once and cache it
 	// (like gradRule) instead of re-interpolating every frame.
 	if m.logoCache == "" {
-		m.logoCache = th.logo.Render(gradient("⬡ bodek", gradFrom, gradTo))
+		m.logoCache = th.logo.Render(gradient("⬡ bodek", th.grad[0], th.grad[1]))
 	}
 	logo := m.logoCache
 	// bodek's own version rides next to the logo; bare numbers get a v prefix
@@ -195,7 +195,7 @@ func gaugeGlyph(r float64) string {
 func (m *Model) rule() string {
 	w := max(m.width, 1)
 	if m.gradRule == "" || m.gradRuleW != w {
-		m.gradRule = gradient(strings.Repeat("─", w), gradFrom, gradTo)
+		m.gradRule = gradient(strings.Repeat("─", w), m.th.grad[0], m.th.grad[1])
 		m.gradRuleW = w
 	}
 	return m.gradRule
@@ -212,7 +212,10 @@ func (m *Model) statusBadge() string {
 			return th.statusBusy.Render("● reconnecting…")
 		}
 		return th.badgeDanger.Render("● disconnected")
-	case m.approval != nil:
+	case m.curApproval() != nil:
+		if n := len(m.approvals); n > 1 {
+			return th.statusBusy.Render(fmt.Sprintf("⚠ approval %d/%d", 1, n))
+		}
 		return th.statusBusy.Render("⚠ approval required")
 	case m.busy:
 		return ""
@@ -256,7 +259,7 @@ func (m *Model) statusLine() string {
 // input area or the socket is down, the header badge carries the state and
 // the row stays hidden.
 func (m *Model) statusLineVisible() bool {
-	return m.busy && m.approval == nil && !m.disconn
+	return m.busy && m.curApproval() == nil && !m.disconn
 }
 
 // ── transcript ───────────────────────────────────────────────────────────
@@ -680,7 +683,7 @@ func (m *Model) renderNotices() string {
 // ── input / approval area ──────────────────────────────────────────────────
 
 func (m *Model) inputArea() string {
-	if m.approval != nil {
+	if m.curApproval() != nil {
 		return m.approvalPanel()
 	}
 	box := m.th.inputBox.Width(m.width - 2).Render(m.ta.View())
@@ -752,8 +755,14 @@ func (m *Model) approvalPanel() string {
 // fit the box — lipgloss would otherwise reflow them and break layout math.
 func (m *Model) approvalBody() string {
 	th := m.th
-	a := m.approval
+	a := m.curApproval()
+	if a == nil {
+		return ""
+	}
 	head := th.apprHead.Render(fmt.Sprintf("⚠ approval required · risk: %s", orDash(a.Risk)))
+	if n := len(m.approvals); n > 1 {
+		head += th.apprBody.Render(fmt.Sprintf(" · 1 of %d queued", n))
+	}
 	if a.IsOperation {
 		head += th.apprBody.Render(" · ") + th.opChip.Render("⚙ operation")
 	}
@@ -816,8 +825,19 @@ func (m *Model) approvalBody() string {
 
 func (m *Model) footer() string {
 	th := m.th
-	if m.approval != nil {
-		return th.footer.Render("  answer the approval prompt to continue")
+	if a := m.curApproval(); a != nil {
+		if a.Friction {
+			return th.footer.Render("  type the word approve + ⏎ · esc denies")
+		}
+		hints := th.footerKey.Render("A") + th.footer.Render("pprove · ") +
+			th.footerKey.Render("D") + th.footer.Render("eny")
+		if a.AllowTrust {
+			hints += " · " + th.footerKey.Render("T") + th.footer.Render("rust")
+		}
+		if n := len(m.approvals); n > 1 {
+			hints += th.footerSep.Render(" · ") + th.footer.Render(fmt.Sprintf("%d more queued", n-1))
+		}
+		return "  " + hints
 	}
 	if m.disconn {
 		hints := []string{th.footer.Render("connection closed")}
