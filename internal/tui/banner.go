@@ -46,7 +46,7 @@ func welcome(th theme, width int, cwd string) string {
 	tips := [][2]string{
 		{"type a task", "and press enter to run the agent"},
 		{"^K palette", "everything: commands, sessions, models, drawer tabs"},
-		{"[ ] jumps", "turn-to-turn navigation · ^F folds the last turn"},
+		{"alt+↑↓", "jump turn-to-turn · ^F folds the last turn"},
 		{"/ commands", "/server cockpit · /runs · /memory · /skills · /events"},
 		{"@ to attach", "attach files, e.g. @main.go — or /attach <path>"},
 		{"⏎ send", "^J newline  ·  ^T toggle thinking  ·  tab opens reasoning"},

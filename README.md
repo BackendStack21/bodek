@@ -128,7 +128,7 @@ by `odek serve` from its usual chain — `~/.odek/config.json` → `./odek.json`
 | `^K` | **The palette** — everything: commands, sessions, models, drawer tabs |
 | `/` | Open the command palette (see below) |
 | `@` | Attach a file (see below) |
-| `[` / `]` | Jump to the previous / next turn |
+| `alt+↑` / `alt+↓` | Jump to the previous / next turn |
 | `^F` | Fold/unfold the most recent turn card (click any turn head with `--mouse`) |
 | `tab` | Open/close the latest reasoning block (live turns auto-expand) |
 | `^R` | Browse & resume saved sessions |
@@ -140,9 +140,9 @@ by `odek serve` from its usual chain — `~/.odek/config.json` → `./odek.json`
 | `↑` / `↓` / `PgUp` / `PgDn` / `^U` / `^D` | Scroll the transcript (arrows at the input's edge lines) |
 | `^P` / `^N` | Recall previous prompts (prompt history) |
 | `^G` / `End` (empty input) | Jump to the latest output |
-| `?` (empty input) | Show the help card |
+| `F1` | Show the help card |
 | `wheel` (with `--mouse`) | Scroll the transcript · click tool rows, turn heads, and the cockpit |
-| `r` (when disconnected) | Retry the connection |
+| `⏎` (disconnected, empty input) | Retry the connection |
 | `^C` | Quit |
 
 Prompts sent while a turn is running are **queued** and sent automatically
@@ -150,7 +150,12 @@ when the turn ends — the footer shows how many are waiting. While the
 transcript is scrolled up mid-run, the footer flags `↓ new output`; press
 `^G` to jump to the latest. If the connection drops, bodek retries with
 backoff and, after giving up, keeps your draft and offers a manual retry
-on `r`.
+on `⏎` with an empty input.
+
+**Every printable character always types.** No bare letter, digit, or
+punctuation key is ever bound in the composer — actions live on chords and
+non-character keys (`^K` palette, `alt+↑↓` turn jumps, `F1` help), so a
+prompt can start with `?`, `[`, or any other character.
 
 ### Commands (`/`)
 

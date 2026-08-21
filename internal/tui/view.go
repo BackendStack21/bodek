@@ -914,10 +914,10 @@ func (m *Model) footer() string {
 	}
 	if m.disconn {
 		hints := []string{th.footer.Render("connection closed")}
-		// r only fires with an empty input (see handleKey) — with a draft
-		// preserved it would just type into it, so don't offer it then.
+		// Retry rides ⏎ on an empty input — a character key would hijack
+		// typing, and a preserved draft must keep typing normally.
 		if m.opts.Reconnect != nil && m.ta.Value() == "" {
-			hints = append(hints, th.footerKey.Render("r")+th.footer.Render(" retry"))
+			hints = append(hints, th.footerKey.Render("⏎")+th.footer.Render(" retry"))
 		}
 		hints = append(hints, th.footer.Render("^C to quit"))
 		return "  " + strings.Join(hints, th.footerSep.Render(" · "))
@@ -1003,7 +1003,7 @@ func (m *Model) footer() string {
 		segs = append(segs, seg)
 	}
 	// The persistent teaching pair: help and the palette, always one chord away.
-	segs = append(segs, th.footerKey.Render("?")+th.footer.Render(" help · ")+
+	segs = append(segs, th.footerKey.Render("F1")+th.footer.Render(" help · ")+
 		th.footerKey.Render("^K")+th.footer.Render(" everything"))
 	right := strings.Join(segs, th.footerSep.Render("  ·  ")) + "  "
 	gap := m.width - lipgloss.Width(left) - lipgloss.Width(right)

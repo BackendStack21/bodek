@@ -549,14 +549,10 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleACKey(msg)
 	}
 
-	// A dead connection offers a manual retry on r — only with an empty
-	// input, so a drafted prompt is never disturbed.
-	if m.disconn && m.opts.Reconnect != nil && msg.String() == "r" && m.ta.Value() == "" {
-		m.status = "reconnecting"
-		m.addNote("retrying connection…")
-		m.refresh()
-		return m, m.scheduleReconnect(0)
-	}
+	// No bare character keys are ever bound in the composer context — every
+	// printable rune must reach the textarea, so prompts can start with any
+	// character ("?why", "[TODO]", "reboot…"). Help, jumps, and the
+	// disconnected retry live on non-character keys (F1, alt+arrows, ⏎).
 
 	switch msg.String() {
 	case "ctrl+c":
@@ -567,12 +563,8 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, m.cancelRun()
 		}
 		return m, nil
-	case "?":
-		// Help — only with an empty input, so a question mark inside a draft
-		// prompt is never hijacked.
-		if m.ta.Value() == "" {
-			m.showHelp()
-		}
+	case "f1":
+		m.showHelp()
 		return m, nil
 	case "ctrl+r":
 		return m, m.openSessions()
@@ -642,10 +634,13 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// (even as the first character of a prompt) is never hijacked.
 		m.vp.GotoBottom()
 		return m, nil
-	case "[", "]":
-		// Turn-to-turn navigation: jump to the previous/next assistant turn
-		// head. Bracket keys never begin a prompt sentence.
-		m.jumpTurn(msg.String() == "]")
+	case "alt+up":
+		// Turn-to-turn navigation on arrow chords — never characters, so
+		// prompts like "[TODO] fix" or array literals always type.
+		m.jumpTurn(false)
+		return m, nil
+	case "alt+down":
+		m.jumpTurn(true)
 		return m, nil
 	case "ctrl+f":
 		// Fold/unfold the most recent turn card — long sessions scan top-down

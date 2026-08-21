@@ -201,7 +201,7 @@ func (m *Model) showHelp() {
 		{"^J", "newline in the input"},
 		{"@", "attach files"},
 		{"↑↓", "scroll the transcript"},
-		{"[ ]", "jump to the previous/next turn"},
+		{"alt+↑↓", "jump to the previous/next turn"},
 		{"^F", "fold/unfold the latest turn card"},
 		{"tab", "open/close the latest reasoning block"},
 		{"Pg↑↓", "page the transcript"},
@@ -215,6 +215,7 @@ func (m *Model) showHelp() {
 		{"esc", "cancel the running turn"},
 		{"r", "retry a lost connection"},
 		{"/server", "cockpit — server, link, budget, session"},
+		{"F1", "this help card"},
 		{"^C", "quit"},
 		{"--mouse", "wheel scroll · click tool rows & turn heads"},
 	} {
