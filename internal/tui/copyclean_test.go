@@ -108,7 +108,7 @@ func TestAnswerCard(t *testing.T) {
 	lipgloss.SetColorProfile(termenv.TrueColor)
 	defer lipgloss.SetColorProfile(termenv.Ascii)
 	for name, wantESC := range map[string]string{
-		"ember-dark":    "[48;2;16;19;26m",    // #10131A
+		"ember-dark":    "[48;2;11;13;18m",    // #0B0D12 (EMBER bg-1)
 		"ember-light":   "[48;2;239;236;229m", // #EFECE5
 		"classic":       "[48;2;22;22;30m",    // #16161E
 		"high-contrast": "",
@@ -151,7 +151,7 @@ func TestAnswerCard(t *testing.T) {
 		t.Error("user turn painted a surface — only the answer carries one")
 	}
 	asstOut, _ := m.renderMessage(m.msgs[1], 1, 0)
-	if !strings.Contains(asstOut, "[48;2;16;19;26m") {
+	if !strings.Contains(asstOut, "[48;2;11;13;18m") {
 		t.Errorf("answer card surface missing:\n%q", asstOut)
 	}
 	if !strings.Contains(plain(asstOut), "Fixed. The cookie was stale.") {
@@ -174,7 +174,7 @@ func TestSurfaceWeave(t *testing.T) {
 	defer lipgloss.SetColorProfile(termenv.Ascii)
 
 	// weaveSurface is the exact transformation: reset → reset + surface.
-	bg := "\x1b[48;2;16;19;26m"
+	bg := "\x1b[48;2;11;13;18m"
 	woven := weaveSurface("\x1b[38;2;231;233;238mspan1\x1b[0m gap \x1b[38;2;231;233;238;1mspan2\x1b[0m", bg)
 	want := "\x1b[38;2;231;233;238mspan1\x1b[0m" + bg + " gap \x1b[38;2;231;233;238;1mspan2\x1b[0m" + bg
 	if woven != want {

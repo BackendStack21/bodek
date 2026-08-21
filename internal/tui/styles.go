@@ -61,8 +61,12 @@ var (
 		faint:    "#6B7280",
 		bodyText: "#8B95A8",
 		hairline: "#2E3242",
-		surface:  "#10131A",
-		grad:     [2][3]int{{0xFF, 0xC9, 0x5E}, {0xFF, 0x8A, 0x3D}},
+		// bg-1, not the WebUI's bg-2 card token: the TUI's "page base" is
+		// the terminal's own background — often neutral gray — where bg-2
+		// reads loudly blue. One step down keeps the card a quiet recessed
+		// panel on any dark terminal.
+		surface: "#0B0D12",
+		grad:    [2][3]int{{0xFF, 0xC9, 0x5E}, {0xFF, 0x8A, 0x3D}},
 	}
 
 	// emberLight mirrors the WebUI light theme (parchment base, deeper amber
@@ -160,7 +164,9 @@ func paletteByName(name string) palette {
 // fine on a bare terminal, but it reads dimmed on the answer card's
 // surface. The document text instead takes the palette's full-brightness
 // body color; the light theme builds on glamour's light preset so code
-// blocks and highlights stay tuned for a light background.
+// blocks and highlights stay tuned for a light background. The document's
+// block prefix/suffix newlines are stripped: vertical framing belongs to
+// the card's symmetric padding alone.
 func answerGlamourStyle() ansi.StyleConfig {
 	name := themeName()
 	cfg := styles.DarkStyleConfig
@@ -170,6 +176,8 @@ func answerGlamourStyle() ansi.StyleConfig {
 	// Assign a fresh pointer — the preset is a package-level shared value.
 	c := string(paletteByName(name).text)
 	cfg.Document.Color = &c
+	cfg.Document.BlockPrefix = ""
+	cfg.Document.BlockSuffix = ""
 	return cfg
 }
 
@@ -409,9 +417,12 @@ func themeFrom(p palette) theme {
 	}
 }
 
-// surfaceStyle builds the user-turn card style; empty means no surface.
+// surfaceStyle builds the answer card style; empty means no surface. The
+// padding is symmetric — one line above and below, one column each side —
+// because glamour's document newlines are stripped in answerGlamourStyle;
+// the frame belongs to the card alone.
 func surfaceStyle(c lipgloss.Color) lipgloss.Style {
-	st := lipgloss.NewStyle().Padding(0, 1)
+	st := lipgloss.NewStyle().Padding(1, 1)
 	if c != "" {
 		st = st.Background(c)
 	}
