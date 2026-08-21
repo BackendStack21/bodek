@@ -38,6 +38,11 @@ func slashCommands() []command {
 		{"sessions", "browse & resume saved sessions", func(m *Model, _ string) tea.Cmd {
 			return m.openSessions()
 		}},
+		{"server", "cockpit — server, link, budget & session", func(m *Model, _ string) tea.Cmd {
+			m.popover = true
+			m.refresh()
+			return nil
+		}},
 		{"model", "switch model — /model [name]", func(m *Model, args string) tea.Cmd {
 			if args != "" {
 				m.pendModel = args
@@ -178,6 +183,9 @@ func (m *Model) showHelp() {
 		{"^J", "newline in the input"},
 		{"@", "attach files"},
 		{"↑↓", "scroll the transcript"},
+		{"[ ]", "jump to the previous/next turn"},
+		{"^F", "fold/unfold the latest turn card"},
+		{"tab", "open/close the latest reasoning block"},
 		{"Pg↑↓", "page the transcript"},
 		{"^P^N", "recall prompts"},
 		{"^G", "jump to the latest output"},
@@ -188,8 +196,9 @@ func (m *Model) showHelp() {
 		{"^E", "toggle tool details"},
 		{"esc", "cancel the running turn"},
 		{"r", "retry a lost connection"},
+		{"/server", "cockpit — server, link, budget, session"},
 		{"^C", "quit"},
-		{"--mouse", "wheel scroll · click tool rows"},
+		{"--mouse", "wheel scroll · click tool rows & turn heads"},
 	} {
 		b.WriteString("\n" + th.tipKey.Render(padRight(k[0], keyW)) + " " + th.tipText.Render(k[1]))
 	}
@@ -199,11 +208,19 @@ func (m *Model) showHelp() {
 	m.refresh()
 }
 
-// showStats appends a session dashboard card: context-window usage, token and
+// showStats appends a session dashboard card to the transcript. The cockpit
+// popover (h) reuses the same body; this remains the /stats quick view.
+func (m *Model) showStats() {
+	card := m.statsCardBody()
+	m.msgs = append(m.msgs, message{role: roleAsst, content: card, rendered: card, raw: true})
+	m.refresh()
+}
+
+// statsCardBody builds the session dashboard: context-window usage, token and
 // tool totals, latency, thinking ratio, session age, and model/sandbox. It is
 // built as pre-styled lines (raw) so its colors and column alignment are exact
 // and survive width changes untouched.
-func (m *Model) showStats() {
+func (m *Model) statsCardBody() string {
 	th := m.th
 	// boxW is the total rendered width (incl. border). lipgloss .Width(w) makes
 	// the text content w-2 wide (padding) and adds 2 for the border, so passing
@@ -357,6 +374,5 @@ func (m *Model) showStats() {
 	}
 
 	card := th.acBox.Width(boxW - 2).Render(b.String())
-	m.msgs = append(m.msgs, message{role: roleAsst, content: card, rendered: card, raw: true})
-	m.refresh()
+	return card
 }

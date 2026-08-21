@@ -18,6 +18,8 @@ func (m *Model) View() string {
 	body := m.vp.View()
 	if m.panel != panelNone {
 		body = m.renderPanel(m.width, m.vp.Height)
+	} else if m.popover {
+		body = m.popoverView(m.width, m.vp.Height)
 	}
 	parts := []string{m.header(), body}
 	if sl := m.statusLine(); sl != "" {
@@ -681,27 +683,37 @@ func (m *Model) renderStep(s step, streaming bool, msgIdx, stepIdx, startLine in
 	if s.done && s.dur > 0 {
 		head += th.stepArg.Render("  " + formatStepDur(s.dur))
 	}
+	// Typed chip: diffstat for diffs, pass/fail for test runs — the shape's
+	// verdict visible without expanding.
+	if s.done {
+		head += stepHeadSuffix(s.name, s.result, th)
+	}
 	lines := []string{head}
 	if expanded {
-		details := append([]string{}, s.logs...)
-		for _, ln := range strings.Split(s.result, "\n") {
-			// Already sanitized at ingest — keep the line verbatim so
-			// indentation and internal spacing (diffs, JSON, code) survive
-			// expansion; blank lines stay stripped for compactness.
-			if strings.TrimSpace(ln) != "" {
-				details = append(details, ln)
+		// Sub-agent logs are plain text — style and truncate here. Tool
+		// output goes through the typed renderers, which return fully
+		// styled, already-truncated lines (truncating styled text would
+		// corrupt ANSI sequences) — append those verbatim.
+		var details []string
+		for _, lg := range s.logs {
+			if strings.TrimSpace(lg) != "" {
+				details = append(details, th.stepRes.Render(truncate(lg, detailBudget)))
 			}
 		}
+		details = append(details, stepDetail(s.name, s.result, m.vp.Width, th)...)
 		if len(details) > 200 {
 			details = details[:200]
-			details = append(details, "… output truncated")
+			details = append(details, th.stepArg.Render("… output truncated"))
 		}
 		for i, d := range details {
 			conn := "    "
 			if i == 0 {
 				conn = "  ⎿ "
 			}
-			lines = append(lines, th.stepTree.Render(conn)+th.stepRes.Render(truncate(d, detailBudget)))
+			// MaxWidth clamps ANSI-safely — styled renderer output must never
+			// be rune-truncated (that would cut escape sequences mid-way).
+			lines = append(lines, th.stepTree.Render(conn)+
+				lipgloss.NewStyle().MaxWidth(detailBudget).Render(d))
 		}
 	}
 	return strings.Join(lines, "\n"), stepRef{msgIdx: msgIdx, stepIdx: stepIdx, line: startLine}, len(lines)

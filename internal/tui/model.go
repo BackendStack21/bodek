@@ -153,6 +153,7 @@ type Model struct {
 	models   []client.ModelInfo
 	panelSel int
 	panelMsg string // status/error line inside a panel
+	popover  bool   // cockpit overlay (h): server/link/budget/session consolidation
 
 	// Sessions panel state: server-side search plus paged "load more".
 	sessQuery   string        // applied search text (server-side substring match)
@@ -430,6 +431,17 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tea.MouseMsg:
 		if msg.Action == tea.MouseActionPress && msg.Button == tea.MouseButtonLeft && m.panel == panelNone && !m.ac.open {
+			// Clicking the cockpit (the header's top rows) toggles the
+			// server/budget/session popover — WebUI health-popover parity.
+			if msg.Y >= 0 && msg.Y < headerHeight {
+				if !m.popover {
+					m.popover = true
+				} else {
+					m.popover = false
+				}
+				m.refresh()
+				return m, nil
+			}
 			// Viewport content begins below the header (2 rows).
 			top := 2
 			if msg.Y >= top && msg.Y < top+m.vp.Height {
@@ -468,6 +480,11 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// A full-area panel (sessions / models) captures the keyboard while open.
 	if m.panel != panelNone {
 		return m.handlePanelKey(msg)
+	}
+
+	// The cockpit popover pages its card; the run keeps streaming underneath.
+	if m.popover {
+		return m.handlePopoverKey(msg)
 	}
 
 	// The @-reference popup captures navigation keys while open.
