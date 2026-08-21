@@ -131,6 +131,7 @@ type Model struct {
 	apprTyped    string         // friction mode: the literal word being typed ("approve")
 	ac           autocomplete   // @-reference completion state
 	pal          palState       // ⌘K command palette — the navigation spine
+	skillSuggest *client.Event  // pending skill suggestion card (skill_event "suggested")
 	queue        []string       // prompts typed mid-turn, sent when the turn ends
 
 	history   []string // submitted prompts, newest last (recalled with ↑)
@@ -560,6 +561,12 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleACKey(msg)
 	}
 
+	// A pending skill suggestion answers on alt-chords — never bare keys or
+	// ⏎/esc, which belong to the composer.
+	if mm, cmd, handled := m.handleSuggestKeys(msg.String()); handled {
+		return mm, cmd
+	}
+
 	// No bare character keys are ever bound in the composer context — every
 	// printable rune must reach the textarea, so prompts can start with any
 	// character ("?why", "[TODO]", "reboot…"). Help, jumps, and the
@@ -857,6 +864,7 @@ func (m *Model) inputAreaHeight() int {
 	if m.pal.open {
 		h += m.palHeight()
 	}
+	h += m.suggestionCardHeight()
 	if m.ac.open {
 		h += m.ac.height()
 	}

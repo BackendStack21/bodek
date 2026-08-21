@@ -54,7 +54,7 @@ func TestApprovalDecisionLetters(t *testing.T) {
 // TestApprovalQueueFIFO pins the parallel-approval contract: requests are
 // answered in arrival order and the panel surfaces the queue depth.
 func TestApprovalQueueFIFO(t *testing.T) {
-	m, actions := approvalRecorder(t)
+	m, actions, _ := approvalRecorder(t)
 	m.handleEvent(client.Event{Type: "approval_request", ID: "apr-1", Command: "rm a"})
 	m.handleEvent(client.Event{Type: "approval_request", ID: "apr-2", Command: "rm b"})
 	if len(m.approvals) != 2 {

@@ -774,6 +774,9 @@ func (m *Model) inputArea() string {
 	if m.ac.open {
 		return m.acPopup() + "\n" + box
 	}
+	if card := m.suggestionCard(); card != "" {
+		return card + "\n" + box
+	}
 	return box
 }
 

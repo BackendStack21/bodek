@@ -241,6 +241,11 @@ func (m *Model) handleEvent(ev client.Event) (tea.Model, tea.Cmd) {
 		m.relayout() // the panel is taller than the textarea — shrink the viewport
 
 	case "skill_event":
+		if ev.SubType == "suggested" {
+			e := ev
+			m.skillSuggest = &e // the card shows until answered or the next prompt
+			m.relayout()
+		}
 		m.addTransientNote("skill · " + strings.TrimSpace(ev.SubType+" "+ev.SkillName) + eventTail(ev))
 	case "memory_event":
 		m.addTransientNote("memory · " + strings.TrimSpace(ev.SubType+" "+ev.Target) + eventTail(ev))
@@ -264,6 +269,7 @@ func (m *Model) handleEvent(ev client.Event) (tea.Model, tea.Cmd) {
 		m.busy = false
 		m.renderPending = false
 		m.cancelAck = false // stale: the error it muted died with the socket
+		m.skillSuggest = nil
 		if m.shutdownReq {
 			// The user asked for this drop: no reconnect spiral, just the
 			// fresh-start affordance (⏎ respawns in spawn mode).
