@@ -74,8 +74,11 @@ func TestAnswerSeparatedFromReasoning(t *testing.T) {
 	if strings.TrimSpace(lines[ansIdx-1]) != "" {
 		t.Errorf("answer not preceded by a blank line:\n%q", lines[ansIdx-1])
 	}
-	if lines[ansIdx] != "The answer." {
-		t.Errorf("answer not at column zero: %q", lines[ansIdx])
+	// The answer may carry the surface card's single padding column (the
+	// card pads lines to full width) — no other leading decoration allowed.
+	line := strings.TrimSpace(lines[ansIdx])
+	if line != "The answer." || strings.IndexFunc(lines[ansIdx], func(r rune) bool { return r != ' ' }) > 2 {
+		t.Errorf("answer carries more than the card padding: %q", lines[ansIdx])
 	}
 	// Live streaming turns keep the same separation.
 	m2 := newTestModel()
@@ -93,12 +96,12 @@ func TestAnswerSeparatedFromReasoning(t *testing.T) {
 	}
 }
 
-// TestUserTurnCard pins the surface-card treatment: user turns paint an
-// EMBER surface background (the turn boundary the transcript lost with the
-// bars), every theme carries one except high-contrast (pure text), and the
-// fill never leaks into copied text — plain() output is identical with or
-// without the surface.
-func TestUserTurnCard(t *testing.T) {
+// TestAnswerCard pins the surface-card treatment: the assistant's FINAL
+// RESPONSE paints an EMBER surface background — the deliverable of the turn,
+// visually separated from the work above it — for every theme except
+// high-contrast (pure text). User turns stay plain, and the fill never
+// leaks into copied text.
+func TestAnswerCard(t *testing.T) {
 	// Assert what each theme PAINTS, not style internals: force TrueColor
 	// for the check and restore the harness profile after.
 	lipgloss.SetColorProfile(termenv.TrueColor)
@@ -120,7 +123,7 @@ func TestUserTurnCard(t *testing.T) {
 		default:
 			pal = emberHighContrast
 		}
-		out := themeFrom(pal).userCard.Render("x")
+		out := themeFrom(pal).answerCard.Render("x")
 		if wantESC == "" {
 			if strings.Contains(out, "[48;") {
 				t.Errorf("%s painted a surface: %q", name, out)
@@ -132,17 +135,30 @@ func TestUserTurnCard(t *testing.T) {
 		}
 	}
 
-	// The card renders the full turn and keeps the text copy-clean.
+	// The answer renders inside the card and keeps the text copy-clean;
+	// user turns stay plain (no surface).
+	lipgloss.SetColorProfile(termenv.TrueColor)
 	m := newTestModel()
-	m.msgs = append(m.msgs, message{role: roleUser, content: "fix the login bug"})
-	out, _ := m.renderMessage(m.msgs[0], 0, 0)
-	plainOut := plain(out)
-	if !strings.Contains(plainOut, "❯ you") || !strings.Contains(plainOut, "fix the login bug") {
-		t.Errorf("user card lost text:\n%s", plainOut)
+	m.msgs = append(m.msgs,
+		message{role: roleUser, content: "fix the login bug"},
+		message{role: roleAsst, content: "**Fixed.** The cookie was stale.",
+			rendered: "Fixed. The cookie was stale.",
+			items:    []turnItem{{thinking: true, text: "hmm"}}},
+	)
+	userOut, _ := m.renderMessage(m.msgs[0], 0, 0)
+	if strings.Contains(userOut, "[48;") {
+		t.Error("user turn painted a surface — only the answer carries one")
 	}
-	for _, bar := range []string{"┃", "▌"} {
-		if strings.ContainsRune(plainOut, []rune(bar)[0]) {
-			t.Errorf("user card drew %q — copied text would not be paste-clean", bar)
-		}
+	asstOut, _ := m.renderMessage(m.msgs[1], 1, 0)
+	if !strings.Contains(asstOut, "[48;2;16;19;26m") {
+		t.Errorf("answer card surface missing:\n%q", asstOut)
 	}
+	if !strings.Contains(plain(asstOut), "Fixed. The cookie was stale.") {
+		t.Errorf("answer card lost text:\n%s", plain(asstOut))
+	}
+	// The dimmed work section stays outside the card.
+	if strings.Contains(plain(asstOut), "hmm") == false {
+		t.Errorf("work section missing from the turn:\n%s", plain(asstOut))
+	}
+	lipgloss.SetColorProfile(termenv.Ascii)
 }

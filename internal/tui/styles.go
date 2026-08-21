@@ -34,7 +34,7 @@ type palette struct {
 	bodyText lipgloss.Color // machinery output (tool results, reasoning)
 	hairline lipgloss.Color // rules, borders, tree glyphs
 
-	// surface tints the user-turn card — EMBER's layered-surface language
+	// surface tints the answer card — EMBER's layered-surface language
 	// (bg-2 "cards, bubbles, inputs"). Empty = no surface (high-contrast
 	// stays pure text-on-terminal). Backgrounds are copy-safe: selections
 	// carry the text, never the SGR fill.
@@ -167,12 +167,12 @@ type theme struct {
 	headerKey  lipgloss.Style
 	rule       lipgloss.Style
 
-	userLabel lipgloss.Style
-	userBar   lipgloss.Style
-	userCard  lipgloss.Style
-	asstLabel lipgloss.Style
-	asstWork  lipgloss.Style
-	sysBar    lipgloss.Style
+	userLabel  lipgloss.Style
+	userBar    lipgloss.Style
+	answerCard lipgloss.Style
+	asstLabel  lipgloss.Style
+	asstWork   lipgloss.Style
+	sysBar     lipgloss.Style
 
 	stepName lipgloss.Style
 	stepArg  lipgloss.Style
@@ -274,15 +274,15 @@ func themeFrom(p palette) theme {
 		// is the only full-brightness block, work items sit dimmer.
 		userLabel: lipgloss.NewStyle().Foreground(p.accentLo).Bold(true),
 		userBar:   lipgloss.NewStyle().Foreground(p.text),
-		// The user turn renders as one raised card — the turn boundary the
-		// transcript lost with the bars. Backgrounds never enter selections.
-		// The user turn renders as one raised card. An empty surface
-		// (high-contrast) stays unset rather than Color("") — nil is the
-		// downstream no-surface signal.
-		userCard:  surfaceStyle(p.surface),
-		asstLabel: lipgloss.NewStyle().Foreground(p.muted).Bold(true),
-		asstWork:  lipgloss.NewStyle().PaddingLeft(2),
-		sysBar:    lipgloss.NewStyle().Foreground(p.red).PaddingLeft(1),
+		// The assistant's FINAL RESPONSE renders as one raised card — the
+		// deliverable of the turn, visually separated from the reasoning and
+		// tool work above it. Backgrounds never enter selections, so copied
+		// answers stay paste-clean. An empty surface (high-contrast) stays
+		// unset rather than Color("") — nil is the no-surface signal.
+		answerCard: surfaceStyle(p.surface),
+		asstLabel:  lipgloss.NewStyle().Foreground(p.muted).Bold(true),
+		asstWork:   lipgloss.NewStyle().PaddingLeft(2),
+		sysBar:     lipgloss.NewStyle().Foreground(p.red).PaddingLeft(1),
 
 		stepName: lipgloss.NewStyle().Foreground(p.steel),
 		stepArg:  lipgloss.NewStyle().Foreground(p.faint),

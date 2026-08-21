@@ -406,14 +406,7 @@ func (m *Model) renderMessage(msg message, msgIdx, lineOffset int) (string, []st
 		if !msg.sentAt.IsZero() {
 			label += th.acDetail.Render(" · " + ago(msg.sentAt))
 		}
-		// One raised card per user turn: the surface spans the full width so
-		// every colored block in the scrollback marks a turn boundary. The
-		// label sits inside — the card IS the turn.
-		card := label + "\n" + th.userBar.Render(msg.content)
-		if th.userCard.GetBackground() == nil {
-			return card, nil // high-contrast: no surface, plain turn
-		}
-		return th.userCard.Width(m.vp.Width - 2).Render(card), nil
+		return label + "\n" + th.userBar.Render(msg.content), nil
 
 	case roleNote:
 		return th.sysBar.Width(m.vp.Width - 2).Render(msg.content), nil
@@ -503,7 +496,15 @@ func (m *Model) renderMessage(msg message, msgIdx, lineOffset int) (string, []st
 			} else {
 				out.WriteString("\n")
 			}
-			out.WriteString(content)
+			// The answer renders as one raised card: the deliverable of the
+			// turn, visually distinct from the dimmed work above it. Glamour
+			// wraps at vp-6, so the card's padding still fits; high-contrast
+			// skips the surface entirely.
+			if th.answerCard.GetBackground() == nil {
+				out.WriteString(content)
+			} else {
+				out.WriteString(th.answerCard.Width(m.vp.Width - 2).Render(content))
+			}
 		}
 		return out.String(), refs
 	}
