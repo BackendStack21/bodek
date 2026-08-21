@@ -140,9 +140,16 @@ func (m *Model) runCommand(name, args string) tea.Cmd {
 	return m.transientNoteCmd("unknown command: /" + name + " — try /help")
 }
 
-// runSelectedCommand executes the command highlighted in the popup.
+// runSelectedCommand executes the command highlighted in the popup. With
+// no matches (a typo like /sesions), the typed line still dispatches —
+// enter must always do something, and the unknown-command note teaches.
 func (m *Model) runSelectedCommand() tea.Cmd {
 	if len(m.ac.items) == 0 {
+		if m.ac.mode == acCmd {
+			if text := strings.TrimSpace(m.ta.Value()); strings.HasPrefix(text, "/") {
+				return m.runCommandLine(text)
+			}
+		}
 		m.closeAC()
 		return nil
 	}

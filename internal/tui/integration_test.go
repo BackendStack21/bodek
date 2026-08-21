@@ -28,6 +28,7 @@ type standInObs struct {
 	sessionDeletes int
 	factDeletes    int
 	lastEventRunID string
+	prompts        int // POST /api/prompt (headless runs)
 }
 
 var standInSaw standInObs
@@ -142,6 +143,7 @@ func standIn(t *testing.T, token string) *Model {
 			w.WriteHeader(http.StatusMethodNotAllowed)
 			return
 		}
+		standInSaw.prompts++
 		w.WriteHeader(http.StatusAccepted)
 		json.NewEncoder(w).Encode(map[string]any{
 			"run_id": "run-9", "session_id": "s-new", "status": "running",
