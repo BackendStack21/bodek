@@ -232,18 +232,36 @@ func TestContextGauge(t *testing.T) {
 	m.winCtxTok = 380
 
 	out := plain(m.header())
-	for _, want := range []string{"▓▓░░░", "38%", "380/1k"} {
+	for _, want := range []string{"█▉░░░", "38%", "380/1k"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("header gauge missing %q in:\n%s", want, out)
 		}
 	}
-
-	// The five-cell fill bar tracks the ratio (the WebUI's ctx ▓▓▓░░ idiom).
-	if g := gaugeGlyph(0.80); g != "▓▓▓▓░" {
-		t.Errorf("gaugeGlyph(0.80) = %q, want ▓▓▓▓░", g)
+	// The gauge is the header's sole token metric: the cumulative session
+	// summary (∑ ⌂ … · ⎇ …) lives in /stats and the per-turn stat line, not
+	// here — a fresh session must not flash placeholder zeros in the bar.
+	m.sessCtxTok, m.sessOutTok = 0, 0
+	out = plain(m.header())
+	for _, banned := range []string{"∑", "⌂ 0", "⎇ 0"} {
+		if strings.Contains(out, banned) {
+			t.Errorf("header still carries session summary %q:\n%s", banned, out)
+		}
 	}
-	if g := gaugeGlyph(0.95); g != "▓▓▓▓▓" {
-		t.Errorf("gaugeGlyph(0.95) = %q, want ▓▓▓▓▓", g)
+	if !strings.Contains(out, "ctx") {
+		t.Errorf("gauge should carry the ctx label:\n%s", out)
+	}
+
+	// The five-cell fill bar tracks the ratio with eighth-block sub-cell
+	// precision (the WebUI's ctx ▓▓▓░░ idiom, sharpened): full cells are █,
+	// the leading edge rounds to the nearest eighth block, the rest stays ░.
+	if g := gaugeGlyph(0.80); g != "████░" {
+		t.Errorf("gaugeGlyph(0.80) = %q, want ████░", g)
+	}
+	if g := gaugeGlyph(0.95); g != "████▊" {
+		t.Errorf("gaugeGlyph(0.95) = %q, want ████▊", g)
+	}
+	if g := gaugeGlyph(1.0); g != "█████" {
+		t.Errorf("gaugeGlyph(1.0) = %q, want █████", g)
 	}
 
 	// Unknown budget hides the gauge entirely (no percent sign in the header).
