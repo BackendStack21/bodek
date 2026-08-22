@@ -296,7 +296,9 @@ one `Esc`.
 - **Cancellation** (`Esc`) — abort a running turn via odek's cancel API.
 - **Sandbox aware** — the header shows `🛡 sandboxed` or `⚠ host access`; pass
   `--sandbox` to run tool calls inside odek's Docker isolation.
-- **Telemetry** — session token totals and last-turn latency in the chrome.
+- **Telemetry** — a pressure-tinted context-window gauge in the header
+  (`ctx █▉░░░ 38% 380/1k`, eighth-block fill, green→amber→red), per-turn
+  token/latency footers, and the full session roll-up in `/stats`.
 - **Cost tracking** — when odek has token prices configured (limits), the
   header shows the running session spend, each turn footer its estimated
   cost, and `/stats` rolls up the session (with the `max_cost_usd` cap when

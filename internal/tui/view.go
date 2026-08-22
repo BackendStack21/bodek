@@ -80,14 +80,11 @@ func (m *Model) header() string {
 	}
 
 	status := m.statusBadge()
-	tokens := th.headerMeta.Render(fmt.Sprintf("∑ ⌂ %s · ⎇ %s",
-		human(m.sessCtxTok), human(m.sessOutTok)))
-	sep := th.headerMeta.Render("  ·  ")
+	// The gauge is the header's sole token metric — session totals live in
+	// /stats and the per-turn stat line, so a fresh session never flashes
+	// placeholder zeros up here.
 	buildRight := func(gauge string) string {
-		right := tokens
-		if gauge != "" {
-			right = gauge + sep + right
-		}
+		right := gauge
 		if status != "" { // empty while busy — progress rides the status line
 			right += "   " + status
 		}
@@ -147,10 +144,13 @@ func (m *Model) ctxGauge(compact bool) string {
 		ratio = 1
 	}
 	pct := fmt.Sprintf("%d%%", int(ratio*100+0.5))
-	g := m.gaugeColor(ratio).Render(gaugeGlyph(ratio)) + " " + m.th.headerMeta.Render(pct)
+	// Color carries state, dim carries magnitude: bar and percent share the
+	// pressure tint, raw token counts recede. The "ctx" label anchors the
+	// WebUI's documented `ctx ▓▓▓░░ 40%` idiom.
+	g := m.th.headerMeta.Render("ctx ") +
+		m.gaugeColor(ratio).Render(gaugeGlyph(ratio)+" "+pct)
 	if !compact {
-		// used via human() so it matches the adjacent "∑ ⌂ …" summary; max via
-		// humanCtx() for a tidy whole-k budget.
+		// used via human(); max via humanCtx() for a tidy whole-k budget.
 		g += " " + m.th.headerMeta.Render(human(m.winCtxTok)+"/"+humanCtx(m.maxContext))
 	}
 	return g
@@ -182,8 +182,10 @@ func (m *Model) sandboxBadge() string {
 
 // gaugeGlyph mirrors the gaugeColor bands (0.75 / 0.90) so fill and hue tell
 // the same story: open while comfortable, half when warm, full when hot.
-// gaugeGlyph renders the context gauge as a five-cell fill bar — the
-// WebUI's documented `ctx ▓▓▓░░ 40%` idiom.
+// gaugeGlyph renders the context gauge as a five-cell fill bar with
+// eighth-block sub-cell precision — the WebUI's documented `ctx ▓▓▓░░ 40%`
+// idiom, sharpened: full cells are █, the leading edge rounds to the nearest
+// eighth block (▏▎▍▌▋▊▉), the remainder stays ░.
 func gaugeGlyph(r float64) string {
 	if r < 0 {
 		r = 0
@@ -191,8 +193,24 @@ func gaugeGlyph(r float64) string {
 	if r > 1 {
 		r = 1
 	}
-	filled := int(r*5 + 0.5)
-	return strings.Repeat("▓", filled) + strings.Repeat("░", 5-filled)
+	const cells = 5
+	v := r * cells
+	full := int(v)
+	bar := strings.Repeat("█", full)
+	if full < cells {
+		// eighths rounds the leading cell's fill to the nearest eighth;
+		// 0x2588 is █ and each codepoint down to 0x258F (▏) is one eighth
+		// lighter. A rounding to 8 lands back on █; a rounding to 0 stays
+		// ░ — the cell always renders, five cells total.
+		eighths := int((v-float64(full))*8 + 0.5)
+		if eighths > 0 {
+			bar += string(rune(0x2590 - eighths))
+		} else {
+			bar += "░"
+		}
+		bar += strings.Repeat("░", cells-full-1)
+	}
+	return bar
 }
 
 // rule returns a full-width gradient hairline, cached per width.
