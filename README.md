@@ -136,6 +136,7 @@ by `odek serve` from its usual chain — `~/.odek/config.json` → `./odek.json`
 | `^T` | Toggle extended thinking for the next turn |
 | `^J` | Insert a newline in the input |
 | `^L` | Clear the conversation |
+| `^E` | Toggle tool details — every step expands to its full output/logs |
 | `Esc` | Cancel the running turn (queued prompts return to the input) |
 | `↑` / `↓` / `PgUp` / `PgDn` / `^U` / `^D` | Scroll the transcript (arrows at the input's edge lines) |
 | `^P` / `^N` | Recall previous prompts (prompt history) |
@@ -251,8 +252,8 @@ one `Esc`.
 - **The palette (`^K`)** — every surface one fuzzy search away, every row
   teaching its chord.
 - **Turn cards** — telemetry rides the turn head, `^F` folds noisy turns,
-  `[`/`]` jump turn-to-turn, reasoning accordions auto-expand live and
-  collapse on the next turn.
+  `alt+↑`/`alt+↓` jump turn-to-turn, reasoning accordions auto-expand live
+  and collapse on the next turn, and `^E` expands every tool step's details.
 - **Typed tool renderers** — diffs tint with diffstats, file reads get line
   numbers, JSON indents, test runs show pass/fail verdicts.
 - **Streaming answers** rendered as Markdown ([glamour](https://github.com/charmbracelet/glamour)).
