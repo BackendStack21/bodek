@@ -62,9 +62,12 @@ func (m *Model) handleEvent(ev client.Event) (tea.Model, tea.Cmd) {
 	case "token", "token_delta":
 		// token_delta is the live fragment stream (server --stream); with
 		// fragments delivered the server suppresses the bulk token re-send,
-		// so both event types must accumulate the same way.
+		// so both event types must accumulate the same way. Prose lands on
+		// the timeline as its own reply segment — appended to the open one,
+		// or opened fresh after reasoning/tools — so each think→reply cycle
+		// renders independently (appendReply keeps msg.content in sync).
 		if i := m.cur(); i >= 0 {
-			m.msgs[i].content += sanitize(ev.Content)
+			appendReply(&m.msgs[i], sanitize(ev.Content))
 			m.msgs[i].streaming = true
 		}
 		m.status = "responding"
@@ -210,7 +213,7 @@ func (m *Model) handleEvent(ev client.Event) (tea.Model, tea.Cmd) {
 			if cancelled {
 				markCancel(&m.msgs[i])
 			} else if m.msgs[i].content == "" {
-				m.msgs[i].content = "**Error:** " + ev.Message
+				setTurnMarker(&m.msgs[i], "**Error:** "+ev.Message)
 			} else {
 				m.addNote("error: " + ev.Message)
 			}
@@ -286,11 +289,7 @@ func (m *Model) handleEvent(ev client.Event) (tea.Model, tea.Cmd) {
 		// forever. Idempotent — with no open turn this is a no-op, so a
 		// later resume is untouched.
 		if i := m.cur(); i >= 0 {
-			if m.msgs[i].content == "" {
-				m.msgs[i].content = "**Interrupted:** connection lost"
-			} else {
-				m.msgs[i].content += "\n\n**Interrupted:** connection lost"
-			}
+			setTurnMarker(&m.msgs[i], "**Interrupted:** connection lost")
 		}
 		m.finalize()
 		m.relayout() // the busy status line is gone with the socket
@@ -448,6 +447,44 @@ func (m *Model) cur() int {
 	return -1
 }
 
+// appendReply appends answer text to the turn's open reply segment, or
+// starts a new one after a reasoning block or tool call — so every
+// think→reply cycle renders independently. msg.content stays in sync for
+// export, stats, and hand-built messages without a timeline; distinct
+// cycles join it with a blank line so copied/exported prose stays readable.
+func appendReply(msg *message, s string) {
+	if s == "" {
+		return
+	}
+	if n := len(msg.items); n > 0 && msg.items[n-1].reply {
+		msg.items[n-1].text += s
+		msg.content += s
+		return
+	}
+	if msg.content != "" {
+		msg.content += "\n\n"
+	}
+	msg.content += s
+	msg.items = append(msg.items, turnItem{reply: true, text: s})
+}
+
+// setTurnMarker closes out a turn with a bold status line ("**Cancelled.**",
+// "**Interrupted:** …", "**Error:** …"): below the existing reply when the
+// turn already produced prose, or as its only reply segment otherwise — the
+// marker always renders attached to the final card.
+func setTurnMarker(msg *message, marker string) {
+	if msg.content == "" {
+		appendReply(msg, marker)
+		return
+	}
+	msg.content += "\n\n" + marker
+	if n := len(msg.items); n > 0 && msg.items[n-1].reply {
+		msg.items[n-1].text += "\n\n" + marker
+		return
+	}
+	msg.items = append(msg.items, turnItem{reply: true, text: marker})
+}
+
 // isContextCanceled reports whether an error message is the abort a run's
 // context returns once a cancel is honored ("context canceled", possibly
 // wrapped by the provider client on its way out).
@@ -458,33 +495,40 @@ func isContextCanceled(msg string) bool {
 // markCancel closes out a streaming turn as cancelled — the deliberate
 // sibling of the interrupted marker a disconnect leaves behind.
 func markCancel(msg *message) {
-	if msg.content == "" {
-		msg.content = "**Cancelled.**"
-	} else {
-		msg.content += "\n\n**Cancelled.**"
-	}
+	setTurnMarker(msg, "**Cancelled.**")
 }
 
-// finalize closes out the streaming assistant message, rendering its markdown.
-// Reasoning blocks the renderer auto-opened for the live stream collapse here
-// (the WebUI's accordion rule): the next turn starts with history folded, and
-// only blocks the user opened themselves stay open.
+// finalize closes out the streaming assistant message and drops the cursor.
 func (m *Model) finalize() {
 	if i := m.cur(); i >= 0 {
-		m.msgs[i].streaming = false
-		m.msgs[i].rendered = m.render(m.msgs[i].content)
-		var thoughts []string
-		for j := range m.msgs[i].items {
-			if m.msgs[i].items[j].thinking {
-				thoughts = append(thoughts, m.msgs[i].items[j].text)
-				m.msgs[i].items[j].open = false
-			}
-		}
-		// Keep the turn's reasoning concatenated on the message for
-		// compatibility; the timeline (items) drives the actual rendering.
-		m.msgs[i].thinking = strings.Join(thoughts, "\n")
+		m.closeTurn(&m.msgs[i])
 	}
 	m.curIdx = -1
+}
+
+// closeTurn renders finalized markdown for one assistant turn: each reply
+// segment goes through glamour individually (cached on the item, re-rendered
+// only on resize), reasoning folds into msg.thinking, and reasoning blocks
+// the renderer auto-opened for the live stream collapse here (the WebUI's
+// accordion rule): the next turn starts with history folded, and only blocks
+// the user opened themselves stay open. Shared by finalize() and the
+// session-replay flush.
+func (m *Model) closeTurn(msg *message) {
+	msg.streaming = false
+	var thoughts []string
+	for j := range msg.items {
+		switch {
+		case msg.items[j].thinking:
+			thoughts = append(thoughts, msg.items[j].text)
+			msg.items[j].open = false
+		case msg.items[j].reply:
+			msg.items[j].rendered = m.render(msg.items[j].text)
+		}
+	}
+	// Keep the turn's reasoning concatenated on the message for
+	// compatibility; the timeline (items) drives the actual rendering.
+	msg.thinking = strings.Join(thoughts, "\n")
+	msg.rendered = m.render(msg.content)
 }
 
 // addNote appends a sticky notice (errors, disconnects) that stays until

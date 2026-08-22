@@ -871,7 +871,7 @@ func (m *Model) handleSessionSwitch(msg sessionSwitchMsg) tea.Cmd {
 // replayTranscript rebuilds a saved transcript turn by turn so a resumed
 // session renders identically to a live one: a user message opens a turn,
 // and everything up to the next user message accumulates into a single
-// assistant message — reasoning blocks, tool calls/results, and reply text
+// assistant message — reasoning blocks, reply segments, tool calls/results
 // interleaved in arrival order, mirroring live event ingestion. System
 // messages are dropped; blank assistant messages (no reply, reasoning, or
 // steps) are skipped.
@@ -879,20 +879,13 @@ func (m *Model) replayTranscript(msgs []client.SessionMessage) {
 	var cur *message // current turn's assistant message, not yet flushed
 	stepByCallID := map[string]int{}
 
-	// flush closes the current assistant message: it folds the timeline's
-	// thinking items into msg.thinking (like finalize) and renders the reply.
+	// flush closes the current assistant message like finalize() does and
+	// flushes it into the transcript.
 	flush := func() {
 		if cur == nil {
 			return
 		}
-		var thoughts []string
-		for _, it := range cur.items {
-			if it.thinking {
-				thoughts = append(thoughts, it.text)
-			}
-		}
-		cur.thinking = strings.Join(thoughts, "\n")
-		cur.rendered = m.render(cur.content)
+		m.closeTurn(cur)
 		if strings.TrimSpace(cur.content) != "" || len(cur.items) > 0 {
 			m.msgs = append(m.msgs, *cur)
 		}
@@ -916,6 +909,11 @@ func (m *Model) replayTranscript(msgs []client.SessionMessage) {
 				// at render time, expandAll unfolds the whole block.
 				cur.items = append(cur.items, turnItem{thinking: true, text: rc})
 			}
+			if c := sanitize(mm.Content); strings.TrimSpace(c) != "" {
+				// One reply segment per persisted assistant record — the same
+				// think→reply pairing live turns build from token events.
+				appendReply(cur, c)
+			}
 			for _, tc := range mm.ToolCalls {
 				name := tc.Function.Name
 				cur.steps = append(cur.steps, step{
@@ -925,12 +923,6 @@ func (m *Model) replayTranscript(msgs []client.SessionMessage) {
 				})
 				stepByCallID[tc.ID] = len(cur.steps) - 1
 				cur.items = append(cur.items, turnItem{stepIdx: len(cur.steps) - 1})
-			}
-			if c := sanitize(mm.Content); strings.TrimSpace(c) != "" {
-				if cur.content != "" {
-					cur.content += "\n\n"
-				}
-				cur.content += c
 			}
 		case "tool":
 			if cur == nil {

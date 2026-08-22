@@ -259,7 +259,9 @@ one `Esc`.
 - **Security approvals** — odek's `danger` engine prompts surface as an inline
   panel; your answer is sent straight back over the socket.
 - **Live reasoning** — the model's pre-tool thinking streams in dimmed text,
-  with a running elapsed timer and cycling status while it works.
+  with a running elapsed timer and cycling status while it works. Long turns
+  keep every think→reply pair intact: each reasoning block is followed by its
+  own answer card, in arrival order.
 - **Command palette (`/`)** and **file attachments (`@`)** — live, navigable popups.
 - **Context-aware progress** — while the agent works, a status line just
   above the input (right below your last message) shows what it's actually

@@ -624,11 +624,12 @@ func TestSessionDetailReplay(t *testing.T) {
 	if asst.role != roleAsst {
 		t.Fatalf("second message role = %v, want assistant", asst.role)
 	}
-	// Both assistant text parts join into the reply.
+	// Both assistant text parts join into the reply blob…
 	if asst.content != "I will inspect the file.\n\nFixed the bug." {
 		t.Errorf("assistant content = %q", asst.content)
 	}
-	// Reasoning folds into msg.thinking like finalize() does.
+	// …and each persisted record becomes its own reply segment on the
+	// timeline, mirroring live think→reply ingestion.
 	if asst.thinking != "let me look at the code\nfound it" {
 		t.Errorf("assistant thinking = %q", asst.thinking)
 	}
@@ -651,19 +652,28 @@ func TestSessionDetailReplay(t *testing.T) {
 		t.Errorf("step 1 result = %q (frame not stripped?)", s1.result)
 	}
 
-	// The timeline interleaves thinking → step → step → thinking, in order.
+	// The timeline interleaves think→reply pairs with tool steps in arrival
+	// order; reply segments cache their glamour render at flush time.
 	want := []turnItem{
 		{thinking: true, text: "let me look at the code"},
+		{reply: true, text: "I will inspect the file."},
 		{stepIdx: 0},
 		{stepIdx: 1},
 		{thinking: true, text: "found it"},
+		{reply: true, text: "Fixed the bug."},
 	}
 	if len(asst.items) != len(want) {
-		t.Fatalf("assistant items = %v, want %v", asst.items, want)
+		t.Fatalf("assistant items = %+v, want %+v", asst.items, want)
 	}
 	for i, w := range want {
-		if asst.items[i] != w {
-			t.Errorf("item %d = %+v, want %+v", i, asst.items[i], w)
+		got := asst.items[i]
+		if got.thinking != w.thinking || got.reply != w.reply || got.text != w.text || got.stepIdx != w.stepIdx {
+			t.Errorf("item %d = %+v, want %+v", i, got, w)
+		}
+	}
+	for i, it := range asst.items {
+		if it.reply && it.rendered == "" {
+			t.Errorf("reply segment %d has no cached render", i)
 		}
 	}
 

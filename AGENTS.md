@@ -89,10 +89,14 @@ feat(tui): compact tool steps with Ctrl+E details toggle
   wrapped in untrusted-content markers: decode the envelope and fold the
   wrappers away before display — don't render either verbatim.
 - The transcript model in `internal/tui`: each assistant `message` keeps a
-  chronological `items []turnItem` timeline (reasoning blocks and step
-  references interleaved). Preserve arrival order; don't regress to a
-  single per-turn reasoning blob, and don't reintroduce a separate
-  in-transcript thinking placeholder alongside it.
+  chronological `items []turnItem` timeline (reasoning blocks, step
+  references, and reply segments interleaved — one think→reply cycle per
+  segment pair, each rendered independently). Preserve arrival order; don't
+  regress to a single per-turn reasoning blob or a single trailing answer
+  card, and don't reintroduce a separate in-transcript thinking placeholder
+  alongside it. `msg.content` stays the "\n\n"-joined blob of all reply
+  segments (appendReply maintains it) for export, stats, and hand-built
+  messages; turn markers (`**Cancelled.**` etc.) attach to the last reply.
 - Events arrive from `internal/client` already in chronological order —
   keep ingestion order-dependent and idempotent.
 - `internal/tui` is split by responsibility: `model.go` holds the core

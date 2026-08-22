@@ -47,13 +47,16 @@ type stepRef struct {
 	line    int
 }
 
-// turnItem is one entry in a turn's chronological timeline: either a
-// reasoning block or a tool call, in arrival order.
+// turnItem is one entry in a turn's chronological timeline: a reasoning
+// block, a tool call, or a response text segment (one think→reply cycle),
+// in arrival order.
 type turnItem struct {
-	thinking bool   // false = tool step
-	text     string // thinking excerpt when thinking (capped per block)
-	stepIdx  int    // index into msg.steps when !thinking
+	thinking bool   // true = reasoning block
+	reply    bool   // true = response text segment
+	text     string // thinking / reply text (stored in full)
+	stepIdx  int    // index into msg.steps when a tool call
 	open     bool   // reasoning: user wants the full block (live turns auto-open)
+	rendered string // cached glamour render (finalized reply segments)
 }
 
 // turnStats is the telemetry of one finalized assistant turn, captured from the
@@ -350,7 +353,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// keeps a phantom streaming assistant message with no reply. Same
 		// inline styling as a server-side error event.
 		if i := m.cur(); i >= 0 && m.msgs[i].content == "" {
-			m.msgs[i].content = "**Error:** " + msg.err.Error()
+			setTurnMarker(&m.msgs[i], "**Error:** "+msg.err.Error())
 		}
 		m.finalize()
 		m.relayout() // the busy status line releases its row
@@ -851,6 +854,11 @@ func (m *Model) resize(w, h int) tea.Cmd {
 		for i := range m.msgs {
 			if m.msgs[i].role == roleAsst && !m.msgs[i].streaming && !m.msgs[i].raw {
 				m.msgs[i].rendered = m.render(m.msgs[i].content)
+				for j := range m.msgs[i].items {
+					if m.msgs[i].items[j].reply {
+						m.msgs[i].items[j].rendered = m.render(m.msgs[i].items[j].text)
+					}
+				}
 			}
 		}
 	}
