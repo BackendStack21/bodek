@@ -200,7 +200,7 @@ func standIn(t *testing.T, token string) *Model {
 	}))
 	mux.HandleFunc("/api/skills", guard(func(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(map[string]any{"skills": []client.Skill{
-			{Name: "deploy-helper", Description: "deploys", UsageCount: 3, Source: "~/.odek/skills"},
+			{Name: "deploy-helper", Description: "deploys the service with zero-downtime rolling restarts, health gates, and automatic rollback on failed probes across all regions", UsageCount: 3, Source: "~/.odek/skills"},
 			{Name: "tainted-thing", NeedsReview: true, Untrusted: true, Source: "./.odek/skills"},
 		}})
 	}))

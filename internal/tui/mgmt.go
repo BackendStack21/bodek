@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"encoding/json"
 	"fmt"
 	"sort"
 	"strings"
@@ -43,7 +44,8 @@ type toolRow struct {
 	kind string // "tool" | "mcp"
 	text string
 	dim  string
-	id   string // mcp: server name
+	id   string            // mcp: server name
+	srv  *client.MCPServer // mcp: full record for the detail view
 }
 
 // cfgRow is one config/usage/connection row.
@@ -52,6 +54,7 @@ type cfgRow struct {
 	k    string
 	v    string
 	id   string // conn: kickable id
+	raw  string // cfg: pretty JSON when v is the "·" marker (detail view)
 }
 
 // mgmtActionMsg reports a mutation outcome (delete/promote/consolidate/
@@ -100,6 +103,8 @@ func (m *Model) openMemory() tea.Cmd {
 	m.panel = panelMemory
 	m.panelSel = 0
 	m.panelEdit = panelEditNone
+	m.panelDetail = false
+	m.detailScroll = 0
 	m.panelMsg = "loading memory…"
 	m.relayout()
 	m.refresh()
@@ -113,6 +118,8 @@ func (m *Model) openMemory() tea.Cmd {
 func (m *Model) openSkills() tea.Cmd {
 	m.panel = panelSkills
 	m.panelSel = 0
+	m.panelDetail = false
+	m.detailScroll = 0
 	m.panelMsg = "loading skills…"
 	m.relayout()
 	m.refresh()
@@ -126,6 +133,8 @@ func (m *Model) openSkills() tea.Cmd {
 func (m *Model) openTools() tea.Cmd {
 	m.panel = panelTools
 	m.panelSel = 0
+	m.panelDetail = false
+	m.detailScroll = 0
 	m.panelMsg = "loading tools…"
 	m.relayout()
 	m.refresh()
@@ -141,6 +150,8 @@ func (m *Model) openTools() tea.Cmd {
 func (m *Model) openConfig() tea.Cmd {
 	m.panel = panelConfig
 	m.panelSel = 0
+	m.panelDetail = false
+	m.detailScroll = 0
 	m.panelMsg = "loading config…"
 	m.relayout()
 	m.refresh()
@@ -224,7 +235,7 @@ func buildToolRows(tools []client.Tool, servers []client.MCPServer) []toolRow {
 		if s.AutoApprove {
 			detail += " · auto-approve"
 		}
-		rows = append(rows, toolRow{kind: "mcp", text: s.Name, dim: detail, id: s.Name})
+		rows = append(rows, toolRow{kind: "mcp", text: s.Name, dim: detail, id: s.Name, srv: &s})
 	}
 	return rows
 }
@@ -244,7 +255,7 @@ func buildCfgRows(cfg map[string]any, usage client.Usage, conns []client.Connect
 		}
 		sort.Strings(keys)
 		for _, k := range keys {
-			rows = append(rows, cfgRow{kind: "cfg", k: k, v: scalarOrMarker(cfg[k])})
+			rows = appendCfgRow(rows, k, cfg[k])
 		}
 	}
 	for _, c := range conns {
@@ -280,6 +291,49 @@ func scalarOrMarker(v any) string {
 	default:
 		return fmt.Sprintf("%v", x)
 	}
+}
+
+// appendCfgRow flattens one level of a config value into list rows:
+// scalars render as "k", a map's children as "k.child". Anything deeper
+// (nested maps, slices) keeps a "·" marker with the raw JSON stashed in
+// raw for the detail view.
+func appendCfgRow(rows []cfgRow, k string, v any) []cfgRow {
+	if isList(v) {
+		return append(rows, cfgRow{kind: "cfg", k: k, v: "·", raw: rawJSON(v)})
+	}
+	if sub, ok := v.(map[string]any); ok && len(sub) > 0 {
+		keys := make([]string, 0, len(sub))
+		for ck := range sub {
+			keys = append(keys, ck)
+		}
+		sort.Strings(keys)
+		for _, ck := range keys {
+			kk, vv := k+"."+ck, sub[ck]
+			if _, nested := vv.(map[string]any); nested || isList(vv) {
+				rows = append(rows, cfgRow{kind: "cfg", k: kk, v: "·", raw: rawJSON(vv)})
+				continue
+			}
+			rows = append(rows, cfgRow{kind: "cfg", k: kk, v: scalarOrMarker(vv)})
+		}
+		return rows
+	}
+	r := cfgRow{kind: "cfg", k: k, v: scalarOrMarker(v)}
+	if _, ok := v.(map[string]any); ok { // empty map: marker with raw body
+		r.raw = rawJSON(v)
+	}
+	return append(rows, r)
+}
+
+func isList(v any) bool { _, ok := v.([]any); return ok }
+
+// rawJSON pretty-prints a nested config value for the detail view; a
+// marshal failure yields "" and the detail simply falls back to the row.
+func rawJSON(v any) string {
+	b, err := json.MarshalIndent(v, "", "  ")
+	if err != nil {
+		return ""
+	}
+	return string(b)
 }
 
 // ── memory actions ──────────────────────────────────────────────────────────
@@ -411,7 +465,7 @@ func (m *Model) memRowsRender(w int) []string {
 
 func (m *Model) skillRowsRender(w int) []string {
 	th := m.th
-	rows := make([]string, 0, len(m.skills))
+	rows := make([]string, 0, len(m.skills)*2)
 	for i, s := range m.skills {
 		badges := ""
 		if s.NeedsReview {
@@ -427,6 +481,11 @@ func (m *Model) skillRowsRender(w int) []string {
 			prefix, lab = th.acSel.Render("› "), th.acSel.Render(truncate(s.Name, budget))
 		}
 		rows = append(rows, prefix+lab+th.acDetail.Render(detail))
+		// A dim description line under each name: the list stays scannable
+		// while the skill's purpose is finally readable at a glance.
+		if d := strings.TrimSpace(s.Description); d != "" {
+			rows = append(rows, "    "+th.acDim.Render(truncate(collapse(sanitize(d)), w-4)))
+		}
 	}
 	return rows
 }
@@ -465,4 +524,154 @@ func (m *Model) cfgRowsRender(w int) []string {
 		rows = append(rows, prefix+lab+th.acDetail.Render(detail))
 	}
 	return rows
+}
+
+// ── detail view (management tabs) ───────────────────────────────────────────
+//
+// Enter on a list row expands it into a readable block: the full text the
+// promote/delete gates assume the human can see. Esc folds back to the list
+// with the selection intact.
+
+// mgmtPanel reports whether p is a management drawer tab.
+func mgmtPanel(p panelMode) bool {
+	switch p {
+	case panelMemory, panelSkills, panelTools, panelConfig:
+		return true
+	}
+	return false
+}
+
+// closeDetail folds the detail view back to the list, selection intact.
+func (m *Model) closeDetail() {
+	m.panelDetail = false
+	m.detailScroll = 0
+	m.refresh()
+}
+
+// detailMaxScroll is the last scroll offset that keeps the final detail line
+// on screen; scrolling stops there.
+func (m *Model) detailMaxScroll() int {
+	visible := m.height - 5 // border(2) + title(1) + breathing room
+	if visible < 1 {
+		visible = 1
+	}
+	return max(len(m.mgmtDetailLines(m.width-8))-visible, 0)
+}
+
+// skillSelRow maps the selected skill to its visual row in the list,
+// accounting for the description line some skills render below their name.
+func (m *Model) skillSelRow() int {
+	row := 0
+	for i := range m.skills {
+		if i == m.panelSel {
+			break
+		}
+		row++
+		if strings.TrimSpace(m.skills[i].Description) != "" {
+			row++
+		}
+	}
+	return row
+}
+
+func (m *Model) toolSelected() *toolRow {
+	if m.panel == panelTools && m.panelSel < len(m.toolRows) {
+		return &m.toolRows[m.panelSel]
+	}
+	return nil
+}
+
+// mgmtDetailLines renders the selected row's detail block, wrapped to w.
+// Everything from the wire goes through sanitize().
+func (m *Model) mgmtDetailLines(w int) []string {
+	th := m.th
+	var out []string
+	switch m.panel {
+	case panelSkills:
+		s := m.skillSelected()
+		if s == nil {
+			return []string{th.acDim.Render("no skill selected")}
+		}
+		out = append(out, th.acSel.Render("› "+sanitize(s.Name)))
+		meta := []string{fmt.Sprintf("×%d used", s.UsageCount), sanitize(s.Source)}
+		if s.AutoLoad {
+			meta = append(meta, "auto-load")
+		}
+		if s.NeedsReview {
+			meta = append(meta, "needs review")
+		}
+		if s.Untrusted {
+			meta = append(meta, "untrusted")
+		}
+		out = append(out, th.acDetail.Render(strings.Join(meta, " · ")))
+		if d := strings.TrimSpace(s.Description); d != "" {
+			out = append(out, "")
+			out = append(out, wrapText(sanitize(d), w)...)
+		}
+	case panelMemory:
+		r := m.memSelected()
+		if r == nil {
+			return []string{th.acDim.Render("no row selected")}
+		}
+		if r.kind == "episode" {
+			out = append(out, th.acSel.Render("› pending episode"))
+			out = append(out, th.acDetail.Render("session "+sanitize(r.sessionID)))
+		} else {
+			out = append(out, th.acSel.Render("› "+sanitize(r.kind)+" fact"))
+		}
+		out = append(out, "")
+		out = append(out, wrapText(sanitize(r.text), w)...)
+	case panelTools:
+		r := m.toolSelected()
+		if r == nil {
+			return []string{th.acDim.Render("no row selected")}
+		}
+		if r.kind == "mcp" && r.srv != nil {
+			srv := r.srv
+			out = append(out, th.acSel.Render("› "+sanitize(srv.Name)+" · mcp server"))
+			cmd := sanitize(srv.Command)
+			for _, a := range srv.Args {
+				cmd += " " + sanitize(a)
+			}
+			out = append(out, th.acDetail.Render(cmd))
+			var meta []string
+			if srv.Project {
+				meta = append(meta, "project-scoped")
+			}
+			if srv.AutoApprove {
+				meta = append(meta, "auto-approve")
+			}
+			if srv.TimeoutSeconds > 0 {
+				meta = append(meta, fmt.Sprintf("timeout %ds", srv.TimeoutSeconds))
+			}
+			if srv.MaxResponseBytes > 0 {
+				meta = append(meta, fmt.Sprintf("max response %s", human(int(srv.MaxResponseBytes))))
+			}
+			if srv.MaxResultChars > 0 {
+				meta = append(meta, fmt.Sprintf("max result %s chars", human(srv.MaxResultChars)))
+			}
+			if len(meta) > 0 {
+				out = append(out, th.acDetail.Render(strings.Join(meta, " · ")))
+			}
+		} else {
+			out = append(out, th.acSel.Render("› "+sanitize(r.text)))
+			state := "enabled"
+			if r.dim != "on" {
+				state = "disabled"
+			}
+			out = append(out, th.acDetail.Render("built-in tool · "+state))
+		}
+	case panelConfig:
+		r := m.cfgSelected()
+		if r == nil {
+			return []string{th.acDim.Render("no row selected")}
+		}
+		out = append(out, th.acSel.Render("› "+sanitize(r.k)))
+		out = append(out, th.acDetail.Render(sanitize(r.v)))
+		if r.raw != "" {
+			out = append(out, "")
+			out = append(out, wrapText(sanitize(r.raw), w)...)
+		}
+	}
+	return out
 }

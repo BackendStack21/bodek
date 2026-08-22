@@ -158,7 +158,13 @@ type Model struct {
 	models   []client.ModelInfo
 	panelSel int
 	panelMsg string // status/error line inside a panel
-	popover  bool   // cockpit overlay (h): server/link/budget/session consolidation
+	// Detail submode for the management tabs: Enter expands the selected
+	// row into a readable block (skill description, full fact text, MCP
+	// args, raw config JSON) — the promote/delete gates assume the human
+	// can see what they are gating.
+	panelDetail  bool // management tab: detail view open
+	detailScroll int  // detail view top-line scroll offset
+	popover      bool // cockpit overlay (h): server/link/budget/session consolidation
 
 	// Sessions panel state: server-side search plus paged "load more".
 	sessQuery   string        // applied search text (server-side substring match)

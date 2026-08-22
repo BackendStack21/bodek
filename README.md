@@ -189,7 +189,12 @@ command and press `⏎`.
 `/sessions`, `/runs`, `/events`, `/memory`, `/skills`, `/tools`, and
 `/config` all open tabs of **one drawer** with a shared grammar:
 
-- `]` / `[` cycle tabs · `1`–`7` jump · `r` and `⏎` refresh · `esc` closes.
+- `]` / `[` cycle tabs · `1`–`7` jump · `r` refresh · `esc` closes.
+- **Every management row opens a detail view on `⏎`** — the full text
+  behind the gate: a skill's description and provenance, a fact or pending
+  episode's body, an MCP server's command/args/limits, raw JSON for nested
+  config values. `↑`/`↓` scroll it, `esc`/`q` folds back (selection kept),
+  and `p` promotes straight from the detail — no more promoting blind.
 - **Sessions** — `/` search (server-side), `p` pin, `r` rename, `e`/`E`
   export md/json, `d` delete (`y` confirms — deletes are always two-step),
   `⏎` resume.
@@ -199,9 +204,11 @@ command and press `⏎`.
   clear filters (a runs-tab drill-in scopes it to one run).
 - **Memory** — `a`/`A` add user/env facts, `d` delete fact (`y` confirms),
   `p` promote a pending episode, `c`/`E` consolidate.
-- **Skills** — provenance badges; `p` promote, `P` force-promote tainted.
-- **Tools/Config** — registry + MCP servers; sanitized config, lifetime
-  usage, `d` kick a connection, `S` typed shutdown death-gate.
+- **Skills** — provenance badges plus a dim description line; `p` promote
+  (also from the detail view), `P` force-promote tainted.
+- **Tools/Config** — registry + MCP servers; config values flatten one
+  level (`sandbox.enabled`), nested values show raw JSON in the detail;
+  lifetime usage, `d` kick a connection, `S` typed shutdown death-gate.
 
 ### File attachments (`@`)
 

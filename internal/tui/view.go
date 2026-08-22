@@ -1052,7 +1052,15 @@ func (m *Model) footer() string {
 				th.footer.Render("any other key cancels"),
 			)
 		}
+		if m.panelDetail {
+			return m.panelFooter(
+				th.footer.Render("↑↓ scroll"),
+				th.footerKey.Render("p")+th.footer.Render(" promote episode"),
+				th.footer.Render("esc back"),
+			)
+		}
 		return m.panelFooter(
+			th.footer.Render("⏎ detail · "),
 			th.footerKey.Render("a")+th.footer.Render(" add user · "),
 			th.footerKey.Render("A")+th.footer.Render(" add env"),
 			th.footerKey.Render("d")+th.footer.Render(" delete fact → y confirm"),
@@ -1063,16 +1071,27 @@ func (m *Model) footer() string {
 		)
 	}
 	if m.panel == panelSkills {
+		if m.panelDetail {
+			return m.panelFooter(
+				th.footer.Render("↑↓ scroll"),
+				th.footerKey.Render("p")+th.footer.Render(" promote · "),
+				th.footerKey.Render("P")+th.footer.Render(" force-promote"),
+				th.footer.Render("esc back"),
+			)
+		}
 		return m.panelFooter(
-			th.footer.Render("↑↓ select · ]/[ tabs"),
+			th.footer.Render("↑↓ select · ⏎ detail · ]/[ tabs"),
 			th.footerKey.Render("p")+th.footer.Render(" promote"),
 			th.footerKey.Render("P")+th.footer.Render(" force-promote"),
 			th.footer.Render("esc close"),
 		)
 	}
 	if m.panel == panelTools {
+		if m.panelDetail {
+			return m.panelFooter(th.footer.Render("↑↓ scroll · esc back"))
+		}
 		return m.panelFooter(
-			th.footer.Render("↑↓ browse · ]/[ tabs · esc close"),
+			th.footer.Render("↑↓ browse · ⏎ detail · ]/[ tabs · esc close"),
 		)
 	}
 	if m.panel == panelConfig {
@@ -1083,8 +1102,11 @@ func (m *Model) footer() string {
 				th.footerKey.Render("esc")+th.footer.Render(" cancels"),
 			)
 		}
+		if m.panelDetail {
+			return m.panelFooter(th.footer.Render("↑↓ scroll · esc back"))
+		}
 		return m.panelFooter(
-			th.footer.Render("↑↓ browse · ]/[ tabs"),
+			th.footer.Render("↑↓ browse · ⏎ detail · ]/[ tabs"),
 			th.footerKey.Render("d")+th.footer.Render(" kick connection"),
 			th.footerKey.Render("S")+th.footerDanger.Render(" shutdown server"),
 			th.footerKey.Render("r")+th.footer.Render(" refresh"),

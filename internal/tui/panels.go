@@ -199,6 +199,8 @@ func (m *Model) closePanel() {
 	m.panel = panelNone
 	m.panelMsg = ""
 	m.panelEdit = panelEditNone
+	m.panelDetail = false
+	m.detailScroll = 0
 	m.confirm = confirmNone
 	m.relayout()
 	m.refresh()
@@ -210,6 +212,52 @@ func (m *Model) handlePanelKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// Text-entry submodes capture everything except quit.
 	if m.panelEdit != panelEditNone {
 		return m.handlePanelEditKey(msg)
+	}
+	// Detail submode: scrolling, folding, and the in-place promote; the
+	// drawer tab keys (] [ and digits) fall through and switch tabs, which
+	// resets the detail via the open* constructors.
+	if m.panelDetail && mgmtPanel(m.panel) {
+		switch msg.String() {
+		case "ctrl+c":
+			m.quitting = true
+			return m, tea.Quit
+		case "esc", "q":
+			m.closeDetail()
+			return m, nil
+		case "up", "ctrl+p", "k":
+			if m.detailScroll > 0 {
+				m.detailScroll--
+				m.refresh()
+			}
+			return m, nil
+		case "down", "ctrl+n", "j":
+			if m.detailScroll < m.detailMaxScroll() {
+				m.detailScroll++
+				m.refresh()
+			}
+			return m, nil
+		case "p":
+			if m.panel == panelSkills {
+				return m, m.skillPromote(false)
+			}
+			if m.panel == panelMemory {
+				return m, m.memPromoteSelected()
+			}
+			return m, nil
+		case "P":
+			if m.panel == panelSkills {
+				return m, m.skillPromote(true)
+			}
+			return m, nil
+		}
+		// Everything else is swallowed by the detail view — except the
+		// drawer navigation keys, which fall through to switch tabs.
+		s := msg.String()
+		drawerNav := s == "]" || s == "[" || s == "left" || s == "right" ||
+			(len(s) == 1 && s[0] >= '1' && s[0] <= '9')
+		if !drawerNav {
+			return m, nil
+		}
 	}
 	// Drawer-level keys: tab cycling and digit jumps work on every drawer tab.
 	if drawerPanel(m.panel) {
@@ -542,8 +590,15 @@ func (m *Model) panelSelect() tea.Cmd {
 	case panelEvents:
 		return m.fetchEvents()
 	case panelMemory, panelSkills, panelTools, panelConfig:
-		// Enter on management tabs refreshes the visible list.
-		return m.switchDrawerTab(m.panel)
+		// Enter expands the selected row into its detail view — the
+		// promote/delete gates assume the human can read what they gate.
+		if m.panelLen() == 0 {
+			return nil
+		}
+		m.panelDetail = true
+		m.detailScroll = 0
+		m.refresh()
+		return nil
 	}
 	return nil
 }
@@ -1036,7 +1091,23 @@ func (m *Model) renderPanel(w, h int) string {
 	if m.panelMsg != "" {
 		body += "\n" + th.acDim.Render(m.panelMsg)
 	}
-	if len(rows) > 0 {
+	if m.panelDetail && mgmtPanel(m.panel) {
+		// Detail view replaces the list: window the wrapped block by the
+		// scroll offset, clamped so the final line stays reachable.
+		lines := m.mgmtDetailLines(w - 8)
+		visible := h - 5 // border(2) + title(1) + breathing room
+		if visible < 1 {
+			visible = 1
+		}
+		if m.detailScroll > max(len(lines)-visible, 0) {
+			m.detailScroll = max(len(lines)-visible, 0)
+		}
+		win := lines
+		if len(lines) > visible {
+			win = lines[m.detailScroll : m.detailScroll+visible]
+		}
+		body += "\n" + strings.Join(win, "\n")
+	} else if len(rows) > 0 {
 		// Window the rows around the selection to fit the available height.
 		visible := h - 4 // border(2) + title(1) + breathing room
 		if m.panelEdit != panelEditNone {
@@ -1045,7 +1116,11 @@ func (m *Model) renderPanel(w, h int) string {
 		if visible < 1 {
 			visible = 1
 		}
-		body += "\n" + strings.Join(windowRows(rows, m.panelSel, visible), "\n")
+		sel := m.panelSel
+		if m.panel == panelSkills {
+			sel = m.skillSelRow() // description lines shift visual rows
+		}
+		body += "\n" + strings.Join(windowRows(rows, sel, visible), "\n")
 	}
 
 	// acBox is exactly the rounded brand box this panel used to hand-build.
