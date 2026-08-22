@@ -112,6 +112,11 @@ feat(tui): compact tool steps with Ctrl+E details toggle
 - The slash-completion popup holds key capture while open; typed keys
   must keep flowing to the input. Route keys through the popup first,
   then fall through to normal input handling.
+- Management drawer tabs (memory/skills/tools/config) have a detail
+  submode: `⏎` expands the selected row (skill description, full fact
+  text, MCP args, raw config JSON — everything through `sanitize()`),
+  `esc`/`q` folds back, `p` promotes in place. Tab switches reset it
+  (`switchDrawerTab`); keep that reset when adding new open paths.
 
 ## Workflow rules for agents
 

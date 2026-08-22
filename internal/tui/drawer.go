@@ -134,6 +134,8 @@ func drawerPanel(p panelMode) bool {
 // tab owns its state and fetches fresh on open.
 func (m *Model) switchDrawerTab(mode panelMode) tea.Cmd {
 	m.confirm = confirmNone // a gate never survives a tab change
+	m.panelDetail = false   // nor does an open detail view
+	m.detailScroll = 0
 	for _, t := range drawerTabs() {
 		if t.mode == mode {
 			return t.open(m)

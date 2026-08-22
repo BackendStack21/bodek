@@ -105,7 +105,7 @@ func TestDrawerTabCycling(t *testing.T) {
 			t.Errorf("digit %s: panel = %d, want %d", d, m.panel, w)
 		}
 	}
-	// The strip renders every tab name, and r/⏎ refresh a management tab
+	// The strip renders every tab name, and r refreshes a management tab
 	// the same as a core tab (they are drawer tabs now).
 	out := plain(m.View())
 	for _, name := range []string{"sessions", "runs", "events", "memory", "skills", "tools", "config"} {
@@ -122,14 +122,19 @@ func TestDrawerTabCycling(t *testing.T) {
 	} else {
 		m.Update(exec(cmd))
 	}
-	_, cmd = m.Update(key("enter"))
-	if cmd == nil {
-		t.Error("enter did not refresh the memory tab")
-	} else {
-		m.Update(exec(cmd))
+	// Enter no longer refreshes — it expands the selected row into the
+	// detail view (the readable half of the promote gate). Esc folds the
+	// detail; a second esc closes the drawer.
+	m.Update(key("enter"))
+	if !m.panelDetail {
+		t.Error("enter did not open the memory detail view")
+	}
+	m.Update(key("esc"))
+	if m.panelDetail {
+		t.Error("esc did not fold the detail view")
 	}
 	if m.panel != panelMemory {
-		t.Errorf("refresh left the tab: %d", m.panel)
+		t.Errorf("folding the detail left the tab: %d", m.panel)
 	}
 	m.Update(key("esc"))
 	if m.panel != panelNone {
