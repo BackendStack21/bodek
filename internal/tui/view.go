@@ -426,17 +426,20 @@ func (m *Model) renderMessage(msg message, msgIdx, lineOffset int) (string, []st
 		if msg.collapsed {
 			return label + "\n" + th.statsDim.Render(m.collapseSummary(msg)), nil
 		}
-		// Resolve the markdown body (finalized or streaming) first.
+		// Resolve the markdown body for messages without timeline replies
+		// (hand-built or resumed transcripts): finalized turns show the
+		// cached glamour render.
 		content := msg.content
 		if !msg.streaming && msg.rendered != "" {
 			content = msg.rendered
 		}
 		// Compose the turn body from the chronological timeline: reasoning
-		// blocks and tool steps interleaved in arrival order.
+		// blocks, tool steps, and reply segments interleaved in arrival
+		// order — each think→reply pair renders independently.
 		items := msg.items
 		if len(items) == 0 {
-			// Messages without a timeline (hand-built or resumed transcripts)
-			// fall back to the old fixed order: thinking, then steps.
+			// Messages without a timeline (hand-built) fall back to the old
+			// fixed order: thinking, steps, then the reply as one card.
 			if strings.TrimSpace(msg.thinking) != "" {
 				items = append(items, turnItem{thinking: true, text: msg.thinking})
 			}
@@ -444,9 +447,23 @@ func (m *Model) renderMessage(msg message, msgIdx, lineOffset int) (string, []st
 				items = append(items, turnItem{stepIdx: i})
 			}
 		}
-		var b strings.Builder
+		var lines []string // turn-body rows below the label, in render order
 		var refs []stepRef
-		line := lineOffset + 1 // body starts one line below the label
+		prevCard := false    // previous emitted block was an answer card
+		var replied []string // reply texts emitted from the timeline
+		// addBlock stacks one rendered block onto the body. Work stays
+		// tightly packed under the previous work item; any block touching a
+		// card is separated by a blank row so each raised card reads as its
+		// own unit. Returns the row the block starts at.
+		addBlock := func(block string, card bool) int {
+			if len(lines) > 0 && (card || prevCard) {
+				lines = append(lines, "")
+			}
+			start := lineOffset + 1 + len(lines)
+			lines = append(lines, strings.Split(strings.TrimRight(block, "\n"), "\n")...)
+			prevCard = card
+			return start
+		}
 		for it := range items {
 			if items[it].thinking {
 				t := strings.TrimSpace(items[it].text)
@@ -462,56 +479,67 @@ func (m *Model) renderMessage(msg message, msgIdx, lineOffset int) (string, []st
 					body = t
 				}
 				excerpt := th.thinkStyle.Width(max(m.vp.Width-4, 8)).Render("… " + body)
-				if b.Len() > 0 {
-					b.WriteString("\n")
+				addBlock(th.asstWork.Render(excerpt), false)
+				continue
+			}
+			if items[it].reply {
+				t := items[it].text
+				if strings.TrimSpace(t) == "" {
+					continue
 				}
-				b.WriteString(excerpt)
-				line += lineCount(excerpt)
+				body := t
+				if !msg.streaming && items[it].rendered != "" {
+					body = items[it].rendered
+				}
+				card, _ := m.answerCardBody(body)
+				addBlock(card, true)
+				replied = append(replied, t)
 				continue
 			}
 			if items[it].stepIdx < 0 || items[it].stepIdx >= len(msg.steps) {
 				continue
 			}
-			block, ref, n := m.renderStep(msg.steps[items[it].stepIdx], msg.streaming, msgIdx, items[it].stepIdx, line)
-			if b.Len() > 0 {
-				b.WriteString("\n")
-			}
-			b.WriteString(block)
-			refs = append(refs, ref)
-			line += n
+			block, _, _ := m.renderStep(msg.steps[items[it].stepIdx], msg.streaming, msgIdx, items[it].stepIdx, 0)
+			start := addBlock(th.asstWork.Render(block), false)
+			refs = append(refs, stepRef{msgIdx: msgIdx, stepIdx: items[it].stepIdx, line: start})
 		}
-		// The work section (reasoning + steps) and the final answer are
-		// separate blocks: the answer renders bare at column zero — full
-		// brightness, and copy-paste-clean — separated from the dimmer,
-		// indented work items by a blank line.
+		// Residual prose: hand-built messages carry their reply only in
+		// msg.content (or msg.rendered) — render it as one trailing card.
+		// Live and replayed turns keep the blob in sync with the timeline
+		// (appendReply), so the per-cycle cards already carry everything.
+		trail := content
+		if len(replied) > 0 && msg.content == strings.Join(replied, "\n\n") {
+			trail = ""
+		}
+		if strings.TrimSpace(trail) != "" {
+			card, _ := m.answerCardBody(trail)
+			addBlock(card, true)
+		}
 		var out strings.Builder
 		out.WriteString(label)
-		if b.Len() > 0 {
+		if len(lines) > 0 {
 			out.WriteString("\n")
-			out.WriteString(th.asstWork.Render(strings.TrimRight(b.String(), "\n")))
-		}
-		if strings.TrimSpace(content) != "" {
-			if b.Len() > 0 {
-				out.WriteString("\n\n")
-			} else {
-				out.WriteString("\n")
-			}
-			// The answer renders as one raised card: the deliverable of the
-			// turn, visually distinct from the dimmed work above it. Glamour
-			// wraps at vp-6, so the card's padding still fits; high-contrast
-			// skips the surface entirely.
-			if th.answerCard.GetBackground() == nil {
-				out.WriteString(content)
-			} else {
-				// Glamour resets styling after each span; without re-asserting
-				// the surface after every reset, the text would sit on the
-				// terminal's own background instead of the card.
-				card := th.answerCard.Width(m.vp.Width - 2)
-				out.WriteString(card.Render(weaveSurface(content, surfaceSGR(th.answerCard))))
-			}
+			out.WriteString(strings.Join(lines, "\n"))
 		}
 		return out.String(), refs
 	}
+}
+
+// answerCardBody styles one reply segment as its raised card — the
+// deliverable of a think→reply cycle, visually distinct from the dimmed,
+// indented work around it. Glamour wraps at vp-6, so the card's padding
+// still fits; high-contrast skips the surface entirely. Returns the styled
+// card and its line count.
+func (m *Model) answerCardBody(body string) (string, int) {
+	if m.th.answerCard.GetBackground() == nil {
+		return body, lineCount(body)
+	}
+	// Glamour resets styling after each span; without re-asserting the
+	// surface after every reset, the text would sit on the terminal's own
+	// background instead of the card.
+	card := m.th.answerCard.Width(m.vp.Width - 2)
+	styled := card.Render(weaveSurface(body, surfaceSGR(m.th.answerCard)))
+	return styled, lineCount(styled)
 }
 
 // collapseSummary describes what a folded turn card hides, so the collapsed
