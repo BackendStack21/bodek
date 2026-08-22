@@ -291,13 +291,14 @@ func (m *Model) palPopup() string {
 	case len(m.pal.items) == 0 && m.pal.query != "":
 		rows = append(rows, th.acDim.Render("no matches for “"+m.pal.query+"”"))
 	default:
-		for i, e := range windowEntries(m.pal.items, m.pal.sel, maxPalRows) {
+		window, start := windowEntries(m.pal.items, m.pal.sel, maxPalRows)
+		for i, e := range window {
 			prefix, label := "  ", th.acItem.Render(e.title)
 			detail := th.acDetail.Render(e.kind)
 			if e.hint != "" {
 				detail += th.acDetail.Render("  ·  ") + th.footerKey.Render(e.hint)
 			}
-			if i == m.pal.sel {
+			if start+i == m.pal.sel {
 				prefix, label = th.acSel.Render("› "), th.acSel.Render(e.title)
 			}
 			rows = append(rows, prefix+label+"  "+detail)
@@ -310,9 +311,11 @@ func (m *Model) palPopup() string {
 }
 
 // windowEntries windows entries around sel without changing indices.
-func windowEntries(entries []palEntry, sel, n int) []palEntry {
+// It returns the window and the absolute index of its first row, so
+// callers can map window-relative positions back onto sel.
+func windowEntries(entries []palEntry, sel, n int) ([]palEntry, int) {
 	if len(entries) <= n {
-		return entries
+		return entries, 0
 	}
 	start := sel - n/2
 	if start < 0 {
@@ -321,7 +324,7 @@ func windowEntries(entries []palEntry, sel, n int) []palEntry {
 	if start+n > len(entries) {
 		start = len(entries) - n
 	}
-	return entries[start : start+n]
+	return entries[start : start+n], start
 }
 
 // palHeight is the palette's rendered height (border + title + rows).

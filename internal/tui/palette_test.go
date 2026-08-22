@@ -87,6 +87,58 @@ func TestPaletteOpenFilterRun(t *testing.T) {
 	}
 }
 
+// TestPaletteSelectionTracksScroll is a regression test for the ^K popup:
+// the highlight must follow sel even after the list scrolls past the
+// visible window (the highlight used to compare a window-relative index
+// against the absolute sel, so it vanished or landed on the wrong row).
+func TestPaletteSelectionTracksScroll(t *testing.T) {
+	m := wired(t)
+	_, cmd := m.Update(key("ctrl+k"))
+	m.Update(exec(cmd)) // sessions fetch
+
+	if len(m.pal.items) <= maxPalRows {
+		t.Fatalf("fixture too small to scroll: %d entries", len(m.pal.items))
+	}
+
+	highlighted := func(m *Model) string {
+		var row string
+		n := 0
+		for _, ln := range strings.Split(plain(m.palPopup()), "\n") {
+			if strings.Contains(ln, "›") {
+				row, n = ln, n+1
+			}
+		}
+		if n != 1 {
+			t.Fatalf("expected exactly one highlighted row, got %d", n)
+		}
+		return row
+	}
+
+	// Walk the selection past the visible window; the highlight must stay
+	// on the row the selection actually points at.
+	for i := 0; i < maxPalRows+2; i++ {
+		m.Update(key("down"))
+	}
+	sel := m.pal.sel
+	if sel != maxPalRows+2 {
+		t.Fatalf("down did not advance sel: got %d", sel)
+	}
+	if row := highlighted(m); !strings.Contains(row, m.pal.items[sel].title) {
+		t.Fatalf("scrolled highlight is on the wrong row:\n%q\nwant title %q", row, m.pal.items[sel].title)
+	}
+
+	// Walk back to the top; the highlight must still track.
+	for i := 0; i < sel; i++ {
+		m.Update(key("up"))
+	}
+	if m.pal.sel != 0 {
+		t.Fatalf("up did not return to top: got %d", m.pal.sel)
+	}
+	if row := highlighted(m); !strings.Contains(row, m.pal.items[0].title) {
+		t.Fatalf("top highlight is on the wrong row:\n%q\nwant title %q", row, m.pal.items[0].title)
+	}
+}
+
 // TestPaletteFromApproval verifies the palette works from the approval rung.
 func TestPaletteFromApproval(t *testing.T) {
 	m := wired(t)
