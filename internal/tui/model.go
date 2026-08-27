@@ -234,8 +234,7 @@ type Model struct {
 
 	status    string
 	notices   []string
-	noticeExp []time.Time // parallel to notices; zero = sticky, else expires at
-	noticeSeq int         // bumped on each transient notice, to invalidate stale timers
+	noticeExp []time.Time // parallel to notices; when each one fades
 	disconn   bool
 	quitting  bool
 
@@ -375,7 +374,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.finalize()
 		m.relayout() // the busy status line releases its row
 		m.refresh()
-		return m, m.sendQueued()
+		return m, tea.Batch(m.sendQueued(), m.noticeSweep())
 
 	case acResultMsg:
 		if msg.seq != m.ac.seq || m.ac.mode != acRef {
@@ -478,7 +477,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.addNote("shutdown failed: " + msg.err.Error())
 			m.refresh()
 		}
-		return m, nil
+		return m, m.noticeSweep()
 
 	case mgmtMsg:
 		m.handleMgmtMsg(msg)
@@ -512,7 +511,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.refresh()
 			return m, cmd
 		}
-		return m, nil
+		return m, m.noticeSweep()
 
 	case updateCheckMsg:
 		// Silent on error or when already current: the hint only ever nags
@@ -521,7 +520,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.addNote(fmt.Sprintf("⬆ bodek %s available — run `bodek upgrade`", msg.latest))
 			m.refresh()
 		}
-		return m, nil
+		return m, m.noticeSweep()
 
 	case eventMsg:
 		return m.handleEvent(client.Event(msg))
@@ -532,7 +531,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case noticeExpireMsg:
 		m.pruneNotices(time.Now())
 		m.refresh()
-		return m, nil
+		return m, m.noticeSweep() // re-arm while pending notices remain
 
 	case tea.MouseMsg:
 		if msg.Action == tea.MouseActionPress && msg.Button == tea.MouseButtonLeft && m.panel == panelNone && !m.ac.open {

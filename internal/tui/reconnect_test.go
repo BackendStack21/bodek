@@ -28,14 +28,18 @@ func TestDisconnectSchedulesReconnect(t *testing.T) {
 	}
 }
 
-// Without a Reconnect hook the disconnect keeps the terminal behavior.
+// Without a Reconnect hook the disconnect stays dead — no reconnect is
+// scheduled, only the (expiring) notes and their sweep ride along.
 func TestDisconnectWithoutHookStaysDead(t *testing.T) {
 	m := newTestModel()
 
 	_, cmd := m.handleEvent(client.Event{Type: client.EventDisconnected})
 
-	if cmd != nil {
-		t.Error("no reconnect hook: expected no scheduled command")
+	if cmd == nil {
+		t.Error("the disconnect notes should arm their expiry sweep")
+	}
+	if !m.disconn {
+		t.Error("input must stay blocked — no reconnect hook means the drop is final")
 	}
 	if m.status != "disconnected" {
 		t.Errorf("status = %q, want disconnected", m.status)

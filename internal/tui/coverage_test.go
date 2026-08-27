@@ -145,24 +145,19 @@ func TestAddNoteRingBuffer(t *testing.T) {
 
 func TestTransientNoticeExpires(t *testing.T) {
 	m := wired(t)
-	m.addNote("sticky")
+	m.addNote("alert tier")
 	m.addTransientNote("skill · loaded")
-	if cmd := m.noticeTimer(0); cmd == nil {
-		t.Fatal("transient notice should schedule an expiry timer")
+	if cmd := m.noticeSweep(); cmd == nil {
+		t.Fatal("pending notices should arm the expiry sweep")
 	}
-	// Expiry sweep drops the transient trace but keeps the sticky note.
+	// A sweep landing at the info TTL drops the transient trace but keeps
+	// the alert — and re-arms the sweep for the alert's own expiry.
 	m.noticeExp[1] = time.Now().Add(-time.Second)
-	if _, cmd := m.Update(noticeExpireMsg{seq: m.noticeSeq}); cmd != nil {
-		t.Error("expiry sweep should not reschedule")
+	if _, cmd := m.Update(noticeExpireMsg{}); cmd == nil {
+		t.Error("expiry sweep should reschedule while an alert is pending")
 	}
-	if got := strings.Join(m.notices, "\n"); got != "sticky" {
+	if got := strings.Join(m.notices, "\n"); got != "alert tier" {
 		t.Errorf("notices after expiry = %q", got)
-	}
-	// A stale timer must not clear notices that have not expired yet.
-	m.addTransientNote("skill · saved")
-	m.Update(noticeExpireMsg{seq: m.noticeSeq - 1})
-	if len(m.notices) != 2 {
-		t.Errorf("stale timer cleared notices: %v", m.notices)
 	}
 }
 
@@ -244,8 +239,8 @@ func TestSubmitGuards(t *testing.T) {
 	}
 	m.disconn = true
 	m.ta.SetValue("hi")
-	if cmd := m.submit(); cmd != nil {
-		t.Error("submit while disconnected should be nil (the warning is sticky, no expiry to arm)")
+	if cmd := m.submit(); cmd == nil {
+		t.Error("submit while disconnected should arm the warning's expiry sweep")
 	}
 	if m.ta.Value() != "hi" {
 		t.Error("submit while disconnected must keep the draft")

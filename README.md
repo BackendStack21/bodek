@@ -314,7 +314,9 @@ one `Esc`.
   spinner, smart autoscroll that never yanks you while you read history, and a
   scroll-position indicator.
 - **Engine notices** — skill loads, memory merges, and agent signals appear as
-  quiet status lines.
+  quiet status lines. Nothing lingers: info traces fade after 3s, and
+  errors, warnings, and disconnect notes autoclose after 10s (connection
+  state stays visible in the header badge).
 - **Version display** — the header shows bodek's own version next to the logo
   and the spawned odek's version next to the model name.
 - **Update hint** — at startup, a quiet note appears when a newer bodek release
