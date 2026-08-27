@@ -4,6 +4,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -407,10 +408,11 @@ func TestDisconnectedFooterHidesRetryWithDraft(t *testing.T) {
 	}
 }
 
-// TestDisconnectedSubmitWarningSticky verifies the submit-while-disconnected
-// warning is sticky (not a 3s transient), keeps the draft, and does not
+// TestDisconnectedSubmitWarningFades verifies the submit-while-disconnected
+// warning is alert-tier (it dwells well past a glance away, but still
+// autocloses like everything in the strip), keeps the draft, and does not
 // stack a duplicate on every enter.
-func TestDisconnectedSubmitWarningSticky(t *testing.T) {
+func TestDisconnectedSubmitWarningFades(t *testing.T) {
 	m := newTestModel()
 	m.disconn = true
 	m.ta.SetValue("hello")
@@ -423,8 +425,8 @@ func TestDisconnectedSubmitWarningSticky(t *testing.T) {
 	if !strings.Contains(m.notices[last], "draft is kept") {
 		t.Errorf("warning text = %q", m.notices[last])
 	}
-	if !m.noticeExp[last].IsZero() {
-		t.Error("disconnect warning should be sticky (no expiry)")
+	if m.noticeExp[last].IsZero() {
+		t.Error("disconnect warning should carry an expiry (no sticky notes)")
 	}
 	if m.ta.Value() != "hello" {
 		t.Errorf("draft should be kept, got %q", m.ta.Value())
@@ -433,6 +435,11 @@ func TestDisconnectedSubmitWarningSticky(t *testing.T) {
 	m.submit() // draft still there — must not stack a duplicate
 	if len(m.notices) != last+1 {
 		t.Errorf("duplicate warning posted: %v", m.notices)
+	}
+
+	m.pruneNotices(time.Now().Add(alertTTL + time.Second))
+	if len(m.notices) != 0 {
+		t.Errorf("warning survived alertTTL: %v", m.notices)
 	}
 }
 

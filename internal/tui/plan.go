@@ -35,7 +35,7 @@ const (
 )
 
 // planDebounceMsg arms the trailing edge of the WS-trigger window; a newer
-// trigger supersedes it via sequence compare (noticeTimer pattern).
+// trigger supersedes it via sequence compare (the expiry-sweep pattern).
 type planDebounceMsg struct{ seq int }
 
 // planTickMsg re-arms the tab-visible poll (runsTickMsg pattern).

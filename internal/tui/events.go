@@ -19,13 +19,18 @@ import (
 // subagent) stay on screen before fading out.
 const noticeTTL = 3 * time.Second
 
-// noticeExpireMsg fires noticeTTL after a transient notice was added.
-type noticeExpireMsg struct {
-	seq int
-}
+// alertTTL is how long alert-tier notices (errors, warnings, disconnects,
+// shutdown / upgrade hints) dwell before fading — longer than the info
+// traces so a glance away doesn't miss them, but bounded like everything
+// else in the strip. Durable state (disconnected, server shut down) lives
+// in the header badge, not here.
+const alertTTL = 10 * time.Second
+
+// noticeExpireMsg fires when the earliest pending notice expiry passes; the
+// handler prunes expired notices and re-arms the sweep while any remain.
+type noticeExpireMsg struct{}
 
 func (m *Model) handleEvent(ev client.Event) (tea.Model, tea.Cmd) {
-	prevSeq := m.noticeSeq
 	stream := false // high-frequency event: coalesce the render (see queueRender)
 	switch ev.Type {
 	case "session":
@@ -296,7 +301,7 @@ func (m *Model) handleEvent(ev client.Event) (tea.Model, tea.Cmd) {
 			m.status = "server shut down"
 			m.addNote("server shut down · ⏎ starts a fresh instance")
 			m.refresh()
-			return m, nil
+			return m, m.noticeSweep()
 		}
 		// A turn in flight when the socket drops will never finish: close it
 		// out with an interrupted marker instead of leaving it streaming
@@ -311,10 +316,9 @@ func (m *Model) handleEvent(ev client.Event) (tea.Model, tea.Cmd) {
 			m.status = "reconnecting…"
 			m.addTransientNote("connection lost — reconnecting…")
 			m.refresh()
-			// The interim note fades via the sweep armed by noticeTimer; the
-			// reconnect outcome (success or the sticky ⏎-retry hint) replaces
-			// it within seconds either way.
-			return m, tea.Batch(cmd, m.noticeTimer(prevSeq))
+			// The interim note fades via the sweep; the reconnect outcome
+			// (success or the ⏎-retry hint) replaces it within seconds.
+			return m, tea.Batch(cmd, m.noticeSweep())
 		}
 		m.status = "disconnected"
 		m.addNote("disconnected from odek serve")
@@ -322,15 +326,15 @@ func (m *Model) handleEvent(ev client.Event) (tea.Model, tea.Cmd) {
 			m.addNote("server log · " + m.opts.LogPath)
 		}
 		m.refresh()
-		return m, nil
+		return m, m.noticeSweep()
 	}
 
 	if stream {
-		return m, tea.Batch(listen(m.events), m.noticeTimer(prevSeq), m.queueRender())
+		return m, tea.Batch(listen(m.events), m.noticeSweep(), m.queueRender())
 	}
 	m.refresh()
 	// A turn that just ended (done / error) drains the next queued prompt.
-	return m, tea.Batch(listen(m.events), m.noticeTimer(prevSeq), m.sendQueued(), m.planFollowup())
+	return m, tea.Batch(listen(m.events), m.noticeSweep(), m.sendQueued(), m.planFollowup())
 }
 
 // stepGlyphs returns up to 4 deduped tool glyphs for a turn's steps, in
@@ -545,26 +549,24 @@ func (m *Model) closeTurn(msg *message) {
 	msg.rendered = m.render(msg.content)
 }
 
-// addNote appends a sticky notice (errors, disconnects) that stays until
-// pushed out by newer ones.
+// addNote appends an alert-tier notice (errors, warnings, disconnects) that
+// dwells for alertTTL before fading — long enough to read, bounded like
+// every notice in the strip.
 func (m *Model) addNote(s string) {
-	m.pushNote(s, time.Time{})
+	m.pushNote(s, time.Now().Add(alertTTL))
 }
 
 // addTransientNote appends an info trace that fades after noticeTTL.
 func (m *Model) addTransientNote(s string) {
 	m.pushNote(s, time.Now().Add(noticeTTL))
-	m.noticeSeq++
 }
 
-// transientNoteCmd adds a transient note and returns the cmd that sweeps it
-// after noticeTTL. handleEvent arms the sweep itself; every other caller
-// (key handlers, async results) must batch this cmd or the note only fades
-// on the next unrelated render.
+// transientNoteCmd adds a transient note and returns the sweep cmd. Every
+// caller outside handleEvent must batch this cmd or the note only fades on
+// the next unrelated render.
 func (m *Model) transientNoteCmd(s string) tea.Cmd {
-	prev := m.noticeSeq
 	m.addTransientNote(s)
-	return m.noticeTimer(prev)
+	return m.noticeSweep()
 }
 
 func (m *Model) pushNote(s string, exp time.Time) {
@@ -590,15 +592,26 @@ func (m *Model) pruneNotices(now time.Time) {
 	m.noticeExp = keptExp
 }
 
-// noticeTimer schedules the expiry sweep when a transient notice was added
-// since prevSeq; otherwise it returns nil.
-func (m *Model) noticeTimer(prevSeq int) tea.Cmd {
-	if m.noticeSeq == prevSeq {
+// noticeSweep schedules the next expiry sweep at the earliest pending
+// notice expiry; nil when the strip has nothing pending. The tick handler
+// prunes and re-arms, so expired notes disappear even on an idle TUI and
+// the timer chain stops itself once the strip is clean.
+func (m *Model) noticeSweep() tea.Cmd {
+	var earliest time.Time
+	for _, exp := range m.noticeExp {
+		if earliest.IsZero() || exp.Before(earliest) {
+			earliest = exp
+		}
+	}
+	if earliest.IsZero() {
 		return nil
 	}
-	seq := m.noticeSeq
-	return tea.Tick(noticeTTL, func(time.Time) tea.Msg {
-		return noticeExpireMsg{seq: seq}
+	d := time.Until(earliest)
+	if d < 0 {
+		d = 0
+	}
+	return tea.Tick(d, func(time.Time) tea.Msg {
+		return noticeExpireMsg{}
 	})
 }
 

@@ -44,8 +44,8 @@ func TestShutdownTypedConfirmation(t *testing.T) {
 	if m.status != "server shut down" {
 		t.Errorf("status = %q, want the expected-drop state", m.status)
 	}
-	if note, exp := lastNoteMatching(m, "⏎ starts a fresh instance"); note == "" || !exp.IsZero() {
-		t.Errorf("fresh-start hint missing or non-sticky: %q", note)
+	if note, exp := lastNoteMatching(m, "⏎ starts a fresh instance"); note == "" || exp.IsZero() {
+		t.Errorf("fresh-start hint missing or not expiring: %q", note)
 	}
 	// No reconnect was scheduled: a retry tick would have flipped the status.
 	if strings.HasPrefix(m.status, "reconnect") {
