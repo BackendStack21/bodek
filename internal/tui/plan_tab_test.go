@@ -74,6 +74,25 @@ func TestPlanTab_OpenerAndRenderedRows(t *testing.T) {
 	}
 }
 
+func TestPlanTab_UnattachedOpenerNeverShowsEternalLoading(t *testing.T) {
+	// Regression: opening the tab with no live session (no client / no
+	// session id) used to render "loading plan…" forever — fetchPlan was
+	// a silent no-op, so no reply ever resolved the placeholder.
+	m := newTestModel()
+	if c := m.openPlan(); c != nil {
+		t.Fatal("unattached opener must not issue a fetch")
+	}
+	if m.panel != panelPlan {
+		t.Fatalf("opener panel = %d", m.panel)
+	}
+	if strings.Contains(m.panelMsg, "loading") {
+		t.Fatalf("unattached tab shows eternal loading copy %q", m.panelMsg)
+	}
+	if got := plain(m.View()); !strings.Contains(got, "no active session") {
+		t.Errorf("unattached copy missing from view:\n%s", got)
+	}
+}
+
 func TestPlanTab_DetailFoldHouseGrammar(t *testing.T) {
 	m := newTestModel()
 	m.cl = &client.Client{}

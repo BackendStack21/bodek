@@ -206,6 +206,11 @@ func (m *Model) planStripLabel() string {
 // syncPlanPanelMsg refreshes the tab's empty/unavailable copy from state.
 func (m *Model) syncPlanPanelMsg() {
 	switch {
+	case m.cl == nil || m.sessionID == "":
+		// No live session: fetchPlan is a silent no-op, so "loading plan…"
+		// would never resolve. Say why instead (attach completes → reset +
+		// refetch at the tail resolves this to a real snapshot).
+		m.panelMsg = "no active session yet — the plan loads when a run starts"
 	case m.planAvail == planUnavailable:
 		m.panelMsg = "plan unavailable on this engine · r retries"
 	case m.planAvail == planUnknown && !m.planInit:
