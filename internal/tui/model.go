@@ -221,6 +221,17 @@ type Model struct {
 	toolTotal    int               // cumulative tool calls this session
 	sessionStart time.Time         // first-prompt timestamp, for session wall-clock
 
+	// Planning surface state (see plan.go): WS triggers → debounced REST fetch.
+	plan             client.PlanSnapshot // last accepted snapshot
+	planVer          int                 // accepted snapshot version (monotonic guard)
+	planInit         bool                // any snapshot accepted for this session
+	planAvail        planAvailability    // endpoint health tri-state
+	planTrig         bool                // a plan tool_call awaits tail-batch pickup
+	planResetPending bool                // session changed; reset+refetch at tail
+	planDebSeq       int                 // debounce window sequence
+	planReqSeq       int                 // fetch request sequence
+	planPollSeq      int                 // armed poll tick sequence
+
 	status    string
 	notices   []string
 	noticeExp []time.Time // parallel to notices; zero = sticky, else expires at
@@ -440,6 +451,15 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case runsTickMsg:
 		return m, m.handleRunsTick(msg)
+
+	case planMsg:
+		return m, m.handlePlanMsg(msg)
+
+	case planDebounceMsg:
+		return m, m.handlePlanDebounce(msg)
+
+	case planTickMsg:
+		return m, m.handlePlanTick(msg)
 
 	case runActionMsg:
 		return m, m.handleRunAction(msg)

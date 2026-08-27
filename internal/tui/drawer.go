@@ -113,6 +113,7 @@ func drawerTabs() []drawerTab {
 		{"sessions", panelSessions, func(m *Model) tea.Cmd { return m.openSessions() }},
 		{"runs", panelRuns, func(m *Model) tea.Cmd { return m.openRuns() }},
 		{"events", panelEvents, func(m *Model) tea.Cmd { return m.openEvents() }},
+		{"plan", panelPlan, func(m *Model) tea.Cmd { return m.openPlan() }},
 		{"memory", panelMemory, func(m *Model) tea.Cmd { return m.openMemory() }},
 		{"skills", panelSkills, func(m *Model) tea.Cmd { return m.openSkills() }},
 		{"tools", panelTools, func(m *Model) tea.Cmd { return m.openTools() }},

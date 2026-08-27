@@ -29,10 +29,14 @@ func (m *Model) handleEvent(ev client.Event) (tea.Model, tea.Cmd) {
 	stream := false // high-frequency event: coalesce the render (see queueRender)
 	switch ev.Type {
 	case "session":
+		prevSession := m.sessionID
 		m.sessionID = ev.SessionID
 		if ev.AuthToken != "" {
 			m.authToken = ev.AuthToken
 			m.tokens.Set(ev.SessionID, ev.AuthToken)
+		}
+		if prevSession != "" && ev.SessionID != prevSession {
+			m.planResetPending = true // switch/attach: drop + refetch at the tail
 		}
 		if ev.Model != "" {
 			m.model = ev.Model
@@ -75,6 +79,11 @@ func (m *Model) handleEvent(ev client.Event) (tea.Model, tea.Cmd) {
 
 	case "tool_call":
 		arg := argPreview(ev.Data)
+		if ev.Name == "plan" {
+			if s := planArgSummary(ev.Data); s != "" {
+				arg = s // semantic one-liner replaces the JSON blob (docs §4A)
+			}
+		}
 		if i := m.cur(); i >= 0 {
 			m.msgs[i].steps = append(m.msgs[i].steps,
 				step{name: ev.Name, arg: arg, subagent: isSubagent(ev.Name), started: time.Now()})
@@ -82,6 +91,11 @@ func (m *Model) handleEvent(ev client.Event) (tea.Model, tea.Cmd) {
 		}
 		m.lastTool = ev.Name
 		m.lastArg = arg
+		if ev.Name == "plan" {
+			// Every engine plan mutation rides an ordinary tool_call: schedule
+			// the debounced structured-view refresh (see plan.go).
+			m.planTrig = true
+		}
 		m.status = "running " + ev.Name
 
 	case "tool_result":
@@ -316,7 +330,7 @@ func (m *Model) handleEvent(ev client.Event) (tea.Model, tea.Cmd) {
 	}
 	m.refresh()
 	// A turn that just ended (done / error) drains the next queued prompt.
-	return m, tea.Batch(listen(m.events), m.noticeTimer(prevSeq), m.sendQueued())
+	return m, tea.Batch(listen(m.events), m.noticeTimer(prevSeq), m.sendQueued(), m.planFollowup())
 }
 
 // stepGlyphs returns up to 4 deduped tool glyphs for a turn's steps, in
