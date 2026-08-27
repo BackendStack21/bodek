@@ -174,6 +174,7 @@ command and press `⏎`.
 | `/runs` | Headless REST runs — live status, remote approvals, cancel |
 | `/run <prompt>` | Start a headless run (fresh session) and watch it in the runs tab |
 | `/events` | The `odek.event/v1` runtime feed |
+| `/plan` | Structured task plan of this session (live status) |
 | `/memory` | Facts by target, pending-episode promote, consolidate |
 | `/skills` | Skill provenance badges & promote |
 | `/tools` | Tool registry with enabled state & MCP servers |
@@ -187,10 +188,10 @@ command and press `⏎`.
 
 ### The management drawer
 
-`/sessions`, `/runs`, `/events`, `/memory`, `/skills`, `/tools`, and
+`/sessions`, `/runs`, `/events`, `/plan`, `/memory`, `/skills`, `/tools`, and
 `/config` all open tabs of **one drawer** with a shared grammar:
 
-- `]` / `[` cycle tabs · `1`–`7` jump · `r` refresh · `esc` closes.
+- `]` / `[` cycle tabs · `1`–`8` jump · `r` refresh · `esc` closes.
 - **Every management row opens a detail view on `⏎`** — the full text
   behind the gate: a skill's description and provenance, a fact or pending
   episode's body, an MCP server's command/args/limits, raw JSON for nested
@@ -203,6 +204,11 @@ command and press `⏎`.
   `p` refresh pending approvals, `e` drill into the run's event trail.
 - **Events** — the `odek.event/v1` ring: `f` filter to this session, `x`
   clear filters (a runs-tab drill-in scopes it to one run).
+- **Plan** — the engine's structured task plan (Telegram-parity renderer):
+  summary badge (`v7 · 2/4 done · 1 blocked`) plus one row per step; `⏎`
+  expands the selected step's full title/note. Read-only — the plan is
+  steered by the model; while a run is active and a plan exists, a live
+  `▸ plan 2/4 · <active step>` summary rides the busy line.
 - **Memory** — `a`/`A` add user/env facts, `d` delete fact (`y` confirms),
   `p` promote a pending episode, `c`/`E` consolidate.
 - **Skills** — provenance badges plus a dim description line; `p` promote

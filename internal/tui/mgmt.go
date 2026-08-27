@@ -535,7 +535,7 @@ func (m *Model) cfgRowsRender(w int) []string {
 // mgmtPanel reports whether p is a management drawer tab.
 func mgmtPanel(p panelMode) bool {
 	switch p {
-	case panelMemory, panelSkills, panelTools, panelConfig:
+	case panelPlan, panelMemory, panelSkills, panelTools, panelConfig:
 		return true
 	}
 	return false
@@ -587,6 +587,26 @@ func (m *Model) mgmtDetailLines(w int) []string {
 	th := m.th
 	var out []string
 	switch m.panel {
+	case panelPlan:
+		st := m.planStepAt(m.panelSel)
+		if st == nil {
+			return []string{th.acDim.Render("no step selected")}
+		}
+		out = append(out, th.acSel.Render("› "+planGlyph(st.Status)+" "+sanitize(st.ID)))
+		meta := []string{string(st.Status)}
+		if m.planInit {
+			meta = append(meta, fmt.Sprintf("v%d", m.plan.Version))
+		}
+		out = append(out, th.acDetail.Render(strings.Join(meta, " · ")))
+		if t := strings.TrimSpace(st.Title); t != "" {
+			out = append(out, "")
+			out = append(out, wrapText(sanitize(t), w)...)
+		}
+		if n := strings.TrimSpace(st.Note); n != "" {
+			out = append(out, "")
+			out = append(out, th.acDetail.Render("note:"))
+			out = append(out, wrapText(sanitize(n), w)...)
+		}
 	case panelSkills:
 		s := m.skillSelected()
 		if s == nil {

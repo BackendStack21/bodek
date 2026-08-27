@@ -284,7 +284,9 @@ func standIn(t *testing.T, token string) *Model {
 	t.Cleanup(func() { cl.Close() })
 
 	m := New(cl, Options{Model: "m"})
-	m.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
+	// 120 cols: wide enough for the full eight-tab drawer strip to render
+	// uncollapsed (≈90 cells), keeping tab-name assertions meaningful.
+	m.Update(tea.WindowSizeMsg{Width: 120, Height: 30})
 	return m
 }
 

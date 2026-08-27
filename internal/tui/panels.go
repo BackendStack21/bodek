@@ -21,6 +21,7 @@ const (
 	panelModels
 	panelRuns
 	panelEvents
+	panelPlan
 	panelMemory
 	panelSkills
 	panelTools
@@ -568,6 +569,13 @@ func (m *Model) panelSelect() tea.Cmd {
 		if m.panelSel < len(m.sessions) {
 			return m.resumeSession(m.sessions[m.panelSel].ID)
 		}
+	case panelPlan:
+		if m.planStepAt(m.panelSel) != nil {
+			m.panelDetail = true // readable step text through sanitize() — house grammar
+			m.detailScroll = 0
+			m.refresh()
+		}
+		return nil
 	case panelModels:
 		entries := m.modelEntries()
 		if m.panelSel < len(entries) {
@@ -1058,6 +1066,9 @@ func (m *Model) renderPanel(w, h int) string {
 			title += th.acDetail.Render("  ·  this session")
 		}
 		rows = m.eventRows(w - 6)
+	case panelPlan:
+		title = m.planTitle()
+		rows = m.planRows(w - 6)
 	case panelMemory:
 		title = "❖ memory"
 		rows = m.memRowsRender(w - 6)

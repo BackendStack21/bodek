@@ -250,6 +250,24 @@ func TestE2EAllCommands(t *testing.T) {
 				t.Fatal("/quit did not set quitting")
 			}
 		},
+		"/plan": func(t *testing.T, m *Model) {
+			if m.panel != panelPlan {
+				t.Fatalf("/plan opened panel %d", m.panel)
+			}
+			// Execute the opener's fetch by hand (drive does not run
+			// command closures): against the stand-in's sessions handler
+			// the transcript carries no plan message, so the wire returns
+			// found:false and the tab shows its empty copy.
+			m.Update(exec(m.fetchPlan()))
+			if m.planAvail != planAvailable || !m.planInit ||
+				strings.Contains(m.panelMsg, "unavailable") {
+				t.Fatalf("wire state = avail %d init %v msg %q",
+					m.planAvail, m.planInit, m.panelMsg)
+			}
+			if !strings.Contains(m.panelMsg, "no active plan in this session.") {
+				t.Fatalf("found:false copy wrong: %q", m.panelMsg)
+			}
+		},
 	}
 
 	// Command → the line a user types for it (some need pre-seeded state).
@@ -274,6 +292,8 @@ func TestE2EAllCommands(t *testing.T) {
 				lines[name] = "/attach " + path
 			case "/unattach":
 				m.attachments = append(m.attachments, client.Attachment{Name: "notes.txt", Content: "hello"})
+			case "/plan":
+				m.sessionID, m.authToken = "s1", "a1" // fetch targets a session
 			}
 			line := lines[name]
 			if line == "" {

@@ -50,6 +50,9 @@ func slashCommands() []command {
 		{"events", "runtime event feed", func(m *Model, _ string) tea.Cmd {
 			return m.openEvents()
 		}},
+		{"plan", "structured task plan of this session", func(m *Model, _ string) tea.Cmd {
+			return m.openPlan()
+		}},
 		{"memory", "facts, pending episodes, consolidate", func(m *Model, _ string) tea.Cmd {
 			return m.openMemory()
 		}},
