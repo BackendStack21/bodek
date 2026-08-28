@@ -28,8 +28,12 @@ func slashCommands() []command {
 			return nil
 		}},
 		{"clear", "clear the conversation", func(m *Model, _ string) tea.Cmd {
-			m.clearConversation()
-			return nil
+			// Same gate as ^L, and idle-only: a mid-turn wipe would drop the
+			// view out from under the streaming turn.
+			if m.busy {
+				return m.transientNoteCmd("can't clear while a turn runs — esc cancels it first")
+			}
+			return m.armConfirm(confirmClear, "the conversation")
 		}},
 		{"stats", "session metrics & context gauge", func(m *Model, _ string) tea.Cmd {
 			m.showStats()

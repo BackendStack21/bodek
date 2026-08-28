@@ -30,10 +30,14 @@ func TestCommandPrefix(t *testing.T) {
 func TestSlashCommandsViaSubmit(t *testing.T) {
 	m := wired(t)
 
-	// /clear
+	// /clear arms the two-step confirm; y fires the wipe.
 	m.msgs = append(m.msgs, message{role: roleUser, content: "x"})
 	m.ta.SetValue("/clear")
 	exec(m.submit())
+	if m.confirm != confirmClear {
+		t.Fatal("/clear did not arm confirmClear")
+	}
+	m.Update(key("y"))
 	if len(m.msgs) != 0 {
 		t.Errorf("/clear left %d messages", len(m.msgs))
 	}
@@ -169,6 +173,10 @@ func TestCommandPopupEnterExecutes(t *testing.T) {
 		t.Fatalf("cmd popup not ready: %+v", m.ac)
 	}
 	m.Update(key("enter")) // executes the highlighted command directly
+	if m.confirm != confirmClear {
+		t.Fatal("/clear via popup enter did not arm confirmClear")
+	}
+	m.Update(key("y"))
 	if len(m.msgs) != 0 {
 		t.Errorf("/clear via popup enter left %d messages", len(m.msgs))
 	}

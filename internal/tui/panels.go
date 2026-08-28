@@ -48,6 +48,7 @@ const (
 	confirmNone confirmKind = iota
 	confirmSessionDelete
 	confirmFactDelete
+	confirmClear
 )
 
 // handleConfirmKey resolves an armed delete: y fires it against the
@@ -63,16 +64,24 @@ func (m *Model) handleConfirmKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, m.deleteSelected()
 		case confirmFactDelete:
 			return m, m.memDeleteSelected()
+		case confirmClear:
+			m.clearConversation()
+			return m, m.transientNoteCmd("conversation cleared")
 		}
 	}
 	m.refresh()
 	return m, nil
 }
 
-// armConfirm arms a row-scoped delete and shows the gate in the panel.
+// armConfirm arms a destructive action and shows the gate: row deletes in
+// the panel, or the conversation clear in the composer footer.
 func (m *Model) armConfirm(kind confirmKind, what string) tea.Cmd {
 	m.confirm = kind
-	m.panelMsg = "delete " + what + "?  y confirm · any other key cancels"
+	verb := "delete "
+	if kind == confirmClear {
+		verb = "clear "
+	}
+	m.panelMsg = verb + what + "?  y confirm · any other key cancels"
 	m.refresh()
 	return nil
 }

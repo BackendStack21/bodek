@@ -1138,6 +1138,15 @@ func (m *Model) footer() string {
 			th.footer.Render("esc close"),
 		)
 	}
+	// The conversation-clear gate rides the composer footer — it is armed
+	// outside any panel and must be visible where ^L was pressed.
+	if m.confirm == confirmClear {
+		return m.panelFooter(
+			th.footerDanger.Render("clear the conversation?"),
+			th.footerKey.Render("y")+th.footerDanger.Render(" clear"),
+			th.footer.Render("any other key cancels"),
+		)
+	}
 	// The status bar carries no static key cheatsheet (the welcome splash and
 	// /help cover that) — only the live run state: a cancel hint while busy on
 	// the left, and latency / scroll position on the right.

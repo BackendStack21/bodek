@@ -119,6 +119,11 @@ func TestE2EAllCommands(t *testing.T) {
 			}
 		},
 		"/clear": func(t *testing.T, m *Model) {
+			// The command arms the two-step confirm; y fires the wipe.
+			if m.confirm != confirmClear {
+				t.Fatalf("/clear did not arm confirmClear: %v", m.confirm)
+			}
+			m.Update(key("y"))
 			if len(m.msgs) != 0 {
 				t.Fatalf("/clear left %d messages", len(m.msgs))
 			}

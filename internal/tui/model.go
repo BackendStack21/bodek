@@ -655,8 +655,10 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.refresh()
 		return m, cmd
 	case "ctrl+l":
+		// The whole transcript is conversation-scope destructive: arm the
+		// same two-step gate the panel row deletes use, idle-only like ^L.
 		if !m.busy {
-			m.clearConversation()
+			return m, m.armConfirm(confirmClear, "the conversation")
 		}
 		return m, nil
 	case "ctrl+e":

@@ -371,9 +371,13 @@ func TestInitAndBasicKeys(t *testing.T) {
 		t.Error("ctrl+t did not enable thinking")
 	}
 	m.Update(key("ctrl+t"))
-	// Clear (not busy).
+	// Clear (not busy): ^L arms the confirm, y fires the wipe.
 	m.msgs = append(m.msgs, message{role: roleUser, content: "x"})
 	m.Update(key("ctrl+l"))
+	if m.confirm != confirmClear {
+		t.Fatal("ctrl+l did not arm confirmClear")
+	}
+	m.Update(key("y"))
 	if len(m.msgs) != 0 {
 		t.Error("ctrl+l did not clear")
 	}

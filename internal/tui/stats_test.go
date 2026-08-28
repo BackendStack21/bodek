@@ -424,9 +424,11 @@ func TestClearResetsTelemetry(t *testing.T) {
 					c.run(m, "")
 				}
 			}
+			m.Update(key("y")) // the two-step confirm fires the clear
 		},
 		"ctrl+l": func(m *Model) {
 			m.Update(tea.KeyMsg{Type: tea.KeyCtrlL})
+			m.Update(key("y")) // the two-step confirm fires the clear
 		},
 	}
 	for name, clear := range clears {
