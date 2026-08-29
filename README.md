@@ -161,8 +161,9 @@ be written by hand and seed the matching flag defaults. Resolution order:
 | `^C` | Quit |
 
 Prompts sent while a turn is running are **queued** and sent automatically
-when the turn ends — the footer shows how many are waiting. While the
-transcript is scrolled up mid-run, the footer flags `↓ new output`; press
+when the turn ends — a transient note acknowledges each hold, and the count
+rides both the busy status line and the footer (one drains per turn-end).
+While the transcript is scrolled up mid-run, the footer flags `↓ new output`; press
 `^G` to jump to the latest. If the connection drops, bodek retries with
 backoff and, after giving up, keeps your draft and offers a manual retry
 on `⏎` with an empty input.
@@ -298,7 +299,7 @@ one `Esc`.
 - **Context-aware progress** — while the agent works, a status line just
   above the input (right below your last message) shows what it's actually
   doing (`🧪 running tests`, `📖 reading client.go`, `🚀 pushing`) with a live
-  elapsed timer.
+  elapsed timer and the queued-prompt count when prompts are held.
 - **Session browser** (`^R`) — resume, replay, delete, pin (`p`), rename
   (`r`), export a transcript (`e` markdown, `E` JSON), and search server-side
   (`/`); `n` loads the next page. Resuming sends a `session_switch` so the

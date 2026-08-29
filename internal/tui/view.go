@@ -291,6 +291,12 @@ func (m *Model) statusLine() string {
 	if e := m.elapsed(); e != "" {
 		el = th.headerMeta.Render(" · " + e)
 	}
+	// Held prompts ride the same row: mid-turn ⏎ queues invisibly, so the
+	// count shows where the eyes already are (mirrors the footer indicator).
+	q := ""
+	if n := len(m.queue); n > 0 {
+		q = th.acDetail.Render(fmt.Sprintf(" · %d queued", n))
+	}
 	// Live plan strip (docs/PLANNING_MODE_UI.md §4B): rides the same row,
 	// silent unless a run is active AND a plan exists — absence costs zero
 	// pixels. Bounded to a short label so small terminals keep the row sane.
@@ -300,7 +306,7 @@ func (m *Model) statusLine() string {
 	}
 	// A blank row above separates the indicator from the transcript tail —
 	// inputAreaHeight accounts for it so the layout math stays exact.
-	return "\n" + th.spinner.Render(m.sp.View()) + " " + th.statusBusy.Render(label) + el + strip
+	return "\n" + th.spinner.Render(m.sp.View()) + " " + th.statusBusy.Render(label) + el + q + strip
 }
 
 // statusLineVisible reports whether the status line occupies a row, keeping
