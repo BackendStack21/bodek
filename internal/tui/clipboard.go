@@ -13,21 +13,22 @@ import (
 // copies are refused with a note rather than silently truncated.
 const osc52Cap = 100_000
 
-// clipboardWrite is a tea.ExecCommand that writes a raw escape sequence to
+// rawSeq is a tea.ExecCommand that writes a raw escape sequence to
 // the terminal. tea.Println can't carry it: bodek runs on the alt-screen,
 // where the renderer drops printed lines entirely. Exec briefly pauses the
 // renderer and hands over the real terminal writer, so the sequence lands
-// verbatim and frames can't interleave.
-type clipboardWrite struct {
+// verbatim and frames can't interleave. Shared by the OSC 52 clipboard
+// write and the attention layer (bell / window title / OSC 9 notify).
+type rawSeq struct {
 	seq string
 	w   io.Writer
 }
 
-func (c *clipboardWrite) SetStdin(io.Reader)    {}
-func (c *clipboardWrite) SetStderr(io.Writer)   {}
-func (c *clipboardWrite) SetStdout(w io.Writer) { c.w = w }
+func (c *rawSeq) SetStdin(io.Reader)    {}
+func (c *rawSeq) SetStderr(io.Writer)   {}
+func (c *rawSeq) SetStdout(w io.Writer) { c.w = w }
 
-func (c *clipboardWrite) Run() error {
+func (c *rawSeq) Run() error {
 	if c.w == nil {
 		return nil // no terminal writer (tests, headless contexts)
 	}
@@ -59,5 +60,5 @@ func (m *Model) copyLastReply() tea.Cmd {
 		return m.transientNoteCmd(fmt.Sprintf("reply too large for OSC 52 (%d bytes) — select it manually", len(text)))
 	}
 	note := m.transientNoteCmd(fmt.Sprintf("copied %d chars via OSC 52 — needs a supporting terminal", len(text)))
-	return tea.Batch(tea.Exec(&clipboardWrite{seq: ansi.SetSystemClipboard(text)}, nil), note)
+	return tea.Batch(tea.Exec(&rawSeq{seq: ansi.SetSystemClipboard(text)}, nil), note)
 }
