@@ -2,6 +2,7 @@ package tui
 
 import (
 	"bytes"
+	"errors"
 	"io"
 	"strings"
 	"testing"
@@ -63,5 +64,37 @@ func TestCopyLastReplyGuards(t *testing.T) {
 	m.msgs = append(m.msgs, message{role: roleAsst, content: strings.Repeat("x", osc52Cap+1)})
 	if cmd := m.copyLastReply(); cmd == nil {
 		t.Error("oversized reply returned nil cmd; want the refusal notice")
+	}
+}
+
+// errWriter always fails, to exercise Run's error propagation.
+type errWriter struct{}
+
+func (errWriter) Write(p []byte) (int, error) { return 0, errors.New("boom") }
+
+func TestClipboardWriteRunner(t *testing.T) {
+	c := &clipboardWrite{seq: "\x1b]52;c;aGk=\x07"}
+
+	// Headless: no writer wired — the setters are no-ops and Run is silent.
+	c.SetStdin(nil)
+	c.SetStderr(io.Discard)
+	if err := c.Run(); err != nil {
+		t.Errorf("Run with no writer = %v, want nil", err)
+	}
+
+	// Wired: the sequence lands verbatim on the terminal writer.
+	var buf bytes.Buffer
+	c.SetStdout(&buf)
+	if err := c.Run(); err != nil {
+		t.Fatalf("Run = %v, want nil", err)
+	}
+	if buf.String() != c.seq {
+		t.Errorf("Run wrote %q, want %q", buf.String(), c.seq)
+	}
+
+	// A failing writer must surface its error, not swallow it.
+	c.SetStdout(errWriter{})
+	if err := c.Run(); err == nil {
+		t.Error("Run swallowed the writer error")
 	}
 }
