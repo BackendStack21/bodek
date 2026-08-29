@@ -177,12 +177,17 @@ func (m *Model) sendPrompt(text string) tea.Cmd {
 	m.attachments = nil
 	m.pendModel = "" // applied
 	cl := m.cl
-	return func() tea.Msg {
+	send := func() tea.Msg {
 		if err := cl.SendPrompt(text, opts); err != nil {
 			return errMsg{err}
 		}
 		return nil
 	}
+	if m.plain {
+		// Linear mode: the prompt joins the scrollback log above the chrome.
+		return tea.Batch(send, tea.Println(plainPromptLine(text)))
+	}
+	return send
 }
 
 // sendQueued pops the oldest queued prompt and sends it when the model is

@@ -13,6 +13,8 @@ import (
 	"syscall"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
+	"github.com/muesli/termenv"
 
 	"github.com/BackendStack21/bodek/internal/client"
 	"github.com/BackendStack21/bodek/internal/server"
@@ -32,6 +34,9 @@ type config struct {
 	sandbox   bool
 	bin       string
 	mouse     bool
+	bel       bool // terminal bell on turn completion / approval waiting
+	notify    bool // desktop notifications (OSC 9) on the same events
+	plain     bool // linear rendering mode (no alt-screen)
 	extraArgs []string
 }
 
@@ -46,6 +51,9 @@ func parseConfig(args []string, output io.Writer) (config, error) {
 	fs.BoolVar(&cfg.sandbox, "sandbox", false, "run tool calls inside odek's Docker sandbox")
 	fs.StringVar(&cfg.bin, "odek-bin", "", "path to the odek binary to spawn (default: odek on PATH)")
 	fs.BoolVar(&cfg.mouse, "mouse", false, "enable mouse wheel scrolling (disables native text selection/copy)")
+	fs.BoolVar(&cfg.bel, "bel", true, "ring the terminal bell when a turn completes or an approval is waiting (--bel=false mutes)")
+	fs.BoolVar(&cfg.notify, "notify", false, "raise desktop notifications (OSC 9) on turn completion and approvals")
+	fs.BoolVar(&cfg.plain, "plain", false, "linear mode: no alt-screen, transcript printed to scrollback (screen readers, pipes, logs)")
 	fs.Usage = func() {
 		_, _ = fmt.Fprintf(fs.Output(), "Usage: bodek [options] [-- <odek serve flags>]\n\n")
 		_, _ = fmt.Fprintf(fs.Output(), "A terminal interface for the odek agent.\n\n")
@@ -60,6 +68,8 @@ func parseConfig(args []string, output io.Writer) (config, error) {
 		_, _ = fmt.Fprintf(fs.Output(), "  bodek --url 'http://127.0.0.1:8080/?token=…'      # attach with the token URL odek serve printed\n")
 		_, _ = fmt.Fprintf(fs.Output(), "  bodek --url http://127.0.0.1:8080 --token d3adb33f  # attach with an explicit token\n")
 		_, _ = fmt.Fprintf(fs.Output(), "  bodek --mouse                                     # enable mouse wheel scrolling (blocks text selection)\n")
+		_, _ = fmt.Fprintf(fs.Output(), "  bodek --notify                                    # desktop notifications on turn/approval events\n")
+		_, _ = fmt.Fprintf(fs.Output(), "  bodek --plain                                     # linear mode: transcript to scrollback (pipes, a11y)\n")
 		_, _ = fmt.Fprintf(fs.Output(), "  bodek -- --prompt-caching                         # pass extra flags to odek serve\n")
 	}
 	if err := fs.Parse(args); err != nil {
@@ -70,12 +80,27 @@ func parseConfig(args []string, output io.Writer) (config, error) {
 	return cfg, nil
 }
 
-func buildProgramOptions(mouse bool) []tea.ProgramOption {
-	opts := []tea.ProgramOption{tea.WithAltScreen()}
+func buildProgramOptions(mouse, plain bool) []tea.ProgramOption {
+	var opts []tea.ProgramOption
+	if !plain {
+		// The alt-screen transcript is the default surface. Linear mode
+		// (--plain) stays on the main buffer so printed lines persist in
+		// the terminal's native scrollback.
+		opts = append(opts, tea.WithAltScreen())
+	}
 	if mouse {
 		opts = append(opts, tea.WithMouseCellMotion())
 	}
 	return opts
+}
+
+// applyNoColor honors https://no-color.org deterministically: when the
+// variable is set, the whole palette (EMBER gradients included) degrades
+// to plain text regardless of what the terminal advertises.
+func applyNoColor() {
+	if os.Getenv("NO_COLOR") != "" {
+		lipgloss.SetColorProfile(termenv.Ascii)
+	}
 }
 
 func run() error {
@@ -89,6 +114,7 @@ func run() error {
 	if err != nil {
 		return err
 	}
+	applyNoColor()
 
 	// A spawned `odek serve` logs to stderr. Routing that to our own terminal
 	// would corrupt the Bubble Tea alt-screen (stray writes desync the diff
@@ -154,6 +180,9 @@ func run() error {
 		LogPath:     logPath,
 		OdekVersion: srv.Version,
 		Version:     currentVersion(),
+		Bell:        cfg.bel,
+		Notify:      cfg.notify,
+		Plain:       cfg.plain,
 		Reconnect: func() (*client.Client, error) {
 			return client.Dial(srv.WSURL, srv.Origin, srv.BaseURL, srv.Token)
 		},
@@ -163,7 +192,7 @@ func run() error {
 	// captures the terminal mouse and blocks native click-drag text selection
 	// and copy. Keep it off by default so users can copy freely; enable it only
 	// when explicitly requested with --mouse.
-	p := tea.NewProgram(model, buildProgramOptions(cfg.mouse)...)
+	p := tea.NewProgram(model, buildProgramOptions(cfg.mouse, cfg.plain)...)
 	if _, err := p.Run(); err != nil {
 		return fmt.Errorf("TUI exited: %w", err)
 	}

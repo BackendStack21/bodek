@@ -99,6 +99,16 @@ type Options struct {
 	OdekVersion string // engine version for the header (empty when attached/unknown)
 	Version     string // bodek's own version; drives the startup update check
 
+	// Attention controls (see attention.go): Bell rings the terminal bell
+	// when a turn completes or an approval waits (--bel=false mutes);
+	// Notify raises desktop notifications via OSC 9 (--notify).
+	Bell   bool
+	Notify bool
+
+	// Plain selects the linear rendering mode: no alt-screen, append-only
+	// scrollback transcript, severity prefixes instead of color (--plain).
+	Plain bool
+
 	// Reconnect, when set, redials the server after the socket drops. The
 	// session resumes transparently: every prompt already carries
 	// session_id + auth_token, so the next send re-binds it server-side.
@@ -112,6 +122,9 @@ type Model struct {
 	opts   Options
 	th     theme
 	tokens *tokens.Store
+	bell   bool // terminal bell on done / approval (--bel)
+	notify bool // OSC 9 desktop notifications (--notify)
+	plain  bool // linear mode: scrollback transcript, minimal chrome (--plain)
 
 	width, height int
 	ready         bool
@@ -299,6 +312,9 @@ func New(cl *client.Client, opts Options) *Model {
 		status:       "ready",
 		odekVersion:  opts.OdekVersion,
 		bodekVersion: opts.Version,
+		bell:         opts.Bell,
+		notify:       opts.Notify,
+		plain:        opts.Plain,
 	}
 }
 
@@ -526,7 +542,12 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.noticeSweep()
 
 	case eventMsg:
-		return m.handleEvent(client.Event(msg))
+		ev := client.Event(msg)
+		mm, cmd := m.handleEvent(ev)
+		if pm := mm.(*Model); pm.plain {
+			cmd = tea.Batch(cmd, pm.plainPrintCmd(ev))
+		}
+		return mm, cmd
 
 	case reconnectMsg:
 		return m.handleReconnect(msg)

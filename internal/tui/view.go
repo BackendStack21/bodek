@@ -15,6 +15,9 @@ func (m *Model) View() string {
 	if !m.ready {
 		return "\n  starting bodek…"
 	}
+	if m.plain {
+		return m.plainView()
+	}
 	body := m.vp.View()
 	if m.panel != panelNone {
 		body = m.renderPanel(m.width, m.vp.Height)
@@ -24,6 +27,23 @@ func (m *Model) View() string {
 	parts := []string{m.header(), body}
 	if sl := m.statusLine(); sl != "" {
 		parts = append(parts, sl)
+	}
+	parts = append(parts, m.inputArea(), m.footer())
+	return strings.Join(parts, "\n")
+}
+
+// plainView composes linear mode's bottom chrome: status line, capped
+// panel/popover, input, footer. The transcript itself lives in the
+// terminal's scrollback, printed line-by-line as events arrive (plain.go).
+func (m *Model) plainView() string {
+	var parts []string
+	if sl := m.statusLine(); sl != "" {
+		parts = append(parts, sl)
+	}
+	if m.panel != panelNone {
+		parts = append(parts, m.renderPanel(m.width, plainPanelMax))
+	} else if m.popover {
+		parts = append(parts, m.popoverView(m.width, plainPanelMax))
 	}
 	parts = append(parts, m.inputArea(), m.footer())
 	return strings.Join(parts, "\n")

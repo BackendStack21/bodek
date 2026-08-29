@@ -48,6 +48,12 @@ func diffStat(s string) (adds, dels int, ok bool) {
 	if !diffLooksLike(s) {
 		return 0, 0, false
 	}
+	adds, dels = countDiffLines(s)
+	return adds, dels, adds > 0 || dels > 0
+}
+
+// countDiffLines tallies +/- body lines, skipping the ---/+++ file markers.
+func countDiffLines(s string) (adds, dels int) {
 	for _, ln := range strings.Split(s, "\n") {
 		switch {
 		case strings.HasPrefix(ln, "+++"), strings.HasPrefix(ln, "---"):
@@ -58,7 +64,99 @@ func diffStat(s string) (adds, dels int, ok bool) {
 			dels++
 		}
 	}
-	return adds, dels, adds > 0 || dels > 0
+	return adds, dels
+}
+
+// ── fenced diff blocks ─────────────────────────────────────────────────────
+
+// fencedDiffBlocks extracts the contents of well-formed ` ```diff ` fences
+// in s, in order. A fence is authoritative — its body is a diff even
+// without a @@ hunk header — but it must close; unterminated fences are
+// left to the verbatim path.
+func fencedDiffBlocks(s string) []string {
+	var blocks []string
+	var cur []string
+	in := false
+	for _, ln := range strings.Split(s, "\n") {
+		t := strings.TrimSpace(ln)
+		if in {
+			if t == "```" {
+				in = false
+				blocks = append(blocks, strings.Join(cur, "\n"))
+				cur = nil
+				continue
+			}
+			cur = append(cur, ln)
+			continue
+		}
+		if t == "```diff" || strings.HasPrefix(t, "```diff ") {
+			in = true
+			cur = nil
+		}
+	}
+	return blocks
+}
+
+// hasFencedDiff reports whether s embeds at least one closed ` ```diff `
+// fence.
+func hasFencedDiff(s string) bool {
+	return len(fencedDiffBlocks(s)) > 0
+}
+
+// renderMixedDiff renders tool output that interleaves prose with fenced
+// ` ```diff ` blocks: prose keeps the verbatim style, each fence unwraps
+// and tints through renderDiff, and the fence markers themselves never
+// appear in the output.
+func renderMixedDiff(s string, width int, th theme) []string {
+	w := detailWidth(width)
+	var out []string
+	var block []string
+	in := false
+	flush := func() {
+		if len(block) > 0 {
+			out = append(out, renderDiff(strings.Join(block, "\n"), width, th)...)
+			block = nil
+		}
+	}
+	for _, ln := range strings.Split(s, "\n") {
+		t := strings.TrimSpace(ln)
+		if in {
+			if t == "```" {
+				in = false
+				flush()
+				continue
+			}
+			block = append(block, ln)
+			continue
+		}
+		if t == "```diff" || strings.HasPrefix(t, "```diff ") {
+			in = true
+			block = nil
+			continue
+		}
+		if t == "" {
+			continue
+		}
+		out = append(out, th.stepRes.Render(truncate(strings.TrimRight(ln, " \t"), w)))
+		if len(out) >= maxDetailLines {
+			return append(out, th.stepArg.Render("… output truncated"))
+		}
+	}
+	return out
+}
+
+// diffStatOf counts a result's diff activity across both shapes: fenced
+// ` ```diff ` blocks (which win outright) and a whole-result unified diff.
+func diffStatOf(s string) (adds, dels int, ok bool) {
+	if blocks := fencedDiffBlocks(s); len(blocks) > 0 {
+		for _, b := range blocks {
+			a, d := countDiffLines(b)
+			adds += a
+			dels += d
+		}
+		return adds, dels, adds > 0 || dels > 0
+	}
+	return diffStat(s)
 }
 
 // renderDiff tints a unified diff: + green, − red, hunk headers steel, file
@@ -212,6 +310,11 @@ func cutPrefixTrim(s, prefix string) (string, bool) {
 // returned lines are fully styled and truncated — append them verbatim.
 func stepDetail(name, result string, width int, th theme) []string {
 	switch {
+	case hasFencedDiff(result):
+		// Fences first: prose stays verbatim, only the fenced content tints.
+		if out := renderMixedDiff(result, width, th); len(out) > 0 {
+			return out
+		}
 	case diffLooksLike(result):
 		if out := renderDiff(result, width, th); len(out) > 0 {
 			return out
@@ -240,7 +343,7 @@ func stepDetail(name, result string, width int, th theme) []string {
 // stepHeadSuffix renders the typed chip a step line gains from its result:
 // a diffstat for diffs, a pass/fail summary for test runs.
 func stepHeadSuffix(name, result string, th theme) string {
-	if adds, dels, ok := diffStat(result); ok {
+	if adds, dels, ok := diffStatOf(result); ok {
 		return th.diffAdd.Render(fmt.Sprintf("  +%d", adds)) +
 			th.diffDel.Render(fmt.Sprintf(" −%d", dels))
 	}

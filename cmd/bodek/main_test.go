@@ -8,6 +8,8 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
+	"github.com/muesli/termenv"
 )
 
 func TestParseConfigDefaults(t *testing.T) {
@@ -18,8 +20,11 @@ func TestParseConfigDefaults(t *testing.T) {
 	if cfg.url != "" || cfg.token != "" || cfg.bin != "" {
 		t.Errorf("unexpected non-empty defaults: %+v", cfg)
 	}
-	if cfg.sandbox || cfg.mouse {
-		t.Errorf("expected sandbox and mouse to be false by default, got sandbox=%v mouse=%v", cfg.sandbox, cfg.mouse)
+	if cfg.sandbox || cfg.mouse || cfg.notify {
+		t.Errorf("expected sandbox, mouse, notify false by default, got sandbox=%v mouse=%v notify=%v", cfg.sandbox, cfg.mouse, cfg.notify)
+	}
+	if !cfg.bel {
+		t.Error("expected bel to default to true (attention bell on)")
 	}
 	if len(cfg.extraArgs) != 0 {
 		t.Errorf("expected no extra args, got %v", cfg.extraArgs)
@@ -33,6 +38,19 @@ func TestParseConfigMouseFlag(t *testing.T) {
 	}
 	if !cfg.mouse {
 		t.Error("expected --mouse to set mouse=true")
+	}
+}
+
+func TestParseConfigAttentionFlags(t *testing.T) {
+	cfg, err := parseConfig([]string{"--bel=false", "--notify"}, io.Discard)
+	if err != nil {
+		t.Fatalf("parseConfig returned error: %v", err)
+	}
+	if cfg.bel {
+		t.Error("expected --bel=false to mute the attention bell")
+	}
+	if !cfg.notify {
+		t.Error("expected --notify to enable desktop notifications")
 	}
 }
 
@@ -74,7 +92,7 @@ func TestParseConfigHelp(t *testing.T) {
 }
 
 func TestBuildProgramOptionsDefault(t *testing.T) {
-	opts := buildProgramOptions(false)
+	opts := buildProgramOptions(false, false)
 	if len(opts) != 1 {
 		t.Fatalf("expected 1 default program option, got %d", len(opts))
 	}
@@ -85,8 +103,26 @@ func TestBuildProgramOptionsDefault(t *testing.T) {
 }
 
 func TestBuildProgramOptionsWithMouse(t *testing.T) {
-	opts := buildProgramOptions(true)
+	opts := buildProgramOptions(true, false)
 	if len(opts) != 2 {
 		t.Fatalf("expected 2 program options with mouse, got %d", len(opts))
+	}
+}
+
+func TestBuildProgramOptionsPlain(t *testing.T) {
+	if opts := buildProgramOptions(false, true); len(opts) != 0 {
+		t.Fatalf("plain mode must skip the alt-screen, got %d options", len(opts))
+	}
+	if opts := buildProgramOptions(true, true); len(opts) != 1 {
+		t.Fatalf("plain+mouse = %d options, want mouse only", len(opts))
+	}
+}
+
+func TestApplyNoColor(t *testing.T) {
+	defer lipgloss.SetColorProfile(termenv.TrueColor)
+	t.Setenv("NO_COLOR", "1")
+	applyNoColor()
+	if lipgloss.ColorProfile() != termenv.Ascii {
+		t.Error("NO_COLOR did not degrade the color profile to Ascii")
 	}
 }

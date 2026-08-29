@@ -104,6 +104,9 @@ bodek --url 'http://127.0.0.1:8080/?token=…'      # attach with the token URL 
 bodek --url http://127.0.0.1:8080 --token d3adb33f  # attach with an explicit token
 bodek --odek-bin ./odek                           # use a specific odek binary
 bodek --mouse                                     # enable mouse wheel scrolling (blocks text selection)
+bodek --bel=false                                 # mute the attention bell (title still updates)
+bodek --notify                                    # desktop notifications (OSC 9) on turn/approval events
+bodek --plain                                     # linear mode: transcript to scrollback (a11y, pipes)
 bodek -- --prompt-caching                         # pass extra flags through to `odek serve`
 bodek version                                     # print the bodek version
 bodek upgrade                                     # download and install the latest release
@@ -320,6 +323,24 @@ one `Esc`.
   quiet status lines. Nothing lingers: info traces fade after 3s, and
   errors, warnings, and disconnect notes autoclose after 10s (connection
   state stays visible in the header badge).
+- **Attention when backgrounded** — turn completion and pending approvals set
+  the terminal window title (`✓ done — <model>` / `⚠ approval needed —
+  <model>`) and ring the bell (`--bel=false` mutes); `--notify` adds OSC 9
+  desktop notifications. Fires only on terminal states — never per token.
+- **Linear mode (`--plain`)** — skips the alt-screen entirely: agent events
+  print as append-only text in the terminal's native scrollback above a
+  minimal input chrome (`▸` tool calls, `[think]`, `[error]`, `⚠ approval`,
+  `❯` your prompts, `✓ done · N tools · Xs · N tok`). Severity never rides
+  color alone, which makes this the accessible surface for screen readers —
+  and the natural one for pipes: `bodek --plain < task > run.log`. Streamed
+  fragments stay suppressed; the reply lands whole when the turn ends.
+  `NO_COLOR` degrades the entire EMBER palette to plain text in every mode.
+- **Diff-aware tool steps** — expanding a step (`^E`) renders its output by
+  shape: unified diffs tint (`+` green, `-` red, hunk headers steel, file
+  markers dim) with a `+N −M` chip on the step head, fenced ` ```diff `
+  blocks tint inside prose without mis-styling the surrounding text, file
+  reads get line numbers, JSON pretty-prints, and test runs summarize
+  pass/fail on the step line.
 - **Version display** — the header shows bodek's own version next to the logo
   and the spawned odek's version next to the model name.
 - **Update hint** — at startup, a quiet note appears when a newer bodek release

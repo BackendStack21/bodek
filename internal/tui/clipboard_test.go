@@ -24,7 +24,7 @@ func TestOsc52Sequence(t *testing.T) {
 
 func TestClipboardWriteRun(t *testing.T) {
 	var buf bytes.Buffer
-	c := &clipboardWrite{seq: "SEQ"}
+	c := &rawSeq{seq: "SEQ"}
 	c.SetStdin(nil)
 	c.SetStdout(&buf)
 	c.SetStderr(io.Discard)
@@ -73,7 +73,7 @@ type errWriter struct{}
 func (errWriter) Write(p []byte) (int, error) { return 0, errors.New("boom") }
 
 func TestClipboardWriteRunner(t *testing.T) {
-	c := &clipboardWrite{seq: "\x1b]52;c;aGk=\x07"}
+	c := &rawSeq{seq: "\x1b]52;c;aGk=\x07"}
 
 	// Headless: no writer wired — the setters are no-ops and Run is silent.
 	c.SetStdin(nil)

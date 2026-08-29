@@ -31,7 +31,8 @@ const alertTTL = 10 * time.Second
 type noticeExpireMsg struct{}
 
 func (m *Model) handleEvent(ev client.Event) (tea.Model, tea.Cmd) {
-	stream := false // high-frequency event: coalesce the render (see queueRender)
+	stream := false  // high-frequency event: coalesce the render (see queueRender)
+	var attn tea.Cmd // terminal attention (title/bell/notify); joined into the return batch
 	switch ev.Type {
 	case "session":
 		prevSession := m.sessionID
@@ -169,6 +170,7 @@ func (m *Model) handleEvent(ev client.Event) (tea.Model, tea.Cmd) {
 		m.runCtxCum = 0 // run over — the next run's cumulative restarts at zero
 		m.lastLatency = ev.Latency
 		m.relayout() // the busy status line releases its row
+		attn = m.attentionCmd(m.attentionFor(attentionDone))
 
 	case "usage":
 		// Per-iteration report from odek serve: keeps the header gauge live
@@ -261,6 +263,7 @@ func (m *Model) handleEvent(ev client.Event) (tea.Model, tea.Cmd) {
 		m.approvals = append(m.approvals, ev)
 		m.status = "approval required"
 		m.relayout() // the panel is taller than the textarea — shrink the viewport
+		attn = m.attentionCmd(m.attentionFor(attentionApproval))
 
 	case "skill_event":
 		if ev.SubType == "suggested" {
@@ -334,7 +337,7 @@ func (m *Model) handleEvent(ev client.Event) (tea.Model, tea.Cmd) {
 	}
 	m.refresh()
 	// A turn that just ended (done / error) drains the next queued prompt.
-	return m, tea.Batch(listen(m.events), m.noticeSweep(), m.sendQueued(), m.planFollowup())
+	return m, tea.Batch(listen(m.events), m.noticeSweep(), m.sendQueued(), m.planFollowup(), attn)
 }
 
 // stepGlyphs returns up to 4 deduped tool glyphs for a turn's steps, in
