@@ -699,6 +699,9 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.vp, cmd = m.vp.Update(msg)
 			return m, cmd
 		}
+	case "ctrl+y":
+		// Copy the latest reply — a chord, so typing a y is never hijacked.
+		return m, m.copyLastReply()
 	case "ctrl+g":
 		// Jump to the latest output. A ctrl binding, so typing a capital G
 		// (even as the first character of a prompt) is never hijacked.

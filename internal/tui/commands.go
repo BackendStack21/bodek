@@ -35,6 +35,9 @@ func slashCommands() []command {
 			}
 			return m.armConfirm(confirmClear, "the conversation")
 		}},
+		{"copy", "copy the last reply to the clipboard (OSC 52)", func(m *Model, _ string) tea.Cmd {
+			return m.copyLastReply()
+		}},
 		{"stats", "session metrics & context gauge", func(m *Model, _ string) tea.Cmd {
 			m.showStats()
 			return nil

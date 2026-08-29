@@ -128,6 +128,14 @@ func TestE2EAllCommands(t *testing.T) {
 				t.Fatalf("/clear left %d messages", len(m.msgs))
 			}
 		},
+		"/copy": func(t *testing.T, m *Model) {
+			// With a finalized reply on record the copy path dispatches
+			// (guard branches are unit-tested in clipboard_test.go).
+			m.msgs = append(m.msgs, message{role: roleAsst, content: "the answer"})
+			if cmd := m.copyLastReply(); cmd == nil {
+				t.Fatal("/copy returned nil cmd with a reply on record")
+			}
+		},
 		"/stats": func(t *testing.T, m *Model) {
 			card := lastMsg(m)
 			if card == nil || !card.raw || !strings.Contains(plain(card.content), "⬡ session") {
