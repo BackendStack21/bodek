@@ -353,6 +353,8 @@ func key(s string) tea.KeyMsg {
 		return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("s"), Alt: true}
 	case "alt+x":
 		return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("x"), Alt: true}
+	case "alt+f":
+		return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("f"), Alt: true}
 	default:
 		return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(s)}
 	}
