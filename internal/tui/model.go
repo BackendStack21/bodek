@@ -105,6 +105,16 @@ type Options struct {
 	Bell   bool
 	Notify bool
 
+	// Theme names the startup palette (ember-dark, ember-light,
+	// high-contrast, classic). Empty defers to BODEK_THEME, then the
+	// settings file — the same order /theme persists into.
+	Theme string
+
+	// OnThemeChange persists a runtime /theme switch. Nil (tests, embedded
+	// uses) skips persistence; an error surfaces as a note while the
+	// switch still applies for this run.
+	OnThemeChange func(name string) error
+
 	// Plain selects the linear rendering mode: no alt-screen, append-only
 	// scrollback transcript, severity prefixes instead of color (--plain).
 	Plain bool
@@ -149,6 +159,8 @@ type Model struct {
 	pal          palState       // ⌘K command palette — the navigation spine
 	skillSuggest *client.Event  // pending skill suggestion card (skill_event "suggested")
 	queue        []string       // prompts typed mid-turn, sent when the turn ends
+	lastPrompt   string         // most recent prompt sent — /retry re-sends it
+	focusIdx     int            // transcript cursor: turn head alt+↑/↓ last jumped to (-1 none)
 
 	history   []string // submitted prompts, newest last (recalled with ↑)
 	histNav   bool     // true while ^P/^N is walking the history
@@ -271,6 +283,11 @@ type Model struct {
 
 // New builds the initial model.
 func New(cl *client.Client, opts Options) *Model {
+	// The startup palette: an explicit option wins, else BODEK_THEME, then
+	// the persisted settings default — all resolved by themeName().
+	if canonical, ok := canonicalTheme(opts.Theme); ok {
+		themeOverride = canonical
+	}
 	th := newTheme()
 
 	ta := textarea.New()
@@ -306,6 +323,7 @@ func New(cl *client.Client, opts Options) *Model {
 		ta:           ta,
 		sp:           sp,
 		curIdx:       -1,
+		focusIdx:     -1,
 		model:        opts.Model,
 		sandbox:      opts.Sandbox,
 		thinkOn:      false,
@@ -732,6 +750,13 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "ctrl+y":
 		// Copy the latest reply — a chord, so typing a y is never hijacked.
 		return m, m.copyLastReply()
+	case "alt+y":
+		// Copy the focused turn — the one alt+↑/↓ last jumped to (falls back
+		// to the latest reply). A chord, so typing a y is never hijacked.
+		return m, m.copyFocusedTurn()
+	case "alt+r":
+		// Re-send the last prompt — a chord, so typing an r is never hijacked.
+		return m, m.retryLast()
 	case "ctrl+g":
 		// Jump to the latest output. A ctrl binding, so typing a capital G
 		// (even as the first character of a prompt) is never hijacked.
@@ -1134,6 +1159,7 @@ func (m *Model) jumpTurn(next bool) {
 		}
 		if target < 0 {
 			m.vp.GotoTop()
+			m.focusTurnAt(m.turnLineIndex[0].line)
 			return
 		}
 	}
@@ -1141,7 +1167,16 @@ func (m *Model) jumpTurn(next bool) {
 		target-- // land with one line of context above the head
 	}
 	m.vp.SetYOffset(target)
+	m.focusTurnAt(target + 1) // the head line we landed under
 	m.refresh()
+}
+
+// focusTurnAt records the turn head at the given viewport line as the copy
+// target (alt+y). A no-op when no head sits on that line.
+func (m *Model) focusTurnAt(line int) {
+	if idx, ok := m.turnAtLine(line); ok {
+		m.focusIdx = idx
+	}
 }
 
 // turnAtLine maps a viewport content line to a turn head (stepIdx -1).

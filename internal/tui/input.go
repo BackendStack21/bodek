@@ -137,6 +137,7 @@ func (m *Model) submit() tea.Cmd {
 // sendPrompt appends the user/assistant pair to the transcript, records the
 // prompt in the history ring, and dispatches it to the server.
 func (m *Model) sendPrompt(text string) tea.Cmd {
+	m.lastPrompt = text
 	m.recordHistory(text)
 	shown := text
 	if n := len(m.attachments); n > 0 {
@@ -199,6 +200,19 @@ func (m *Model) sendQueued() tea.Cmd {
 	text := m.queue[0]
 	m.queue = m.queue[1:]
 	return m.sendPrompt(text)
+}
+
+// retryLast re-sends the most recent prompt: immediately when idle, queued
+// when a turn is running — the same path a mid-turn typed prompt takes.
+func (m *Model) retryLast() tea.Cmd {
+	if m.lastPrompt == "" {
+		return m.transientNoteCmd("nothing to retry yet — send a prompt first")
+	}
+	if m.busy {
+		m.queue = append(m.queue, m.lastPrompt)
+		return m.transientNoteCmd("retry queued — it sends when the turn ends")
+	}
+	return m.sendPrompt(m.lastPrompt)
 }
 
 // maxHistory bounds the in-memory prompt history ring.

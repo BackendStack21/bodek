@@ -127,6 +127,9 @@ func (m *Model) findGoto(dir int) {
 		return
 	}
 	line := m.msgLine(m.find.matches[m.find.sel])
+	if idx := m.find.matches[m.find.sel]; idx >= 0 && idx < len(m.msgs) && m.msgs[idx].role == roleAsst {
+		m.focusIdx = idx // the jumped-to reply becomes the alt+y copy target
+	}
 	m.find.sel = ((m.find.sel+dir)%n + n) % n
 	if line > 0 {
 		line-- // land with one line of context above the block

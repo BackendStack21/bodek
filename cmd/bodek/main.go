@@ -18,6 +18,7 @@ import (
 
 	"github.com/BackendStack21/bodek/internal/client"
 	"github.com/BackendStack21/bodek/internal/server"
+	"github.com/BackendStack21/bodek/internal/settings"
 	"github.com/BackendStack21/bodek/internal/tui"
 )
 
@@ -34,14 +35,28 @@ type config struct {
 	sandbox   bool
 	bin       string
 	mouse     bool
-	bel       bool // terminal bell on turn completion / approval waiting
-	notify    bool // desktop notifications (OSC 9) on the same events
-	plain     bool // linear rendering mode (no alt-screen)
+	bel       bool   // terminal bell on turn completion / approval waiting
+	notify    bool   // desktop notifications (OSC 9) on the same events
+	plain     bool   // linear rendering mode (no alt-screen)
+	theme     string // startup palette override (empty = BODEK_THEME / settings)
 	extraArgs []string
+
+	persist settings.Settings // the loaded file, re-saved when /theme switches
 }
 
 func parseConfig(args []string, output io.Writer) (config, error) {
 	var cfg config
+	// Persisted preferences seed the flag defaults, so a choice made once
+	// (via /theme or by hand) survives relaunches; explicit flags still
+	// win. A broken file warns but never blocks startup.
+	st, err := settings.Load()
+	if err != nil {
+		if output != nil {
+			_, _ = fmt.Fprintf(output, "bodek: ignoring settings file: %v\n", err)
+		}
+		st = settings.Settings{}
+	}
+	cfg.persist = st
 	fs := flag.NewFlagSet("bodek", flag.ContinueOnError)
 	if output != nil {
 		fs.SetOutput(output)
@@ -50,10 +65,15 @@ func parseConfig(args []string, output io.Writer) (config, error) {
 	fs.StringVar(&cfg.token, "token", "", "WS auth token for an attached odek serve (as printed at its startup)")
 	fs.BoolVar(&cfg.sandbox, "sandbox", false, "run tool calls inside odek's Docker sandbox")
 	fs.StringVar(&cfg.bin, "odek-bin", "", "path to the odek binary to spawn (default: odek on PATH)")
-	fs.BoolVar(&cfg.mouse, "mouse", false, "enable mouse wheel scrolling (disables native text selection/copy)")
-	fs.BoolVar(&cfg.bel, "bel", true, "ring the terminal bell when a turn completes or an approval is waiting (--bel=false mutes)")
-	fs.BoolVar(&cfg.notify, "notify", false, "raise desktop notifications (OSC 9) on turn completion and approvals")
-	fs.BoolVar(&cfg.plain, "plain", false, "linear mode: no alt-screen, transcript printed to scrollback (screen readers, pipes, logs)")
+	themeDefault := st.Theme
+	if os.Getenv("BODEK_THEME") != "" {
+		themeDefault = "" // the env override wins over the persisted file
+	}
+	fs.StringVar(&cfg.theme, "theme", themeDefault, "color theme: ember-dark, ember-light, high-contrast, classic (default: BODEK_THEME, then the settings file)")
+	fs.BoolVar(&cfg.mouse, "mouse", st.Bool(st.Mouse, false), "enable mouse wheel scrolling (disables native text selection/copy)")
+	fs.BoolVar(&cfg.bel, "bel", st.Bool(st.Bell, true), "ring the terminal bell when a turn completes or an approval is waiting (--bel=false mutes)")
+	fs.BoolVar(&cfg.notify, "notify", st.Bool(st.Notify, false), "raise desktop notifications (OSC 9) on turn completion and approvals")
+	fs.BoolVar(&cfg.plain, "plain", st.Bool(st.Plain, false), "linear mode: no alt-screen, transcript printed to scrollback (screen readers, pipes, logs)")
 	fs.Usage = func() {
 		_, _ = fmt.Fprintf(fs.Output(), "Usage: bodek [options] [-- <odek serve flags>]\n\n")
 		_, _ = fmt.Fprintf(fs.Output(), "A terminal interface for the odek agent.\n\n")
@@ -69,6 +89,7 @@ func parseConfig(args []string, output io.Writer) (config, error) {
 		_, _ = fmt.Fprintf(fs.Output(), "  bodek --url http://127.0.0.1:8080 --token d3adb33f  # attach with an explicit token\n")
 		_, _ = fmt.Fprintf(fs.Output(), "  bodek --mouse                                     # enable mouse wheel scrolling (blocks text selection)\n")
 		_, _ = fmt.Fprintf(fs.Output(), "  bodek --notify                                    # desktop notifications on turn/approval events\n")
+		_, _ = fmt.Fprintf(fs.Output(), "  bodek --theme ember-light                         # start with a specific theme (/theme switches at runtime)\n")
 		_, _ = fmt.Fprintf(fs.Output(), "  bodek --plain                                     # linear mode: transcript to scrollback (pipes, a11y)\n")
 		_, _ = fmt.Fprintf(fs.Output(), "  bodek -- --prompt-caching                         # pass extra flags to odek serve\n")
 	}
@@ -183,6 +204,11 @@ func run() error {
 		Bell:        cfg.bel,
 		Notify:      cfg.notify,
 		Plain:       cfg.plain,
+		Theme:       cfg.theme,
+		OnThemeChange: func(name string) error {
+			cfg.persist.Theme = name
+			return settings.Save(cfg.persist)
+		},
 		Reconnect: func() (*client.Client, error) {
 			return client.Dial(srv.WSURL, srv.Origin, srv.BaseURL, srv.Token)
 		},

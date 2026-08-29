@@ -47,12 +47,12 @@ func (m *Model) lastReply() string {
 	return ""
 }
 
-// copyLastReply puts the latest assistant reply on the system clipboard via
-// OSC 52: the sequence is consumed by the terminal emulator itself, so no
-// external tool runs and the payload never leaves the machine. Terminals
-// without OSC 52 support silently ignore the sequence — the note says so.
-func (m *Model) copyLastReply() tea.Cmd {
-	text := m.lastReply()
+// copyText puts text on the system clipboard via OSC 52: the sequence is
+// consumed by the terminal emulator itself, so no external tool runs and
+// the payload never leaves the machine. Terminals without OSC 52 support
+// silently ignore the sequence — the note says so. Shared by copy-last-
+// reply (^Y) and copy-focused-turn (alt+y).
+func (m *Model) copyText(text string) tea.Cmd {
 	if text == "" {
 		return m.transientNoteCmd("nothing to copy — no assistant reply yet")
 	}
@@ -61,4 +61,27 @@ func (m *Model) copyLastReply() tea.Cmd {
 	}
 	note := m.transientNoteCmd(fmt.Sprintf("copied %d chars via OSC 52 — needs a supporting terminal", len(text)))
 	return tea.Batch(tea.Exec(&rawSeq{seq: ansi.SetSystemClipboard(text)}, nil), note)
+}
+
+// focusedReply returns the reply of the turn the cursor last jumped to
+// (alt+↑/alt+↓, find jumps), falling back to the latest reply when there
+// is no focus or it went stale (messages trimmed, index now a user turn).
+func (m *Model) focusedReply() string {
+	if m.focusIdx >= 0 && m.focusIdx < len(m.msgs) {
+		if msg := m.msgs[m.focusIdx]; msg.role == roleAsst && msg.content != "" {
+			return msg.content
+		}
+	}
+	return m.lastReply()
+}
+
+// copyLastReply puts the latest assistant reply on the system clipboard.
+func (m *Model) copyLastReply() tea.Cmd {
+	return m.copyText(m.lastReply())
+}
+
+// copyFocusedTurn puts the focused turn's reply on the clipboard — any
+// earlier answer, not just the newest one.
+func (m *Model) copyFocusedTurn() tea.Cmd {
+	return m.copyText(m.focusedReply())
 }

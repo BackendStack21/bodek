@@ -38,6 +38,10 @@ func slashCommands() []command {
 		{"copy", "copy the last reply to the clipboard (OSC 52)", func(m *Model, _ string) tea.Cmd {
 			return m.copyLastReply()
 		}},
+		{"theme", "switch the color theme — /theme [name]", runTheme},
+		{"retry", "re-send the last prompt (alt+r)", func(m *Model, _ string) tea.Cmd {
+			return m.retryLast()
+		}},
 		{"stats", "session metrics & context gauge", func(m *Model, _ string) tea.Cmd {
 			m.showStats()
 			return nil
@@ -190,6 +194,44 @@ func (m *Model) openCmdAC(query string) {
 	m.refresh()
 }
 
+// themeOptions lists the palettes /theme accepts (aliases included in
+// canonicalTheme: light, contrast, dark, default).
+const themeOptions = "ember-dark · ember-light · high-contrast · classic"
+
+// runTheme handles /theme: no argument reports the active palette and the
+// options; a name switches at runtime and persists via OnThemeChange.
+func runTheme(m *Model, args string) tea.Cmd {
+	if args == "" {
+		return m.transientNoteCmd("theme: " + themeName() + " — options: " + themeOptions)
+	}
+	return m.switchTheme(args)
+}
+
+// switchTheme swaps the active palette mid-run: every style rebuilds from
+// the new palette, the glamour renderer is recreated and finalized
+// messages re-render through resize(), and the choice persists so the
+// next launch starts there (flag > BODEK_THEME > settings file).
+func (m *Model) switchTheme(name string) tea.Cmd {
+	canonical, ok := canonicalTheme(name)
+	if !ok {
+		return m.transientNoteCmd("unknown theme: " + name + " — options: " + themeOptions)
+	}
+	if canonical == themeName() {
+		return m.transientNoteCmd(canonical + " is already the active theme")
+	}
+	themeOverride = canonical
+	m.th = themeFrom(paletteByName(canonical))
+	m.ta.FocusedStyle.CursorLine = m.th.taCursorLine
+	m.logoCache = "" // the banner gradient is palette-dependent
+	m.resize(m.width, m.height)
+	if m.opts.OnThemeChange != nil {
+		if err := m.opts.OnThemeChange(canonical); err != nil {
+			return m.transientNoteCmd("theme set to " + canonical + " — not saved: " + sanitize(err.Error()))
+		}
+	}
+	return m.transientNoteCmd("theme set to " + canonical)
+}
+
 // showHelp appends a help card listing commands and key bindings. Like /stats
 // it is pre-styled to the brand palette (raw), not glamour's stock dark style.
 func (m *Model) showHelp() {
@@ -217,6 +259,8 @@ func (m *Model) showHelp() {
 		{"@", "attach files"},
 		{"↑↓", "scroll the transcript"},
 		{"alt+↑↓", "jump to the previous/next turn"},
+		{"alt+y", "copy the focused turn's reply (falls back to the latest)"},
+		{"alt+r", "re-send the last prompt (/retry)"},
 		{"^F", "fold/unfold the latest turn card"},
 		{"tab", "open/close the latest reasoning block"},
 		{"Pg↑↓", "page the transcript"},
