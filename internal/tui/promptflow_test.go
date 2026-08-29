@@ -153,7 +153,12 @@ func TestSubmitWhileBusyQueues(t *testing.T) {
 	busyTurn(m)
 
 	m.ta.SetValue("follow up")
-	if cmd := m.submit(); cmd != nil {
+	// Queueing returns the acknowledgment note's sweep cmd — but nothing is
+	// dispatched: no prompt send, no transcript pair.
+	if cmd := m.submit(); cmd == nil {
+		t.Error("queueing should acknowledge with the note-sweep cmd")
+	}
+	if m.lastPrompt == "follow up" {
 		t.Error("queueing a prompt should not send anything yet")
 	}
 	if len(m.queue) != 1 || m.queue[0] != "follow up" {

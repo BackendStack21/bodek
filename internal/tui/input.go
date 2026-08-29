@@ -121,13 +121,15 @@ func (m *Model) submit() tea.Cmd {
 	}
 	if m.busy {
 		// Queue mid-turn prompts instead of dropping them; the queue drains
-		// automatically when the running turn ends.
+		// automatically when the running turn ends. Acknowledge the hold —
+		// the input clearing silently reads as a lost message (same
+		// rationale as the disconnected-draft warning below).
 		m.queue = append(m.queue, text)
 		m.ta.Reset()
 		m.closeAC()
 		m.refresh()
 		m.vp.GotoBottom() // Enter means "show me the latest", even mid-turn
-		return nil
+		return m.transientNoteCmd("queued — it sends when the turn ends")
 	}
 	m.ta.Reset()
 	m.closeAC()
