@@ -105,6 +105,11 @@ type Options struct {
 	Bell   bool
 	Notify bool
 
+	// Mouse reports that the terminal sends mouse events (--mouse). The
+	// queue strip gates its ▲▼✕ controls on it: glyphs without tracking
+	// are dead pixels, so mouseless runs get a ^Q hint instead.
+	Mouse bool
+
 	// Theme names the startup palette (ember-dark, ember-light,
 	// high-contrast, classic). Empty defers to BODEK_THEME, then the
 	// settings file — the same order /theme persists into.
@@ -159,6 +164,9 @@ type Model struct {
 	pal          palState       // ⌘K command palette — the navigation spine
 	skillSuggest *client.Event  // pending skill suggestion card (skill_event "suggested")
 	queue        []string       // prompts typed mid-turn, sent when the turn ends
+	mouse        bool           // the terminal reports mouse events (--mouse)
+	qfocus       bool           // the queue strip owns the keyboard (ctrl+q)
+	qsel         int            // selected strip row while qfocus
 	lastPrompt   string         // most recent prompt sent — /retry re-sends it
 	focusIdx     int            // transcript cursor: turn head alt+↑/↓ last jumped to (-1 none)
 
@@ -326,6 +334,7 @@ func New(cl *client.Client, opts Options) *Model {
 		focusIdx:     -1,
 		model:        opts.Model,
 		sandbox:      opts.Sandbox,
+		mouse:        opts.Mouse,
 		thinkOn:      false,
 		status:       "ready",
 		odekVersion:  opts.OdekVersion,
@@ -589,6 +598,12 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.refresh()
 				return m, nil
 			}
+			// The queue strip owns the rows between the status line and the
+			// input: its controls act on their row.
+			if m.queueStripClick(msg.Y, msg.X) {
+				m.refresh()
+				return m, nil
+			}
 			// Viewport content begins below the header (2 rows).
 			top := 2
 			if msg.Y >= top && msg.Y < top+m.vp.Height {
@@ -670,6 +685,12 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// character ("?why", "[TODO]", "reboot…"). Help, jumps, and the
 	// disconnected retry live on non-character keys (F1, alt+arrows, ⏎).
 
+	// Queue-strip focus captures everything (except quit) until esc/⏎/ctrl+q
+	// returns it to the composer.
+	if m.qfocus {
+		return m.queueStripKey(msg)
+	}
+
 	switch msg.String() {
 	case "ctrl+c":
 		m.quitting = true
@@ -693,6 +714,15 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		var cmd tea.Cmd
 		m.ta, cmd = m.ta.Update(tea.KeyMsg{Type: tea.KeyEnter})
 		return m, tea.Batch(cmd, m.syncAC())
+	case "ctrl+q":
+		// Queue-strip focus: a chord, so typing a q is never hijacked.
+		// Only latches when there is something queued to manage.
+		if m.queueStripVisible() {
+			m.qfocus = true
+			m.qsel = 0
+			m.refresh()
+		}
+		return m, nil
 	case "ctrl+t":
 		m.thinkOn = !m.thinkOn
 		state := "off"
@@ -991,6 +1021,7 @@ func (m *Model) inputAreaHeight() int {
 	if m.find.open {
 		h++ // the one-row search strip above the input box
 	}
+	h += m.queueStripHeight()
 	return h
 }
 

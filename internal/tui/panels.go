@@ -733,6 +733,7 @@ func (m *Model) cancelRun() tea.Cmd {
 		m.ta.SetValue(draft)
 		m.ta.CursorEnd()
 		m.queue = nil
+		m.qfocus, m.qsel = false, 0
 		// The textarea content just changed out from under the user — say why.
 		note = m.transientNoteCmd("queued prompts returned to the input")
 	}

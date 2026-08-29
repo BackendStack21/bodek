@@ -146,6 +146,7 @@ be written by hand and seed the matching flag defaults. Resolution order:
 | `tab` | Open/close the latest reasoning block (live turns auto-expand) |
 | `^R` | Browse & resume saved sessions |
 | `^O` | Switch the model |
+| `^Q` | Focus the queue strip (`↑↓`/`jk` select · `←→`/`hl` move · `d` delete · `esc`/`⏎` back to the input) |
 | `^T` | Toggle extended thinking for the next turn |
 | `^J` | Insert a newline in the input |
 | `^L` | Clear the conversation (two-step confirm: `y` clears, any other key cancels) |
@@ -163,6 +164,10 @@ be written by hand and seed the matching flag defaults. Resolution order:
 Prompts sent while a turn is running are **queued** and sent automatically
 when the turn ends — a transient note acknowledges each hold, and the count
 rides both the busy status line and the footer (one drains per turn-end).
+Queued prompts stay visible in a **strip directly above the input area**: one
+row per prompt with per-row `▲ ▼ ✕` controls (`--mouse`) to reorder or delete,
+and a `^Q` keyboard focus mode for the same actions (`↑↓` select, `←→` move,
+`d` delete). The strip collapses to zero rows when the queue is empty.
 While the transcript is scrolled up mid-run, the footer flags `↓ new output`; press
 `^G` to jump to the latest. If the connection drops, bodek retries with
 backoff and, after giving up, keeps your draft and offers a manual retry
