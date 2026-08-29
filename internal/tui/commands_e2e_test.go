@@ -136,6 +136,27 @@ func TestE2EAllCommands(t *testing.T) {
 				t.Fatal("/copy returned nil cmd with a reply on record")
 			}
 		},
+		"/theme": func(t *testing.T, m *Model) {
+			if !notePresent(m, "theme set to classic") {
+				t.Fatalf("no switch note: %v", m.notices)
+			}
+			if themeOverride != "classic" {
+				t.Errorf("themeOverride = %q, want classic", themeOverride)
+			}
+		},
+		"/retry": func(t *testing.T, m *Model) {
+			// The turn itself may already have settled via echoed events
+			// during pumpWS — the durable signal is the re-sent prompt.
+			found := false
+			for _, msg := range m.msgs {
+				if msg.role == roleUser && strings.Contains(msg.content, "echo me once") {
+					found = true
+				}
+			}
+			if !found {
+				t.Errorf("retry did not re-send the seeded prompt (%d msgs)", len(m.msgs))
+			}
+		},
 		"/stats": func(t *testing.T, m *Model) {
 			card := lastMsg(m)
 			if card == nil || !card.raw || !strings.Contains(plain(card.content), "⬡ session") {
@@ -307,6 +328,11 @@ func TestE2EAllCommands(t *testing.T) {
 				m.attachments = append(m.attachments, client.Attachment{Name: "notes.txt", Content: "hello"})
 			case "/plan":
 				m.sessionID, m.authToken = "s1", "a1" // fetch targets a session
+			case "/theme":
+				lines[name] = "/theme classic"
+				t.Cleanup(func() { themeOverride = "" }) // don't leak into later subtests
+			case "/retry":
+				m.lastPrompt = "echo me once"
 			}
 			line := lines[name]
 			if line == "" {

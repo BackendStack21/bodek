@@ -131,9 +131,19 @@ var (
 // reduced-functionality mode.
 var motionEnabled = os.Getenv("NO_MOTION") != "1"
 
-// themeName resolves the configured palette. BODEK_THEME selects
-// ember-dark (default) · ember-light · high-contrast · classic.
+// themeOverride, when non-empty, replaces the BODEK_THEME env as the active
+// palette: set at startup from --theme / the settings file and at runtime
+// by /theme. Package-level on purpose — like motionEnabled, a bodek process
+// renders exactly one transcript, and glamour's answer styling resolves the
+// active palette through themeName().
+var themeOverride string
+
+// themeName resolves the configured palette: the runtime/startup override
+// first, then BODEK_THEME, then the default.
 func themeName() string {
+	if themeOverride != "" {
+		return themeOverride
+	}
 	switch strings.ToLower(strings.TrimSpace(os.Getenv("BODEK_THEME"))) {
 	case "classic":
 		return "classic"
@@ -143,6 +153,24 @@ func themeName() string {
 		return "high-contrast"
 	default:
 		return "ember-dark"
+	}
+}
+
+// canonicalTheme maps a user-supplied theme name (including the aliases
+// BODEK_THEME accepts) to its canonical palette name; ok is false for
+// unknown names, so /theme can reject them instead of silently defaulting.
+func canonicalTheme(name string) (canonical string, ok bool) {
+	switch strings.ToLower(strings.TrimSpace(name)) {
+	case "ember-dark", "dark", "default":
+		return "ember-dark", true
+	case "classic":
+		return "classic", true
+	case "ember-light", "light":
+		return "ember-light", true
+	case "high-contrast", "contrast":
+		return "high-contrast", true
+	default:
+		return "", false
 	}
 }
 

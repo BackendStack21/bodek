@@ -106,6 +106,7 @@ bodek --odek-bin ./odek                           # use a specific odek binary
 bodek --mouse                                     # enable mouse wheel scrolling (blocks text selection)
 bodek --bel=false                                 # mute the attention bell (title still updates)
 bodek --notify                                    # desktop notifications (OSC 9) on turn/approval events
+bodek --theme ember-light                         # start with a theme (/theme switches live)
 bodek --plain                                     # linear mode: transcript to scrollback (a11y, pipes)
 bodek -- --prompt-caching                         # pass extra flags through to `odek serve`
 bodek version                                     # print the bodek version
@@ -123,6 +124,12 @@ Configuration (model, base URL, API key, MCP servers, memory, skills) is read
 by `odek serve` from its usual chain — `~/.odek/config.json` → `./odek.json` →
 `ODEK_*` env vars — so bodek inherits whatever you've already set up.
 
+bodek keeps its **own front-end settings** in `~/.bodek/config.json` (override
+with `BODEK_CONFIG`): `theme`, `mouse`, `bel`, `notify`, `plain`. Switching
+the theme with `/theme` persists it there automatically; the other values can
+be written by hand and seed the matching flag defaults. Resolution order:
+**flag → `BODEK_THEME` env (theme) → settings file → built-in default**.
+
 ### Key bindings
 
 | Key | Action |
@@ -132,6 +139,8 @@ by `odek serve` from its usual chain — `~/.odek/config.json` → `./odek.json`
 | `/` | Open the command palette (see below) |
 | `@` | Attach a file (see below) |
 | `alt+↑` / `alt+↓` | Jump to the previous / next turn |
+| `alt+y` | Copy the **focused** turn's reply — the one you last jumped to (falls back to the latest reply) |
+| `alt+r` | Re-send the last prompt (`/retry`) |
 | `alt+f` | Search the transcript (`⏎` next match · `N` previous) |
 | `^F` | Fold/unfold the most recent turn card (click any turn head with `--mouse`) |
 | `tab` | Open/close the latest reasoning block (live turns auto-expand) |
@@ -174,6 +183,8 @@ command and press `⏎`.
 | `/help` | Show available commands and key bindings |
 | `/clear` | Clear the conversation (two-step confirm; idle only) |
 | `/copy` | Copy the last reply to the clipboard (OSC 52) |
+| `/retry` | Re-send the last prompt (queues it if a turn is running) |
+| `/theme [name]` | Switch the color theme at runtime and persist it (`ember-dark` · `ember-light` · `high-contrast` · `classic`) |
 | `/stats` | Session metrics card (cost, cache, context gauge) |
 | `/server` | Cockpit — server, link, budget & session in one card (or click the header) |
 | `/sessions` | Browse, search, pin, rename, export & resume sessions |
@@ -260,7 +271,8 @@ one `Esc`.
 
 - **EMBER Terminal** — the WebUI's design language (electric amber on
   blue-charcoal) as terminal tokens; `BODEK_THEME=ember-light|high-contrast|classic`
-  and `NO_MOTION=1` for a fully static UI.
+  or `/theme` to switch live (persisted to `~/.bodek/config.json`), and
+  `NO_MOTION=1` for a fully static UI.
 - **The palette (`^K`)** — every surface one fuzzy search away, every row
   teaching its chord.
 - **Turn cards** — telemetry rides the turn head, `^F` folds noisy turns,
