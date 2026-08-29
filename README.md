@@ -129,14 +129,16 @@ by `odek serve` from its usual chain — `~/.odek/config.json` → `./odek.json`
 | `/` | Open the command palette (see below) |
 | `@` | Attach a file (see below) |
 | `alt+↑` / `alt+↓` | Jump to the previous / next turn |
+| `alt+f` | Search the transcript (`⏎` next match · `N` previous) |
 | `^F` | Fold/unfold the most recent turn card (click any turn head with `--mouse`) |
 | `tab` | Open/close the latest reasoning block (live turns auto-expand) |
 | `^R` | Browse & resume saved sessions |
 | `^O` | Switch the model |
 | `^T` | Toggle extended thinking for the next turn |
 | `^J` | Insert a newline in the input |
-| `^L` | Clear the conversation |
+| `^L` | Clear the conversation (two-step confirm: `y` clears, any other key cancels) |
 | `^E` | Toggle tool details — every step expands to its full output/logs |
+| `^Y` | Copy the last reply to the clipboard (OSC 52 — needs a supporting terminal) |
 | `Esc` | Cancel the running turn (queued prompts return to the input) |
 | `↑` / `↓` / `PgUp` / `PgDn` / `^U` / `^D` | Scroll the transcript (arrows at the input's edge lines) |
 | `^P` / `^N` | Recall previous prompts (prompt history) |
@@ -167,7 +169,8 @@ command and press `⏎`.
 | Command | Action |
 |---------|--------|
 | `/help` | Show available commands and key bindings |
-| `/clear` | Clear the conversation |
+| `/clear` | Clear the conversation (two-step confirm; idle only) |
+| `/copy` | Copy the last reply to the clipboard (OSC 52) |
 | `/stats` | Session metrics card (cost, cache, context gauge) |
 | `/server` | Cockpit — server, link, budget & session in one card (or click the header) |
 | `/sessions` | Browse, search, pin, rename, export & resume sessions |

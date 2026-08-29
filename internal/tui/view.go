@@ -349,10 +349,12 @@ func (m *Model) conversation() string {
 	}
 	var refs []stepRef
 	var turns []stepRef
+	var msgsIdx []stepRef
 	collectTurn := func(i, line int) {
 		if m.msgs[i].role == roleAsst && !m.msgs[i].raw {
 			turns = append(turns, stepRef{msgIdx: i, stepIdx: -1, line: line})
 		}
+		msgsIdx = append(msgsIdx, stepRef{msgIdx: i, stepIdx: -1, line: line})
 	}
 	lineOffset := 0
 	if m.convCount != tail {
@@ -367,10 +369,12 @@ func (m *Model) conversation() string {
 		m.convPrefix = strings.Join(blocks, "\n\n")
 		m.convPrefixRefs = refs
 		m.convPrefixTurn = turns
+		m.convPrefixMsgs = msgsIdx
 		m.convCount = tail
 	} else {
 		refs = append(refs, m.convPrefixRefs...)
 		turns = append(turns, m.convPrefixTurn...)
+		msgsIdx = append(msgsIdx, m.convPrefixMsgs...)
 		if m.convPrefix != "" {
 			lineOffset = lineCount(m.convPrefix) + 1
 		}
@@ -391,6 +395,7 @@ func (m *Model) conversation() string {
 		refs = append(refs, r...)
 		lineOffset += lineCount(s) + 1
 	}
+	m.msgLineIndex = msgsIdx
 	if len(m.notices) > 0 {
 		if notes := m.renderNotices(); notes != "" {
 			blocks = append(blocks, notes)
@@ -829,6 +834,9 @@ func (m *Model) inputArea() string {
 		return m.approvalPanel()
 	}
 	box := m.th.inputBox.Width(m.width - 2).Render(m.ta.View())
+	if m.find.open {
+		return m.findBar() + "\n" + box
+	}
 	if m.pal.open {
 		return m.palPopup() + "\n" + box
 	}
@@ -1136,6 +1144,15 @@ func (m *Model) footer() string {
 			th.footerKey.Render("S")+th.footerDanger.Render(" shutdown server"),
 			th.footerKey.Render("r")+th.footer.Render(" refresh"),
 			th.footer.Render("esc close"),
+		)
+	}
+	// The conversation-clear gate rides the composer footer — it is armed
+	// outside any panel and must be visible where ^L was pressed.
+	if m.confirm == confirmClear {
+		return m.panelFooter(
+			th.footerDanger.Render("clear the conversation?"),
+			th.footerKey.Render("y")+th.footerDanger.Render(" clear"),
+			th.footer.Render("any other key cancels"),
 		)
 	}
 	// The status bar carries no static key cheatsheet (the welcome splash and

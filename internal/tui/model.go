@@ -245,9 +245,12 @@ type Model struct {
 	convPrefix     string    // cached rendering of the finalized transcript prefix
 	convPrefixRefs []stepRef // step header line index for the cached prefix
 	convPrefixTurn []stepRef // turn-head line index for the cached prefix (stepIdx -1)
+	convPrefixMsgs []stepRef // per-message first-line index for the cached prefix
 	convCount      int       // messages the prefix covers (-1 = invalidated)
 	stepLineIndex  []stepRef // full transcript step index for mouse hit-testing
 	turnLineIndex  []stepRef // full transcript turn-head index (stepIdx -1) for jump/collapse
+	msgLineIndex   []stepRef // full transcript per-message first-line index for find jumps
+	find           findState // transcript search bar (alt+f)
 
 	renderPending bool // a coalesced streaming render is scheduled
 	renderSeq     int  // bumped per scheduled flush, to drop stale ticks
@@ -606,6 +609,12 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handlePopoverKey(msg)
 	}
 
+	// The find bar captures keys while open — typed runes filter matches,
+	// they never reach the composer.
+	if m.find.open {
+		return m.handleFindKey(msg)
+	}
+
 	// The @-reference popup captures navigation keys while open.
 	if m.ac.open {
 		return m.handleACKey(msg)
@@ -655,8 +664,10 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.refresh()
 		return m, cmd
 	case "ctrl+l":
+		// The whole transcript is conversation-scope destructive: arm the
+		// same two-step gate the panel row deletes use, idle-only like ^L.
 		if !m.busy {
-			m.clearConversation()
+			return m, m.armConfirm(confirmClear, "the conversation")
 		}
 		return m, nil
 	case "ctrl+e":
@@ -697,6 +708,9 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.vp, cmd = m.vp.Update(msg)
 			return m, cmd
 		}
+	case "ctrl+y":
+		// Copy the latest reply — a chord, so typing a y is never hijacked.
+		return m, m.copyLastReply()
 	case "ctrl+g":
 		// Jump to the latest output. A ctrl binding, so typing a capital G
 		// (even as the first character of a prompt) is never hijacked.
@@ -709,6 +723,10 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case "alt+down":
 		m.jumpTurn(true)
+		return m, nil
+	case "alt+f":
+		// Transcript search — a chord, so a bare f always types.
+		m.openFind()
 		return m, nil
 	case "ctrl+f":
 		// Fold/unfold the most recent turn card — long sessions scan top-down
@@ -754,6 +772,7 @@ func (m *Model) clearConversation() {
 	m.curIdx = -1
 	m.convCount = -1 // transcript replaced — drop the cached prefix
 	m.convPrefixRefs = nil
+	m.find = findState{} // nothing left to search
 	m.stepLineIndex = nil
 	m.turnStats = nil
 	m.toolTotal = 0
@@ -922,6 +941,9 @@ func (m *Model) inputAreaHeight() int {
 	h += m.suggestionCardHeight()
 	if m.ac.open {
 		h += m.ac.height()
+	}
+	if m.find.open {
+		h++ // the one-row search strip above the input box
 	}
 	return h
 }

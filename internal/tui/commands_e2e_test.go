@@ -119,8 +119,21 @@ func TestE2EAllCommands(t *testing.T) {
 			}
 		},
 		"/clear": func(t *testing.T, m *Model) {
+			// The command arms the two-step confirm; y fires the wipe.
+			if m.confirm != confirmClear {
+				t.Fatalf("/clear did not arm confirmClear: %v", m.confirm)
+			}
+			m.Update(key("y"))
 			if len(m.msgs) != 0 {
 				t.Fatalf("/clear left %d messages", len(m.msgs))
+			}
+		},
+		"/copy": func(t *testing.T, m *Model) {
+			// With a finalized reply on record the copy path dispatches
+			// (guard branches are unit-tested in clipboard_test.go).
+			m.msgs = append(m.msgs, message{role: roleAsst, content: "the answer"})
+			if cmd := m.copyLastReply(); cmd == nil {
+				t.Fatal("/copy returned nil cmd with a reply on record")
 			}
 		},
 		"/stats": func(t *testing.T, m *Model) {

@@ -353,6 +353,8 @@ func key(s string) tea.KeyMsg {
 		return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("s"), Alt: true}
 	case "alt+x":
 		return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("x"), Alt: true}
+	case "alt+f":
+		return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("f"), Alt: true}
 	default:
 		return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(s)}
 	}
@@ -371,9 +373,13 @@ func TestInitAndBasicKeys(t *testing.T) {
 		t.Error("ctrl+t did not enable thinking")
 	}
 	m.Update(key("ctrl+t"))
-	// Clear (not busy).
+	// Clear (not busy): ^L arms the confirm, y fires the wipe.
 	m.msgs = append(m.msgs, message{role: roleUser, content: "x"})
 	m.Update(key("ctrl+l"))
+	if m.confirm != confirmClear {
+		t.Fatal("ctrl+l did not arm confirmClear")
+	}
+	m.Update(key("y"))
 	if len(m.msgs) != 0 {
 		t.Error("ctrl+l did not clear")
 	}
