@@ -28,6 +28,9 @@ func (m *Model) View() string {
 	if sl := m.statusLine(); sl != "" {
 		parts = append(parts, sl)
 	}
+	if s := m.queueStripView(); s != "" {
+		parts = append(parts, s)
+	}
 	parts = append(parts, m.inputArea(), m.footer())
 	return strings.Join(parts, "\n")
 }
@@ -44,6 +47,9 @@ func (m *Model) plainView() string {
 		parts = append(parts, m.renderPanel(m.width, plainPanelMax))
 	} else if m.popover {
 		parts = append(parts, m.popoverView(m.width, plainPanelMax))
+	}
+	if s := m.queueStripView(); s != "" {
+		parts = append(parts, s)
 	}
 	parts = append(parts, m.inputArea(), m.footer())
 	return strings.Join(parts, "\n")

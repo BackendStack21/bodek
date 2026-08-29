@@ -267,6 +267,7 @@ func (m *Model) showHelp() {
 		{"^P^N", "recall prompts"},
 		{"^G", "jump to the latest output"},
 		{"^R", "browse & resume sessions"},
+		{"^Q", "manage the queue strip (select · move · delete)"},
 		{"^O", "switch model"},
 		{"^T", "toggle extended thinking"},
 		{"^L", "clear the conversation"},

@@ -205,6 +205,7 @@ func run() error {
 		Notify:      cfg.notify,
 		Plain:       cfg.plain,
 		Theme:       cfg.theme,
+		Mouse:       cfg.mouse,
 		OnThemeChange: func(name string) error {
 			cfg.persist.Theme = name
 			return settings.Save(cfg.persist)
