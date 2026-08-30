@@ -66,18 +66,39 @@ func (m *Model) approvalSweep() tea.Cmd {
 	})
 }
 
-// handleApprovalExpiry drops queue heads whose deadline has passed — the
-// engine already failed those prompts ("approval timeout") and moved on, so
-// a lingering form only invites approving a dead request. Teardown mirrors
-// answer(): input reset, status, relayout, plus a strip notice and a plain
-// scrollback line so the autoclose is never silent.
+// handleApprovalExpiry prunes every entry whose deadline has passed — not
+// just the head: with per-frame timeout_seconds (future odek) a short-TTL
+// request can expire mid-queue while the head is still alive. The engine
+// already failed those prompts ("approval timeout") and moved on, so a
+// lingering form only invites approving a dead request. Teardown mirrors
+// answer() only when the head actually changed — a surviving head keeps its
+// selection state — plus a strip notice and a plain scrollback line so the
+// autoclose is never silent.
 func (m *Model) handleApprovalExpiry(now time.Time) tea.Cmd {
-	dropped := 0
-	for len(m.approvals) > 0 && len(m.apprDeadlines) > 0 && !now.Before(m.apprDeadlines[0]) {
-		m.approvals = m.approvals[1:]
-		m.apprDeadlines = m.apprDeadlines[1:]
-		dropped++
+	var oldHead client.Event
+	hadHead := len(m.approvals) > 0
+	if hadHead {
+		oldHead = m.approvals[0]
 	}
+
+	kept := m.approvals[:0]
+	keptDL := m.apprDeadlines[:0]
+	dropped := 0
+	for i, a := range m.approvals {
+		var dl time.Time
+		if i < len(m.apprDeadlines) {
+			dl = m.apprDeadlines[i]
+		}
+		if !dl.IsZero() && !now.Before(dl) {
+			dropped++
+			continue
+		}
+		kept = append(kept, a)
+		keptDL = append(keptDL, dl)
+	}
+	m.approvals = kept
+	m.apprDeadlines = keptDL
+
 	if dropped == 0 {
 		return nil
 	}
@@ -87,8 +108,10 @@ func (m *Model) handleApprovalExpiry(now time.Time) tea.Cmd {
 	} else {
 		m.status = "thinking"
 	}
-	m.resetApprovalInput()
-	m.relayout()
+	if len(m.approvals) == 0 || m.approvals[0] != oldHead {
+		m.resetApprovalInput()
+		m.relayout()
+	}
 	if m.plain {
 		return tea.Println("· approval expired · odek will find an alternative")
 	}

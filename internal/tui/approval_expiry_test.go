@@ -129,3 +129,71 @@ func TestApprovalCountdownRequiresDeadline(t *testing.T) {
 		t.Fatal("request without a deadline must not be dropped")
 	}
 }
+
+// Mixed TTLs (possible once odek sends per-frame timeout_seconds): a short
+// deadline can expire mid-queue while the head is still alive. The sweep
+// must prune exactly the expired entries, wherever they sit, and leave the
+// living head — input state included — untouched.
+func TestApprovalExpiryMidQueuePreservesHead(t *testing.T) {
+	m := newTestModel()
+	feedApproval(t, m, client.Event{Type: "approval_request", ID: "apr-1", Risk: "shell_exec", Command: "rm x"})
+	feedApproval(t, m, client.Event{Type: "approval_request", ID: "apr-2", Risk: "network_egress", Command: "curl x"})
+	feedApproval(t, m, client.Event{Type: "approval_request", ID: "apr-3", Risk: "shell_exec", Command: "make test"})
+	m.apprDeadlines[1] = time.Now().Add(-time.Second) // apr-2 expired mid-queue
+	m.apprDeadlines[2] = time.Now().Add(45 * time.Second)
+	m.apprSel = 1
+	m.apprExpanded = true
+	_, cmd := m.Update(approvalExpireMsg{})
+
+	if len(m.approvals) != 2 || m.approvals[0].ID != "apr-1" || m.approvals[1].ID != "apr-3" {
+		t.Fatalf("expected survivors [apr-1 apr-3], got %+v", m.approvals)
+	}
+	if len(m.apprDeadlines) != 2 {
+		t.Fatalf("deadline queue out of sync: %d", len(m.apprDeadlines))
+	}
+	if m.apprSel != 1 || !m.apprExpanded {
+		t.Fatal("living head's input state must survive a mid-queue drop")
+	}
+	if out := m.approvalBody(); !strings.Contains(out, "expires in 60s") {
+		t.Fatalf("head countdown disturbed: %q", out)
+	}
+	if n := strings.Count(strings.Join(m.notices, "\n"), "expired"); n != 1 {
+		t.Fatalf("expected exactly one expiry notice, got %d", n)
+	}
+	if m.status != "approval required" {
+		t.Fatalf("status with survivors, got %q", m.status)
+	}
+	if cmd == nil {
+		t.Fatal("sweep must re-arm while a form is open")
+	}
+}
+
+// Head and tail expired, middle alive: exactly the middle survives and —
+// the head having changed — the input state resets.
+func TestApprovalExpiryMultiDropSkipsAliveMiddle(t *testing.T) {
+	m := newTestModel()
+	feedApproval(t, m, client.Event{Type: "approval_request", ID: "apr-1", Risk: "shell_exec", Command: "rm x"})
+	feedApproval(t, m, client.Event{Type: "approval_request", ID: "apr-2", Risk: "network_egress", Command: "curl x"})
+	feedApproval(t, m, client.Event{Type: "approval_request", ID: "apr-3", Risk: "shell_exec", Command: "make test"})
+	m.apprDeadlines[0] = time.Now().Add(-time.Second)
+	m.apprDeadlines[2] = time.Now().Add(-time.Second)
+	m.apprSel = 1
+	m.apprExpanded = true
+	_, cmd := m.Update(approvalExpireMsg{})
+
+	if len(m.approvals) != 1 || m.approvals[0].ID != "apr-2" {
+		t.Fatalf("only the alive middle must survive, got %+v", m.approvals)
+	}
+	if len(m.apprDeadlines) != 1 {
+		t.Fatalf("deadline queue out of sync: %d", len(m.apprDeadlines))
+	}
+	if m.apprSel != 0 || m.apprExpanded {
+		t.Fatal("head changed — input state must reset")
+	}
+	if m.status != "approval required" {
+		t.Fatalf("status with a survivor, got %q", m.status)
+	}
+	if cmd == nil {
+		t.Fatal("sweep must re-arm while a form is open")
+	}
+}
