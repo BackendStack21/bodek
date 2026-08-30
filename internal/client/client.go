@@ -85,9 +85,11 @@ type Event struct {
 
 	// skill_event / memory_event / agent_signal / subagent_log: the event
 	// subtype (e.g. "loaded", "merge", "trim") plus a few shared details.
+	// Status carries the child-reported log status on subagent_log frames.
 	SubType   string `json:"event"`
 	Target    string `json:"target"`
 	Detail    string `json:"detail"`
+	Status    string `json:"status,omitempty"`
 	SkillName string `json:"skill_name"`
 	Untrusted bool   `json:"untrusted"`
 	Count     int    `json:"count"`
