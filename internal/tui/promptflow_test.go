@@ -348,15 +348,25 @@ func TestHistoryEdgeCases(t *testing.T) {
 	}
 }
 
-// TestCancelRestoresQueue verifies that esc hands queued prompts back to the
-// input instead of firing them into a cancelled session.
+// TestCancelRestoresQueue verifies that a confirmed esc hands queued prompts
+// back to the input instead of firing them into a cancelled session. The
+// gate must arm without touching the queue — only y fires the cancel.
 func TestCancelRestoresQueue(t *testing.T) {
 	m := newTestModel()
 	busyTurn(m)
 	m.sessionID = "s1"
 	m.queue = []string{"one", "two"}
 
+	// Arming the gate is not a cancel: the queue stays untouched.
 	m.Update(key("esc"))
+	if m.confirm != confirmCancel {
+		t.Fatalf("esc did not arm confirmCancel: %v", m.confirm)
+	}
+	if len(m.queue) != 2 {
+		t.Errorf("arming the gate disturbed the queue: %v", m.queue)
+	}
+
+	m.Update(key("y"))
 	if len(m.queue) != 0 {
 		t.Errorf("queue should be handed back, got %v", m.queue)
 	}
