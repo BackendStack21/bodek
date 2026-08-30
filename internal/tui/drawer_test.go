@@ -71,16 +71,16 @@ func TestDrawerEventsTab(t *testing.T) {
 	}
 }
 
-// TestDrawerTabCycling verifies ]/[ and digit jumps move between ALL seven
+// TestDrawerTabCycling verifies ]/[ and digit jumps move between ALL nine
 // drawer tabs (management panels included — they are full tabs, not loose
 // overlays) and esc closes from any of them.
 func TestDrawerTabCycling(t *testing.T) {
 	m := wired(t)
 	m.Update(exec(m.openRuns()))
 
-	// ] walks the full ring: runs → events → plan → memory → skills →
-	// tools → config → sessions.
-	want := []panelMode{panelEvents, panelPlan, panelMemory, panelSkills, panelTools, panelConfig, panelSessions}
+	// ] walks the full ring: runs → agents → events → plan → memory →
+	// skills → tools → config → sessions.
+	want := []panelMode{panelAgents, panelEvents, panelPlan, panelMemory, panelSkills, panelTools, panelConfig, panelSessions}
 	for _, w := range want {
 		_, cmd := m.Update(key("]"))
 		m.Update(exec(cmd))
@@ -96,8 +96,9 @@ func TestDrawerTabCycling(t *testing.T) {
 	}
 	// Digits jump straight to any tab.
 	for d, w := range map[string]panelMode{
-		"1": panelSessions, "2": panelRuns, "3": panelEvents, "4": panelPlan,
-		"5": panelMemory, "6": panelSkills, "7": panelTools, "8": panelConfig,
+		"1": panelSessions, "2": panelRuns, "3": panelAgents, "4": panelEvents,
+		"5": panelPlan, "6": panelMemory, "7": panelSkills, "8": panelTools,
+		"9": panelConfig,
 	} {
 		_, cmd := m.Update(key(d))
 		m.Update(exec(cmd))
@@ -108,13 +109,13 @@ func TestDrawerTabCycling(t *testing.T) {
 	// The strip renders every tab name, and r refreshes a management tab
 	// the same as a core tab (they are drawer tabs now).
 	out := plain(m.View())
-	for _, name := range []string{"sessions", "runs", "events", "plan", "memory", "skills", "tools", "config"} {
+	for _, name := range []string{"sessions", "runs", "agents", "events", "plan", "memory", "skills", "tools", "config"} {
 		if !strings.Contains(out, name) {
 			t.Errorf("tab strip missing %q:\n%s", name, out)
 		}
 	}
 	m.Update(exec(m.fetchSessionsPage("", 0, false)))
-	_, cmd = m.Update(key("5")) // memory tab (plan is 4 since its insertion)
+	_, cmd = m.Update(key("6")) // memory tab (agents shifted the digits)
 	m.Update(exec(cmd))
 	_, cmd = m.Update(key("r"))
 	if cmd == nil {

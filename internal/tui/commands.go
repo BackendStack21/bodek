@@ -105,6 +105,12 @@ func slashCommands() []command {
 		{"cancel", "cancel the running turn", func(m *Model, _ string) tea.Cmd {
 			return m.cancelRun()
 		}},
+		{"stop", "stop one sub-agent — /stop <SA#>", func(m *Model, args string) tea.Cmd {
+			return m.stopByLabel(args)
+		}},
+		{"agents", "sub-agent registry — recent delegated tasks", func(m *Model, _ string) tea.Cmd {
+			return m.openAgents()
+		}},
 		{"attach", "stage a file for the next prompt — /attach <path>", func(m *Model, args string) tea.Cmd {
 			return m.attachFile(args)
 		}},

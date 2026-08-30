@@ -98,6 +98,31 @@ func (m *Model) handleRunStarted(msg runStartedMsg) tea.Cmd {
 	return tea.Batch(note, m.openRuns())
 }
 
+// ── agents tab ──────────────────────────────────────────────────────────────
+
+// openAgents opens the sub-agent registry tab (GET /api/subagents snapshot).
+func (m *Model) openAgents() tea.Cmd {
+	m.panel = panelAgents
+	m.panelSel = 0
+	m.panelEdit = panelEditNone
+	m.panelMsg = "loading sub-agents…"
+	m.relayout()
+	m.refresh()
+	return m.fetchAgents()
+}
+
+// fetchAgents refetches the registry snapshot; r re-runs it while open.
+func (m *Model) fetchAgents() tea.Cmd {
+	if m.cl == nil {
+		return nil
+	}
+	cl := m.cl
+	return func() tea.Msg {
+		entries, err := cl.Subagents("")
+		return mgmtMsg{tab: panelAgents, sag: entries, err: err}
+	}
+}
+
 // drawerTab is one tab of the management drawer.
 type drawerTab struct {
 	name string
@@ -112,6 +137,7 @@ func drawerTabs() []drawerTab {
 	return []drawerTab{
 		{"sessions", panelSessions, func(m *Model) tea.Cmd { return m.openSessions() }},
 		{"runs", panelRuns, func(m *Model) tea.Cmd { return m.openRuns() }},
+		{"agents", panelAgents, func(m *Model) tea.Cmd { return m.openAgents() }},
 		{"events", panelEvents, func(m *Model) tea.Cmd { return m.openEvents() }},
 		{"plan", panelPlan, func(m *Model) tea.Cmd { return m.openPlan() }},
 		{"memory", panelMemory, func(m *Model) tea.Cmd { return m.openMemory() }},

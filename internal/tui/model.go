@@ -27,17 +27,18 @@ const (
 
 // step is a single tool invocation within an assistant turn.
 type step struct {
-	name     string
-	arg      string
-	result   string // sanitized tool output (multi-line); excerpted at render
-	done     bool
-	isErr    bool          // the result reads as a failure (tints the status glyph red)
-	subagent bool          // this call delegates to a sub-agent (renders its log tree)
-	logs     []string      // nested sub-agent activity, from subagent_log events
-	agents   []*agentCard  // live per-task telemetry, from subagent_state frames
-	expanded bool          // user has expanded this step to show full output/logs
-	started  time.Time     // when the tool_call arrived; zero for resumed history
-	dur      time.Duration // wall-clock the call took; 0 until the result lands
+	name       string
+	arg        string
+	result     string // sanitized tool output (multi-line); excerpted at render
+	done       bool
+	isErr      bool          // the result reads as a failure (tints the status glyph red)
+	subagent   bool          // this call delegates to a sub-agent (renders its log tree)
+	logs       []string      // nested sub-agent activity, from subagent_log events
+	agents     []*agentCard  // live per-task telemetry, from subagent_state frames
+	resultCard *agentResult  // framed result envelope (delegate tools)
+	expanded   bool          // user has expanded this step to show full output/logs
+	started    time.Time     // when the tool_call arrived; zero for resumed history
+	dur        time.Duration // wall-clock the call took; 0 until the result lands
 }
 
 // stepRef maps a rendered transcript line to a specific step for mouse
@@ -207,8 +208,10 @@ type Model struct {
 	panelEdit   panelEditMode // text-entry submode while a panel is open
 	panelDraft  string        // the text being edited (search query / rename)
 	confirm     confirmKind   // armed destructive action: y fires, any other key disarms
+	stopTarget  string        // task_id armed by confirmStopAgent
 
-	profiles []client.Profile // built-in model catalog (picker + context gauge)
+	profiles  []client.Profile       // built-in model catalog (picker + context gauge)
+	agentsReg []client.SubagentEntry // agents tab: sub-agent registry snapshot
 
 	// Drawer state: runs polling + the events feed.
 	runs            []client.Run
@@ -561,6 +564,13 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, m.noticeSweep()
 
+	case stopAgentDoneMsg:
+		if msg.err != nil {
+			m.addNote("stop failed · " + msg.err.Error())
+			m.refresh()
+		}
+		return m, m.noticeSweep()
+
 	case updateCheckMsg:
 		// Silent on error or when already current: the hint only ever nags
 		// once, at startup, when a newer release is confirmed.
@@ -730,6 +740,17 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.qfocus = true
 			m.qsel = 0
 			m.refresh()
+		}
+		return m, nil
+	case "ctrl+s":
+		// Stop one running sub-agent — a chord, so queue typing is never
+		// hijacked — behind the same two-step gate as every destructive
+		// action. /stop <SA#> targets a specific card.
+		if m.busy {
+			if id, label, ok := m.firstLiveAgent(); ok {
+				return m, m.armStopAgent(id, label)
+			}
+			return m, m.transientNoteCmd("no running sub-agents")
 		}
 		return m, nil
 	case "ctrl+t":

@@ -300,6 +300,41 @@ func (c *Client) Cancel(sessionID, token string) error {
 
 // ── low-level helpers ────────────────────────────────────────────────────────
 
+// SubagentEntry is one delegated task's lifecycle record from the serve
+// registry snapshot (GET /api/subagents).
+type SubagentEntry struct {
+	TaskID          string    `json:"task_id"`
+	RunKey          string    `json:"run_key"`
+	Goal            string    `json:"goal,omitempty"`
+	Status          string    `json:"status,omitempty"`
+	Phase           string    `json:"phase"`
+	PID             int       `json:"pid,omitempty"`
+	StartedAt       time.Time `json:"started_at"`
+	FinishedAt      time.Time `json:"finished_at,omitempty"`
+	Iterations      int       `json:"iterations,omitempty"`
+	Step            int       `json:"step,omitempty"`
+	LastTool        string    `json:"last_tool,omitempty"`
+	DurationSeconds float64   `json:"duration_seconds,omitempty"`
+	TokensUsed      int       `json:"tokens_used,omitempty"`
+}
+
+// Subagents fetches the sub-agent registry snapshot, optionally filtered by
+// run key. Auth mirrors the other instance-level GETs.
+func (c *Client) Subagents(runKey string) ([]SubagentEntry, error) {
+	u := c.baseURL + "/api/subagents"
+	if runKey != "" {
+		u += "?key=" + url.QueryEscape(runKey)
+	}
+	var out struct {
+		Entries []SubagentEntry `json:"entries"`
+		Count   int             `json:"count"`
+	}
+	if err := c.getJSON(u, "", &out); err != nil {
+		return nil, err
+	}
+	return out.Entries, nil
+}
+
 func (c *Client) do(method, u, sessionToken string) (*http.Response, error) {
 	req, err := http.NewRequest(method, u, nil)
 	if err != nil {
