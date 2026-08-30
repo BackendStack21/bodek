@@ -731,7 +731,9 @@ func (m *Model) exportSelected(format string) tea.Cmd {
 			return sessionExportedMsg{id: id, err: err}
 		}
 		path := fmt.Sprintf("bodek-%s.%s", id, format)
-		if err := os.WriteFile(path, data, 0o644); err != nil {
+		// 0600: transcripts can carry sensitive tool output — owner-only,
+		// matching the tokens/settings store standard.
+		if err := os.WriteFile(path, data, 0o600); err != nil {
 			return sessionExportedMsg{id: id, err: err}
 		}
 		return sessionExportedMsg{id: id, path: path}
