@@ -5,11 +5,12 @@
 // auth_token) and requires it on the cancel/detail/delete endpoints. The Web
 // UI keeps these in localStorage; bodek keeps them in ~/.bodek/sessions.json.
 // Persistence is best-effort — a Store with no writable path still works as an
-// in-memory cache for the current run.
+// in-memory cache for the current run; failures are reported on stderr.
 package tokens
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"sync"
@@ -65,7 +66,9 @@ func (s *Store) Set(id, token string) {
 	}
 	path := s.path
 	s.mu.Unlock()
-	persist(path, snapshot)
+	if err := persist(path, snapshot); err != nil {
+		warnPersist(err)
+	}
 }
 
 // Delete removes a session's token and persists the store (best-effort).
@@ -85,23 +88,38 @@ func (s *Store) Delete(id string) {
 	}
 	path := s.path
 	s.mu.Unlock()
-	persist(path, snapshot)
+	if err := persist(path, snapshot); err != nil {
+		warnPersist(err)
+	}
 }
 
-func persist(path string, m map[string]string) {
+// persist atomically writes the store (staged .tmp + rename) so a crash
+// mid-write never corrupts the previous snapshot.
+func persist(path string, m map[string]string) error {
 	if path == "" {
-		return
+		return nil
 	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		return
+		return fmt.Errorf("create store dir: %w", err)
 	}
 	data, err := json.MarshalIndent(m, "", "  ")
 	if err != nil {
-		return
+		return fmt.Errorf("encode store: %w", err)
 	}
 	tmp := path + ".tmp"
 	if err := os.WriteFile(tmp, data, 0o600); err != nil {
-		return
+		return fmt.Errorf("write store: %w", err)
 	}
-	_ = os.Rename(tmp, path)
+	if err := os.Rename(tmp, path); err != nil {
+		_ = os.Remove(tmp) // don't leave the staged copy behind
+		return fmt.Errorf("replace store: %w", err)
+	}
+	return nil
+}
+
+// warnPersist reports a failed best-effort save without aborting the
+// operation: the store stays a working in-memory cache, but a silent failure
+// would break session resume with no diagnostic.
+func warnPersist(err error) {
+	fmt.Fprintf(os.Stderr, "bodek: warning: session token store not saved: %v\n", err)
 }
