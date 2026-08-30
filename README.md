@@ -205,13 +205,15 @@ command and press `⏎`.
 | `/model [name]` | Switch model (opens a picker with no argument) |
 | `/thinking [on\|off]` | Toggle extended thinking for the next turn |
 | `/cancel` | Cancel the running turn |
+| `/stop <SA#>` | Stop one running sub-agent (bare `/stop` lists them) |
+| `/agents` | Sub-agent registry — recent delegated tasks (drawer tab) |
 | `/attach <path>` | Stage a file to send with the next prompt (5 MB each, 10 MB total) |
 | `/unattach [name]` | Drop staged files (all when no name given) |
 | `/quit` | Exit bodek |
 
 ### The management drawer
 
-`/sessions`, `/runs`, `/events`, `/plan`, `/memory`, `/skills`, `/tools`, and
+`/sessions`, `/runs`, `/agents`, `/events`, `/plan`, `/memory`, `/skills`, `/tools`, and
 `/config` all open tabs of **one drawer** with a shared grammar:
 
 - `]` / `[` cycle tabs · `1`–`8` jump · `r` refresh · `esc` closes.
@@ -303,6 +305,11 @@ collect an approval for a prompt the engine already abandoned.
   drives live cards — step, tool, iterations, tokens, duration — and terminal
   status glyphs (`✓` success, `◐` partial, `✗` error, `⊘` cancelled, `⏱`
   timeout), with a `1/2 agents · 6.3k tok` rollup on the collapsed line.
+  Framed delegate results render as a structured card — status, summary,
+  changed files, and usage — while prose results keep the generic preview.
+  `ctrl+s` (or `/stop <SA#>`, two-step confirmed) stops one running
+  sub-agent, and the `/agents` drawer tab lists the serve instance's
+  registry snapshot — recent delegated tasks with goal, status, and usage.
 - **Security approvals** — odek's `danger` engine prompts surface as an inline
   panel; your answer is sent straight back over the socket.
 - **Live reasoning** — the model's pre-tool thinking streams in dimmed text,

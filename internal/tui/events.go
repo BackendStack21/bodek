@@ -112,6 +112,9 @@ func (m *Model) handleEvent(ev client.Event) (tea.Model, tea.Cmd) {
 					steps[j].done = true
 					steps[j].result = resultPreview(ev.Data)
 					steps[j].isErr = looksLikeError(steps[j].result)
+					if steps[j].subagent {
+						steps[j].resultCard = parseAgentResult(ev.Data)
+					}
 					if !steps[j].started.IsZero() {
 						steps[j].dur = time.Since(steps[j].started)
 					}
@@ -307,6 +310,14 @@ func (m *Model) handleEvent(ev client.Event) (tea.Model, tea.Cmd) {
 			break
 		}
 		m.addTransientNote("subagent · " + stateNoticeLine(ev))
+
+	case "subagent_cancelled":
+		// Stop ack. accepted:false is a benign race — the task already
+		// finished. The card's terminal state comes exclusively from the
+		// subagent_state frame; the ack never flips UI state.
+		if !ev.Accepted {
+			m.addTransientNote("stop declined · sub-agent already finished")
+		}
 
 	case client.EventDisconnected:
 		m.disconn = true

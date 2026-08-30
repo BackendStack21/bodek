@@ -820,7 +820,11 @@ func (m *Model) renderStep(s step, streaming bool, msgIdx, stepIdx, startLine in
 				details = append(details, th.stepRes.Render(truncate(lg, detailBudget)))
 			}
 		}
-		details = append(details, stepDetail(s.name, s.result, m.vp.Width, th)...)
+		if s.resultCard != nil {
+			details = append(details, agentResultLines(m, s.resultCard, detailBudget)...)
+		} else {
+			details = append(details, stepDetail(s.name, s.result, m.vp.Width, th)...)
+		}
 		if len(details) > 200 {
 			details = details[:200]
 			details = append(details, th.stepArg.Render("… output truncated"))

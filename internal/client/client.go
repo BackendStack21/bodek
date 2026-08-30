@@ -71,9 +71,11 @@ type Event struct {
 	TimeoutSeconds int `json:"timeout_seconds,omitempty"`
 
 	// approval_ack (Action echoes the client's reply) / cancelled (Idle is
-	// true when nothing was running for the target session).
-	Action string `json:"action"`
-	Idle   bool   `json:"idle"`
+	// true when nothing was running for the target session) /
+	// subagent_cancelled (Accepted:false is a benign race — task already done).
+	Action   string `json:"action"`
+	Idle     bool   `json:"idle"`
+	Accepted bool   `json:"accepted"`
 
 	// server_info / pong snapshot. T is the pong timestamp (unix ms); the
 	// client measures round-trip latency from its own send clock instead.
@@ -265,6 +267,20 @@ func (c *Client) SendCancel(sessionID, authToken string) error {
 		SessionID string `json:"session_id"`
 		AuthToken string `json:"auth_token,omitempty"`
 	}{Type: "cancel", SessionID: sessionID, AuthToken: authToken})
+}
+
+// SendSubagentCancel stops ONE running sub-agent by task id over the
+// WebSocket (handled inline by the socket reader, so it works while
+// delegate_tasks occupies the prompt processor; session-scoped auth). The
+// subagent_cancelled ack replies; the card's terminal state arrives as a
+// subagent_state transition.
+func (c *Client) SendSubagentCancel(sessionID, authToken, taskID string) error {
+	return c.send(struct {
+		Type      string `json:"type"`
+		SessionID string `json:"session_id"`
+		AuthToken string `json:"auth_token,omitempty"`
+		TaskID    string `json:"task_id"`
+	}{Type: "subagent_cancel", SessionID: sessionID, AuthToken: authToken, TaskID: taskID})
 }
 
 // SessionSwitch adopts an existing session without sending a prompt: the

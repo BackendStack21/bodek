@@ -26,6 +26,7 @@ const (
 	panelSkills
 	panelTools
 	panelConfig
+	panelAgents
 )
 
 // panelEditMode is the text-entry submode a panel can capture: `/` search in
@@ -50,6 +51,7 @@ const (
 	confirmFactDelete
 	confirmClear
 	confirmCancel
+	confirmStopAgent
 )
 
 // handleConfirmKey resolves an armed delete: y fires it against the
@@ -72,6 +74,11 @@ func (m *Model) handleConfirmKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			// cancelRun self-guards: if the run settled while the gate sat
 			// armed, it degrades to the "nothing to cancel" note.
 			return m, m.cancelRun()
+		case confirmStopAgent:
+			// stopAgent self-guards: a card that settled while the gate sat
+			// armed degrades to a notice — the terminal state still comes
+			// from subagent_state, never from the ack.
+			return m, m.stopAgent(m.stopTarget)
 		}
 	}
 	m.refresh()
@@ -88,6 +95,8 @@ func (m *Model) armConfirm(kind confirmKind, what string) tea.Cmd {
 		verb = "clear "
 	case confirmCancel:
 		verb = "cancel "
+	case confirmStopAgent:
+		verb = "stop "
 	}
 	m.panelMsg = verb + what + "?  y confirm · any other key cancels"
 	m.refresh()
@@ -525,6 +534,8 @@ func (m *Model) panelLen() int {
 		return len(m.toolRows)
 	case panelConfig:
 		return len(m.cfgRows)
+	case panelAgents:
+		return len(m.agentsReg)
 	}
 	return 0
 }
@@ -614,6 +625,13 @@ func (m *Model) panelSelect() tea.Cmd {
 		}
 	case panelEvents:
 		return m.fetchEvents()
+	case panelAgents:
+		if m.panelSel < len(m.agentsReg) {
+			m.panelDetail = true // readable goal text through sanitize() — house grammar
+			m.detailScroll = 0
+			m.refresh()
+		}
+		return nil
 	case panelMemory, panelSkills, panelTools, panelConfig:
 		// Enter expands the selected row into its detail view — the
 		// promote/delete gates assume the human can read what they gate.
@@ -1099,6 +1117,9 @@ func (m *Model) renderPanel(w, h int) string {
 	case panelConfig:
 		title = "⚙ config"
 		rows = m.cfgRowsRender(w - 6)
+	case panelAgents:
+		title = "◈ agents"
+		rows = m.agentRowsRender(w - 6)
 	}
 
 	header := th.acTitle.Render(title)

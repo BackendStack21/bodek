@@ -29,6 +29,7 @@ type mgmtMsg struct {
 	cfg  map[string]any
 	usr  client.Usage
 	con  []client.Connection
+	sag  []client.SubagentEntry
 	err  error
 }
 
@@ -199,6 +200,13 @@ func (m *Model) handleMgmtMsg(msg mgmtMsg) {
 	case panelConfig:
 		m.cfgRows = buildCfgRows(msg.cfg, msg.usr, msg.con)
 		m.panelMsg = ""
+	case panelAgents:
+		m.agentsReg = msg.sag
+		if len(msg.sag) == 0 {
+			m.panelMsg = "no sub-agent activity recorded"
+		} else {
+			m.panelMsg = ""
+		}
 	}
 	if m.panelSel >= m.panelLen() {
 		m.panelSel = max(m.panelLen()-1, 0)
@@ -583,6 +591,56 @@ func (m *Model) toolSelected() *toolRow {
 
 // mgmtDetailLines renders the selected row's detail block, wrapped to w.
 // Everything from the wire goes through sanitize().
+// agentRowsRender renders the agents tab: one row per registry entry —
+// status glyph, redacted goal, and a compact usage tail.
+func (m *Model) agentRowsRender(w int) []string {
+	th := m.th
+	rows := make([]string, 0, len(m.agentsReg))
+	for i, e := range m.agentsReg {
+		goal := e.Goal
+		if goal == "" {
+			goal = "(no goal recorded)"
+		}
+		var detail string
+		if e.Phase == "finished" {
+			detail = fmt.Sprintf("  %s · %d it · %s tok", e.Status, e.Iterations, human(e.TokensUsed))
+		} else {
+			detail = fmt.Sprintf("  running · step %d · %s", e.Step, e.LastTool)
+		}
+		if e.DurationSeconds > 0 {
+			detail += fmt.Sprintf(" · %.1fs", e.DurationSeconds)
+		}
+		budget := w - 2 - lipgloss.Width(detail)
+		label := agentStatusGlyph(e.Phase, e.Status) + " " + goal
+		prefix, lab := "  ", th.acItem.Render(truncate(label, budget))
+		if i == m.panelSel {
+			prefix, lab = th.acSel.Render("› "), th.acSel.Render(truncate(label, budget))
+		}
+		rows = append(rows, prefix+lab+th.acDetail.Render(detail))
+	}
+	return rows
+}
+
+// agentStatusGlyph mirrors the live-card glyph set.
+func agentStatusGlyph(phase, status string) string {
+	if phase != "finished" {
+		return "⟳"
+	}
+	switch status {
+	case "success":
+		return "✓"
+	case "partial":
+		return "◐"
+	case "error":
+		return "✗"
+	case "cancelled":
+		return "⊘"
+	case "timeout":
+		return "⏱"
+	}
+	return "•"
+}
+
 func (m *Model) mgmtDetailLines(w int) []string {
 	th := m.th
 	var out []string
@@ -641,6 +699,26 @@ func (m *Model) mgmtDetailLines(w int) []string {
 		}
 		out = append(out, "")
 		out = append(out, wrapText(sanitize(r.text), w)...)
+	case panelAgents:
+		if m.panelSel >= len(m.agentsReg) {
+			return []string{th.acDim.Render("no entry selected")}
+		}
+		e := m.agentsReg[m.panelSel]
+		out = append(out, th.acSel.Render("› "+agentStatusGlyph(e.Phase, e.Status)+" "+sanitize(e.Goal)))
+		meta := []string{e.Phase, e.Status, "task " + sanitize(e.TaskID)}
+		if e.LastTool != "" {
+			meta = append(meta, "last "+sanitize(e.LastTool))
+		}
+		out = append(out, th.acDetail.Render(strings.Join(meta, " · ")))
+		out = append(out, "")
+		out = append(out, th.acDetail.Render(fmt.Sprintf("run %s · %d iterations · %d tokens · %.1fs",
+			sanitize(e.RunKey), e.Iterations, e.TokensUsed, e.DurationSeconds)))
+		if !e.StartedAt.IsZero() {
+			out = append(out, th.acDetail.Render("started "+e.StartedAt.String()))
+		}
+		if !e.FinishedAt.IsZero() {
+			out = append(out, th.acDetail.Render("finished "+e.FinishedAt.String()))
+		}
 	case panelTools:
 		r := m.toolSelected()
 		if r == nil {

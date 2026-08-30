@@ -266,6 +266,19 @@ func TestE2EAllCommands(t *testing.T) {
 				t.Fatal("/cancel did not clear the busy state")
 			}
 		},
+		"/stop": func(t *testing.T, m *Model) {
+			if m.confirm != confirmNone {
+				t.Fatal("/stop without live agents armed a gate")
+			}
+			if !notePresent(m, "no running sub-agents") {
+				t.Errorf("/stop note missing: %v", m.notices)
+			}
+		},
+		"/agents": func(t *testing.T, m *Model) {
+			if m.panel != panelAgents {
+				t.Fatalf("/agents opened panel %d", m.panel)
+			}
+		},
 		"/attach": func(t *testing.T, m *Model) {
 			if len(m.attachments) != 1 || m.attachments[0].Name != "notes.txt" {
 				t.Fatalf("/attach staged = %+v", m.attachments)
