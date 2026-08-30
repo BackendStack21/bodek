@@ -34,6 +34,7 @@ type step struct {
 	isErr    bool          // the result reads as a failure (tints the status glyph red)
 	subagent bool          // this call delegates to a sub-agent (renders its log tree)
 	logs     []string      // nested sub-agent activity, from subagent_log events
+	agents   []*agentCard  // live per-task telemetry, from subagent_state frames
 	expanded bool          // user has expanded this step to show full output/logs
 	started  time.Time     // when the tool_call arrived; zero for resumed history
 	dur      time.Duration // wall-clock the call took; 0 until the result lands

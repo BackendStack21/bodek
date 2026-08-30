@@ -94,6 +94,19 @@ type Event struct {
 	Untrusted bool   `json:"untrusted"`
 	Count     int    `json:"count"`
 	TaskIdx   int    `json:"task_idx"`
+
+	// subagent_state: per-task lifecycle telemetry (odek v1.30+). All
+	// omitempty — older servers degrade to zero values and the TUI renders
+	// exactly what it did before. Status is shared with the block above
+	// (both frames carry "status").
+	TaskID          string  `json:"task_id,omitempty"`
+	RunKey          string  `json:"run_key,omitempty"`
+	Phase           string  `json:"phase,omitempty"` // started | active | finished
+	Step            int     `json:"step,omitempty"`
+	Iterations      int     `json:"iterations,omitempty"`
+	Tool            string  `json:"tool,omitempty"`
+	DurationSeconds float64 `json:"duration_seconds,omitempty"`
+	TokensUsed      int     `json:"tokens_used,omitempty"`
 }
 
 // EventDisconnected is a synthetic Type emitted on the Events channel when the

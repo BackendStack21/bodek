@@ -299,7 +299,10 @@ collect an approval for a prompt the engine already abandoned.
   footer, and tinted with a `✗` when the call fails.
 - **Sub-agents** — delegations are labelled and their `subagent_log` activity
   nests beneath the delegating call, so a sub-agent's progress reads as its own
-  branch of the step tree.
+  branch of the step tree. Per-task `subagent_state` telemetry (odek v1.30+)
+  drives live cards — step, tool, iterations, tokens, duration — and terminal
+  status glyphs (`✓` success, `◐` partial, `✗` error, `⊘` cancelled, `⏱`
+  timeout), with a `1/2 agents · 6.3k tok` rollup on the collapsed line.
 - **Security approvals** — odek's `danger` engine prompts surface as an inline
   panel; your answer is sent straight back over the socket.
 - **Live reasoning** — the model's pre-tool thinking streams in dimmed text,
