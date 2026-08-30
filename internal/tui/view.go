@@ -772,6 +772,9 @@ func (m *Model) renderStep(s step, streaming bool, msgIdx, stepIdx, startLine in
 	left := chevron + " " + icon + " " + th.toolIcon.Render(toolGlyph(s.name)) + " " + th.stepName.Render(s.name)
 	if s.subagent {
 		left += th.stepArg.Render(" · sub-agent")
+		if r := agentRollup(&s); r != "" {
+			left += th.stepArg.Render(" · " + r)
+		}
 	}
 	// Right rail: response time once the call lands, plus the typed chip
 	// (diffstat / test verdict) — right-aligned so durations read as a
@@ -804,6 +807,14 @@ func (m *Model) renderStep(s step, streaming bool, msgIdx, stepIdx, startLine in
 		// styled, already-truncated lines (truncating styled text would
 		// corrupt ANSI sequences) — append those verbatim.
 		var details []string
+		for _, a := range s.agents {
+			line := agentCardLine(a)
+			if a.failed() {
+				details = append(details, th.stepErr.Render(truncate(line, detailBudget)))
+				continue
+			}
+			details = append(details, th.stepRes.Render(truncate(line, detailBudget)))
+		}
 		for _, lg := range s.logs {
 			if strings.TrimSpace(lg) != "" {
 				details = append(details, th.stepRes.Render(truncate(lg, detailBudget)))

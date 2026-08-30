@@ -298,6 +298,16 @@ func (m *Model) handleEvent(ev client.Event) (tea.Model, tea.Cmd) {
 		}
 		m.addTransientNote("subagent · " + line)
 
+	case "subagent_state":
+		// Per-task lifecycle telemetry (odek v1.30+): attach to the
+		// in-flight sub-agent step; strays (resumed turn, idle, late
+		// frames) fall back to a notice so nothing vanishes silently.
+		if i := m.cur(); i >= 0 && m.attachSubState(i, ev) {
+			stream = true // coalesce redraws — state frames arrive in bursts
+			break
+		}
+		m.addTransientNote("subagent · " + stateNoticeLine(ev))
+
 	case client.EventDisconnected:
 		m.disconn = true
 		m.busy = false
