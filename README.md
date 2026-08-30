@@ -271,6 +271,12 @@ withdrawn, and approving requires typing the literal word `approve` and
 pressing `⏎` (a mistyped word resets — retyping is the point). Denying stays
 one `Esc`.
 
+Approvals are time-boxed by the engine (60s by default), and an expired
+request is dead — odek fails the tool call and picks an alternative path. The
+panel shows a live `expires in Ns` countdown (red in the last 10 seconds) and
+autocloses expired requests with an expiry notice, so a stale form can never
+collect an approval for a prompt the engine already abandoned.
+
 ---
 
 ## What you see
