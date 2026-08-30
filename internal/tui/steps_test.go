@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -136,22 +137,50 @@ func TestSubagentLogPayload(t *testing.T) {
 	// Child-reported status rides status — surface it too.
 	m.handleEvent(client.Event{Type: "subagent_log", SubType: "finished", Name: "explorer", Status: "success"})
 	step = m.msgs[0].steps[len(m.msgs[0].steps)-1]
-	if got := step.logs[len(step.logs)-1]; !strings.Contains(got, "success") {
+	if got := step.logs[0]; !strings.Contains(got, "success") {
 		t.Errorf("status dropped: %q", got)
 	}
 
 	// Detail remains a fallback for legacy/synthetic senders.
 	m.handleEvent(client.Event{Type: "subagent_log", SubType: "tool_call", Name: "stat", Detail: "fallback.md"})
 	step = m.msgs[0].steps[len(m.msgs[0].steps)-1]
-	if got := step.logs[len(step.logs)-1]; !strings.Contains(got, "fallback.md") {
+	if got := step.logs[0]; !strings.Contains(got, "fallback.md") {
 		t.Errorf("detail fallback lost: %q", got)
 	}
 
 	// Oversized payloads are capped at construction (serve caps data at 8 KiB).
 	m.handleEvent(client.Event{Type: "subagent_log", SubType: "tool_call", Name: "grep", Data: strings.Repeat("x", 8192)})
 	step = m.msgs[0].steps[len(m.msgs[0].steps)-1]
-	if got := step.logs[len(step.logs)-1]; len([]rune(got)) > 120 {
+	if got := step.logs[0]; len([]rune(got)) > 120 {
 		t.Errorf("payload not capped (%d runes): %.40q", len([]rune(got)), got)
+	}
+}
+
+// TestSubagentLogMutatesInPlaceDesc pins the in-place mutation contract:
+// the nested log keeps only the newest maxSubLogs lines with the newest
+// first (DESC), so a long-running sub-agent's card always shows its latest
+// activity instead of freezing on its first few frames.
+func TestSubagentLogMutatesInPlaceDesc(t *testing.T) {
+	m := newTestModel()
+	m.msgs = append(m.msgs, message{role: roleAsst, streaming: true})
+	m.curIdx = 0
+	m.busy = true
+	m.handleEvent(client.Event{Type: "tool_call", Name: "delegate_task", Data: `{"task":"explore"}`})
+
+	const feed = 12 // overshoot the 8-line cap
+	for n := 1; n <= feed; n++ {
+		m.handleEvent(client.Event{Type: "subagent_log", SubType: "tool_call", Name: "shell",
+			Data: fmt.Sprintf("step-%02d", n)})
+	}
+	step := m.msgs[0].steps[len(m.msgs[0].steps)-1]
+	if len(step.logs) != 8 {
+		t.Fatalf("log line count = %d, want capped 8", len(step.logs))
+	}
+	for k, want := 0, feed; k < 8; k, want = k+1, want-1 {
+		tag := fmt.Sprintf("step-%02d", want)
+		if !strings.Contains(step.logs[k], tag) {
+			t.Errorf("logs[%d] = %q, want %q (newest-first DESC)", k, step.logs[k], tag)
+		}
 	}
 }
 

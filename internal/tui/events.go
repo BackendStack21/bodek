@@ -718,8 +718,11 @@ func looksLikeError(s string) bool {
 		strings.Contains(t, "no such file or directory")
 }
 
-// attachSubLog appends a sub-agent activity line to the most recent sub-agent
-// step in message i, reporting whether one was found.
+// attachSubLog nests a sub-agent activity line under the most recent
+// sub-agent step in message i, reporting whether one was found. The log
+// mutates in place — newest line first (DESC), capped at maxSubLogs with the
+// oldest rolling off — so a long-running agent's card always shows its
+// latest activity rather than freezing on its first frames.
 func (m *Model) attachSubLog(i int, line string) bool {
 	const maxSubLogs = 8
 	steps := m.msgs[i].steps
@@ -727,8 +730,9 @@ func (m *Model) attachSubLog(i int, line string) bool {
 		if !steps[j].subagent {
 			continue
 		}
-		if len(steps[j].logs) < maxSubLogs {
-			steps[j].logs = append(steps[j].logs, sanitize(line))
+		steps[j].logs = append([]string{sanitize(line)}, steps[j].logs...)
+		if len(steps[j].logs) > maxSubLogs {
+			steps[j].logs = steps[j].logs[:maxSubLogs]
 		}
 		return true
 	}
