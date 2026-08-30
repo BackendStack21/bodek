@@ -261,6 +261,7 @@ func (m *Model) handleEvent(ev client.Event) (tea.Model, tea.Cmd) {
 			m.resetApprovalInput()
 		}
 		m.approvals = append(m.approvals, ev)
+		m.stampApprovalDeadline(ev) // the engine expires the request server-side — track its clock
 		m.status = "approval required"
 		m.relayout() // the panel is taller than the textarea — shrink the viewport
 		attn = m.attentionCmd(m.attentionFor(attentionApproval))
@@ -333,11 +334,11 @@ func (m *Model) handleEvent(ev client.Event) (tea.Model, tea.Cmd) {
 	}
 
 	if stream {
-		return m, tea.Batch(listen(m.events), m.noticeSweep(), m.queueRender())
+		return m, tea.Batch(listen(m.events), m.noticeSweep(), m.approvalSweep(), m.queueRender())
 	}
 	m.refresh()
 	// A turn that just ended (done / error) drains the next queued prompt.
-	return m, tea.Batch(listen(m.events), m.noticeSweep(), m.sendQueued(), m.planFollowup(), attn)
+	return m, tea.Batch(listen(m.events), m.noticeSweep(), m.approvalSweep(), m.sendQueued(), m.planFollowup(), attn)
 }
 
 // stepGlyphs returns up to 4 deduped tool glyphs for a turn's steps, in

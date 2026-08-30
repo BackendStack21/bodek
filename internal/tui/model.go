@@ -156,19 +156,20 @@ type Model struct {
 	lastTool string
 	lastArg  string
 
-	approvals    []client.Event // pending approval queue — odek runs parallel tools, so requests FIFO
-	apprSel      int            // highlighted option in the approval panel
-	apprExpanded bool           // tab: show the full command/description text
-	apprTyped    string         // friction mode: the literal word being typed ("approve")
-	ac           autocomplete   // @-reference completion state
-	pal          palState       // ⌘K command palette — the navigation spine
-	skillSuggest *client.Event  // pending skill suggestion card (skill_event "suggested")
-	queue        []string       // prompts typed mid-turn, sent when the turn ends
-	mouse        bool           // the terminal reports mouse events (--mouse)
-	qfocus       bool           // the queue strip owns the keyboard (ctrl+q)
-	qsel         int            // selected strip row while qfocus
-	lastPrompt   string         // most recent prompt sent — /retry re-sends it
-	focusIdx     int            // transcript cursor: turn head alt+↑/↓ last jumped to (-1 none)
+	approvals     []client.Event // pending approval queue — odek runs parallel tools, so requests FIFO
+	apprDeadlines []time.Time    // per-approval expiry, stamped on arrival (parallel to approvals)
+	apprSel       int            // highlighted option in the approval panel
+	apprExpanded  bool           // tab: show the full command/description text
+	apprTyped     string         // friction mode: the literal word being typed ("approve")
+	ac            autocomplete   // @-reference completion state
+	pal           palState       // ⌘K command palette — the navigation spine
+	skillSuggest  *client.Event  // pending skill suggestion card (skill_event "suggested")
+	queue         []string       // prompts typed mid-turn, sent when the turn ends
+	mouse         bool           // the terminal reports mouse events (--mouse)
+	qfocus        bool           // the queue strip owns the keyboard (ctrl+q)
+	qsel          int            // selected strip row while qfocus
+	lastPrompt    string         // most recent prompt sent — /retry re-sends it
+	focusIdx      int            // transcript cursor: turn head alt+↑/↓ last jumped to (-1 none)
 
 	history   []string // submitted prompts, newest last (recalled with ↑)
 	histNav   bool     // true while ^P/^N is walking the history
@@ -583,6 +584,11 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.pruneNotices(time.Now())
 		m.refresh()
 		return m, m.noticeSweep() // re-arm while pending notices remain
+
+	case approvalExpireMsg:
+		drop := m.handleApprovalExpiry(time.Now())
+		m.refresh()
+		return m, tea.Batch(drop, m.approvalSweep()) // re-arm while a form is open
 
 	case tea.MouseMsg:
 		if msg.Action == tea.MouseActionPress && msg.Button == tea.MouseButtonLeft && m.panel == panelNone && !m.ac.open {

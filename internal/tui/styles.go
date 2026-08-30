@@ -277,10 +277,11 @@ type theme struct {
 	noticeStyle lipgloss.Style
 	thinkStyle  lipgloss.Style
 
-	apprBox  lipgloss.Style
-	apprHead lipgloss.Style
-	apprBody lipgloss.Style
-	apprKey  lipgloss.Style
+	apprBox    lipgloss.Style
+	apprHead   lipgloss.Style
+	apprBody   lipgloss.Style
+	apprKey    lipgloss.Style
+	apprUrgent lipgloss.Style
 
 	statusReady lipgloss.Style
 	statusBusy  lipgloss.Style
@@ -387,10 +388,11 @@ func themeFrom(p palette) theme {
 		noticeStyle: lipgloss.NewStyle().Foreground(p.bodyText).Italic(true),
 		thinkStyle:  lipgloss.NewStyle().Foreground(p.bodyText).Italic(true),
 
-		apprBox:  lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(p.yellow).Padding(0, 1),
-		apprHead: lipgloss.NewStyle().Foreground(p.yellow).Bold(true),
-		apprBody: lipgloss.NewStyle().Foreground(p.text),
-		apprKey:  lipgloss.NewStyle().Foreground(p.green).Bold(true),
+		apprBox:    lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(p.yellow).Padding(0, 1),
+		apprHead:   lipgloss.NewStyle().Foreground(p.yellow).Bold(true),
+		apprBody:   lipgloss.NewStyle().Foreground(p.text),
+		apprKey:    lipgloss.NewStyle().Foreground(p.green).Bold(true),
+		apprUrgent: lipgloss.NewStyle().Foreground(p.red).Bold(true),
 
 		statusReady: lipgloss.NewStyle().Foreground(p.green),
 		statusBusy:  lipgloss.NewStyle().Foreground(p.yellow),

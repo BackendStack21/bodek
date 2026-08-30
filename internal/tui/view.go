@@ -957,6 +957,15 @@ func (m *Model) approvalBody() string {
 	if a.Untrusted {
 		head += th.apprBody.Render(" · ") + th.untrustedTag.Render("⚠ untrusted")
 	}
+	if secs := m.apprSecondsLeft(); secs > 0 {
+		label := fmt.Sprintf("expires in %ds", secs)
+		head += th.apprBody.Render(" · ")
+		if secs <= approvalUrgentSecs {
+			head += th.apprUrgent.Render(label)
+		} else {
+			head += th.apprBody.Render(label)
+		}
+	}
 
 	target := a.Command
 	if a.Name != "" {

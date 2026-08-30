@@ -65,6 +65,11 @@ type Event struct {
 	Friction          bool   `json:"friction"`
 	FrictionApprovals int    `json:"friction_approvals"`
 
+	// approval lifetime advertised per request (absent on current odek
+	// frames; zero → the TUI falls back to the server's interactive
+	// default instead of guessing).
+	TimeoutSeconds int `json:"timeout_seconds,omitempty"`
+
 	// approval_ack (Action echoes the client's reply) / cancelled (Idle is
 	// true when nothing was running for the target session).
 	Action string `json:"action"`

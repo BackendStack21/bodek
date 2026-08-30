@@ -166,6 +166,9 @@ func (m *Model) answer(action string) tea.Cmd {
 	}
 	id := a.ID
 	m.approvals = m.approvals[1:]
+	if len(m.apprDeadlines) > 0 {
+		m.apprDeadlines = m.apprDeadlines[1:] // keep the parallel expiry queue in lockstep
+	}
 	m.resetApprovalInput()
 	if len(m.approvals) > 0 {
 		m.status = "approval required"
