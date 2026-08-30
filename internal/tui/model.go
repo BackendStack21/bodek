@@ -696,8 +696,10 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.quitting = true
 		return m, tea.Quit
 	case "esc":
+		// The run's kill switch sits behind the same two-step gate as every
+		// other destructive action — esc is too easy to hit by accident.
 		if m.busy {
-			return m, m.cancelRun()
+			return m, m.armConfirm(confirmCancel, "the running turn")
 		}
 		return m, nil
 	case "f1":

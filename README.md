@@ -152,7 +152,7 @@ be written by hand and seed the matching flag defaults. Resolution order:
 | `^L` | Clear the conversation (two-step confirm: `y` clears, any other key cancels) |
 | `^E` | Toggle tool details — every step expands to its full output/logs |
 | `^Y` | Copy the last reply to the clipboard (OSC 52 — needs a supporting terminal) |
-| `Esc` | Cancel the running turn (queued prompts return to the input) |
+| `Esc` | Cancel the running turn (two-step confirm: `y` cancels, any other key keeps running; queued prompts return to the input) |
 | `↑` / `↓` / `PgUp` / `PgDn` / `^U` / `^D` | Scroll the transcript (arrows at the input's edge lines) |
 | `^P` / `^N` | Recall previous prompts (prompt history) |
 | `^G` / `End` (empty input) | Jump to the latest output |

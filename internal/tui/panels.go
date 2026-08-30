@@ -49,6 +49,7 @@ const (
 	confirmSessionDelete
 	confirmFactDelete
 	confirmClear
+	confirmCancel
 )
 
 // handleConfirmKey resolves an armed delete: y fires it against the
@@ -67,6 +68,10 @@ func (m *Model) handleConfirmKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case confirmClear:
 			m.clearConversation()
 			return m, m.transientNoteCmd("conversation cleared")
+		case confirmCancel:
+			// cancelRun self-guards: if the run settled while the gate sat
+			// armed, it degrades to the "nothing to cancel" note.
+			return m, m.cancelRun()
 		}
 	}
 	m.refresh()
@@ -78,8 +83,11 @@ func (m *Model) handleConfirmKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (m *Model) armConfirm(kind confirmKind, what string) tea.Cmd {
 	m.confirm = kind
 	verb := "delete "
-	if kind == confirmClear {
+	switch kind {
+	case confirmClear:
 		verb = "clear "
+	case confirmCancel:
+		verb = "cancel "
 	}
 	m.panelMsg = verb + what + "?  y confirm · any other key cancels"
 	m.refresh()

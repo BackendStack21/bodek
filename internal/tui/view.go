@@ -1180,10 +1180,16 @@ func (m *Model) footer() string {
 	}
 	// The conversation-clear gate rides the composer footer — it is armed
 	// outside any panel and must be visible where ^L was pressed.
-	if m.confirm == confirmClear {
+	if m.confirm == confirmClear || m.confirm == confirmCancel {
+		headline := "clear the conversation?"
+		action := "clear"
+		if m.confirm == confirmCancel {
+			headline = "cancel the running turn?"
+			action = "cancel"
+		}
 		return m.panelFooter(
-			th.footerDanger.Render("clear the conversation?"),
-			th.footerKey.Render("y")+th.footerDanger.Render(" clear"),
+			th.footerDanger.Render(headline),
+			th.footerKey.Render("y")+th.footerDanger.Render(" "+action),
 			th.footer.Render("any other key cancels"),
 		)
 	}
