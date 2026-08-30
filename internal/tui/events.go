@@ -279,8 +279,16 @@ func (m *Model) handleEvent(ev client.Event) (tea.Model, tea.Cmd) {
 		m.addTransientNote("signal · " + strings.TrimSpace(ev.SubType+" "+ev.Detail) + eventTail(ev))
 	case "subagent_log":
 		line := strings.TrimSpace(ev.SubType + " " + ev.Name)
-		if d := collapse(ev.Detail); d != "" {
-			line = strings.TrimSpace(line + " · " + d)
+		// The relay delivers the payload in data (Detail is only a legacy
+		// fallback) and the child's log status in status — surface both,
+		// capped like every other one-line preview.
+		if d := collapse(ev.Data); d != "" {
+			line = strings.TrimSpace(line + " · " + truncate(d, 72))
+		} else if d := collapse(ev.Detail); d != "" {
+			line = strings.TrimSpace(line + " · " + truncate(d, 72))
+		}
+		if ev.Status != "" {
+			line = strings.TrimSpace(line + " · " + ev.Status)
 		}
 		line += eventTail(ev)
 		// Nest the log under the in-flight sub-agent step when there is one;

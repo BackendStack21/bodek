@@ -102,13 +102,56 @@ func TestSubagentLogNesting(t *testing.T) {
 
 	// A sub-agent tool: subsequent logs nest under its step.
 	m.handleEvent(client.Event{Type: "tool_call", Name: "delegate_task", Data: `{"task":"explore the repo"}`})
-	m.handleEvent(client.Event{Type: "subagent_log", SubType: "tool_call", Name: "read", Detail: "main.go"})
+	m.handleEvent(client.Event{Type: "subagent_log", SubType: "tool_call", Name: "read", Data: "main.go"})
 	step := m.msgs[0].steps[len(m.msgs[0].steps)-1]
 	if !step.subagent {
 		t.Fatal("delegate step not flagged as sub-agent")
 	}
-	if len(step.logs) != 1 || !strings.Contains(step.logs[0], "read") {
+	if len(step.logs) != 1 || !strings.Contains(step.logs[0], "main.go") {
 		t.Errorf("sub-agent log not nested: %#v", step.logs)
+	}
+}
+
+// TestSubagentLogPayload pins the wire-accurate subagent_log frame shape:
+// the payload rides the data field (the serve relay sends data, never
+// detail) and the child-reported status rides status — Detail is only a
+// legacy/synthetic fallback.
+func TestSubagentLogPayload(t *testing.T) {
+	m := newTestModel()
+	m.msgs = append(m.msgs, message{role: roleAsst, streaming: true})
+	m.curIdx = 0
+	m.busy = true
+	m.handleEvent(client.Event{Type: "tool_call", Name: "delegate_task", Data: `{"task":"explore"}`})
+
+	// Wire shape: the payload rides data — surface it in the nested log.
+	m.handleEvent(client.Event{Type: "subagent_log", SubType: "tool_call", Name: "read", Data: "handlers/user.go", TaskIdx: 2})
+	step := m.msgs[0].steps[len(m.msgs[0].steps)-1]
+	if len(step.logs) != 1 {
+		t.Fatalf("expected 1 nested log, got %#v", step.logs)
+	}
+	if got := step.logs[0]; !strings.Contains(got, "handlers/user.go") {
+		t.Errorf("payload dropped: %q", got)
+	}
+
+	// Child-reported status rides status — surface it too.
+	m.handleEvent(client.Event{Type: "subagent_log", SubType: "finished", Name: "explorer", Status: "success"})
+	step = m.msgs[0].steps[len(m.msgs[0].steps)-1]
+	if got := step.logs[len(step.logs)-1]; !strings.Contains(got, "success") {
+		t.Errorf("status dropped: %q", got)
+	}
+
+	// Detail remains a fallback for legacy/synthetic senders.
+	m.handleEvent(client.Event{Type: "subagent_log", SubType: "tool_call", Name: "stat", Detail: "fallback.md"})
+	step = m.msgs[0].steps[len(m.msgs[0].steps)-1]
+	if got := step.logs[len(step.logs)-1]; !strings.Contains(got, "fallback.md") {
+		t.Errorf("detail fallback lost: %q", got)
+	}
+
+	// Oversized payloads are capped at construction (serve caps data at 8 KiB).
+	m.handleEvent(client.Event{Type: "subagent_log", SubType: "tool_call", Name: "grep", Data: strings.Repeat("x", 8192)})
+	step = m.msgs[0].steps[len(m.msgs[0].steps)-1]
+	if got := step.logs[len(step.logs)-1]; len([]rune(got)) > 120 {
+		t.Errorf("payload not capped (%d runes): %.40q", len([]rune(got)), got)
 	}
 }
 
