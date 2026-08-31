@@ -105,7 +105,7 @@ func TestStepDetailPrefersFences(t *testing.T) {
 
 func TestStepHeadSuffixCountsFences(t *testing.T) {
 	th := newTheme()
-	suffix := stepHeadSuffix("edit", "```diff\n+a\n-b\n-c\n```", th)
+	suffix := stepHeadSuffix("edit", "", "```diff\n+a\n-b\n-c\n```", th)
 	if !strings.Contains(suffix, "+1") || !strings.Contains(suffix, "−2") {
 		t.Errorf("fence diffstat chip = %q, want +1 −2", suffix)
 	}

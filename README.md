@@ -162,7 +162,11 @@ own front-end settings are separate; see [Configuration](#configuration).
   `alt+↑`/`alt+↓` jump turn-to-turn, reasoning accordions auto-expand live
   and collapse on the next turn, and `^E` expands every tool step's details.
 - **Typed tool renderers** — diffs tint with a `+N −M` chip, file reads get
-  line numbers, JSON pretty-prints, test runs show pass/fail verdicts.
+  line numbers, JSON pretty-prints, and step lines earn typed chips from
+  structured output only: test verdicts (`✓ 5 passed · 2 skipped`, go
+  coverage), git commits/pushes (`⎇ a1b2c3d`, `↑ main`), lint results,
+  compiler warning counts, HTTP statuses, and search hit counts. Prose like
+  "Build passed" never goes green.
 - **Streaming answers** rendered as Markdown
   ([glamour](https://github.com/charmbracelet/glamour)).
 - **Tool activity** — every `tool_call`/`tool_result` shown live with a glyph
