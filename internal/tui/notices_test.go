@@ -59,8 +59,9 @@ func assertAlertDwell(t *testing.T, m *Model, cmdArmed bool, substr string) {
 }
 
 // TestTrimSignalSilenced pins the actionable-only contract for agent_signal:
-// the "trim" subtype is engine housekeeping (context-window trimming) —
-// nothing the user can act on — so it must never surface as a notice.
+// the "trim" and "tool_running" subtypes are engine housekeeping (context-
+// window trimming, tool-execution heartbeats) — nothing the user can act
+// on — so they must never surface as notices.
 // Every other subtype keeps flowing into the strip.
 func TestTrimSignalSilenced(t *testing.T) {
 	m := newTestModel()
@@ -68,6 +69,13 @@ func TestTrimSignalSilenced(t *testing.T) {
 	for _, n := range m.notices {
 		if strings.Contains(n, "signal · trim") {
 			t.Fatalf("trim signal surfaced as a notice: %v", m.notices)
+		}
+	}
+
+	m.handleEvent(client.Event{Type: "agent_signal", SubType: "tool_running", Detail: "shell"})
+	for _, n := range m.notices {
+		if strings.Contains(n, "signal · tool_running") {
+			t.Fatalf("tool_running signal surfaced as a notice: %v", m.notices)
 		}
 	}
 
