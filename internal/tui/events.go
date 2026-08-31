@@ -279,9 +279,10 @@ func (m *Model) handleEvent(ev client.Event) (tea.Model, tea.Cmd) {
 	case "memory_event":
 		m.addTransientNote("memory · " + strings.TrimSpace(ev.SubType+" "+ev.Target) + eventTail(ev))
 	case "agent_signal":
-		if ev.SubType == "trim" {
-			// Context trimming is engine housekeeping — nothing the user
-			// can act on, so it never reaches the notice strip.
+		if ev.SubType == "trim" || ev.SubType == "tool_running" {
+			// Engine housekeeping: context trimming and tool-running
+			// heartbeats duplicate what the transcript already shows
+			// (the in-flight step spinner) — never reach the strip.
 			break
 		}
 		m.addTransientNote("signal · " + strings.TrimSpace(ev.SubType+" "+ev.Detail) + eventTail(ev))
