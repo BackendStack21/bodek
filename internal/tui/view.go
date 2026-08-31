@@ -303,7 +303,7 @@ func (m *Model) statusLine() string {
 	if n := len(m.queue); n > 0 {
 		q = th.acDetail.Render(fmt.Sprintf(" · %d queued", n))
 	}
-	// Live plan strip (docs/PLANNING_MODE_UI.md §4B): rides the same row,
+	// Live plan strip: rides the same row,
 	// silent unless a run is active AND a plan exists — absence costs zero
 	// pixels. Bounded to a short label so small terminals keep the row sane.
 	strip := ""

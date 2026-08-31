@@ -10,7 +10,7 @@ import (
 	"github.com/BackendStack21/bodek/internal/client"
 )
 
-// ── planning surface state (docs/PLANNING_MODE_UI.md §3.2) ─────────────────
+// ── planning surface state ─────────────────────────────────────────────────
 //
 // bodek's WS carries triggers only: every engine plan mutation arrives as an
 // ordinary plan tool_call/tool_result pair. The structured truth lives behind

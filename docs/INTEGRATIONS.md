@@ -42,9 +42,9 @@ update it when either side changes.
 | `GET /api/tools` | `Tools` | tools tab |
 | `POST /api/shutdown` | `Shutdown` | config tab (`S` + typed "shutdown" death-gate) |
 
-All seven management surfaces are drawer tabs (sessions · runs · events ·
-memory · skills · tools · config): `]`/`[` cycle, `1–7` jump, `r`/`⏎`
-refresh — one grammar everywhere.
+All nine management surfaces are drawer tabs (sessions · runs · agents ·
+events · plan · memory · skills · tools · config): `]`/`[` cycle, `1–9`
+jump, `r`/`⏎` refresh — one grammar everywhere.
 
 ## Not exposed by odek REST (documented gaps)
 

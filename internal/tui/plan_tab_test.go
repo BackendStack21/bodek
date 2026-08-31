@@ -10,8 +10,7 @@ import (
 	"github.com/BackendStack21/bodek/internal/client"
 )
 
-// Tests for the drawer Plan tab surface (docs/PLANNING_MODE_UI.md §4C):
-// opener states, Telegram-parity rows + summary badge, detail submode per
+// Tests for the drawer Plan tab surface: opener states, Telegram-parity rows + summary badge, detail submode per
 // house grammar (⏎ expand / esc fold), and the silent-degrade empty states.
 // Snapshots are injected through handlePlanMsg so no server is involved.
 

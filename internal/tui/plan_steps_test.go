@@ -7,8 +7,8 @@ import (
 	"github.com/BackendStack21/bodek/internal/client"
 )
 
-// Tests for plan tool_call transcript specialization (docs/PLANNING_MODE_UI.md
-// §4A): semantic one-liners replace the JSON preview, hostile model-authored
+// Tests for plan tool_call transcript specialization: semantic one-liners
+// replace the JSON preview, hostile model-authored
 // text is sanitized/truncated, and anything unparseable falls back to the
 // generic argPreview path.
 
