@@ -1116,6 +1116,28 @@ func (m *Model) footer() string {
 			th.footer.Render("esc close"),
 		)
 	}
+	if m.panel == panelAgents {
+		if m.confirm == confirmStopAgent {
+			return m.panelFooter(
+				th.footerDanger.Render("stop this sub-agent?"),
+				th.footerKey.Render("y")+th.footerDanger.Render(" stop"),
+				th.footer.Render("any other key cancels"),
+			)
+		}
+		if m.panelDetail {
+			return m.panelFooter(
+				th.footer.Render("↑↓ scroll"),
+				th.footer.Render("esc back"),
+			)
+		}
+		return m.panelFooter(
+			th.footer.Render("↑↓ select · ⏎ detail · ]/[ tabs"),
+			th.footerKey.Render("c")+th.footer.Render(" stop → y confirm"),
+			th.footerKey.Render("o")+th.footer.Render(" open in transcript"),
+			th.footerKey.Render("r")+th.footer.Render(" refresh · 3s poll"),
+			th.footer.Render("esc close"),
+		)
+	}
 	if m.panel == panelEvents {
 		filter := "all"
 		if m.evRunFilter != "" {

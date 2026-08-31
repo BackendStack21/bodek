@@ -203,7 +203,8 @@ own front-end settings are separate; see [Configuration](#configuration).
   `swarm: 5 ✓ · 1 ✗ — SA4 error` verdict. A disconnect retires in-flight
   cards (`× lost on disconnect`) instead of leaving ghost spinners.
   `ctrl+s` (or `/stop <SA#>`, two-step confirmed) stops one running
-  sub-agent — from any turn, not just the current one.
+  sub-agent of the current turn; the `/agents` tab's `c` reaches any live
+  task through the instance registry.
 - **Model switcher** (`^O`) — change the model for the next turn. The picker
   merges the server's configured model with its built-in profile catalog
   (`/api/profiles`), each annotated with its context window.

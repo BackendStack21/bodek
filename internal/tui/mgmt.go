@@ -204,8 +204,8 @@ func (m *Model) handleMgmtMsg(msg mgmtMsg) {
 		m.agentsReg = msg.sag
 		if len(msg.sag) == 0 {
 			m.panelMsg = "no sub-agent activity recorded"
-		} else {
-			m.panelMsg = ""
+		} else if m.confirm != confirmStopAgent {
+			m.panelMsg = "" // keep the armed stop gate's prompt visible
 		}
 	}
 	if m.panelSel >= m.panelLen() {
@@ -543,7 +543,7 @@ func (m *Model) cfgRowsRender(w int) []string {
 // mgmtPanel reports whether p is a management drawer tab.
 func mgmtPanel(p panelMode) bool {
 	switch p {
-	case panelPlan, panelMemory, panelSkills, panelTools, panelConfig:
+	case panelAgents, panelPlan, panelMemory, panelSkills, panelTools, panelConfig:
 		return true
 	}
 	return false

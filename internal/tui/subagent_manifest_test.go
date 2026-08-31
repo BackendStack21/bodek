@@ -148,4 +148,15 @@ func TestLostOnDisconnect(t *testing.T) {
 	if got := strings.Join(m.notices, "\n"); !strings.Contains(got, "sub-agent state lost on disconnect") {
 		t.Errorf("disconnect note missing: %q", got)
 	}
+	// The verdict counts lost cards as lost, not live.
+	if !strings.Contains(m.msgs[0].content, "swarm: 1 lost") {
+		t.Errorf("verdict missing lost bucket: %q", m.msgs[0].content)
+	}
+	// Frames resuming after a reconnect revive the card.
+	m.curIdx = 0
+	m.busy = true
+	m.handleEvent(client.Event{Type: "subagent_state", TaskID: "t1", TaskIdx: 0, Phase: "active", Status: "running", Step: 8})
+	if s = stateStep(t, m); s.agents[0].lost {
+		t.Error("card still marked lost after frames resumed")
+	}
 }

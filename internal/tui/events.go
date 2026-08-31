@@ -586,7 +586,7 @@ func (m *Model) finalize() {
 // "**swarm: 5 ✓ · 1 ✗ — SA4 error**" — so a failure in a multi-agent turn
 // can't scroll by uncounted. "" when the turn delegated nothing.
 func (m *Model) swarmVerdict(msg *message) string {
-	var ok, partial, failed, cancelled, timed, live int
+	var ok, partial, failed, cancelled, timed, live, lostN int
 	var bad []string
 	for j := range msg.steps {
 		if !msg.steps[j].subagent {
@@ -595,7 +595,11 @@ func (m *Model) swarmVerdict(msg *message) string {
 		for _, a := range msg.steps[j].agents {
 			switch {
 			case !a.finished():
-				live++
+				if a.lost {
+					lostN++ // orphaned by a disconnect: neither live nor terminal
+				} else {
+					live++
+				}
 			case a.status == "success":
 				ok++
 			case a.status == "partial":
@@ -612,7 +616,7 @@ func (m *Model) swarmVerdict(msg *message) string {
 			}
 		}
 	}
-	total := ok + partial + failed + cancelled + timed + live
+	total := ok + partial + failed + cancelled + timed + live + lostN
 	if total == 0 {
 		return ""
 	}
@@ -631,6 +635,9 @@ func (m *Model) swarmVerdict(msg *message) string {
 	}
 	if cancelled > 0 {
 		parts = append(parts, fmt.Sprintf("%d ⊘", cancelled))
+	}
+	if lostN > 0 {
+		parts = append(parts, fmt.Sprintf("%d lost", lostN))
 	}
 	if live > 0 {
 		parts = append(parts, fmt.Sprintf("%d live", live))

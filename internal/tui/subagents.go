@@ -119,6 +119,9 @@ func (m *Model) attachSubState(i int, ev client.Event) bool {
 		card.iters = ev.Iterations
 		card.tokens = ev.TokensUsed
 		card.durS = ev.DurationSeconds
+		if card.lost {
+			card.lost = false // frames resumed after a reconnect: alive again
+		}
 		// Registry bookkeeping: every unfinished card stays reachable regardless
 		// of which turn owns it, so stops resolve across turns.
 		if card.finished() {

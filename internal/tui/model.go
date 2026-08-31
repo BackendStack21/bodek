@@ -576,6 +576,11 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case stopAgentDoneMsg:
 		if msg.err != nil {
+			// The stop never left — un-advertise it so the card doesn't
+			// claim a stop is in flight.
+			if a := m.liveCard(msg.taskID); a != nil {
+				a.stopSent = false
+			}
 			m.addNote("stop failed · " + msg.err.Error())
 			m.refresh()
 		}
