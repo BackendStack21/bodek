@@ -10,7 +10,7 @@ import (
 	"github.com/BackendStack21/bodek/internal/client"
 )
 
-// Tests for the live plan strip (docs/PLANNING_MODE_UI.md §4B) and the /plan
+// Tests for the live plan strip and the /plan
 // slash command. The strip's zero-footprint rule: idle, no-plan, collapsed,
 // or degraded engine ⇒ empty label, no layout cost.
 

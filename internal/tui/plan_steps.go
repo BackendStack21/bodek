@@ -6,7 +6,7 @@ import (
 	"strings"
 )
 
-// ── transcript specialization for plan steps (docs/PLANNING_MODE_UI.md §4A) ─
+// ── transcript specialization for plan steps ───────────────────────────────
 //
 // Plan mutations are ordinary tool_call events, so without help each status
 // change renders as an opaque JSON preview row and long runs drown in them.

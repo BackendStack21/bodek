@@ -8,8 +8,8 @@ import (
 	ws "golang.org/x/net/websocket"
 )
 
-// Tests for GET /api/sessions/{id}/plan (odek serve contract, docs/
-// PLANNING_MODE_UI.md §1): structured snapshot decoding, the found:false
+// Tests for GET /api/sessions/{id}/plan (odek serve contract):
+// structured snapshot decoding, the found:false
 // shape, HTTP error mapping, and malformed-body tolerance. The endpoint is
 // read-only by engine contract; the client never sends anything but GET.
 

@@ -11,7 +11,7 @@ import (
 //
 // odek serve exposes the engine's plan state read-only: the newest parseable
 // "[Current plan:" system message, parsed with the same strict extractor the
-// restart-resume path uses. GET-only by contract; see docs/PLANNING_MODE_UI.md.
+// restart-resume path uses. GET-only by contract.
 
 // PlanStepStatus is one step's lifecycle state on the wire.
 type PlanStepStatus string

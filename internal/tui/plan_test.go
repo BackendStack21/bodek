@@ -7,8 +7,8 @@ import (
 	"github.com/BackendStack21/bodek/internal/client"
 )
 
-// Tests for the planning-surface state machine (docs/PLANNING_MODE_UI.md
-// §3.2): WS-trigger scheduling + debounce sequencing, monotonic acceptance,
+// Tests for the planning-surface state machine: WS-trigger
+// scheduling + debounce sequencing, monotonic acceptance,
 // tab-visible poll lifecycle, and the session-switch reset hook. Assertions
 // ride synchronous observables (seq counters, flags, accepted state); fetch
 // closures are never executed — the wire contract lives in internal/client,
