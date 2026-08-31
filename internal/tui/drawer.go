@@ -108,7 +108,10 @@ func (m *Model) openAgents() tea.Cmd {
 	m.panelMsg = "loading sub-agents…"
 	m.relayout()
 	m.refresh()
-	return m.fetchAgents()
+	if m.cl == nil {
+		return nil // no connection: nothing to fetch, nothing to poll
+	}
+	return tea.Batch(m.fetchAgents(), m.armAgentsPoll())
 }
 
 // fetchAgents refetches the registry snapshot; r re-runs it while open.
@@ -121,6 +124,71 @@ func (m *Model) fetchAgents() tea.Cmd {
 		entries, err := cl.Subagents("")
 		return mgmtMsg{tab: panelAgents, sag: entries, err: err}
 	}
+}
+
+const agentsPollEvery = 3 * time.Second
+
+// agentsTickMsg re-arms the agents-tab poll (runsTickMsg pattern) — the
+// registry is a live view while visible, not a stale snapshot.
+type agentsTickMsg struct{ seq int }
+
+// armAgentsPoll schedules the next registry refresh while the tab is visible.
+func (m *Model) armAgentsPoll() tea.Cmd {
+	m.agentsSeq++
+	seq := m.agentsSeq
+	return tea.Tick(agentsPollEvery, func(time.Time) tea.Msg {
+		return agentsTickMsg{seq: seq}
+	})
+}
+
+// handleAgentsTick refetches the snapshot only for the newest generation on
+// the visible tab — stale ticks and closed tabs drop silently.
+func (m *Model) handleAgentsTick(msg agentsTickMsg) tea.Cmd {
+	if msg.seq != m.agentsSeq || m.panel != panelAgents {
+		return nil
+	}
+	return m.fetchAgents()
+}
+
+// stopSelectedAgent arms the two-step stop gate on the highlighted registry
+// row — the same confirmStopAgent the transcript's /stop uses, resolved
+// through the cross-turn live registry.
+func (m *Model) stopSelectedAgent() tea.Cmd {
+	if m.panelSel >= len(m.agentsReg) {
+		return m.transientNoteCmd("no sub-agent selected")
+	}
+	e := m.agentsReg[m.panelSel]
+	if e.Phase == "finished" {
+		return m.transientNoteCmd("sub-agent already finished")
+	}
+	label := truncate(collapse(e.Goal), 24)
+	if label == "" {
+		label = shortID(e.TaskID)
+	}
+	return m.armStopAgent(e.TaskID, label)
+}
+
+// jumpToAgentStep closes the drawer onto the transcript step that owns the
+// selected task, expanded — the registry jumps to the thing it describes.
+func (m *Model) jumpToAgentStep() tea.Cmd {
+	if m.panelSel >= len(m.agentsReg) {
+		return nil
+	}
+	taskID := m.agentsReg[m.panelSel].TaskID
+	for i := range m.msgs {
+		for j := range m.msgs[i].steps {
+			if m.msgs[i].steps[j].card(taskID) == nil {
+				continue
+			}
+			m.msgs[i].steps[j].expanded = true
+			m.panel = panelNone
+			m.relayout()
+			m.scrollToMessage(i)
+			m.refresh()
+			return nil
+		}
+	}
+	return m.transientNoteCmd("no transcript card for this task (resumed or foreign run)")
 }
 
 // drawerTab is one tab of the management drawer.

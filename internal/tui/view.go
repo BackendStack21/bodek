@@ -809,6 +809,9 @@ func (m *Model) renderStep(s step, streaming bool, msgIdx, stepIdx, startLine in
 			}
 			details = append(details, th.stepRes.Render(truncate(line, detailBudget)))
 		}
+		for _, ln := range s.pendingAgentLines() {
+			details = append(details, th.stepArg.Render(truncate(ln, detailBudget)))
+		}
 		for _, lg := range s.logs {
 			if strings.TrimSpace(lg) != "" {
 				details = append(details, th.stepRes.Render(truncate(lg, detailBudget)))
@@ -1110,6 +1113,28 @@ func (m *Model) footer() string {
 			th.footerKey.Render("e")+th.footer.Render(" events"),
 			th.footerKey.Render("p")+th.footer.Render(" approvals"),
 			th.footerKey.Render("r")+th.footer.Render(" refresh"),
+			th.footer.Render("esc close"),
+		)
+	}
+	if m.panel == panelAgents {
+		if m.confirm == confirmStopAgent {
+			return m.panelFooter(
+				th.footerDanger.Render("stop this sub-agent?"),
+				th.footerKey.Render("y")+th.footerDanger.Render(" stop"),
+				th.footer.Render("any other key cancels"),
+			)
+		}
+		if m.panelDetail {
+			return m.panelFooter(
+				th.footer.Render("↑↓ scroll"),
+				th.footer.Render("esc back"),
+			)
+		}
+		return m.panelFooter(
+			th.footer.Render("↑↓ select · ⏎ detail · ]/[ tabs"),
+			th.footerKey.Render("c")+th.footer.Render(" stop → y confirm"),
+			th.footerKey.Render("o")+th.footer.Render(" open in transcript"),
+			th.footerKey.Render("r")+th.footer.Render(" refresh · 3s poll"),
 			th.footer.Render("esc close"),
 		)
 	}

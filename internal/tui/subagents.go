@@ -28,7 +28,10 @@ type agentCard struct {
 	iters    int
 	tokens   int
 	durS     float64
-	stopSent bool // subagent_cancel sent; terminal frame still pending
+	stopSent bool      // subagent_cancel sent; terminal frame still pending
+	goal     string    // manifest goal excerpt (parent arg; "" when unknown)
+	seen     time.Time // first frame locally observed; drives the live elapsed
+	lost     bool      // socket dropped while running: retired, never a ghost
 }
 
 // finished reports whether the card reached a terminal state.
@@ -38,6 +41,9 @@ func (a *agentCard) finished() bool { return a.phase == "finished" }
 // odek's status framing (user cancel and deadline timeout never conflate).
 func (a *agentCard) glyph() string {
 	if !a.finished() {
+		if a.lost {
+			return "×" // orphaned by a disconnect: dead, not spinning
+		}
 		return "⟳"
 	}
 	switch a.status {
@@ -92,7 +98,12 @@ func (m *Model) attachSubState(i int, ev client.Event) bool {
 		s := &msg.steps[j]
 		card := s.card(ev.TaskID)
 		if card == nil {
-			card = &agentCard{taskID: ev.TaskID, idx: ev.TaskIdx, status: "running"}
+			card = &agentCard{taskID: ev.TaskID, idx: ev.TaskIdx, status: "running", seen: time.Now()}
+			// Seed identity from the delegate manifest: goal and profile ride
+			// the parent's tool_call arg, never the wire frames.
+			if ev.TaskIdx >= 0 && ev.TaskIdx < len(s.manifest) {
+				card.goal = s.manifest[ev.TaskIdx].goal
+			}
 			s.agents = append(s.agents, card)
 		}
 		if ev.Phase != "" {
@@ -108,6 +119,16 @@ func (m *Model) attachSubState(i int, ev client.Event) bool {
 		card.iters = ev.Iterations
 		card.tokens = ev.TokensUsed
 		card.durS = ev.DurationSeconds
+		if card.lost {
+			card.lost = false // frames resumed after a reconnect: alive again
+		}
+		// Registry bookkeeping: every unfinished card stays reachable regardless
+		// of which turn owns it, so stops resolve across turns.
+		if card.finished() {
+			m.untrackLive(card.taskID)
+		} else {
+			m.trackLive(card)
+		}
 		return true
 	}
 	return false
@@ -120,11 +141,20 @@ func agentCardLine(a *agentCard) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "%s SA%d", a.glyph(), a.idx+1)
 	if !a.finished() {
-		if a.step > 0 {
-			fmt.Fprintf(&b, " · step %d", a.step)
-		}
-		if a.tool != "" {
-			b.WriteString(" · " + a.tool)
+		if a.lost {
+			b.WriteString(" · lost on disconnect")
+		} else {
+			if a.step > 0 {
+				fmt.Fprintf(&b, " · step %d", a.step)
+			}
+			if a.tool != "" {
+				b.WriteString(" · " + a.tool)
+			}
+			if !a.seen.IsZero() {
+				// Client-side elapsed: state frames arrive in bursts, so the
+				// server-reported duration freezes between them.
+				b.WriteString(" · " + formatStepDur(time.Since(a.seen)))
+			}
 		}
 	} else if a.status != "" && a.status != "success" {
 		b.WriteString(" · " + a.status)
@@ -141,26 +171,123 @@ func agentCardLine(a *agentCard) string {
 	if a.durS > 0 {
 		b.WriteString(" · " + formatStepDur(time.Duration(a.durS*float64(time.Second))))
 	}
+	// The goal renders last on purpose: right-edge truncation on narrow
+	// terminals eats the garnish before the vitals.
+	if a.goal != "" {
+		b.WriteString(" · " + a.goal)
+	}
 	return b.String()
 }
 
-// agentRollup is the collapsed-head aggregate: "1/2 agents · 6.3k tok".
+// agentRollup is the collapsed-head aggregate: "1/2 agents · 6.3k tok",
+// with the failure count spelled out once one exists — "2/3 · 1 ✗ · 8.1k tok".
 func agentRollup(s *step) string {
 	if len(s.agents) == 0 {
 		return ""
 	}
-	done, tokens := 0, 0
+	done, failed, tokens := 0, 0, 0
 	for _, a := range s.agents {
 		if a.finished() {
 			done++
 		}
+		if a.failed() {
+			failed++
+		}
 		tokens += a.tokens
 	}
 	rollup := fmt.Sprintf("%d/%d agents", done, len(s.agents))
+	if failed > 0 {
+		rollup += fmt.Sprintf(" · %d ✗", failed)
+	}
 	if tokens > 0 {
 		rollup += " · " + human(tokens) + " tok"
 	}
 	return rollup
+}
+
+// ── delegate manifest (per-task identity from the parent's arg) ───────────────
+
+// taskSlot is one delegate_tasks argument entry, parsed at tool-call time:
+// the identity the per-task frames don't carry. Fields are sanitized on
+// ingest — slots render verbatim afterwards.
+type taskSlot struct {
+	goal    string // collapsed excerpt, ≤32 runes ("" when absent)
+	profile string // requested profile id, as sent ("" when unset)
+}
+
+// parseDelegateManifest extracts per-task slots from a delegate_tasks JSON
+// arg: {"tasks":[…]} or a bare array. Tolerant by design — string entries
+// become goal-only slots, objects contribute goal/profile, and anything
+// unparseable returns nil so the step renders exactly as before.
+func parseDelegateManifest(data string) []taskSlot {
+	var slots []taskSlot
+	appendSlot := func(raw json.RawMessage) {
+		var str string
+		if err := json.Unmarshal(raw, &str); err == nil {
+			slots = append(slots, taskSlot{goal: excerptGoal(str)})
+			return
+		}
+		var obj struct {
+			Goal    string `json:"goal"`
+			Profile string `json:"profile"`
+		}
+		if err := json.Unmarshal(raw, &obj); err == nil {
+			slots = append(slots, taskSlot{goal: excerptGoal(obj.Goal), profile: collapse(obj.Profile)})
+		}
+	}
+	var env struct {
+		Tasks []json.RawMessage `json:"tasks"`
+	}
+	if err := json.Unmarshal([]byte(strings.TrimSpace(data)), &env); err == nil && len(env.Tasks) > 0 {
+		for _, raw := range env.Tasks {
+			appendSlot(raw)
+		}
+		return slots
+	}
+	var bare []json.RawMessage
+	if err := json.Unmarshal([]byte(strings.TrimSpace(data)), &bare); err == nil {
+		for _, raw := range bare {
+			appendSlot(raw)
+		}
+		return slots
+	}
+	return nil
+}
+
+// excerptGoal collapses a task goal to a ≤32-rune one-line excerpt.
+func excerptGoal(s string) string {
+	return truncate(collapse(s), 32)
+}
+
+// pendingAgentLines renders manifest slots that have not reported a card yet
+// — labelled inference: the parent declared the task, the wire has not
+// confirmed it. Empty once every slot has a frame.
+func (s *step) pendingAgentLines() []string {
+	if len(s.manifest) == 0 {
+		return nil
+	}
+	var out []string
+	for k := range s.manifest {
+		if s.cardByIdx(k) != nil {
+			continue
+		}
+		line := fmt.Sprintf("◌ SA%d · pending (not yet reported)", k+1)
+		if g := s.manifest[k].goal; g != "" {
+			line += " · " + g
+		}
+		out = append(out, line)
+	}
+	return out
+}
+
+// cardByIdx finds a step's agent card by task index.
+func (s *step) cardByIdx(idx int) *agentCard {
+	for _, a := range s.agents {
+		if a.idx == idx {
+			return a
+		}
+	}
+	return nil
 }
 
 // stateNoticeLine renders a subagent_state frame that had nowhere to attach
@@ -259,14 +386,65 @@ func (m *Model) liveAgents() []*agentCard {
 	return out
 }
 
-// liveCard finds an unfinished card by task id across the current turn.
+// trackLive registers an unfinished card so stops resolve it from any turn —
+// the drawer registry and /stop must not be scoped to whatever turn happens
+// to be current at keypress time.
+func (m *Model) trackLive(a *agentCard) {
+	if m.liveTasks == nil {
+		m.liveTasks = make(map[string]*agentCard)
+	}
+	m.liveTasks[a.taskID] = a
+}
+
+// untrackLive drops a card from the live registry once it settles.
+func (m *Model) untrackLive(taskID string) {
+	if m.liveTasks != nil {
+		delete(m.liveTasks, taskID)
+	}
+}
+
+// liveCard finds an unfinished card by task id: the cross-turn live registry
+// first, then the current-turn scan as a fallback.
 func (m *Model) liveCard(taskID string) *agentCard {
+	if a := m.liveTasks[taskID]; a != nil && !a.finished() {
+		return a
+	}
 	for _, a := range m.liveAgents() {
 		if a.taskID == taskID {
 			return a
 		}
 	}
 	return nil
+}
+
+// loseLiveAgents retires every in-flight card — a socket drop orphans them
+// (frames never replay), so they must stop claiming to be live. Returns how
+// many cards were retired; 0 means nothing looked alive.
+func (m *Model) loseLiveAgents() int {
+	n := 0
+	for _, a := range m.liveTasks {
+		if !a.finished() && !a.lost {
+			a.lost = true
+			n++
+		}
+	}
+	m.liveTasks = nil
+	return n
+}
+
+// subagentTerminalNote surfaces a card's terminal state: failures stick (no
+// autoclose) until the turn finalizes — a ✗ buried in an eight-agent swarm
+// must not scroll by; user-initiated cancels stay transient (you did that).
+func (m *Model) subagentTerminalNote(ev client.Event) {
+	if ev.Phase != "finished" {
+		return
+	}
+	switch ev.Status {
+	case "error", "timeout":
+		m.pushNote(fmt.Sprintf("sub-agent SA%d %s", ev.TaskIdx+1, ev.Status), time.Time{})
+	case "cancelled":
+		m.addTransientNote(fmt.Sprintf("sub-agent SA%d cancelled", ev.TaskIdx+1))
+	}
 }
 
 // stopByLabel resolves /stop <SA#> (or a bare number) to a live card and
