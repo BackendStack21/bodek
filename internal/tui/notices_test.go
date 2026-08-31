@@ -58,6 +58,26 @@ func assertAlertDwell(t *testing.T, m *Model, cmdArmed bool, substr string) {
 	}
 }
 
+// TestTrimSignalSilenced pins the actionable-only contract for agent_signal:
+// the "trim" subtype is engine housekeeping (context-window trimming) —
+// nothing the user can act on — so it must never surface as a notice.
+// Every other subtype keeps flowing into the strip.
+func TestTrimSignalSilenced(t *testing.T) {
+	m := newTestModel()
+	m.handleEvent(client.Event{Type: "agent_signal", SubType: "trim", Detail: "ctx"})
+	for _, n := range m.notices {
+		if strings.Contains(n, "signal · trim") {
+			t.Fatalf("trim signal surfaced as a notice: %v", m.notices)
+		}
+	}
+
+	// Silence is per-subtype, not per event class.
+	m.handleEvent(client.Event{Type: "agent_signal", SubType: "fallback", Detail: "glm-x"})
+	if note, _ := lastNoteMatching(m, "signal · fallback"); note == "" {
+		t.Errorf("non-trim agent_signal was silenced too: %v", m.notices)
+	}
+}
+
 // TestNoticesAutoclose is the regression for the never-disappearing
 // "error: iteration 22: llm: stream idle…" notice: every addNote path —
 // errors with and without an open turn, disconnects — posts into the strip

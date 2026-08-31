@@ -776,19 +776,13 @@ func (m *Model) renderStep(s step, streaming bool, msgIdx, stepIdx, startLine in
 			left += th.stepArg.Render(" · " + r)
 		}
 	}
-	// Right rail: response time once the call lands, plus the typed chip
-	// (diffstat / test verdict) — right-aligned so durations read as a
-	// column down the step list instead of floating mid-line.
+	// Right rail: the typed chip (diffstat / test verdict), right-aligned.
+	// Tool execution time is internal telemetry — recorded on the step but
+	// deliberately never rendered.
 	right := ""
-	if s.done && s.dur > 0 {
-		right = th.stepArg.Render(formatStepDur(s.dur))
-	}
 	if s.done {
 		if chip := stepHeadSuffix(s.name, s.result, th); chip != "" {
-			if right != "" {
-				right += th.stepArg.Render("  ")
-			}
-			right += chip
+			right = chip
 		}
 	}
 	// The left side yields to the right rail, then the pair pads to the
