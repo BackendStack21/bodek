@@ -19,7 +19,7 @@ import (
 
 // tabBar renders the drawer's tab strip after the panel title: the active
 // tab in accent, the rest muted, with the digit shortcuts taught inline.
-// When seven tabs don't fit the given width, the strip collapses to the
+// When the strip doesn't fit the given width, it collapses to the
 // active tab behind an ellipsis — cycling and digits still reach the rest.
 func (m *Model) tabBar(maxw int) string {
 	var parts []string
@@ -132,7 +132,7 @@ type drawerTab struct {
 
 // drawerTabs lists the drawer's tabs in display order. Every management
 // surface is a tab: the same ]/[ cycle, digit jump, strip, and r/⏎ refresh
-// grammar governs all seven.
+// grammar governs every tab.
 func drawerTabs() []drawerTab {
 	return []drawerTab{
 		{"sessions", panelSessions, func(m *Model) tea.Cmd { return m.openSessions() }},

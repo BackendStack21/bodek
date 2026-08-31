@@ -7,8 +7,6 @@
 
 **A beautiful [Bubble Tea](https://github.com/charmbracelet/bubbletea) terminal interface for the [odek](https://github.com/BackendStack21/odek) agent.**
 
-[📺 Watch intro →](bodek-intro-july-2026.mov)
-
 ```
 ██████   ██████  ██████  ███████ ██   ██
 ██   ██ ██    ██ ██   ██ ██      ██  ██
@@ -23,9 +21,32 @@ approvals, skills, and memory — as a polished TUI. Every bit of agent
 behaviour (tools, danger gating, sandbox, skills, memory, sessions) comes from
 **odek itself**; bodek never re-implements any of it.
 
+## Quick start
+
+```bash
+# 1 · Install the engine and the TUI
+go install github.com/BackendStack21/odek/cmd/odek@latest
+go install github.com/BackendStack21/bodek/cmd/bodek@latest
+
+# 2 · Provide an LLM key (any OpenAI-compatible provider)
+export ODEK_API_KEY=<your-key>
+
+# 3 · Chat
+bodek
+```
+
+Prefer a compiled binary? Grab one from the
+[releases page](https://github.com/BackendStack21/bodek/releases) — see
+[Install](#install).
+
+**Contents:** [What & why](#what--why) · [Install](#install) ·
+[Usage](#usage) · [Features](#features) · [Using bodek](#using-bodek) ·
+[Configuration](#configuration) · [Security model](#security-model) ·
+[Troubleshooting](#troubleshooting) · [Development](#development)
+
 ---
 
-## Why a separate front-end?
+## What & why
 
 odek already ships a streaming WebSocket protocol (the one its Web UI speaks).
 bodek reuses that exact protocol from the terminal, which means:
@@ -44,7 +65,7 @@ bodek reuses that exact protocol from the terminal, which means:
 ┌──────────────┐   WebSocket (RFC 6455, JSON)   ┌──────────────────┐
 │    bodek     │ ◄────────────────────────────► │   odek serve      │
 │ (Bubble Tea) │   tokens · tools · approvals    │  (ReAct engine,   │
-│   TUI client │                                 │   tools, sandbox) │
+│   TUI client │                                 │  tools, sandbox)  │
 └──────────────┘                                 └──────────────────┘
 ```
 
@@ -56,7 +77,7 @@ bodek reuses that exact protocol from the terminal, which means:
 engine. See [odek's install instructions](https://github.com/BackendStack21/odek)
 (any OpenAI-compatible provider key via `ODEK_API_KEY`).
 
-### Prebuilt binaries (bodek only)
+### Prebuilt binaries
 
 Download the latest compiled binary from the
 [releases page](https://github.com/BackendStack21/bodek/releases) — archives
@@ -85,7 +106,7 @@ go install github.com/BackendStack21/odek/cmd/odek@latest
 go install github.com/BackendStack21/bodek/cmd/bodek@latest
 
 # Provide an LLM key (any OpenAI-compatible provider)
-export ODEK_API_KEY=sk-...
+export ODEK_API_KEY=<your-key>
 
 bodek
 ```
@@ -122,13 +143,131 @@ detected and connected to as before.
 
 Configuration (model, base URL, API key, MCP servers, memory, skills) is read
 by `odek serve` from its usual chain — `~/.odek/config.json` → `./odek.json` →
-`ODEK_*` env vars — so bodek inherits whatever you've already set up.
+`ODEK_*` env vars — so bodek inherits whatever you've already set up. bodek's
+own front-end settings are separate; see [Configuration](#configuration).
 
-bodek keeps its **own front-end settings** in `~/.bodek/config.json` (override
-with `BODEK_CONFIG`): `theme`, `mouse`, `bel`, `notify`, `plain`. Switching
-the theme with `/theme` persists it there automatically; the other values can
-be written by hand and seed the matching flag defaults. Resolution order:
-**flag → `BODEK_THEME` env (theme) → settings file → built-in default**.
+---
+
+## Features
+
+### Interface
+
+- **EMBER Terminal** — the WebUI's design language (electric amber on
+  blue-charcoal) as terminal tokens; four themes (`ember-dark` ·
+  `ember-light` · `high-contrast` · `classic`), switchable live with `/theme`
+  and persisted to `~/.bodek/config.json`.
+- **The palette (`^K`)** — every command, session, model, and drawer tab one
+  fuzzy search away; every row teaches its chord.
+- **Turn cards** — telemetry rides the turn head, `^F` folds noisy turns,
+  `alt+↑`/`alt+↓` jump turn-to-turn, reasoning accordions auto-expand live
+  and collapse on the next turn, and `^E` expands every tool step's details.
+- **Typed tool renderers** — diffs tint with a `+N −M` chip, file reads get
+  line numbers, JSON pretty-prints, test runs show pass/fail verdicts.
+- **Streaming answers** rendered as Markdown
+  ([glamour](https://github.com/charmbracelet/glamour)).
+- **Tool activity** — every `tool_call`/`tool_result` shown live with a glyph
+  per tool, a spinner, an argument preview, and a result excerpt rendered as
+  a tree (`⎿`) — multi-line, blank-stripped, capped with a `+N more lines`
+  footer, and tinted with a `✗` when the call fails.
+- **Fluent by default** — gradient wordmark, smooth braille spinner, smart
+  autoscroll that never yanks you while you read history, and a
+  scroll-position indicator.
+- **Version display & update hint** — bodek's version rides the header next
+  to the logo (the spawned odek's next to the model); a quiet note appears at
+  startup when a newer release is available (`bodek upgrade` installs it;
+  dev builds are never nagged).
+
+### Working with the agent
+
+- **Live reasoning** — the model's pre-tool thinking streams in dimmed text
+  with an elapsed timer and cycling status. Long turns keep every
+  think→reply pair intact: each reasoning block is followed by its own
+  answer card, in arrival order.
+- **Context-aware progress** — while the agent works, a status line right
+  below your last message shows what it's actually doing (`🧪 running
+  tests`, `📖 reading client.go`, `🚀 pushing`) with a live elapsed timer.
+- **Sub-agents** — delegations are labelled and their `subagent_log` activity
+  nests beneath the delegating call, so a sub-agent's progress reads as its
+  own branch of the step tree. Per-task `subagent_state` telemetry
+  (odek v1.30+) drives live cards — step, tool, iterations, tokens,
+  duration — and terminal status glyphs (`✓` success, `◐` partial, `✗` error,
+  `⊘` cancelled, `⏱` timeout), with a `1/2 agents · 6.3k tok` rollup on the
+  collapsed line. Framed delegate results render as a structured card —
+  status, summary, changed files, and usage. `ctrl+s` (or `/stop <SA#>`,
+  two-step confirmed) stops one running sub-agent, and the `/agents` drawer
+  tab lists the serve instance's registry snapshot.
+- **Model switcher** (`^O`) — change the model for the next turn. The picker
+  merges the server's configured model with its built-in profile catalog
+  (`/api/profiles`), each annotated with its context window.
+- **Session browser** (`^R`) — resume, replay, delete, pin (`p`), rename
+  (`r`), export a transcript (`e` markdown, `E` JSON), and search server-side
+  (`/`); `n` loads the next page. Resuming sends a `session_switch` so the
+  server-side memory buffer is restored before you type.
+- **Skill suggestions** — when odek's learn loop proposes a skill, a passive
+  card above the composer answers on `alt+s` (save) / `alt+x` (skip); it
+  never blocks sending, and auto-save governs real persistence.
+- **Engine notices** — skill loads, memory merges, and actionable agent
+  signals appear as quiet status lines; internal housekeeping (context
+  trims, tool execution times) stays silent. Info traces fade after 3s;
+  errors, warnings, and disconnect notes autoclose after 10s.
+- **Cancellation** (`Esc`) — abort a running turn via odek's cancel API.
+
+### Safety
+
+- **Inline approvals** — odek's `danger` engine prompts surface where the
+  context is; decisions go straight back over the socket. See
+  [Approvals](#approvals).
+- **Friction & expiry** — repeated same-class approvals require typing
+  `approve`; every request is time-boxed, autocloses on expiry, and can
+  never collect an approval for a prompt the engine already abandoned.
+- **Death-gates everywhere** — deletes are two-step, `/stop` and `^L` are
+  two-step, and the server shutdown requires typing the literal word
+  `shutdown`. See the [Security model](#security-model).
+
+### Telemetry & cost
+
+- **Context gauge** — a pressure-tinted context-window gauge in the header
+  (`ctx █▉░░░ 38% 380/1k`, eighth-block fill, green→amber→red).
+- **Per-turn footers & `/stats`** — token counts and latency ride every turn
+  head; `/stats` rolls up the session (cost, cache, context).
+- **Cost tracking** — when odek has token prices configured, the header shows
+  the running session spend, each turn footer its estimated cost, and
+  `/stats` adds the `max_cost_usd` cap when set; hidden entirely otherwise.
+- **Live server snapshot** — a 25s heartbeat measures WebSocket round-trip
+  latency and refreshes server uptime, connection count, and streaming state
+  (the ⚡ badge beside the model); `/server` opens the full cockpit card.
+
+### Accessibility & plain mode
+
+- **Linear mode (`--plain`)** — skips the alt-screen entirely: agent events
+  print as append-only text in the terminal's native scrollback above a
+  minimal input chrome (`▸` tool calls, `[think]`, `[error]`, `⚠ approval`,
+  `❯` your prompts, `✓ done · N tools · Xs · N tok`). Streamed fragments stay
+  suppressed; the reply lands whole when the turn ends.
+- **Severity never rides color alone** — state always carries a glyph, which
+  makes `--plain` the accessible surface for screen readers — and the
+  natural one for pipes: `bodek --plain < task > run.log`.
+- **`NO_COLOR`** degrades the entire EMBER palette to plain text in every
+  mode; **`NO_MOTION=1`** swaps animated spinners for static frames.
+
+### Connectivity & lifecycle
+
+- **Spawn or attach** — bodek launches a private `odek serve` by default, or
+  attaches to a running one with `--url` (+`--token`).
+- **Auto-reconnect** — if the socket drops, bodek redials with backoff
+  (500ms → 8s, 5 attempts) and re-adopts the session over the fresh socket;
+  only a server that stays down leaves the `disconnected` badge (empty input
+  + `⏎` retries manually).
+- **Attention when backgrounded** — turn completion and pending approvals
+  set the terminal window title (`✓ done — <model>` / `⚠ approval needed —
+  <model>`) and ring the bell (`--bel=false` mutes); `--notify` adds OSC 9
+  desktop notifications. Fires only on terminal states — never per token.
+- **Sandbox aware** — the header shows `🛡 sandboxed` or `⚠ host access`;
+  pass `--sandbox` to run tool calls inside odek's Docker isolation.
+
+---
+
+## Using bodek
 
 ### Key bindings
 
@@ -161,28 +300,28 @@ be written by hand and seed the matching flag defaults. Resolution order:
 | `⏎` (disconnected, empty input) | Retry the connection |
 | `^C` | Quit |
 
-Prompts sent while a turn is running are **queued** and sent automatically
-when the turn ends — a transient note acknowledges each hold, and the count
-rides both the busy status line and the footer (one drains per turn-end).
-Queued prompts stay visible in a **strip directly above the input area**: one
-row per prompt with per-row `▲ ▼ ✕` controls (`--mouse`) to reorder or delete,
-and a `^Q` keyboard focus mode for the same actions (`↑↓` select, `←→` move,
-`d` delete). The strip collapses to zero rows when the queue is empty.
-While the transcript is scrolled up mid-run, the footer flags `↓ new output`; press
-`^G` to jump to the latest. If the connection drops, bodek retries with
-backoff and, after giving up, keeps your draft and offers a manual retry
-on `⏎` with an empty input.
-
 **Every printable character always types.** No bare letter, digit, or
 punctuation key is ever bound in the composer — actions live on chords and
 non-character keys (`^K` palette, `alt+↑↓` turn jumps, `F1` help), so a
 prompt can start with `?`, `[`, or any other character.
 
+### The prompt queue
+
+Prompts sent while a turn is running are **queued** and sent automatically
+when the turn ends — a transient note acknowledges each hold, and the count
+rides both the busy status line and the footer (one drains per turn-end).
+Queued prompts stay visible in a **strip directly above the input area**: one
+row per prompt with per-row `▲ ▼ ✕` controls (`--mouse`) to reorder or
+delete, and a `^Q` keyboard focus mode for the same actions (`↑↓` select,
+`←→` move, `d` delete). The strip collapses to zero rows when the queue is
+empty. While the transcript is scrolled up mid-run, the footer flags
+`↓ new output`; press `^G` to jump to the latest.
+
 ### Commands (`/`)
 
 Type `/` at the start of the input for a command palette. `↑`/`↓` to choose,
-`⇥` to complete, `⏎` to run, `esc` to dismiss. You can also just type the full
-command and press `⏎`.
+`⇥` to complete, `⏎` to run, `esc` to dismiss. You can also just type the
+full command and press `⏎`.
 
 | Command | Action |
 |---------|--------|
@@ -213,10 +352,10 @@ command and press `⏎`.
 
 ### The management drawer
 
-`/sessions`, `/runs`, `/agents`, `/events`, `/plan`, `/memory`, `/skills`, `/tools`, and
-`/config` all open tabs of **one drawer** with a shared grammar:
+`/sessions`, `/runs`, `/agents`, `/events`, `/plan`, `/memory`, `/skills`,
+`/tools`, and `/config` all open tabs of **one drawer** with a shared grammar:
 
-- `]` / `[` cycle tabs · `1`–`8` jump · `r` refresh · `esc` closes.
+- `]` / `[` cycle tabs · `1`–`9` jump · `r` refresh · `esc` closes.
 - **Every management row opens a detail view on `⏎`** — the full text
   behind the gate: a skill's description and provenance, a fact or pending
   episode's body, an MCP server's command/args/limits, raw JSON for nested
@@ -242,7 +381,7 @@ command and press `⏎`.
   level (`sandbox.enabled`), nested values show raw JSON in the detail;
   lifetime usage, `d` kick a connection, `S` typed shutdown death-gate.
 
-### File attachments (`@`)
+### File attachments
 
 Type `@` to attach a file. bodek searches the working tree and shows a
 completion popup; `↑`/`↓` to choose, `⏎` or `⇥` to insert, `esc` to dismiss.
@@ -252,9 +391,11 @@ completion popup; `↑`/`↓` to choose, `⏎` or `⇥` to insert, `esc` to dism
 ```
 
 odek resolves and inlines the file content **server-side** (wrapped in its
-untrusted-content boundary), so attachments go through the same security model
-as any other external input — bodek doesn't special-case them. (Saved sessions
-are resumed via `/sessions` or `^R`, not `@`.)
+untrusted-content boundary), so attachments go through the same security
+model as any other external input — bodek doesn't special-case them. (Saved
+sessions are resumed via `/sessions` or `^R`, not `@`.)
+
+### Approvals
 
 When the agent requests approval for a dangerous operation, pick an outcome
 from the panel and confirm — typing never answers by accident:
@@ -267,119 +408,85 @@ from the panel and confirm — typing never answers by accident:
 | `Tab` | Expand/collapse the full command & description text |
 | `PgUp` / `PgDn` / `^U` / `^D` | Scroll the transcript while the panel is open |
 
-After three same-class approvals inside a minute the server engages **friction
-mode**: the panel shows the recent-approval count, the trust shortcut is
-withdrawn, and approving requires typing the literal word `approve` and
-pressing `⏎` (a mistyped word resets — retyping is the point). Denying stays
-one `Esc`.
+After three same-class approvals inside a minute the server engages
+**friction mode**: the panel shows the recent-approval count, the trust
+shortcut is withdrawn, and approving requires typing the literal word
+`approve` and pressing `⏎` (a mistyped word resets — retyping is the point).
+Denying stays one `Esc`.
 
 Approvals are time-boxed by the engine (60s by default), and an expired
-request is dead — odek fails the tool call and picks an alternative path. The
-panel shows a live `expires in Ns` countdown (red in the last 10 seconds) and
-autocloses expired requests with an expiry notice, so a stale form can never
-collect an approval for a prompt the engine already abandoned.
+request is dead — odek fails the tool call and picks an alternative path.
+The panel shows a live `expires in Ns` countdown (red in the last 10
+seconds) and autocloses expired requests with an expiry notice, so a stale
+form can never collect an approval for a prompt the engine already abandoned.
 
 ---
 
-## What you see
+## Configuration
 
-- **EMBER Terminal** — the WebUI's design language (electric amber on
-  blue-charcoal) as terminal tokens; `BODEK_THEME=ember-light|high-contrast|classic`
-  or `/theme` to switch live (persisted to `~/.bodek/config.json`), and
-  `NO_MOTION=1` for a fully static UI.
-- **The palette (`^K`)** — every surface one fuzzy search away, every row
-  teaching its chord.
-- **Turn cards** — telemetry rides the turn head, `^F` folds noisy turns,
-  `alt+↑`/`alt+↓` jump turn-to-turn, reasoning accordions auto-expand live
-  and collapse on the next turn, and `^E` expands every tool step's details.
-- **Typed tool renderers** — diffs tint with diffstats, file reads get line
-  numbers, JSON indents, test runs show pass/fail verdicts.
-- **Streaming answers** rendered as Markdown ([glamour](https://github.com/charmbracelet/glamour)).
-- **Tool activity** — every `tool_call`/`tool_result` shown live with a glyph
-  per tool, a spinner, an argument preview, and a result excerpt rendered as a
-  tree (`⎿`) — multi-line, blank-stripped, capped with a `+N more lines`
-  footer, and tinted with a `✗` when the call fails.
-- **Sub-agents** — delegations are labelled and their `subagent_log` activity
-  nests beneath the delegating call, so a sub-agent's progress reads as its own
-  branch of the step tree. Per-task `subagent_state` telemetry (odek v1.30+)
-  drives live cards — step, tool, iterations, tokens, duration — and terminal
-  status glyphs (`✓` success, `◐` partial, `✗` error, `⊘` cancelled, `⏱`
-  timeout), with a `1/2 agents · 6.3k tok` rollup on the collapsed line.
-  Framed delegate results render as a structured card — status, summary,
-  changed files, and usage — while prose results keep the generic preview.
-  `ctrl+s` (or `/stop <SA#>`, two-step confirmed) stops one running
-  sub-agent, and the `/agents` drawer tab lists the serve instance's
-  registry snapshot — recent delegated tasks with goal, status, and usage.
-- **Security approvals** — odek's `danger` engine prompts surface as an inline
-  panel; your answer is sent straight back over the socket.
-- **Live reasoning** — the model's pre-tool thinking streams in dimmed text,
-  with a running elapsed timer and cycling status while it works. Long turns
-  keep every think→reply pair intact: each reasoning block is followed by its
-  own answer card, in arrival order.
-- **Command palette (`/`)** and **file attachments (`@`)** — live, navigable popups.
-- **Context-aware progress** — while the agent works, a status line just
-  above the input (right below your last message) shows what it's actually
-  doing (`🧪 running tests`, `📖 reading client.go`, `🚀 pushing`) with a live
-  elapsed timer and the queued-prompt count when prompts are held.
-- **Session browser** (`^R`) — resume, replay, delete, pin (`p`), rename
-  (`r`), export a transcript (`e` markdown, `E` JSON), and search server-side
-  (`/`); `n` loads the next page. Resuming sends a `session_switch` so the
-  server-side memory buffer is restored before you type.
-- **Auto-reconnect** — if the socket drops, bodek redials with backoff
-  (500ms → 8s, 5 attempts) and re-adopts the session over the fresh socket;
-  only a server that stays down leaves the `disconnected` badge.
-- **Model switcher** (`^O`) — change the model for the next turn. The picker
-  merges the server's configured model with its built-in profile catalog
-  (`/api/profiles`), each annotated with its context window.
-- **Skill suggestions** — when odek's learn loop proposes a skill, a passive
-  card above the composer answers on `alt+s` (save) / `alt+x` (skip); it never
-  blocks sending, and auto-save governs real persistence.
-- **Server shutdown** — the config tab's `S` requires typing the literal word
-  `shutdown` (the approval-friction pattern); the socket drop that follows is
-  expected state, with `⏎` starting a fresh instance in spawn mode.
-- **Live server snapshot** — a 25s heartbeat measures WebSocket round-trip
-  latency and refreshes server uptime, connection count, and streaming state
-  (the ⚡ badge beside the model); `/stats` surfaces the full link row.
-- **Cancellation** (`Esc`) — abort a running turn via odek's cancel API.
-- **Sandbox aware** — the header shows `🛡 sandboxed` or `⚠ host access`; pass
-  `--sandbox` to run tool calls inside odek's Docker isolation.
-- **Telemetry** — a pressure-tinted context-window gauge in the header
-  (`ctx █▉░░░ 38% 380/1k`, eighth-block fill, green→amber→red), per-turn
-  token/latency footers, and the full session roll-up in `/stats`.
-- **Cost tracking** — when odek has token prices configured (limits), the
-  header shows the running session spend, each turn footer its estimated
-  cost, and `/stats` rolls up the session (with the `max_cost_usd` cap when
-  set); hidden entirely otherwise.
-- **Fluent by default** — gradient wordmark and hairline, smooth braille
-  spinner, smart autoscroll that never yanks you while you read history, and a
-  scroll-position indicator.
-- **Engine notices** — skill loads, memory merges, and actionable agent
-  signals appear as quiet status lines; internal housekeeping (context
-  trims, tool execution times) stays silent. Nothing lingers: info traces
-  fade after 3s, and errors, warnings, and disconnect notes autoclose
-  after 10s (connection state stays visible in the header badge).
-- **Attention when backgrounded** — turn completion and pending approvals set
-  the terminal window title (`✓ done — <model>` / `⚠ approval needed —
-  <model>`) and ring the bell (`--bel=false` mutes); `--notify` adds OSC 9
-  desktop notifications. Fires only on terminal states — never per token.
-- **Linear mode (`--plain`)** — skips the alt-screen entirely: agent events
-  print as append-only text in the terminal's native scrollback above a
-  minimal input chrome (`▸` tool calls, `[think]`, `[error]`, `⚠ approval`,
-  `❯` your prompts, `✓ done · N tools · Xs · N tok`). Severity never rides
-  color alone, which makes this the accessible surface for screen readers —
-  and the natural one for pipes: `bodek --plain < task > run.log`. Streamed
-  fragments stay suppressed; the reply lands whole when the turn ends.
-  `NO_COLOR` degrades the entire EMBER palette to plain text in every mode.
-- **Diff-aware tool steps** — expanding a step (`^E`) renders its output by
-  shape: unified diffs tint (`+` green, `-` red, hunk headers steel, file
-  markers dim) with a `+N −M` chip on the step head, fenced ` ```diff `
-  blocks tint inside prose without mis-styling the surrounding text, file
-  reads get line numbers, JSON pretty-prints, and test runs summarize
-  pass/fail on the step line.
-- **Version display** — the header shows bodek's own version next to the logo
-  and the spawned odek's version next to the model name.
-- **Update hint** — at startup, a quiet note appears when a newer bodek release
-  is available (`bodek upgrade` installs it; dev builds are never nagged).
+bodek keeps its **own front-end settings** in `~/.bodek/config.json`
+(override the location with `BODEK_CONFIG`): `theme`, `mouse`, `bel`,
+`notify`, `plain`. Switching the theme with `/theme` persists it there
+automatically; the other values can be written by hand and seed the matching
+flag defaults. Resolution order:
+**flag → `BODEK_THEME` env (theme) → settings file → built-in default**.
+
+The full settings reference — every key, every `BODEK_*`/display env var,
+and an example file — lives in
+[docs/CONFIGURATION.md](docs/CONFIGURATION.md). odek's server-side
+configuration is unaffected and stays in `~/.odek/config.json`.
+
+---
+
+## Security model
+
+bodek is a renderer, not an enforcer — and that's the point. All agent
+behaviour, danger gating, and sandboxing live in odek; the TUI's job is to
+never become the weakest link:
+
+- **Everything from the wire is sanitized.** Any remote-rendered content —
+  tool output, file contents, titles, server strings — passes through
+  `sanitize()` before it touches the screen. Raw terminal escapes from the
+  server can't repaint your session.
+- **Untrusted content stays fenced.** Tool results arrive as JSON envelopes
+  wrapped in odek's untrusted-content markers; bodek decodes the envelope and
+  folds the wrappers away — the content is displayed as data, never executed,
+  and prompt-injection text inside it renders like any other text.
+- **Approvals can't be faked or stale.** The panel is inline and keyed, the
+  trust shortcut dies under friction mode, and expired requests autoclose —
+  a dead prompt can't collect an approval. See [Approvals](#approvals).
+- **Destructive actions are deliberately slow.** Session/fact deletes are
+  two-step (`y`), stopping a sub-agent is two-step, clearing the
+  conversation is two-step, and shutting the server down requires typing
+  `shutdown` letter by letter.
+- **Server config is read-only** — the config tab renders a sanitized
+  snapshot; mutation stays with the operator on disk.
+- **Tokens stay local.** The per-instance token is adopted automatically on
+  spawn and stored only on your machine (`internal/tokens`); attaching asks
+  you to supply it explicitly.
+
+---
+
+## Troubleshooting
+
+- **`bodek` can't find `odek`** — the engine must be on your `PATH`, or pass
+  `--odek-bin /path/to/odek`.
+- **Auth errors when attaching** — copy the *full* token URL `odek serve`
+  printed (`--url 'http://…/?token=…'`) or pass the token via `--token`.
+  Spawned instances adopt the token automatically.
+- **Clipboard (`^Y` / `alt+y`) does nothing** — it uses OSC 52, which needs
+  a supporting terminal; over SSH your terminal must pass OSC 52 through.
+- **Mouse scrolling eats text selection** — that's the `--mouse` trade-off
+  (terminals can't have both). Launch without it when you need to copy.
+- **Colors look wrong** — try `/theme classic`, check `TERM`; `NO_COLOR=1`
+  forces a colorless render everywhere.
+- **Connection dropped mid-turn** — bodek retries with backoff (5 attempts)
+  and re-adopts the session; if it gives up, your draft is kept — press `⏎`
+  on an empty input to reconnect.
+- **Where are my settings?** — `~/.bodek/config.json` (override with
+  `BODEK_CONFIG`). See [docs/CONFIGURATION.md](docs/CONFIGURATION.md).
+- **Windows** — use Windows Terminal or another ANSI/OSC-capable
+  emulator; desktop notifications depend on OSC 9 support.
 
 ---
 
@@ -395,28 +502,43 @@ make vet
 make tidy
 ```
 
-Continuous integration runs build, `go vet`, `golangci-lint`, and the race-
-enabled test suite on every push (see [`.github/workflows`](.github/workflows)).
-Tagged releases (`vX.Y.Z`) are built and published automatically by
+Continuous integration runs build, `go vet`, `golangci-lint`, and the
+race-enabled test suite on every push (see
+[`.github/workflows`](.github/workflows)). Tagged releases (`vX.Y.Z`) are
+built and published automatically by
 [GoReleaser](https://goreleaser.com).
 
 Project layout:
 
 | Path | Responsibility |
 |------|----------------|
-| `cmd/bodek` | CLI entry point: flags, lifecycle, wiring |
+| `cmd/bodek` | CLI entry point: flags, lifecycle, `version` / `upgrade` subcommands |
 | `internal/server` | Launch / attach to `odek serve`, resolve the auth token |
 | `internal/client` | odek serve WebSocket protocol (transport + REST + decoding) |
 | `internal/tokens` | Local persistence of per-session auth tokens |
+| `internal/settings` | Front-end settings (`~/.bodek/config.json`) |
+| `internal/update` | Self-upgrade: fetch and swap in the latest GitHub release binary |
 | `internal/tui` | The Bubble Tea model, update loop, panels, and view |
 
 ### Architecture & testing
 
-bodek is a pure client, so it is highly testable: the WebSocket protocol, REST
-endpoints, token store, and the full Bubble Tea update/view loop are exercised
-by unit and integration tests against an in-process `odek serve` stand-in.
-Internal-package statement coverage is **~99%** (client 100%, tui 99%, tokens
-98%, server 95% — the remainder is unreachable OS-error handling).
+bodek is a pure client, so it is highly testable: the WebSocket protocol,
+REST endpoints, token store, and the full Bubble Tea update/view loop are
+exercised by unit and integration tests against an in-process `odek serve`
+stand-in. Internal-package statement coverage is **~99%** (client 100%,
+tui 99%, tokens 98%, server 95% — the remainder is unreachable OS-error
+handling).
+
+### For contributors
+
+- [AGENTS.md](AGENTS.md) — the contributor contract: commands, the
+  mandatory pre-commit checklist, testing expectations, and code
+  conventions.
+- [docs/INTEGRATIONS.md](docs/INTEGRATIONS.md) — the audit matrix mapping
+  every `odek serve` REST endpoint and WebSocket message to its client
+  method and UI surface. Update it when either side changes.
+- [docs/CONFIGURATION.md](docs/CONFIGURATION.md) — the front-end settings
+  and environment variable reference.
 
 ---
 
