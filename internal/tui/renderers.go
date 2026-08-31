@@ -4,6 +4,9 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"math"
+	"regexp"
+	"strconv"
 	"strings"
 )
 
@@ -253,38 +256,165 @@ func renderJSON(s string, width int, th theme) []string {
 
 // ── test-run summary ────────────────────────────────────────────────────────
 
+// Structured pass/fail patterns — only real runner output matches. Loose
+// words ("Build passed", a stray "ok" progress line, the word "testsuite")
+// must never produce a verdict chip.
+var (
+	// go test: "ok  \tpkg\t0.5s" / "ok  \tpkg\t(cached)"
+	goPassRe = regexp.MustCompile(`^ok[ \t]+\S+[ \t]+(?:\d+(?:\.\d+)?s|\(cached\))`)
+	// TAP: "ok 1 - description"
+	tapPassRe = regexp.MustCompile(`^ok[ \t]+\d+[ \t]+-`)
+	// Counted verdicts: pytest "1 failed, 4 passed in 0.1s", jest
+	// "Tests: 3 passed, 3 total", vitest "Tests  5 passed (5)", cargo
+	// "0 passed; 2 ignored".
+	countedRe = regexp.MustCompile(`\b(\d+) (passed|failed|skipped|ignored)\b`)
+	// go -cover: "coverage: 82.3% of statements", also trailing on ok lines.
+	coverageRe = regexp.MustCompile(`(\d+(?:\.\d+)?)% of statements`)
+	// Counted verdicts only fire on summary-shaped lines — bare "N passed"
+	// in prose ("10 files failed validation, 5 passed") must not produce
+	// verdicts. Jest ("Tests:"), vitest ("Tests "), cargo ("test result:"),
+	// or a pytest-style duration tail ("in 0.12s").
+	countSummaryRe = regexp.MustCompile(`^tests?[ :]|^test result:|in \d+(?:\.\d+)?s?(?: =+)?$`)
+	// sanitize() strips ESC bytes but leaves SGR residue ("[32m") that glues
+	// digits and defeats line anchors; chips match on stripped text.
+	sgrResidueRe = regexp.MustCompile(`(?:\x1b)?\[[0-9;]+m`)
+)
+
+// Arg-gated chip patterns: they fire only when the command words say the
+// step actually ran the tool, so output that merely mentions a hash or an
+// HTTP status never grows a chip.
+var (
+	commitLineRe     = regexp.MustCompile(`^\[(.+?)\][ \t]*(.*)$`)
+	commitHashRe     = regexp.MustCompile(`([0-9a-f]{7,40})\z`)
+	gitPushRe        = regexp.MustCompile(`[0-9a-f]{7,40}\.{2,3}[0-9a-f]{7,40}[ \t]+(\S+)[ \t]+->`)
+	gitNewRefRe      = regexp.MustCompile(`\[(?:new branch|new tag)\][ \t]+(\S+)[ \t]+->`)
+	lintIssuesRe     = regexp.MustCompile(`^(\d+) issues?\.?:?$`)
+	eslintProblemsRe = regexp.MustCompile(`✖ (\d+) problems`)
+	warnEmittedRe    = regexp.MustCompile(`^warning: (\d+) warnings? emitted\.?$`)
+	warnGeneratedRe  = regexp.MustCompile(`^(\d+) warnings? generated\.?$`)
+	httpStatusRe     = regexp.MustCompile(`(?i)^HTTP/[\d.]+ (\d{3})`)
+	wgetStatusRe     = regexp.MustCompile(`awaiting response\.\.\.?[ \t]?(\d{3})`)
+	searchHitsRe     = regexp.MustCompile(`found (\d+) matches`)
+)
+
 // testSummary extracts a compact pass/fail summary from test-runner output
-// (go test / pytest / jest). ok=false when nothing recognizable.
+// (go test / pytest / jest / vitest / cargo / TAP). ok=false when nothing
+// recognizable — only structured runner patterns produce a verdict. The
+// chip carries counts when the runner provides them ("✓ 5 passed · 2
+// skipped") and the go -cover figure when present ("· 82.3% cov").
 func testSummary(s string) (summary string, ok bool) {
-	lower := strings.ToLower(s)
-	fails := 0
+	lineFails, countedFails, passes, suitePasses, skips := 0, 0, 0, 0, 0
+	counted := false
+	covSum, covN := 0.0, 0
 	var failNames []string
+	seen := map[string]bool{}
+	count := func(ln string, suite bool) {
+		// Doubled summaries (jest reruns) must not inflate counts — but cargo
+		// prints an identical "test result:" line per package; those are
+		// real repeats.
+		if seen[ln] && !strings.HasPrefix(ln, "test result:") {
+			return
+		}
+		seen[ln] = true
+		if !suite && !countSummaryRe.MatchString(ln) {
+			return
+		}
+		for _, m := range countedRe.FindAllStringSubmatch(ln, -1) {
+			n, _ := strconv.Atoi(m[1])
+			switch m[2] {
+			case "failed":
+				countedFails += n
+			case "passed":
+				if suite {
+					suitePasses += n
+				} else {
+					passes += n
+					counted = true
+				}
+			default: // skipped, ignored
+				skips += n
+			}
+		}
+	}
 	for _, ln := range strings.Split(s, "\n") {
-		// go test: "--- FAIL: TestX"
-		if name, found := cutPrefixTrim(ln, "--- FAIL: "); found {
-			fails++
+		trimmed := strings.TrimSpace(ln)
+		// go -cover figure — an addition to an existing pass verdict, never
+		// one on its own.
+		if m := coverageRe.FindStringSubmatch(trimmed); m != nil {
+			if v, err := strconv.ParseFloat(m[1], 64); err == nil {
+				covSum += v
+				covN++
+			}
+		}
+		// go test: "--- FAIL: TestX" (indented for subtests).
+		if name, found := cutPrefixTrim(trimmed, "--- FAIL: "); found {
+			lineFails++
 			if fields := strings.Fields(name); len(fields) > 0 && len(failNames) < 3 {
 				failNames = append(failNames, fields[0])
 			}
 			continue
 		}
-		// pytest: "FAILED tests/test_x.py::test_y"
-		if strings.Contains(ln, "FAILED ") {
-			fails++
+		// go test verbose: "--- PASS: TestY" / "--- SKIP: TestZ".
+		if strings.HasPrefix(trimmed, "--- PASS: ") {
+			passes++
 			continue
 		}
-		// jest: "✕ test name" / "● test name"
-		if strings.HasPrefix(strings.TrimSpace(ln), "✕") {
-			fails++
+		if strings.HasPrefix(trimmed, "--- SKIP: ") {
+			skips++
+			continue
 		}
+		// pytest: "FAILED tests/test_x.py::test_y".
+		if strings.HasPrefix(trimmed, "FAILED ") {
+			lineFails++
+			continue
+		}
+		// jest: "✕ test name".
+		if strings.HasPrefix(trimmed, "✕") {
+			lineFails++
+			continue
+		}
+		lower := strings.ToLower(trimmed)
+		// Suite-level lines ("Test Suites:" / "Test Files") must not inflate
+		// the test count when the Tests line is present too.
+		suite := strings.HasPrefix(lower, "test files") || strings.HasPrefix(lower, "test suites")
+		// cargo: "test result: ok. 5 passed; 0 failed; ..." — the counts
+		// carry the verdict; no blanket increment on the ok prefix.
+		if strings.HasPrefix(lower, "test result:") {
+			count(lower, false)
+			continue
+		}
+		// go test package verdict, TAP ok, or a counted summary line.
+		if goPassRe.MatchString(trimmed) || tapPassRe.MatchString(trimmed) {
+			passes++
+			continue
+		}
+		count(lower, suite)
+	}
+	// Runner summaries restate what the per-test lines already said — take
+	// the larger count instead of adding both.
+	fails := lineFails
+	if countedFails > fails {
+		fails = countedFails
 	}
 	if fails == 0 {
-		// A clean run: go test "ok  \tpkg", pytest "N passed".
-		if strings.Contains(lower, "\nok ") || strings.Contains(lower, " passed") ||
-			strings.Contains(lower, "testsuite") {
-			return "✓ tests pass", true
+		if passes == 0 && suitePasses > 0 {
+			passes, counted = suitePasses, true
 		}
-		return "", false
+		if passes == 0 && skips == 0 {
+			return "", false
+		}
+		chip := "✓ tests pass"
+		if counted {
+			chip = fmt.Sprintf("✓ %d passed", passes)
+		}
+		if skips > 0 {
+			chip += fmt.Sprintf(" · %d skipped", skips)
+		}
+		if covN > 0 {
+			avg := math.Round(covSum/float64(covN)*10) / 10
+			chip += " · " + strconv.FormatFloat(avg, 'f', -1, 64) + "% cov"
+		}
+		return chip, true
 	}
 	summary = fmt.Sprintf("✗ %d failing", fails)
 	if len(failNames) > 0 {
@@ -341,11 +471,23 @@ func stepDetail(name, result string, width int, th theme) []string {
 }
 
 // stepHeadSuffix renders the typed chip a step line gains from its result:
-// a diffstat for diffs, a pass/fail summary for test runs.
-func stepHeadSuffix(name, result string, th theme) string {
+// a diffstat for diffs; a pass/fail summary for test runs; arg-gated git,
+// lint, warning, and HTTP hints for shell steps; a hit count for searches.
+// At most one chip per step, in that precedence.
+func stepHeadSuffix(name, arg, result string, th theme) string {
 	if adds, dels, ok := diffStatOf(result); ok {
 		return th.diffAdd.Render(fmt.Sprintf("  +%d", adds)) +
 			th.diffDel.Render(fmt.Sprintf(" −%d", dels))
+	}
+	result = sgrResidueRe.ReplaceAllString(result, "")
+	if name != "shell" {
+		// Non-shell steps get exactly one chip: a search hit count. Test
+		// verdicts stay shell-only — a read_file returning runner text is a
+		// file read, not a test run.
+		if isSearchTool(name) {
+			return hitsChip(result, th)
+		}
+		return ""
 	}
 	if s, ok := testSummary(result); ok {
 		if strings.HasPrefix(s, "✗") {
@@ -354,6 +496,202 @@ func stepHeadSuffix(name, result string, th theme) string {
 			return th.stepErr.Render(strings.TrimPrefix(s, "✗ "))
 		}
 		return th.stepDone.Render(s)
+	}
+	for _, chip := range []string{
+		gitChip(arg, result, th),
+		lintChip(arg, result, th),
+		warnChip(result, th),
+		httpChip(arg, result, th),
+	} {
+		if chip != "" {
+			return chip
+		}
+	}
+	return ""
+}
+
+// isSearchTool reports whether a tool's hits deserve the hit-count chip —
+// same substring matching style as toolGlyph.
+func isSearchTool(name string) bool {
+	n := strings.ToLower(name)
+	for _, k := range []string{"grep", "search", "glob", "find"} {
+		if strings.Contains(n, k) {
+			return true
+		}
+	}
+	return false
+}
+
+// shellWords flattens a shell step's command into words so chip gates can
+// check what the step actually ran (multiline scripts included).
+func shellWords(arg string) []string {
+	return strings.Fields(strings.ReplaceAll(arg, "\n", " "))
+}
+
+func hasWord(words []string, want string) bool {
+	for _, w := range words {
+		if w == want {
+			return true
+		}
+	}
+	return false
+}
+
+// gitChip decorates git commit/push steps with their outcome — the short
+// hash plus subject for commits, the branch for pushes. Requires the git
+// verb in the command words, so output that merely mentions a hash stays
+// chip-free.
+func gitChip(arg, result string, th theme) string {
+	words := shellWords(arg)
+	if !hasWord(words, "git") {
+		return ""
+	}
+	if hasWord(words, "commit") {
+		for _, ln := range strings.Split(result, "\n") {
+			m := commitLineRe.FindStringSubmatch(strings.TrimSpace(ln))
+			if m == nil {
+				continue
+			}
+			hash := commitHashRe.FindString(strings.TrimSpace(m[1]))
+			if hash == "" {
+				continue
+			}
+			if len(hash) > 7 {
+				hash = hash[:7]
+			}
+			chip := "⎇ " + hash
+			if subj := strings.TrimSpace(m[2]); subj != "" {
+				chip += " " + truncate(subj, 26)
+			}
+			return th.stepDone.Render(chip)
+		}
+	}
+	if hasWord(words, "push") {
+		branch := ""
+		for _, ln := range strings.Split(result, "\n") {
+			if m := gitPushRe.FindStringSubmatch(ln); m != nil {
+				branch = m[1]
+			}
+			if m := gitNewRefRe.FindStringSubmatch(ln); m != nil {
+				branch = m[1]
+			}
+		}
+		if branch != "" {
+			return th.stepDone.Render("↑ " + branch)
+		}
+		if strings.Contains(result, "Everything up-to-date") {
+			return th.stepDone.Render("↑ up to date")
+		}
+	}
+	return ""
+}
+
+// lintChip reports the linter outcome: "✓ lint clean" or a red issue
+// count. Gated on linter-sounding commands, so ruff's "All checks passed"
+// cannot leak into arbitrary output.
+func lintChip(arg, result string, th theme) string {
+	words := shellWords(arg)
+	linters := []string{"lint", "golangci-lint", "ruff", "eslint", "clippy"}
+	gate := false
+	for _, l := range linters {
+		if hasWord(words, l) {
+			gate = true
+			break
+		}
+	}
+	if !gate {
+		// Word match, not substring: "git commit -m fix-lint" is not a lint
+		// run.
+		return ""
+	}
+	for _, ln := range strings.Split(result, "\n") {
+		t := strings.TrimSpace(ln)
+		if m := lintIssuesRe.FindStringSubmatch(t); m != nil {
+			if n, _ := strconv.Atoi(m[1]); n == 0 {
+				return th.stepDone.Render("✓ lint clean")
+			}
+			return th.stepErr.Render(m[1] + " issues")
+		}
+		if strings.HasPrefix(t, "All checks passed") {
+			return th.stepDone.Render("✓ lint clean")
+		}
+		if m := eslintProblemsRe.FindStringSubmatch(t); m != nil {
+			if n, _ := strconv.Atoi(m[1]); n == 0 {
+				return th.stepDone.Render("✓ lint clean")
+			}
+			return th.stepErr.Render(m[1] + " issues")
+		}
+	}
+	return ""
+}
+
+// warnChip surfaces compiler warning summaries ("warning: 2 warnings
+// emitted", "3 warnings generated") as an amber chip. Only summary lines
+// count — individual warning lines are chatter.
+func warnChip(result string, th theme) string {
+	n := 0
+	for _, ln := range strings.Split(result, "\n") {
+		t := strings.TrimSpace(ln)
+		if m := warnEmittedRe.FindStringSubmatch(t); m != nil {
+			n, _ = strconv.Atoi(m[1])
+			continue
+		}
+		if m := warnGeneratedRe.FindStringSubmatch(t); m != nil {
+			n, _ = strconv.Atoi(m[1])
+		}
+	}
+	if n > 0 {
+		chip := "warning"
+		if n > 1 {
+			chip = "warnings"
+		}
+		return th.badgeWarn.Render(fmt.Sprintf("⚠ %d %s", n, chip))
+	}
+	return ""
+}
+
+// httpChip colors the final HTTP status of a client step: green 2xx, amber
+// 3xx, red otherwise. Gated on the client heading the command, so a cat of
+// saved headers never gets one.
+func httpChip(arg, result string, th theme) string {
+	head := strings.Fields(strings.SplitN(arg, "\n", 2)[0])
+	if len(head) == 0 {
+		return ""
+	}
+	switch head[0] {
+	case "curl", "wget", "http", "https":
+	default:
+		return ""
+	}
+	code := ""
+	for _, ln := range strings.Split(result, "\n") {
+		if m := httpStatusRe.FindStringSubmatch(ln); m != nil {
+			code = m[1]
+		}
+		if m := wgetStatusRe.FindStringSubmatch(ln); m != nil {
+			code = m[1]
+		}
+	}
+	if code == "" {
+		return ""
+	}
+	switch code[0] {
+	case '2':
+		return th.stepDone.Render("● " + code)
+	case '3':
+		return th.badgeWarn.Render("● " + code)
+	default:
+		return th.stepErr.Render("● " + code)
+	}
+}
+
+// hitsChip summarizes search steps: odek's "found N matches" envelope
+// becomes a neutral hit count.
+func hitsChip(result string, th theme) string {
+	for _, ln := range strings.Split(result, "\n") {
+		if m := searchHitsRe.FindStringSubmatch(ln); m != nil {
+			return th.stepRes.Render(m[1] + " hits")
+		}
 	}
 	return ""
 }

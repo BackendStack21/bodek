@@ -781,7 +781,7 @@ func (m *Model) renderStep(s step, streaming bool, msgIdx, stepIdx, startLine in
 	// deliberately never rendered.
 	right := ""
 	if s.done {
-		if chip := stepHeadSuffix(s.name, s.result, th); chip != "" {
+		if chip := stepHeadSuffix(s.name, s.arg, s.result, th); chip != "" {
 			right = chip
 		}
 	}
