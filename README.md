@@ -353,10 +353,11 @@ collect an approval for a prompt the engine already abandoned.
 - **Fluent by default** — gradient wordmark and hairline, smooth braille
   spinner, smart autoscroll that never yanks you while you read history, and a
   scroll-position indicator.
-- **Engine notices** — skill loads, memory merges, and agent signals appear as
-  quiet status lines. Nothing lingers: info traces fade after 3s, and
-  errors, warnings, and disconnect notes autoclose after 10s (connection
-  state stays visible in the header badge).
+- **Engine notices** — skill loads, memory merges, and actionable agent
+  signals appear as quiet status lines; internal housekeeping (context
+  trims, tool execution times) stays silent. Nothing lingers: info traces
+  fade after 3s, and errors, warnings, and disconnect notes autoclose
+  after 10s (connection state stays visible in the header badge).
 - **Attention when backgrounded** — turn completion and pending approvals set
   the terminal window title (`✓ done — <model>` / `⚠ approval needed —
   <model>`) and ring the bell (`--bel=false` mutes); `--notify` adds OSC 9

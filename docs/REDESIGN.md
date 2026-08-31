@@ -114,7 +114,7 @@ Typography of the cockpit: values bright, labels muted, glyphs amber. Numbers ne
 
 **Reasoning accordions** adopt the WebUI's proven rule: auto-expand while its turn is live (with auto-follow), auto-collapse when the next turn starts; manually-opened history stays open; resumed transcripts start collapsed. (Today: always-capped excerpt — close, but the live auto-expand is what makes thinking models feel fast.)
 
-**Typed tool renderers.** The step line stays one-line (glyph · name · arg · duration · status). What changes is *inspect depth*: expanding picks a renderer by tool/shape —
+**Typed tool renderers.** The step line stays one-line (glyph · name · arg · status chip). What changes is *inspect depth*: expanding picks a renderer by tool/shape —
 
 | Renderer | Trigger | Inspect view |
 |----------|---------|--------------|

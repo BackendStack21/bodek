@@ -76,4 +76,4 @@ These workflows have no server endpoint; bodek cannot offer them:
 | `error` | ← | — | error bubble / cancel markers |
 | `cancelled` | ← | — | clean cancel close-out |
 | `approval_request` / `approval_ack` | ← | — | approval queue |
-| `skill_event` / `memory_event` / `agent_signal` | ← | — | transient notes (+ suggestion card) |
+| `skill_event` / `memory_event` / `agent_signal` | ← | — | transient notes (+ suggestion card; `agent_signal:trim` stays silent) |

@@ -281,7 +281,9 @@ func TestFormatStepDur(t *testing.T) {
 }
 
 // TestStepDuration drives a tool call through handleEvent and checks the step
-// head: the response time appears once done, and no result excerpt shows.
+// head: the duration is recorded internally once done, but the compact head
+// never renders it — execution time is internal telemetry, not actionable
+// output. No result excerpt shows either.
 func TestStepDuration(t *testing.T) {
 	m := newTestModel()
 	m.msgs = append(m.msgs, message{role: roleAsst, streaming: true})
@@ -295,14 +297,15 @@ func TestStepDuration(t *testing.T) {
 		t.Fatalf("tool_result should stamp the step duration: %+v", st)
 	}
 
-	// A done step head shows the duration (fixture-set, for exact rendering).
+	// A done step head shows no duration even when one was recorded —
+	// the right rail is reserved for the typed chip (diffstat / verdict).
 	msg := message{role: roleAsst, steps: []step{
 		{name: "shell", arg: "go test", done: true, result: "exit status 1", dur: 320 * time.Millisecond},
 	}}
 	out, _ := renderStepsForTest(m, msg, 0, 0)
 	plainOut := plain(out)
-	if !strings.Contains(plainOut, "320ms") {
-		t.Errorf("done head missing duration: %q", plainOut)
+	if strings.Contains(plainOut, "320ms") {
+		t.Errorf("done head must not render a duration: %q", plainOut)
 	}
 	if strings.Contains(plainOut, "→") || strings.Contains(plainOut, "exit status 1") {
 		t.Errorf("compact head should not show a result excerpt: %q", plainOut)

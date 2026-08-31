@@ -279,6 +279,11 @@ func (m *Model) handleEvent(ev client.Event) (tea.Model, tea.Cmd) {
 	case "memory_event":
 		m.addTransientNote("memory · " + strings.TrimSpace(ev.SubType+" "+ev.Target) + eventTail(ev))
 	case "agent_signal":
+		if ev.SubType == "trim" {
+			// Context trimming is engine housekeeping — nothing the user
+			// can act on, so it never reaches the notice strip.
+			break
+		}
 		m.addTransientNote("signal · " + strings.TrimSpace(ev.SubType+" "+ev.Detail) + eventTail(ev))
 	case "subagent_log":
 		line := strings.TrimSpace(ev.SubType + " " + ev.Name)
