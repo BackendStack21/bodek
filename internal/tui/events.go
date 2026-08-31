@@ -93,7 +93,13 @@ func (m *Model) handleEvent(ev client.Event) (tea.Model, tea.Cmd) {
 		if i := m.cur(); i >= 0 {
 			m.msgs[i].steps = append(m.msgs[i].steps,
 				step{name: ev.Name, arg: arg, subagent: isSubagent(ev.Name), started: time.Now()})
-			m.msgs[i].items = append(m.msgs[i].items, turnItem{stepIdx: len(m.msgs[i].steps) - 1})
+			last := len(m.msgs[i].steps) - 1
+			if m.msgs[i].steps[last].subagent {
+				// Per-task identity (goals, profiles) lives in the parent's
+				// argument, not on the subagent_state frames.
+				m.msgs[i].steps[last].manifest = parseDelegateManifest(ev.Data)
+			}
+			m.msgs[i].items = append(m.msgs[i].items, turnItem{stepIdx: last})
 		}
 		m.lastTool = ev.Name
 		m.lastArg = arg
@@ -313,6 +319,7 @@ func (m *Model) handleEvent(ev client.Event) (tea.Model, tea.Cmd) {
 		// frames) fall back to a notice so nothing vanishes silently.
 		if i := m.cur(); i >= 0 && m.attachSubState(i, ev) {
 			stream = true // coalesce redraws — state frames arrive in bursts
+			m.subagentTerminalNote(ev)
 			break
 		}
 		m.addTransientNote("subagent · " + stateNoticeLine(ev))
@@ -348,6 +355,11 @@ func (m *Model) handleEvent(ev client.Event) (tea.Model, tea.Cmd) {
 		// later resume is untouched.
 		if i := m.cur(); i >= 0 {
 			setTurnMarker(&m.msgs[i], "**Interrupted:** connection lost")
+		}
+		if n := m.loseLiveAgents(); n > 0 {
+			// In-flight cards just became unknowable — say so once instead of
+			// leaving spinners that will never settle.
+			m.addNote("sub-agent state lost on disconnect")
 		}
 		m.finalize()
 		m.relayout() // the busy status line is gone with the socket
@@ -555,12 +567,79 @@ func markCancel(msg *message) {
 	setTurnMarker(msg, "**Cancelled.**")
 }
 
-// finalize closes out the streaming assistant message and drops the cursor.
+// finalize closes out the streaming assistant message and drops the cursor:
+// the swarm verdict (when the turn delegated sub-agents) lands as the turn
+// marker, and sticky sub-agent failure notices retire — the verdict line
+// supersedes them.
 func (m *Model) finalize() {
 	if i := m.cur(); i >= 0 {
+		if v := m.swarmVerdict(&m.msgs[i]); v != "" {
+			setTurnMarker(&m.msgs[i], v)
+		}
 		m.closeTurn(&m.msgs[i])
 	}
 	m.curIdx = -1
+	m.clearStickyNotes()
+}
+
+// swarmVerdict summarizes a turn's sub-agent outcomes as a turn marker —
+// "**swarm: 5 ✓ · 1 ✗ — SA4 error**" — so a failure in a multi-agent turn
+// can't scroll by uncounted. "" when the turn delegated nothing.
+func (m *Model) swarmVerdict(msg *message) string {
+	var ok, partial, failed, cancelled, timed, live int
+	var bad []string
+	for j := range msg.steps {
+		if !msg.steps[j].subagent {
+			continue
+		}
+		for _, a := range msg.steps[j].agents {
+			switch {
+			case !a.finished():
+				live++
+			case a.status == "success":
+				ok++
+			case a.status == "partial":
+				partial++
+			case a.status == "error":
+				failed++
+				bad = append(bad, fmt.Sprintf("SA%d %s", a.idx+1, a.status))
+			case a.status == "timeout":
+				timed++
+				bad = append(bad, fmt.Sprintf("SA%d %s", a.idx+1, a.status))
+			case a.status == "cancelled":
+				cancelled++
+				bad = append(bad, fmt.Sprintf("SA%d %s", a.idx+1, a.status))
+			}
+		}
+	}
+	total := ok + partial + failed + cancelled + timed + live
+	if total == 0 {
+		return ""
+	}
+	parts := make([]string, 0, 6)
+	if ok > 0 {
+		parts = append(parts, fmt.Sprintf("%d ✓", ok))
+	}
+	if partial > 0 {
+		parts = append(parts, fmt.Sprintf("%d ◐", partial))
+	}
+	if failed > 0 {
+		parts = append(parts, fmt.Sprintf("%d ✗", failed))
+	}
+	if timed > 0 {
+		parts = append(parts, fmt.Sprintf("%d ⏱", timed))
+	}
+	if cancelled > 0 {
+		parts = append(parts, fmt.Sprintf("%d ⊘", cancelled))
+	}
+	if live > 0 {
+		parts = append(parts, fmt.Sprintf("%d live", live))
+	}
+	line := "swarm: " + strings.Join(parts, " · ")
+	if len(bad) > 0 {
+		line += " — " + strings.Join(bad, ", ")
+	}
+	return "**" + line + "**"
 }
 
 // closeTurn renders finalized markdown for one assistant turn: each reply
@@ -625,6 +704,21 @@ func (m *Model) pruneNotices(now time.Time) {
 		if exp := m.noticeExp[i]; exp.IsZero() || now.Before(exp) {
 			kept = append(kept, n)
 			keptExp = append(keptExp, exp)
+		}
+	}
+	m.notices = kept
+	m.noticeExp = keptExp
+}
+
+// clearStickyNotes retires zero-expiry notes (sticky sub-agent failures) —
+// used when the context that made them sticky is gone (turn finalized).
+func (m *Model) clearStickyNotes() {
+	kept := m.notices[:0]
+	keptExp := m.noticeExp[:0]
+	for i, n := range m.notices {
+		if !m.noticeExp[i].IsZero() {
+			kept = append(kept, n)
+			keptExp = append(keptExp, m.noticeExp[i])
 		}
 	}
 	m.notices = kept

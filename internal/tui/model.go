@@ -35,6 +35,7 @@ type step struct {
 	subagent   bool          // this call delegates to a sub-agent (renders its log tree)
 	logs       []string      // nested sub-agent activity, from subagent_log events
 	agents     []*agentCard  // live per-task telemetry, from subagent_state frames
+	manifest   []taskSlot    // delegate arg parsed at tool-call time: per-task identity
 	resultCard *agentResult  // framed result envelope (delegate tools)
 	expanded   bool          // user has expanded this step to show full output/logs
 	started    time.Time     // when the tool_call arrived; zero for resumed history
@@ -212,6 +213,9 @@ type Model struct {
 
 	profiles  []client.Profile       // built-in model catalog (picker + context gauge)
 	agentsReg []client.SubagentEntry // agents tab: sub-agent registry snapshot
+	agentsSeq int                    // agents-tab poll generation; stale ticks drop
+
+	liveTasks map[string]*agentCard // every unfinished card, any turn: stop paths resolve across turns
 
 	// Drawer state: runs polling + the events feed.
 	runs            []client.Run
@@ -502,6 +506,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case runsTickMsg:
 		return m, m.handleRunsTick(msg)
 
+	case agentsTickMsg:
+		return m, m.handleAgentsTick(msg)
+
 	case planMsg:
 		return m, m.handlePlanMsg(msg)
 
@@ -533,6 +540,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case mgmtMsg:
 		m.handleMgmtMsg(msg)
 		m.refresh()
+		if msg.tab == panelAgents && m.panel == panelAgents {
+			return m, m.armAgentsPoll() // keeps the 3s chain alive while visible
+		}
 		return m, nil
 
 	case mgmtActionMsg:
@@ -1238,6 +1248,22 @@ func (m *Model) focusTurnAt(line int) {
 	if idx, ok := m.turnAtLine(line); ok {
 		m.focusIdx = idx
 	}
+}
+
+// scrollToMessage parks the viewport at a message's turn head (one line of
+// context above it), bottom when the turn isn't indexed yet (in-flight).
+func (m *Model) scrollToMessage(msgIdx int) {
+	for _, r := range m.turnLineIndex {
+		if r.msgIdx == msgIdx {
+			off := r.line
+			if off > 0 {
+				off--
+			}
+			m.vp.SetYOffset(off)
+			return
+		}
+	}
+	m.vp.GotoBottom()
 }
 
 // turnAtLine maps a viewport content line to a turn head (stepIdx -1).

@@ -192,14 +192,18 @@ own front-end settings are separate; see [Configuration](#configuration).
   tests`, `📖 reading client.go`, `🚀 pushing`) with a live elapsed timer.
 - **Sub-agents** — delegations are labelled and their `subagent_log` activity
   nests beneath the delegating call, so a sub-agent's progress reads as its
-  own branch of the step tree. Per-task `subagent_state` telemetry
-  (odek v1.30+) drives live cards — step, tool, iterations, tokens,
-  duration — and terminal status glyphs (`✓` success, `◐` partial, `✗` error,
-  `⊘` cancelled, `⏱` timeout), with a `1/2 agents · 6.3k tok` rollup on the
-  collapsed line. Framed delegate results render as a structured card —
-  status, summary, changed files, and usage. `ctrl+s` (or `/stop <SA#>`,
-  two-step confirmed) stops one running sub-agent, and the `/agents` drawer
-  tab lists the serve instance's registry snapshot.
+  own branch of the step tree. Each card carries its task's goal (parsed
+  from the `delegate_tasks` argument; tasks the wire hasn't confirmed yet
+  show as `pending`), live step/tool/iterations/tokens telemetry from
+  `subagent_state` frames (odek v1.30+), a client-side elapsed timer between
+  frame bursts, and terminal status glyphs (`✓` success, `◐` partial, `✗`
+  error, `⊘` cancelled, `⏱` timeout). The collapsed rollup counts failures —
+  `2/3 · 1 ✗ · 8.1k tok` — a terminal failure sticks to the notice strip
+  until the turn ends, and every delegating turn closes with a
+  `swarm: 5 ✓ · 1 ✗ — SA4 error` verdict. A disconnect retires in-flight
+  cards (`× lost on disconnect`) instead of leaving ghost spinners.
+  `ctrl+s` (or `/stop <SA#>`, two-step confirmed) stops one running
+  sub-agent — from any turn, not just the current one.
 - **Model switcher** (`^O`) — change the model for the next turn. The picker
   merges the server's configured model with its built-in profile catalog
   (`/api/profiles`), each annotated with its context window.
@@ -349,7 +353,7 @@ full command and press `⏎`.
 | `/thinking [on\|off]` | Toggle extended thinking for the next turn |
 | `/cancel` | Cancel the running turn |
 | `/stop <SA#>` | Stop one running sub-agent (bare `/stop` lists them) |
-| `/agents` | Sub-agent registry — recent delegated tasks (drawer tab) |
+| `/agents` | Sub-agent registry — live 3s poll, `c` stop (two-step), `o` jump to transcript |
 | `/attach <path>` | Stage a file to send with the next prompt (5 MB each, 10 MB total) |
 | `/unattach [name]` | Drop staged files (all when no name given) |
 | `/quit` | Exit bodek |
@@ -370,6 +374,9 @@ full command and press `⏎`.
   `⏎` resume.
 - **Runs** — live 3s poll, `A`/`D`/`T` remote approvals, `c` cancel,
   `p` refresh pending approvals, `e` drill into the run's event trail.
+- **Agents** — the serve instance's sub-agent registry, live-polled every 3s;
+  `c` stop the highlighted row (two-step, same gate as `/stop`), `o` jump to
+  the delegating transcript step, `⏎` the full registry record.
 - **Events** — the `odek.event/v1` ring: `f` filter to this session, `x`
   clear filters (a runs-tab drill-in scopes it to one run).
 - **Plan** — the engine's structured task plan (Telegram-parity renderer):

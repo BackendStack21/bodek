@@ -379,6 +379,9 @@ func (m *Model) handlePanelKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.panel == panelMemory {
 			return m, m.memConsolidate("user")
 		}
+		if m.panel == panelAgents {
+			return m, m.stopSelectedAgent()
+		}
 	case "f", "F":
 		if m.panel == panelEvents {
 			return m, m.toggleEventFilter()
@@ -425,6 +428,11 @@ func (m *Model) handlePanelKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		if m.panel == panelMemory {
 			return m, m.memConsolidate("env")
+		}
+	case "o":
+		if m.panel == panelAgents {
+			// Jump to the delegating transcript step, expanded.
+			return m, m.jumpToAgentStep()
 		}
 	case "r":
 		if m.panel == panelSessions {

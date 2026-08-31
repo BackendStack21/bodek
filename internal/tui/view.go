@@ -809,6 +809,9 @@ func (m *Model) renderStep(s step, streaming bool, msgIdx, stepIdx, startLine in
 			}
 			details = append(details, th.stepRes.Render(truncate(line, detailBudget)))
 		}
+		for _, ln := range s.pendingAgentLines() {
+			details = append(details, th.stepArg.Render(truncate(ln, detailBudget)))
+		}
 		for _, lg := range s.logs {
 			if strings.TrimSpace(lg) != "" {
 				details = append(details, th.stepRes.Render(truncate(lg, detailBudget)))
