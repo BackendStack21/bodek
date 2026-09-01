@@ -75,8 +75,12 @@ func TestPanelKeyBoundsAndQuit(t *testing.T) {
 		t.Errorf("panelSel = %d", m.panelSel)
 	}
 	m.Update(key("ctrl+c"))
+	if m.confirm != confirmQuit || m.quitting {
+		t.Fatalf("ctrl+c in panel should arm the gate: confirm=%v quitting=%v", m.confirm, m.quitting)
+	}
+	m.Update(key("ctrl+c"))
 	if !m.quitting {
-		t.Error("ctrl+c in panel should quit")
+		t.Error("second ctrl+c in panel should quit")
 	}
 }
 

@@ -218,8 +218,7 @@ func fuzzyScore(query, s string) (int, bool) {
 func (m *Model) handlePaletteKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "ctrl+c":
-		m.quitting = true
-		return m, tea.Quit
+		return m, m.armConfirm(confirmQuit, "bodek")
 	case "esc", "ctrl+k":
 		m.pal.open = false
 		m.relayout()

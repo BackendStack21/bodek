@@ -228,11 +228,16 @@ func TestQueueStripKeyboardFocus(t *testing.T) {
 		t.Errorf("typing after esc must reach the input, got %q", m.ta.Value())
 	}
 
-	// ctrl+c still quits while focused — the strip never traps the exit.
+	// ctrl+c still reaches the gate while focused — the strip never traps
+	// the exit; a second ^C confirms it.
 	m.Update(key("ctrl+q"))
 	m.Update(key("ctrl+c"))
+	if m.confirm != confirmQuit || m.quitting {
+		t.Fatalf("ctrl+c must still arm the gate from queue focus: confirm=%v quitting=%v", m.confirm, m.quitting)
+	}
+	m.Update(key("ctrl+c"))
 	if !m.quitting {
-		t.Error("ctrl+c must still quit from queue focus mode")
+		t.Error("second ctrl+c must quit from queue focus mode")
 	}
 }
 

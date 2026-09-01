@@ -79,8 +79,7 @@ func (m *Model) handleApprovalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.vp.GotoBottom()
 		return m, nil
 	case "ctrl+c":
-		m.quitting = true
-		return m, tea.Quit
+		return m, m.armConfirm(confirmQuit, "bodek")
 	}
 	return m, nil
 }
@@ -115,8 +114,7 @@ func (m *Model) handleFrictionKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.vp.GotoBottom()
 		return m, nil
 	case "ctrl+c":
-		m.quitting = true
-		return m, tea.Quit
+		return m, m.armConfirm(confirmQuit, "bodek")
 	default:
 		// Single printable runes only — modifiers (ctrl+X, alt+X) must not
 		// splice escape bytes into the confirmation buffer.

@@ -289,7 +289,11 @@ func TestTinyHelpers(t *testing.T) {
 func TestQuitKeys(t *testing.T) {
 	m := wired(t)
 	m.Update(key("ctrl+c"))
+	if m.confirm != confirmQuit || m.quitting {
+		t.Fatalf("ctrl+c should arm the gate: confirm=%v quitting=%v", m.confirm, m.quitting)
+	}
+	m.Update(key("ctrl+c"))
 	if !m.quitting {
-		t.Error("ctrl+c should set quitting")
+		t.Error("second ctrl+c should set quitting")
 	}
 }

@@ -271,6 +271,7 @@ type Model struct {
 	planAvail        planAvailability    // endpoint health tri-state
 	planTrig         bool                // a plan tool_call awaits tail-batch pickup
 	planResetPending bool                // session changed; reset+refetch at tail
+	freshStart       bool                // /new drop: reconnect lands on a fresh session
 	planDebSeq       int                 // debounce window sequence
 	planReqSeq       int                 // fetch request sequence
 	planPollSeq      int                 // armed poll tick sequence
@@ -726,8 +727,7 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	switch msg.String() {
 	case "ctrl+c":
-		m.quitting = true
-		return m, tea.Quit
+		return m, m.armConfirm(confirmQuit, "bodek")
 	case "esc":
 		// The run's kill switch sits behind the same two-step gate as every
 		// other destructive action — esc is too easy to hit by accident.
@@ -906,6 +906,29 @@ func (m *Model) clearConversation() {
 	m.runCtxCum = 0
 	m.lastLatency = 0
 	m.refresh()
+}
+
+// startFreshSession tears down the current conversation AND its server-side
+// session: /clear only wipes the local view, while the session (history,
+// context) keeps accumulating on the server. Dropping sessionID/authToken
+// before the forced redial leaves adoptSession nothing to re-adopt, so the
+// fresh connection stays sessionless — and odek mints a brand-new session
+// (new ID, empty history and memory buffer) on the connection's first prompt.
+// The old session stays on disk, resumable via /sessions.
+func (m *Model) startFreshSession() tea.Cmd {
+	m.clearConversation()
+	m.sessionID = ""
+	m.authToken = ""
+	m.pendModel = m.model // the new session re-asserts the active model
+	m.resetPlanState()
+	m.freshStart = true
+	cl := m.cl
+	return func() tea.Msg {
+		if cl != nil {
+			_ = cl.Close() // the drop runs the standard disconnect→reconnect flow
+		}
+		return nil
+	}
 }
 
 // curApproval returns the head of the approval queue, or nil when empty.

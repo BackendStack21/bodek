@@ -1048,6 +1048,16 @@ func (m *Model) approvalBody() string {
 
 func (m *Model) footer() string {
 	th := m.th
+	// The quit gate outranks every context — ^C can arm it from panels,
+	// overlays, approvals, and the composer alike, so the gate must show
+	// wherever that keypress landed.
+	if m.confirm == confirmQuit {
+		return m.panelFooter(
+			th.footerDanger.Render("quit bodek?"),
+			th.footerKey.Render("y")+th.footerDanger.Render(" quit"),
+			th.footer.Render("any other key cancels"),
+		)
+	}
 	if a := m.curApproval(); a != nil {
 		if a.Friction {
 			return th.footer.Render("  type the word approve + ⏎ · esc denies")

@@ -157,10 +157,15 @@ func TestCommandPopupKeepsTyping(t *testing.T) {
 	if got := m.ta.Value(); got != "/" {
 		t.Errorf("input after backspace = %q, want %q", got, "/")
 	}
-	// ctrl+c still quits while the popup has capture.
+	// ctrl+c arms the quit gate while the popup has capture; a second ^C
+	// confirms.
+	m.Update(key("ctrl+c"))
+	if m.confirm != confirmQuit {
+		t.Error("ctrl+c should arm the quit gate while the popup is open")
+	}
 	m.Update(key("ctrl+c"))
 	if !m.quitting {
-		t.Error("ctrl+c should quit while the popup is open")
+		t.Error("second ctrl+c should quit while the popup is open")
 	}
 }
 

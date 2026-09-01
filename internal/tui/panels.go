@@ -52,6 +52,7 @@ const (
 	confirmClear
 	confirmCancel
 	confirmStopAgent
+	confirmQuit
 )
 
 // handleConfirmKey resolves an armed delete: y fires it against the
@@ -79,6 +80,16 @@ func (m *Model) handleConfirmKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			// armed degrades to a notice — the terminal state still comes
 			// from subagent_state, never from the ack.
 			return m, m.stopAgent(m.stopTarget)
+		case confirmQuit:
+			m.quitting = true
+			return m, tea.Quit
+		}
+	case "ctrl+c":
+		// A second ^C is the muscle-memory confirm for the quit gate —
+		// for every other armed action it disarms like any key.
+		if kind == confirmQuit {
+			m.quitting = true
+			return m, tea.Quit
 		}
 	}
 	m.refresh()
@@ -97,6 +108,8 @@ func (m *Model) armConfirm(kind confirmKind, what string) tea.Cmd {
 		verb = "cancel "
 	case confirmStopAgent:
 		verb = "stop "
+	case confirmQuit:
+		verb = "quit "
 	}
 	m.panelMsg = verb + what + "?  y confirm · any other key cancels"
 	m.refresh()
@@ -246,8 +259,7 @@ func (m *Model) handlePanelKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.panelDetail && mgmtPanel(m.panel) {
 		switch msg.String() {
 		case "ctrl+c":
-			m.quitting = true
-			return m, tea.Quit
+			return m, m.armConfirm(confirmQuit, "bodek")
 		case "esc", "q":
 			m.closeDetail()
 			return m, nil
@@ -303,8 +315,7 @@ func (m *Model) handlePanelKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 	switch msg.String() {
 	case "ctrl+c":
-		m.quitting = true
-		return m, tea.Quit
+		return m, m.armConfirm(confirmQuit, "bodek")
 	case "esc", "ctrl+r", "ctrl+o", "q":
 		m.closePanel()
 		return m, nil
@@ -472,8 +483,7 @@ func (m *Model) handlePanelKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (m *Model) handlePanelEditKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "ctrl+c":
-		m.quitting = true
-		return m, tea.Quit
+		return m, m.armConfirm(confirmQuit, "bodek")
 	case "esc":
 		m.panelEdit = panelEditNone
 		m.panelDraft = ""

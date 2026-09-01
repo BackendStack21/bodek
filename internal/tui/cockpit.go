@@ -61,8 +61,7 @@ func (m *Model) handleCockpitMsg(msg cockpitMsg) tea.Cmd {
 func (m *Model) handlePopoverKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "ctrl+c":
-		m.quitting = true
-		return m, tea.Quit
+		return m, m.armConfirm(confirmQuit, "bodek")
 	case "esc", "h", "q":
 		m.popover = false
 		m.refresh()

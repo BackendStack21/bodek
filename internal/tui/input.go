@@ -41,8 +41,7 @@ func (m *Model) handleACKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.closeAC()
 		return m, nil
 	case "ctrl+c":
-		m.quitting = true
-		return m, tea.Quit
+		return m, m.armConfirm(confirmQuit, "bodek")
 	}
 	// Any other key is plain input: forward it to the textarea, then
 	// re-evaluate the popup against the new value — typing narrows the
