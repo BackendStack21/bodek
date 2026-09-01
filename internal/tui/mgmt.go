@@ -610,6 +610,9 @@ func (m *Model) agentRowsRender(w int) []string {
 		if e.DurationSeconds > 0 {
 			detail += fmt.Sprintf(" · %.1fs", e.DurationSeconds)
 		}
+		if e.CostUSD > 0 {
+			detail += " · " + fmtCost(e.CostUSD)
+		}
 		budget := w - 2 - lipgloss.Width(detail)
 		label := agentStatusGlyph(e.Phase, e.Status) + " " + goal
 		prefix, lab := "  ", th.acItem.Render(truncate(label, budget))
@@ -624,12 +627,15 @@ func (m *Model) agentRowsRender(w int) []string {
 // agentStatusGlyph mirrors the live-card glyph set.
 func agentStatusGlyph(phase, status string) string {
 	if phase != "finished" {
+		if phase == "queued" {
+			return "◌"
+		}
 		return "⟳"
 	}
 	switch status {
 	case "success":
 		return "✓"
-	case "partial":
+	case "partial", "budget_exhausted":
 		return "◐"
 	case "error":
 		return "✗"
@@ -718,6 +724,42 @@ func (m *Model) mgmtDetailLines(w int) []string {
 		}
 		if !e.FinishedAt.IsZero() {
 			out = append(out, th.acDetail.Render("finished "+e.FinishedAt.String()))
+		}
+		if e.Profile != "" || e.MaxRisk != "" {
+			var trust []string
+			if e.Profile != "" {
+				trust = append(trust, "profile="+sanitize(e.Profile))
+			}
+			if e.MaxRisk != "" {
+				trust = append(trust, "risk="+sanitize(e.MaxRisk))
+			}
+			out = append(out, th.acDetail.Render(strings.Join(trust, " · ")))
+		}
+		if e.BudgetSeconds > 0 || e.BudgetIterations > 0 || e.BudgetCostUSD > 0 {
+			var b []string
+			if e.BudgetSeconds > 0 {
+				b = append(b, fmt.Sprintf("%ds", e.BudgetSeconds))
+			}
+			if e.BudgetIterations > 0 {
+				b = append(b, fmt.Sprintf("%d it", e.BudgetIterations))
+			}
+			if e.BudgetCostUSD > 0 {
+				b = append(b, strings.TrimPrefix(fmtCost(e.BudgetCostUSD), "~"))
+			}
+			out = append(out, th.acDetail.Render("budget "+strings.Join(b, " · ")))
+		}
+		if e.CostUSD > 0 {
+			out = append(out, th.acDetail.Render("cost "+fmtCost(e.CostUSD)))
+		}
+		if len(e.Artifacts) > 0 {
+			out = append(out, th.acDetail.Render(fmt.Sprintf("%d artifacts", len(e.Artifacts))))
+			for _, art := range e.Artifacts {
+				al := "⎘ " + sanitize(art.ID)
+				if art.Path != "" {
+					al += " · " + sanitize(art.Path)
+				}
+				out = append(out, th.acDetail.Render(al))
+			}
 		}
 	case panelTools:
 		r := m.toolSelected()

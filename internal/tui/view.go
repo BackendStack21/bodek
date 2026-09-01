@@ -803,11 +803,24 @@ func (m *Model) renderStep(s step, streaming bool, msgIdx, stepIdx, startLine in
 		var details []string
 		for _, a := range s.agents {
 			line := agentCardLine(a)
+			styled := th.stepRes.Render(truncate(line, detailBudget))
 			if a.failed() {
-				details = append(details, th.stepErr.Render(truncate(line, detailBudget)))
-				continue
+				styled = th.stepErr.Render(truncate(line, detailBudget))
 			}
-			details = append(details, th.stepRes.Render(truncate(line, detailBudget)))
+			if badge := cardTrustBadge(a); badge != "" {
+				styled += th.stepArg.Render("  " + badge)
+			}
+			details = append(details, styled)
+			for _, art := range a.artifacts {
+				al := "⎘ " + art.ID
+				if art.Path != "" {
+					al += " · " + art.Path
+				}
+				if art.Bytes > 0 {
+					al += fmt.Sprintf(" (%s)", human(int(art.Bytes)))
+				}
+				details = append(details, th.stepArg.Render(truncate(collapse(al), detailBudget)))
+			}
 		}
 		for _, ln := range s.pendingAgentLines() {
 			details = append(details, th.stepArg.Render(truncate(ln, detailBudget)))

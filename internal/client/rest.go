@@ -316,6 +316,15 @@ type SubagentEntry struct {
 	LastTool        string    `json:"last_tool,omitempty"`
 	DurationSeconds float64   `json:"duration_seconds,omitempty"`
 	TokensUsed      int       `json:"tokens_used,omitempty"`
+
+	// wire v2 — omitted when the engine predates it
+	Profile          string          `json:"profile,omitempty"`
+	MaxRisk          string          `json:"max_risk,omitempty"`
+	BudgetSeconds    int             `json:"budget_seconds,omitempty"`
+	BudgetIterations int             `json:"budget_iterations,omitempty"`
+	CostUSD          float64         `json:"cost_usd,omitempty"`
+	BudgetCostUSD    float64         `json:"budget_cost_usd,omitempty"`
+	Artifacts        []StateArtifact `json:"artifacts,omitempty"`
 }
 
 // Subagents fetches the sub-agent registry snapshot, optionally filtered by

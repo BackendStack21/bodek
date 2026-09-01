@@ -201,7 +201,13 @@ own front-end settings are separate; see [Configuration](#configuration).
   `2/3 · 1 ✗ · 8.1k tok` — a terminal failure sticks to the notice strip
   until the turn ends, and every delegating turn closes with a
   `swarm: 5 ✓ · 1 ✗ — SA4 error` verdict. A disconnect retires in-flight
-  cards (`× lost on disconnect`) instead of leaving ghost spinners.
+  cards (`× lost on disconnect`) instead of leaving ghost spinners. Wire v2
+  (odek): queued tasks render as `◌ · queued` and count in the rollup
+  (`0/8 agents · 6 queued`); cards carry trust badges (resolved profile +
+  effective risk ceiling, in the expanded details), budget horizons
+  (`it 9/15`, `12s/30m`), and per-task cost (`~$0.0421/$0.5` when priced);
+  result cards list artifacts (`⎘`) and policy denials (`⊘ N denied`) —
+  sub-agents are deny-not-prompt: they never block on approvals.
   `ctrl+s` (or `/stop <SA#>`, two-step confirmed) stops one running
   sub-agent of the current turn; the `/agents` tab's `c` reaches any live
   task through the instance registry.
@@ -377,7 +383,8 @@ full command and press `⏎`.
   `p` refresh pending approvals, `e` drill into the run's event trail.
 - **Agents** — the serve instance's sub-agent registry, live-polled every 3s;
   `c` stop the highlighted row (two-step, same gate as `/stop`), `o` jump to
-  the delegating transcript step, `⏎` the full registry record.
+  the delegating transcript step, `⏎` the full registry record — trust,
+  budget, cost, and artifact lines included.
 - **Events** — the `odek.event/v1` ring: `f` filter to this session, `x`
   clear filters (a runs-tab drill-in scopes it to one run).
 - **Plan** — the engine's structured task plan (Telegram-parity renderer):

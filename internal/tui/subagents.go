@@ -21,8 +21,8 @@ import (
 type agentCard struct {
 	taskID   string
 	idx      int
-	phase    string // started | active | finished
-	status   string // running | success | partial | error | cancelled | timeout
+	phase    string // queued | started | active | finished
+	status   string // running | queued | success | partial | budget_exhausted | error | cancelled | timeout
 	step     int
 	tool     string
 	iters    int
@@ -32,6 +32,15 @@ type agentCard struct {
 	goal     string    // manifest goal excerpt (parent arg; "" when unknown)
 	seen     time.Time // first frame locally observed; drives the live elapsed
 	lost     bool      // socket dropped while running: retired, never a ghost
+
+	// wire v2 identity/budget/cost (omitempty on the wire; ""/0 = unreported)
+	profile       string
+	maxRisk       string
+	budgetS       int
+	budgetIt      int
+	costUSD       float64
+	budgetCostUSD float64
+	artifacts     []client.StateArtifact
 }
 
 // finished reports whether the card reached a terminal state.
@@ -41,15 +50,18 @@ func (a *agentCard) finished() bool { return a.phase == "finished" }
 // odek's status framing (user cancel and deadline timeout never conflate).
 func (a *agentCard) glyph() string {
 	if !a.finished() {
-		if a.lost {
+		switch {
+		case a.lost:
 			return "×" // orphaned by a disconnect: dead, not spinning
+		case a.phase == "queued":
+			return "◌" // accepted by the engine, not spawned yet
 		}
 		return "⟳"
 	}
 	switch a.status {
 	case "success":
 		return "✓"
-	case "partial":
+	case "partial", "budget_exhausted":
 		return "◐"
 	case "error":
 		return "✗"
@@ -99,10 +111,12 @@ func (m *Model) attachSubState(i int, ev client.Event) bool {
 		card := s.card(ev.TaskID)
 		if card == nil {
 			card = &agentCard{taskID: ev.TaskID, idx: ev.TaskIdx, status: "running", seen: time.Now()}
-			// Seed identity from the delegate manifest: goal and profile ride
-			// the parent's tool_call arg, never the wire frames.
+			// Seed identity from the delegate manifest (the pre-v2 fallback):
+			// goals/profiles/risk ride the parent's tool_call arg, never the
+			// old wire frames. Newer frames overwrite with effective values.
 			if ev.TaskIdx >= 0 && ev.TaskIdx < len(s.manifest) {
-				card.goal = s.manifest[ev.TaskIdx].goal
+				slot := s.manifest[ev.TaskIdx]
+				card.goal, card.profile, card.maxRisk = slot.goal, slot.profile, slot.maxRisk
 			}
 			s.agents = append(s.agents, card)
 		}
@@ -119,6 +133,33 @@ func (m *Model) attachSubState(i int, ev client.Event) bool {
 		card.iters = ev.Iterations
 		card.tokens = ev.TokensUsed
 		card.durS = ev.DurationSeconds
+		// Wire-v2 identity/budget/cost: non-empty wire values overwrite the
+		// manifest-seeded guesses (queued frames carry the requested profile
+		// and risk; started+ frames carry the effective ones).
+		if ev.Goal != "" {
+			card.goal = collapse(ev.Goal)
+		}
+		if ev.Profile != "" {
+			card.profile = collapse(ev.Profile)
+		}
+		if ev.MaxRisk != "" {
+			card.maxRisk = collapse(ev.MaxRisk)
+		}
+		if ev.BudgetSeconds > 0 {
+			card.budgetS = ev.BudgetSeconds
+		}
+		if ev.BudgetIterations > 0 {
+			card.budgetIt = ev.BudgetIterations
+		}
+		if ev.CostUSD > 0 {
+			card.costUSD = ev.CostUSD
+		}
+		if ev.BudgetCostUSD > 0 {
+			card.budgetCostUSD = ev.BudgetCostUSD
+		}
+		if len(ev.Artifacts) > 0 {
+			card.artifacts = ev.Artifacts
+		}
 		if card.lost {
 			card.lost = false // frames resumed after a reconnect: alive again
 		}
@@ -141,9 +182,12 @@ func agentCardLine(a *agentCard) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "%s SA%d", a.glyph(), a.idx+1)
 	if !a.finished() {
-		if a.lost {
+		switch {
+		case a.lost:
 			b.WriteString(" · lost on disconnect")
-		} else {
+		case a.phase == "queued":
+			b.WriteString(" · queued")
+		default:
 			if a.step > 0 {
 				fmt.Fprintf(&b, " · step %d", a.step)
 			}
@@ -152,8 +196,13 @@ func agentCardLine(a *agentCard) string {
 			}
 			if !a.seen.IsZero() {
 				// Client-side elapsed: state frames arrive in bursts, so the
-				// server-reported duration freezes between them.
-				b.WriteString(" · " + formatStepDur(time.Since(a.seen)))
+				// server-reported duration freezes between them. Paired with
+				// the wall-clock cap when the engine declares one.
+				elapsed := formatStepDur(time.Since(a.seen))
+				if a.budgetS > 0 {
+					elapsed += "/" + formatStepDur(time.Duration(a.budgetS)*time.Second)
+				}
+				b.WriteString(" · " + elapsed)
 			}
 		}
 	} else if a.status != "" && a.status != "success" {
@@ -163,13 +212,24 @@ func agentCardLine(a *agentCard) string {
 		b.WriteString(" · stop sent")
 	}
 	if a.iters > 0 {
-		fmt.Fprintf(&b, " · %d it", a.iters)
+		if a.budgetIt > 0 {
+			fmt.Fprintf(&b, " · it %d/%d", a.iters, a.budgetIt)
+		} else {
+			fmt.Fprintf(&b, " · %d it", a.iters)
+		}
 	}
 	if a.tokens > 0 {
 		b.WriteString(" · " + human(a.tokens) + " tok")
 	}
 	if a.durS > 0 {
 		b.WriteString(" · " + formatStepDur(time.Duration(a.durS*float64(time.Second))))
+	}
+	if a.costUSD > 0 {
+		c := fmtCost(a.costUSD)
+		if a.budgetCostUSD > 0 {
+			c += "/" + strings.TrimPrefix(fmtCost(a.budgetCostUSD), "~")
+		}
+		b.WriteString(" · " + c)
 	}
 	// The goal renders last on purpose: right-edge truncation on narrow
 	// terminals eats the garnish before the vitals.
@@ -185,7 +245,7 @@ func agentRollup(s *step) string {
 	if len(s.agents) == 0 {
 		return ""
 	}
-	done, failed, tokens := 0, 0, 0
+	done, failed, queued, tokens := 0, 0, 0, 0
 	for _, a := range s.agents {
 		if a.finished() {
 			done++
@@ -193,16 +253,41 @@ func agentRollup(s *step) string {
 		if a.failed() {
 			failed++
 		}
+		if a.phase == "queued" {
+			queued++
+		}
 		tokens += a.tokens
 	}
 	rollup := fmt.Sprintf("%d/%d agents", done, len(s.agents))
 	if failed > 0 {
 		rollup += fmt.Sprintf(" · %d ✗", failed)
 	}
+	if queued > 0 {
+		rollup += fmt.Sprintf(" · %d queued", queued)
+	}
 	if tokens > 0 {
 		rollup += " · " + human(tokens) + " tok"
 	}
 	return rollup
+}
+
+// cardTrustBadge renders a card's wire-v2 trust line — the resolved profile
+// and the effective risk ceiling the engine reports. "" when unreported.
+func cardTrustBadge(a *agentCard) string {
+	var parts []string
+	if a.profile != "" {
+		parts = append(parts, "profile="+a.profile)
+	}
+	if a.maxRisk != "" {
+		parts = append(parts, "risk="+a.maxRisk)
+	}
+	return strings.Join(parts, " · ")
+}
+
+// fmtCost renders an estimated cost: "~$0.0421" — shortest exact decimal
+// representation. Absent costs never render as $0 upstream.
+func fmtCost(v float64) string {
+	return "~$" + strconv.FormatFloat(v, 'f', -1, 64)
 }
 
 // ── delegate manifest (per-task identity from the parent's arg) ───────────────
@@ -213,6 +298,7 @@ func agentRollup(s *step) string {
 type taskSlot struct {
 	goal    string // collapsed excerpt, ≤32 runes ("" when absent)
 	profile string // requested profile id, as sent ("" when unset)
+	maxRisk string // requested risk ceiling, as sent ("" when unset)
 }
 
 // parseDelegateManifest extracts per-task slots from a delegate_tasks JSON
@@ -230,9 +316,10 @@ func parseDelegateManifest(data string) []taskSlot {
 		var obj struct {
 			Goal    string `json:"goal"`
 			Profile string `json:"profile"`
+			MaxRisk string `json:"max_risk"`
 		}
 		if err := json.Unmarshal(raw, &obj); err == nil {
-			slots = append(slots, taskSlot{goal: excerptGoal(obj.Goal), profile: collapse(obj.Profile)})
+			slots = append(slots, taskSlot{goal: excerptGoal(obj.Goal), profile: collapse(obj.Profile), maxRisk: collapse(obj.MaxRisk)})
 		}
 	}
 	var env struct {
@@ -481,11 +568,15 @@ func (m *Model) stopByLabel(args string) tea.Cmd {
 // tool_result (headline capped at 2048 by serve): status, summary, changed
 // files, and usage — parsed tolerantly, rendered as a card in the details.
 type agentResult struct {
-	status  string
-	summary string
-	files   []string
-	tokens  int
-	iters   int
+	status       string
+	summary      string
+	files        []string
+	tokens       int
+	iters        int
+	costUSD      float64
+	artifacts    []client.ResultArtifact
+	denials      []client.ResultDenial
+	denialsTotal int
 }
 
 // parseAgentResult extracts the framed-result envelope from delegate tool
@@ -498,11 +589,15 @@ func parseAgentResult(data string) *agentResult {
 		return nil
 	}
 	var env struct {
-		Status       string   `json:"status"`
-		Summary      string   `json:"summary"`
-		FilesChanged []string `json:"files_changed"`
-		TokensUsed   int      `json:"tokens_used"`
-		Iterations   int      `json:"iterations"`
+		Status       string                  `json:"status"`
+		Summary      string                  `json:"summary"`
+		FilesChanged []string                `json:"files_changed"`
+		TokensUsed   int                     `json:"tokens_used"`
+		Iterations   int                     `json:"iterations"`
+		CostUSD      float64                 `json:"cost_usd"`
+		Artifacts    []client.ResultArtifact `json:"artifacts"`
+		Denials      []client.ResultDenial   `json:"denials"`
+		DenialsTotal int                     `json:"denials_total"`
 	}
 	if err := json.Unmarshal([]byte(obj), &env); err != nil {
 		return nil
@@ -510,7 +605,8 @@ func parseAgentResult(data string) *agentResult {
 	if env.Status == "" || env.Summary == "" {
 		return nil
 	}
-	r := &agentResult{status: env.Status, summary: collapse(env.Summary), tokens: env.TokensUsed, iters: env.Iterations}
+	r := &agentResult{status: env.Status, summary: collapse(env.Summary), tokens: env.TokensUsed, iters: env.Iterations,
+		costUSD: env.CostUSD, artifacts: env.Artifacts, denials: env.Denials, denialsTotal: env.DenialsTotal}
 	for _, f := range env.FilesChanged {
 		if f = collapse(f); f != "" {
 			r.files = append(r.files, f)
@@ -556,7 +652,8 @@ func firstJSONObject(s string) string {
 }
 
 // agentResultLines renders the structured result card for the expanded step
-// details: summary, status/usage head, then one line per changed file.
+// details: summary, status/usage head, changed files, then artifact refs and
+// the policy denials the run hit.
 func agentResultLines(m *Model, r *agentResult, budget int) []string {
 	th := m.th
 	parts := []string{r.status, fmt.Sprintf("%d files", len(r.files))}
@@ -565,6 +662,12 @@ func agentResultLines(m *Model, r *agentResult, budget int) []string {
 	}
 	if r.tokens > 0 {
 		parts = append(parts, human(r.tokens)+" tok")
+	}
+	if r.costUSD > 0 {
+		parts = append(parts, fmtCost(r.costUSD))
+	}
+	if r.denialsTotal > 0 {
+		parts = append(parts, fmt.Sprintf("⊘ %d denied", r.denialsTotal))
 	}
 	head := strings.Join(parts, " · ")
 	style := th.stepRes
@@ -575,6 +678,30 @@ func agentResultLines(m *Model, r *agentResult, budget int) []string {
 	lines = append(lines, style.Render(truncate(head, budget)))
 	for _, f := range r.files {
 		lines = append(lines, th.stepRes.Render(truncate("· "+f, budget)))
+	}
+	for _, art := range r.artifacts {
+		al := "⎘ " + collapse(art.ID)
+		if art.URI != "" {
+			al += " · " + collapse(art.URI)
+		}
+		if art.SizeBytes != nil && *art.SizeBytes > 0 {
+			al += fmt.Sprintf(" (%s)", human(int(*art.SizeBytes)))
+		}
+		lines = append(lines, th.stepRes.Render(truncate(al, budget)))
+	}
+	for i, d := range r.denials {
+		if i == 4 {
+			lines = append(lines, th.stepRes.Render(truncate(fmt.Sprintf("… +%d more", len(r.denials)-4), budget)))
+			break
+		}
+		dl := "⊘ " + collapse(d.Tool)
+		if d.Class != "" {
+			dl += " (" + collapse(d.Class) + ")"
+		}
+		if d.Reason != "" {
+			dl += " — " + collapse(d.Reason)
+		}
+		lines = append(lines, th.stepRes.Render(truncate(dl, budget)))
 	}
 	return lines
 }
