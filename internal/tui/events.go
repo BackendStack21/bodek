@@ -375,7 +375,11 @@ func (m *Model) handleEvent(ev client.Event) (tea.Model, tea.Cmd) {
 		m.relayout() // the busy status line is gone with the socket
 		if cmd := m.scheduleReconnect(0); cmd != nil {
 			m.status = "reconnecting…"
-			m.addTransientNote("connection lost — reconnecting…")
+			if m.freshStart {
+				m.addTransientNote("starting a fresh session…")
+			} else {
+				m.addTransientNote("connection lost — reconnecting…")
+			}
 			m.refresh()
 			// The interim note fades via the sweep; the reconnect outcome
 			// (success or the ⏎-retry hint) replaces it within seconds.

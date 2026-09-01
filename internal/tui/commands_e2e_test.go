@@ -297,6 +297,17 @@ func TestE2EAllCommands(t *testing.T) {
 				t.Fatal("/quit did not set quitting")
 			}
 		},
+		"/new": func(t *testing.T, m *Model) {
+			if m.sessionID != "" || m.authToken != "" {
+				t.Fatalf("session identity not dropped: sid=%q", m.sessionID)
+			}
+			if len(m.msgs) != 0 {
+				t.Fatalf("transcript not wiped: %d msgs", len(m.msgs))
+			}
+			if !m.freshStart {
+				t.Fatal("freshStart not armed for the reconnect note")
+			}
+		},
 		"/plan": func(t *testing.T, m *Model) {
 			if m.panel != panelPlan {
 				t.Fatalf("/plan opened panel %d", m.panel)
@@ -330,6 +341,9 @@ func TestE2EAllCommands(t *testing.T) {
 			case "/cancel":
 				m.busy = true
 				m.sessionID, m.authToken = "s1", "a1"
+			case "/new":
+				m.sessionID, m.authToken = "s1", "a1"
+				m.msgs = append(m.msgs, message{role: roleUser, content: "x"})
 			case "/attach":
 				dir := t.TempDir()
 				path := filepath.Join(dir, "notes.txt")
