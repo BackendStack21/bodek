@@ -391,7 +391,7 @@ func (m *Model) statsBody() string {
 		// otherwise the client-side twin resolves it. Hidden unless odek has
 		// both token prices configured.
 		if inPrice, outPrice := m.prices(); inPrice > 0 && outPrice > 0 {
-			costVal := th.statsValue.Render(formatUSD(costUSD(m.sessCtxTok, m.sessOutTok, inPrice, outPrice)))
+			costVal := th.statsValue.Render(formatUSD(costUSD(m.sessCtxTok, m.sessOutTok, inPrice, outPrice) + m.subCostTotal()))
 			if m.limits.MaxCostUSD > 0 {
 				costVal += th.statsDim.Render("  · cap " + formatUSD(m.limits.MaxCostUSD))
 			}

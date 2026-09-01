@@ -145,7 +145,7 @@ func (m *Model) cockpitBudgetSection() string {
 		rows = append(rows, [2]string{"tool calls", fmt.Sprintf("%d", l.MaxToolCalls)})
 	}
 	if l.MaxCostUSD > 0 {
-		spend := formatUSD(costUSD(m.sessCtxTok, m.sessOutTok, inPrice, outPrice))
+		spend := formatUSD(costUSD(m.sessCtxTok, m.sessOutTok, inPrice, outPrice) + m.subCostTotal())
 		rows = append(rows, [2]string{"cost cap", fmt.Sprintf("%s of %s", spend, formatUSD(l.MaxCostUSD))})
 	}
 	if inPrice > 0 && outPrice > 0 {

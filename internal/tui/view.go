@@ -99,10 +99,11 @@ func (m *Model) header() string {
 	// Sandbox status, prominently colored: green ● when isolated, amber ▲
 	// when the agent has host access.
 	tail += th.headerMeta.Render("  ·  ") + m.sandboxBadge()
-	// Session spend rides the left cluster; hidden until odek reports both
+	// Session spend rides the left cluster: main-loop tokens plus every
+	// finished sub-agent's reported cost; hidden until odek reports both
 	// token prices (never show a guessed $0).
 	if inPrice, outPrice := m.prices(); inPrice > 0 && outPrice > 0 {
-		tail += th.headerMeta.Render("  ·  ") + th.headerKey.Render(formatUSD(costUSD(m.sessCtxTok, m.sessOutTok, inPrice, outPrice)))
+		tail += th.headerMeta.Render("  ·  ") + th.headerKey.Render(formatUSD(costUSD(m.sessCtxTok, m.sessOutTok, inPrice, outPrice)+m.subCostTotal()))
 	}
 
 	status := m.statusBadge()

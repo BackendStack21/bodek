@@ -238,6 +238,7 @@ type Model struct {
 	usageSnap  *client.Usage
 
 	sessCtxTok int
+	subCosts   map[string]float64 // finished sub-agent final costs by task id (wire v2 P6)
 	sessOutTok int
 	winCtxTok  int // live context-window fill: last request's prompt size
 	runCtxCum  int // last cumulative run contextTokens seen (odek reports per-run
@@ -900,6 +901,7 @@ func (m *Model) clearConversation() {
 	m.sessionStart = time.Time{}
 	m.sessCtxTok = 0
 	m.sessOutTok = 0
+	m.subCosts = nil
 	m.winCtxTok = 0
 	m.runCtxCum = 0
 	m.lastLatency = 0
