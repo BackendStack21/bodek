@@ -490,6 +490,29 @@ func (m *Model) untrackLive(taskID string) {
 	}
 }
 
+// recordSubCost banks a finished task's engine-reported final cost (wire
+// v2 P6): upserted per task id, so replayed frames overwrite instead of
+// doubling. Stray frames still count — cost spent is cost spent. A zero
+// or absent cost records nothing: unavailable is never $0.
+func (m *Model) recordSubCost(ev client.Event) {
+	if ev.Phase != "finished" || ev.TaskID == "" || ev.CostUSD <= 0 {
+		return
+	}
+	if m.subCosts == nil {
+		m.subCosts = make(map[string]float64)
+	}
+	m.subCosts[ev.TaskID] = ev.CostUSD
+}
+
+// subCostTotal sums the banked sub-agent costs; 0 when nothing reported.
+func (m *Model) subCostTotal() float64 {
+	var total float64
+	for _, c := range m.subCosts {
+		total += c
+	}
+	return total
+}
+
 // liveCard finds an unfinished card by task id: the cross-turn live registry
 // first, then the current-turn scan as a fallback.
 func (m *Model) liveCard(taskID string) *agentCard {

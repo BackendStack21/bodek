@@ -324,6 +324,9 @@ func (m *Model) handleEvent(ev client.Event) (tea.Model, tea.Cmd) {
 		// Per-task lifecycle telemetry (odek v1.30+): attach to the
 		// in-flight sub-agent step; strays (resumed turn, idle, late
 		// frames) fall back to a notice so nothing vanishes silently.
+		// The finished frame's final cost banks first — spent is spent
+		// even when the frame has no step left to attach to.
+		m.recordSubCost(ev)
 		if i := m.cur(); i >= 0 && m.attachSubState(i, ev) {
 			stream = true // coalesce redraws — state frames arrive in bursts
 			m.subagentTerminalNote(ev)

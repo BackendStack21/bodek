@@ -909,6 +909,7 @@ func (m *Model) handleSessionDetail(msg sessionDetailMsg) tea.Cmd {
 	m.sessionStart = time.Time{}
 	m.sessCtxTok = 0
 	m.sessOutTok = 0
+	m.subCosts = nil
 	m.winCtxTok = 0
 	m.runCtxCum = 0
 	m.lastLatency = 0
