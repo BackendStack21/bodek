@@ -120,6 +120,13 @@ func (m *Model) handleEvent(ev client.Event) (tea.Model, tea.Cmd) {
 					steps[j].isErr = looksLikeError(steps[j].result)
 					if steps[j].subagent {
 						steps[j].resultCard = parseAgentResult(ev.Data)
+						if rc := steps[j].resultCard; rc != nil && rc.denialsTotal > 0 {
+							note := fmt.Sprintf("sub-agent · %d denied op", rc.denialsTotal)
+							if rc.denialsTotal > 1 {
+								note += "s"
+							}
+							m.addTransientNote(note + " — see the result card")
+						}
 					}
 					if !steps[j].started.IsZero() {
 						steps[j].dur = time.Since(steps[j].started)
@@ -602,7 +609,7 @@ func (m *Model) swarmVerdict(msg *message) string {
 				}
 			case a.status == "success":
 				ok++
-			case a.status == "partial":
+			case a.status == "partial", a.status == "budget_exhausted":
 				partial++
 			case a.status == "error":
 				failed++

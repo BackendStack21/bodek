@@ -108,7 +108,7 @@ func (m *Model) handleApprovalExpiry(now time.Time) tea.Cmd {
 	} else {
 		m.status = "thinking"
 	}
-	if len(m.approvals) == 0 || m.approvals[0] != oldHead {
+	if len(m.approvals) == 0 || m.approvals[0].ID != oldHead.ID {
 		m.resetApprovalInput()
 		m.relayout()
 	}

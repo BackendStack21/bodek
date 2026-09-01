@@ -103,12 +103,48 @@ type Event struct {
 	// (both frames carry "status").
 	TaskID          string  `json:"task_id,omitempty"`
 	RunKey          string  `json:"run_key,omitempty"`
-	Phase           string  `json:"phase,omitempty"` // started | active | finished
+	Phase           string  `json:"phase,omitempty"` // queued | started | active | finished
 	Step            int     `json:"step,omitempty"`
 	Iterations      int     `json:"iterations,omitempty"`
 	Tool            string  `json:"tool,omitempty"`
 	DurationSeconds float64 `json:"duration_seconds,omitempty"`
 	TokensUsed      int     `json:"tokens_used,omitempty"`
+
+	// Wire v2 (odek): identity, budgets, and cost on state frames — all
+	// omitted when unset, so older engines degrade to the block above only.
+	Goal             string          `json:"goal,omitempty"`
+	Profile          string          `json:"profile,omitempty"`
+	MaxRisk          string          `json:"max_risk,omitempty"`
+	BudgetSeconds    int             `json:"budget_seconds,omitempty"`
+	BudgetIterations int             `json:"budget_iterations,omitempty"`
+	CostUSD          float64         `json:"cost_usd,omitempty"`
+	BudgetCostUSD    float64         `json:"budget_cost_usd,omitempty"`
+	Artifacts        []StateArtifact `json:"artifacts,omitempty"`
+}
+
+// StateArtifact is the bounded artifact metadata carried on subagent_state
+// frames and registry entries (wire v2).
+type StateArtifact struct {
+	ID    string `json:"id"`
+	Path  string `json:"path,omitempty"`
+	Bytes int64  `json:"bytes,omitempty"`
+}
+
+// ResultArtifact is one artifact.Ref from a framed sub-agent result
+// (odek.artifact-ref/v1).
+type ResultArtifact struct {
+	ID        string `json:"id"`
+	URI       string `json:"uri,omitempty"`
+	MediaType string `json:"media_type,omitempty"`
+	Summary   string `json:"summary,omitempty"`
+	SizeBytes *int64 `json:"size_bytes,omitempty"`
+}
+
+// ResultDenial is one policy denial reported in a framed sub-agent result.
+type ResultDenial struct {
+	Tool   string `json:"tool"`
+	Class  string `json:"class,omitempty"`
+	Reason string `json:"reason"`
 }
 
 // EventDisconnected is a synthetic Type emitted on the Events channel when the
