@@ -111,10 +111,12 @@ func (m *Model) attachSubState(i int, ev client.Event) bool {
 		card := s.card(ev.TaskID)
 		if card == nil {
 			card = &agentCard{taskID: ev.TaskID, idx: ev.TaskIdx, status: "running", seen: time.Now()}
-			// Seed identity from the delegate manifest: goal and profile ride
-			// the parent's tool_call arg, never the wire frames.
+			// Seed identity from the delegate manifest (the pre-v2 fallback):
+			// goals/profiles/risk ride the parent's tool_call arg, never the
+			// old wire frames. Newer frames overwrite with effective values.
 			if ev.TaskIdx >= 0 && ev.TaskIdx < len(s.manifest) {
-				card.goal = s.manifest[ev.TaskIdx].goal
+				slot := s.manifest[ev.TaskIdx]
+				card.goal, card.profile, card.maxRisk = slot.goal, slot.profile, slot.maxRisk
 			}
 			s.agents = append(s.agents, card)
 		}
@@ -314,9 +316,10 @@ func parseDelegateManifest(data string) []taskSlot {
 		var obj struct {
 			Goal    string `json:"goal"`
 			Profile string `json:"profile"`
+			MaxRisk string `json:"max_risk"`
 		}
 		if err := json.Unmarshal(raw, &obj); err == nil {
-			slots = append(slots, taskSlot{goal: excerptGoal(obj.Goal), profile: collapse(obj.Profile)})
+			slots = append(slots, taskSlot{goal: excerptGoal(obj.Goal), profile: collapse(obj.Profile), maxRisk: collapse(obj.MaxRisk)})
 		}
 	}
 	var env struct {
