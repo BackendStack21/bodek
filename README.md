@@ -313,7 +313,7 @@ own front-end settings are separate; see [Configuration](#configuration).
 | `F1` | Show the help card |
 | `wheel` (with `--mouse`) | Scroll the transcript · click tool rows, turn heads, and the cockpit |
 | `⏎` (disconnected, empty input) | Retry the connection |
-| `^C` | Quit |
+| `^C` | Quit (confirm: `y` or a second `^C`) |
 
 **Every printable character always types.** No bare letter, digit, or
 punctuation key is ever bound in the composer — actions live on chords and
@@ -342,6 +342,7 @@ full command and press `⏎`.
 |---------|--------|
 | `/help` | Show available commands and key bindings |
 | `/clear` | Clear the conversation (two-step confirm; idle only) |
+| `/new` | Start a fresh session — new ID, empty context; the old one stays resumable via `/sessions` (idle only) |
 | `/copy` | Copy the last reply to the clipboard (OSC 52) |
 | `/retry` | Re-send the last prompt (queues it if a turn is running) |
 | `/theme [name]` | Switch the color theme at runtime and persist it (`ember-dark` · `ember-light` · `high-contrast` · `classic`) |

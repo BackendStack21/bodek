@@ -35,6 +35,21 @@ func slashCommands() []command {
 			}
 			return m.armConfirm(confirmClear, "the conversation")
 		}},
+		{"new", "start a fresh session (the old one stays resumable)", func(m *Model, _ string) tea.Cmd {
+			// Idle-only like /clear, plus the connection-scoped state a
+			// forced redial would destroy: pending approvals die with the
+			// socket, and queued prompts belong to THIS conversation.
+			if m.busy {
+				return m.transientNoteCmd("can't start a new session while a turn runs — esc cancels it first")
+			}
+			if len(m.approvals) > 0 {
+				return m.transientNoteCmd("answer the pending approval first — it dies with the connection")
+			}
+			if len(m.queue) > 0 {
+				return m.transientNoteCmd("drain the prompt queue first (ctrl+q)")
+			}
+			return m.startFreshSession()
+		}},
 		{"copy", "copy the last reply to the clipboard (OSC 52)", func(m *Model, _ string) tea.Cmd {
 			return m.copyLastReply()
 		}},

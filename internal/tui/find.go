@@ -40,8 +40,7 @@ func (m *Model) closeFind() {
 func (m *Model) handleFindKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "ctrl+c":
-		m.quitting = true
-		return m, tea.Quit
+		return m, m.armConfirm(confirmQuit, "bodek")
 	case "esc", "alt+f":
 		m.closeFind()
 		return m, nil

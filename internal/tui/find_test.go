@@ -142,10 +142,14 @@ func TestFindKeyRouting(t *testing.T) {
 	seedConversation(m)
 	m.Update(key("alt+f"))
 
-	// ctrl+c quits from the find bar like from anywhere else.
+	// ctrl+c arms the quit gate from the find bar like from anywhere else.
+	m.Update(key("ctrl+c"))
+	if m.confirm != confirmQuit || m.quitting {
+		t.Fatalf("ctrl+c in the find bar did not arm the gate: confirm=%v quitting=%v", m.confirm, m.quitting)
+	}
 	m.Update(key("ctrl+c"))
 	if !m.quitting {
-		t.Error("ctrl+c in the find bar did not quit")
+		t.Error("second ctrl+c in the find bar did not quit")
 	}
 
 	// Backspace pops the query and rescans; past the last rune it is a

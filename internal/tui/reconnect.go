@@ -58,6 +58,12 @@ func (m *Model) handleReconnect(msg reconnectMsg) (tea.Model, tea.Cmd) {
 		// buffer) without waiting for a prompt, and every prompt still carries
 		// session_id + auth_token as the belt-and-suspenders fallback.
 		note := m.transientNoteCmd("reconnected to odek serve — the session resumes on your next prompt")
+		if m.freshStart {
+			// /new dropped the identity on purpose: nothing was resumed —
+			// the first prompt mints a brand-new session server-side.
+			m.freshStart = false
+			note = m.transientNoteCmd("fresh session — your next prompt starts a new conversation")
+		}
 		m.refresh()
 		return m, tea.Batch(listen(m.events), m.adoptSession(), m.sendQueued(), note)
 	}

@@ -227,8 +227,7 @@ func (m *Model) queueStripKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 	switch msg.String() {
 	case "ctrl+c":
-		m.quitting = true
-		return m, tea.Quit
+		return m, m.armConfirm(confirmQuit, "bodek")
 	case "esc", "enter", "ctrl+q":
 		m.qfocus = false
 	case "up", "k":
