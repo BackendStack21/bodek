@@ -107,6 +107,7 @@ func (m *Model) handleConfirmKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// navigation, not typing.
 	if m.panel == panelNone && msg.Type == tea.KeyRunes && len(msg.Runes) > 0 {
 		m.ta.InsertString(string(msg.Runes))
+		m.syncComposer()
 	}
 	return m, nil
 }

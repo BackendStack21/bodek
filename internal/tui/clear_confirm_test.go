@@ -90,6 +90,7 @@ func TestSlashClearArmsConfirm(t *testing.T) {
 
 	m.Update(key("/"))
 	m.ta.SetValue("/clear")
+	m.closeAC() // SetValue bypasses the hooks: drop the popup "/" opened
 	m.Update(key("enter"))
 
 	if m.confirm != confirmClear {
@@ -112,6 +113,7 @@ func TestSlashClearRefusedWhileBusy(t *testing.T) {
 
 	m.Update(key("/"))
 	m.ta.SetValue("/clear")
+	m.closeAC() // SetValue bypasses the hooks: drop the popup "/" opened
 	m.Update(key("enter"))
 
 	if m.confirm != confirmNone {
