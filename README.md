@@ -290,6 +290,10 @@ own front-end settings are separate; see [Configuration](#configuration).
   desktop notifications. Fires only on terminal states — never per token.
 - **Sandbox aware** — the header shows `🛡 sandboxed` or `⚠ host access`;
   pass `--sandbox` to run tool calls inside odek's Docker isolation.
+- **Wake turns** — when a background job finishes while the session is
+  idle (odek ≥ v1.40), the engine wakes the model on its own; bodek opens
+  the turn from the wire, marks the card `⬡ odek · wake`, and streams the
+  model's report like any other turn — never rendered as a user message.
 
 ---
 
@@ -407,7 +411,9 @@ shared grammar:
   every 3s; a background watcher surfaces starts as transcript notes and
   exits as **alert-tier notes naming the command** — with a bell / desktop
   notification (same gates as turns) so a finished job is never missed,
-  even with the tab closed. `⏎` opens the job's output viewer (`f`
+  even with the tab closed. odek ≥ v1.40 also pushes `bg_job` frames: the
+  snapshot refreshes the moment a job starts or exits, the watcher tick
+  stays as the fallback. `⏎` opens the job's output viewer (`f`
   pages further output), `s` stops a running job (two-step, same gate as
   `/stop`). Jobs are session-scoped: other sessions' jobs never appear.
 - **Events** — the `odek.event/v1` ring: `f` filter to this session, `x`
