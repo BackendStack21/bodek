@@ -250,10 +250,11 @@ func (m *Model) handleEvent(ev client.Event) (tea.Model, tea.Cmd) {
 		if i := m.cur(); i >= 0 {
 			if cancelled {
 				markCancel(&m.msgs[i])
-			} else if m.msgs[i].content == "" {
-				setTurnMarker(&m.msgs[i], "**Error:** "+sanitize(ev.Message))
 			} else {
-				m.addNote("error: " + ev.Message)
+				// Every failure variant lands on the turn itself: the
+				// classified card renders below a partial reply, or as the
+				// turn's only content. No side-note degradation.
+				setTurnMarker(&m.msgs[i], m.errorCard(ev.Message))
 			}
 		} else if !cancelled {
 			m.addNote("error: " + ev.Message)
