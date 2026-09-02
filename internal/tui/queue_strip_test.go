@@ -128,7 +128,8 @@ func TestQueueStripDeleteViaMouse(t *testing.T) {
 	m.queue = []string{"alpha", "beta", "gamma"}
 	m.refresh()
 
-	clickQueueControl(t, m, 1, '✕')
+	clickQueueControl(t, m, 1, '✕') // arms (two-step delete)
+	clickQueueControl(t, m, 1, '✕') // confirms
 	if got := strings.Join(m.queue, ","); got != "alpha,gamma" {
 		t.Errorf("queue = %q, want alpha,gamma (beta deleted)", got)
 	}
@@ -137,6 +138,7 @@ func TestQueueStripDeleteViaMouse(t *testing.T) {
 	}
 
 	// The head row can be deleted too.
+	clickQueueControl(t, m, 0, '✕')
 	clickQueueControl(t, m, 0, '✕')
 	if got := strings.Join(m.queue, ","); got != "gamma" {
 		t.Errorf("queue = %q, want gamma", got)
@@ -209,10 +211,14 @@ func TestQueueStripKeyboardFocus(t *testing.T) {
 		t.Errorf("after l: %q, want alpha,beta", got)
 	}
 
-	// d deletes the selected row.
+	// d arms, second d deletes (two-step, like every destructive action).
+	m.Update(key("d"))
+	if len(m.queue) != 2 {
+		t.Errorf("first d deleted without confirm: %v", m.queue)
+	}
 	m.Update(key("d"))
 	if got := strings.Join(m.queue, ","); got != "alpha" {
-		t.Errorf("after d: %q, want alpha (beta deleted)", got)
+		t.Errorf("after d d: %q, want alpha (beta deleted)", got)
 	}
 	if m.qsel != 0 {
 		t.Errorf("qsel = %d, want clamped 0 after delete", m.qsel)
@@ -292,6 +298,7 @@ func TestQueueStripOverflowCap(t *testing.T) {
 		t.Errorf("overflow tail = %q, want the selected hidden row (ten)", got)
 	}
 	m.Update(key("d"))
+	m.Update(key("d"))
 	if len(m.queue) != 9 || m.queue[8] != "nine" {
 		t.Errorf("queue after delete = %v, want ten removed", m.queue)
 	}
@@ -327,7 +334,8 @@ func TestQueueStripClickUsesCellColumns(t *testing.T) {
 		}
 		m.refresh()
 
-		// ✕ on the head row deletes it.
+		// ✕ on the head row deletes it (two-step: arm, then confirm).
+		clickQueueControl(t, m, 0, '✕')
 		clickQueueControl(t, m, 0, '✕')
 		if len(m.queue) != 1 || m.queue[0] != text {
 			t.Errorf("[%s] ✕ click: queue = %v, want %q deleted", text, m.queue, "second queued")

@@ -146,7 +146,7 @@ func TestStickyFailureAndVerdict(t *testing.T) {
 
 	m.finalize()
 	msg := m.msgs[0]
-	if !strings.Contains(msg.content, "**swarm: 1 ✗ · 1 ⊘ — SA1 error, SA2 cancelled**") {
+	if !strings.Contains(msg.content, "**sub-agents: 1 ✗ · 1 ⊘ — #1 error, #2 cancelled**") {
 		t.Errorf("swarm verdict missing: %q", msg.content)
 	}
 	for i, exp := range m.noticeExp {

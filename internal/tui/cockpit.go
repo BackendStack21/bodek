@@ -10,7 +10,8 @@ import (
 	"github.com/BackendStack21/bodek/internal/client"
 )
 
-// The cockpit popover (h, or /server) is the single place to read server,
+// The cockpit popover (/server, the palette, or a header click) is the single
+// place to read server,
 // link, budget, and session state — the consolidation the redesign promises:
 // am I connected, on what model, how full is my context, what has this cost,
 // and what are the caps. Everything renders from state the heartbeat,
@@ -117,7 +118,7 @@ func (m *Model) cockpitServerSection() string {
 		rows = append(rows, [2]string{"uptime", formatDuration(m.srvUptime)})
 	}
 	if m.srvConns > 0 {
-		rows = append(rows, [2]string{"ws conns", fmt.Sprintf("%d", m.srvConns)})
+		rows = append(rows, [2]string{"connections", fmt.Sprintf("%d", m.srvConns)})
 	}
 	if m.rtt > 0 {
 		rows = append(rows, [2]string{"rtt", formatStepDur(m.rtt)})

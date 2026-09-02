@@ -69,9 +69,11 @@ func TestQuitGateOtherKeyDisarms(t *testing.T) {
 	if m.quitting {
 		t.Error("disarming the gate quit anyway")
 	}
-	// The disarming keypress is consumed by the gate — it never types.
-	if got := m.ta.Value(); got != "" {
-		t.Errorf("the disarm keypress leaked into the input: %q", got)
+	// The gate eats exactly one decision key: the disarming printable rune
+	// falls through to the composer, so "esc/^C, keep typing" never loses a
+	// character (judge-3 F2).
+	if got := m.ta.Value(); got != "n" {
+		t.Errorf("disarm keypress did not reach the input: %q", got)
 	}
 	// And quit stays two-step afterwards: re-arm, not quit.
 	m.Update(key("ctrl+c"))

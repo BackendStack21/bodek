@@ -59,7 +59,7 @@ func (m *Model) suggestionCard() string {
 		name = "(unnamed)"
 	}
 	heur := strings.TrimSpace(m.skillSuggest.Detail)
-	title := th.acTitle.Render("✦ skill suggested") + th.acItem.Render("  "+name)
+	title := th.acTitle.Render("✦ skill suggested") + th.acItem.Render("  "+truncate(name, max(m.width-8, 12)))
 	rows := []string{title}
 	if heur != "" {
 		rows = append(rows, th.acDetail.Render("  "+truncate(heur, max(m.width-8, 12))))

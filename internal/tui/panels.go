@@ -3,6 +3,7 @@ package tui
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -93,6 +94,13 @@ func (m *Model) handleConfirmKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	}
 	m.refresh()
+	// The gate eats exactly one decision key: a disarmed printable rune
+	// falls through to the composer, so the reflex "esc, keep typing" never
+	// loses a character. Panel contexts keep silent disarm — their keys are
+	// navigation, not typing.
+	if m.panel == panelNone && msg.Type == tea.KeyRunes && len(msg.Runes) > 0 {
+		m.ta.InsertString(string(msg.Runes))
+	}
 	return m, nil
 }
 
@@ -748,14 +756,27 @@ func (m *Model) exportSelected(format string) tea.Cmd {
 		if err != nil {
 			return sessionExportedMsg{id: id, err: err}
 		}
-		path := fmt.Sprintf("bodek-%s.%s", id, format)
-		// 0600: transcripts can carry sensitive tool output — owner-only,
-		// matching the tokens/settings store standard.
-		if err := os.WriteFile(path, data, 0o600); err != nil {
+		path, err := writeExport(".", id, format, data)
+		if err != nil {
 			return sessionExportedMsg{id: id, err: err}
 		}
 		return sessionExportedMsg{id: id, path: path}
 	}
+}
+
+// writeExport writes the transcript next to the user, never silently
+// overwriting: an existing file gets a -1, -2… suffix. 0600 — transcripts
+// can carry sensitive tool output, matching the tokens store standard.
+func writeExport(dir, id, format string, data []byte) (string, error) {
+	base := fmt.Sprintf("bodek-%s-%s", shortID(id), time.Now().Format("20060102-150405"))
+	path := filepath.Join(dir, base+"."+format)
+	for i := 1; ; i++ {
+		if _, err := os.Stat(path); os.IsNotExist(err) {
+			break
+		}
+		path = filepath.Join(dir, fmt.Sprintf("%s-%d.%s", base, i, format))
+	}
+	return path, os.WriteFile(path, data, 0o600)
 }
 
 // cancelRun aborts the in-flight prompt: the WebSocket cancel first (the
@@ -1035,7 +1056,7 @@ func (m *Model) replayTranscript(msgs []client.SessionMessage) {
 				appendReply(cur, c)
 			}
 			for _, tc := range mm.ToolCalls {
-				name := tc.Function.Name
+				name := collapse(tc.Function.Name)
 				cur.steps = append(cur.steps, step{
 					name:     name,
 					arg:      argPreview(tc.Function.Arguments),

@@ -87,7 +87,9 @@ func (m *Model) queueStripView() string {
 		rows = append(rows, th.acDetail.Render(s))
 	}
 	if !m.mouse {
-		if m.qfocus {
+		if m.qarm >= 0 {
+			rows = append(rows, th.footerDanger.Render("  d again deletes · esc cancels"))
+		} else if m.qfocus {
 			rows = append(rows, th.acDetail.Render("  ↑↓ select · ←→ move · d delete · esc done"))
 		} else {
 			rows = append(rows, th.acDetail.Render("  ^q to manage the queue"))
@@ -198,7 +200,12 @@ func (m *Model) queueStripClick(y, x int) bool {
 	// Check right-to-left: the controls trail the row, so a hit test claims
 	// the rightmost control whose column the click reached.
 	if delC >= 0 && x >= delC {
-		m.queueDeleteAt(rel)
+		if m.qarm == rel { // second ✕ on the same row confirms
+			m.queueDeleteAt(rel)
+			return true
+		}
+		m.qarm = rel
+		m.refresh()
 		return true
 	}
 	if downC >= 0 && x >= downC {
@@ -230,16 +237,27 @@ func (m *Model) queueStripKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, m.armConfirm(confirmQuit, "bodek")
 	case "esc", "enter", "ctrl+q":
 		m.qfocus = false
+		m.qarm = -1
 	case "up", "k":
 		m.qsel = clampSel(m.qsel-1, len(m.queue))
+		m.qarm = -1
 	case "down", "j":
 		m.qsel = clampSel(m.qsel+1, len(m.queue))
+		m.qarm = -1
 	case "left", "h":
 		m.queueMove(m.qsel, -1)
 	case "right", "l":
 		m.queueMove(m.qsel, 1)
 	case "d":
-		m.queueDeleteAt(m.qsel)
+		// Two-step delete, like every destructive action here: the first
+		// press arms the row, the second confirms; anything else disarms.
+		if m.qarm == m.qsel {
+			m.qarm = -1
+			m.queueDeleteAt(m.qsel)
+			break
+		}
+		m.qarm = m.qsel
+		return m, m.transientNoteCmd("press d again to delete")
 	}
 	m.refresh()
 	return m, nil

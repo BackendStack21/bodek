@@ -10,6 +10,8 @@ import (
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/glamour"
+	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/BackendStack21/bodek/internal/client"
 	"github.com/BackendStack21/bodek/internal/tokens"
@@ -171,6 +173,7 @@ type Model struct {
 	mouse         bool           // the terminal reports mouse events (--mouse)
 	qfocus        bool           // the queue strip owns the keyboard (ctrl+q)
 	qsel          int            // selected strip row while qfocus
+	qarm          int            // armed-for-delete row while qfocus (-1 = none)
 	lastPrompt    string         // most recent prompt sent — /retry re-sends it
 	focusIdx      int            // transcript cursor: turn head alt+↑/↓ last jumped to (-1 none)
 
@@ -343,6 +346,7 @@ func New(cl *client.Client, opts Options) *Model {
 		sp:           sp,
 		curIdx:       -1,
 		focusIdx:     -1,
+		qarm:         -1,
 		model:        opts.Model,
 		sandbox:      opts.Sandbox,
 		mouse:        opts.Mouse,
@@ -483,6 +487,14 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case sessionExportedMsg:
 		return m, m.handleSessionExported(msg)
+
+	case copyResultMsg:
+		if msg.err != nil {
+			m.addNote("copy failed — " + msg.err.Error())
+			m.refresh()
+			return m, nil
+		}
+		return m, m.transientNoteCmd(fmt.Sprintf("copied %d bytes via %s", msg.n, msg.tool))
 
 	case sessionSwitchMsg:
 		return m, m.handleSessionSwitch(msg)
@@ -1063,8 +1075,23 @@ func (m *Model) relayout() {
 		return
 	}
 	vpH := m.height - headerHeight - footerHeight - m.inputAreaHeight()
-	if vpH < 3 {
-		vpH = 3
+	// Degradation ladder, step 1: when the layout doesn't fit, give the
+	// transcript rows back by shrinking the composer first — a one-visible-
+	// row terminal beats a View that never fits (judge-5 E1).
+	if vpH < 1 && m.ta.Height() > 1 {
+		over := 1 - vpH
+		m.ta.SetHeight(max(1, m.ta.Height()-over))
+		vpH = m.height - headerHeight - footerHeight - m.inputAreaHeight()
+	}
+	// Ladder, restore: with room again the composer returns to full height.
+	if vpH >= 4 && m.ta.Height() < 3 {
+		m.ta.SetHeight(3)
+		vpH = m.height - headerHeight - footerHeight - m.inputAreaHeight()
+	}
+	// Floor of 1, not 3: below the old floor the View was guaranteed taller
+	// than the terminal (permanent scroll-jitter in alt-screen).
+	if vpH < 1 {
+		vpH = 1
 	}
 	m.vp.Width = m.width
 	m.vp.Height = vpH
@@ -1109,34 +1136,70 @@ func (m *Model) elapsed() string {
 	return fmt.Sprintf("%dm%02ds", int(d.Minutes()), int(d.Seconds())%60)
 }
 
-// sanitize strips terminal control sequences from untrusted content before it
-// is rendered. Agent output — streamed tokens, tool results, file contents,
-// resumed transcripts — is attacker-influenced; raw C0 control bytes (notably
-// ESC, 0x1b) could drive ANSI/OSC escapes that move the cursor, clear the
-// screen, or exfiltrate via OSC 52. We keep newlines and tabs and drop every
-// other control byte (and DEL), which defangs escape sequences by removing
-// their introducer while leaving readable text intact.
+// sanitize strips terminal-hostile content from untrusted text before it is
+// rendered. Agent output — streamed tokens, tool results, file contents,
+// resumed transcripts — is attacker-influenced; raw control bytes (C0, C1,
+// notably ESC 0x1b and the 8-bit CSI/OSC forms) could drive ANSI/OSC escapes
+// that move the cursor, clear the screen, or exfiltrate via OSC 52. Invisible
+// and direction-forcing characters (bidi overrides, zero-width, soft hyphen,
+// Unicode line separators) are dropped so displayed text can never disagree
+// with itself. Newlines are kept; tabs expand to four spaces so width math
+// never meets an ambiguous tab stop. Readable text survives untouched.
 func sanitize(s string) string {
-	if !strings.ContainsFunc(s, isControl) {
+	if !strings.ContainsFunc(s, needsSanitize) {
 		return s
 	}
 	var b strings.Builder
 	b.Grow(len(s))
 	for _, r := range s {
-		if !isControl(r) {
+		switch {
+		case r == '\n':
+			b.WriteRune(r)
+		case r == '\t':
+			b.WriteString("    ")
+		case !isControl(r) && !isInvisible(r):
 			b.WriteRune(r)
 		}
 	}
 	return b.String()
 }
 
+// needsSanitize is the fast-path predicate: whether the rune is anything
+// sanitize would rewrite.
+func needsSanitize(r rune) bool {
+	return isControl(r) || isInvisible(r) || r == '\t'
+}
+
 // isControl reports whether r is a control character we strip from untrusted
-// text (C0 controls and DEL, except newline and tab).
+// text: C0 controls, C1 controls (whose 8-bit CSI/OSC forms some emulators
+// execute), and DEL — except newline and tab, which sanitize handles.
 func isControl(r rune) bool {
 	if r == '\n' || r == '\t' {
 		return false
 	}
-	return r < 0x20 || r == 0x7f
+	return r < 0x20 || (r >= 0x7f && r < 0xa0)
+}
+
+// isInvisible reports whether r is a zero-width, direction-forcing, or
+// line-separating character that must never reach the display: it is either
+// unseen payload or it can visually reverse text (a bidi override can dress
+// a hostile approval command up as something harmless).
+func isInvisible(r rune) bool {
+	switch {
+	case r == 0xad: // soft hyphen
+		return true
+	case r == 0x200b, r == 0x200e, r == 0x200f: // ZWSP, LRM, RLM
+		return true
+	case r >= 0x2028 && r <= 0x202e: // line/paragraph separators, bidi overrides
+		return true
+	case r == 0x2060: // word joiner
+		return true
+	case r >= 0x2066 && r <= 0x2069: // bidi isolates
+		return true
+	case r == 0xfeff: // BOM / zero-width no-break space
+		return true
+	}
+	return false
 }
 
 // formatDuration renders a short, friendly elapsed time.
@@ -1160,15 +1223,19 @@ func formatStepDur(d time.Duration) string {
 	}
 }
 
+// truncate cuts s to at most n display columns, marking the cut with an
+// ellipsis. Budgets across the TUI are column counts derived from
+// lipgloss.Width, so the cut is width-aware: CJK, emoji, and ZWJ sequences
+// count their real cell width and graphemes are never split mid-cluster.
+// Styled input is not expected — call sites truncate before styling.
 func truncate(s string, n int) string {
 	if n < 1 {
 		return "" // no room even for the ellipsis (very narrow terminal)
 	}
-	r := []rune(s)
-	if len(r) <= n {
+	if lipgloss.Width(s) <= n {
 		return s
 	}
-	return string(r[:n-1]) + "…"
+	return ansi.Truncate(s, n, "…")
 }
 
 // toggleStep flips the expanded state of a step and invalidates the transcript
@@ -1232,10 +1299,12 @@ func (m *Model) toggleThinkingLast() {
 }
 
 // jumpTurn scrolls to the previous ([) or next (]) assistant turn head, so
-// long sessions read turn-by-turn instead of line-by-line.
-func (m *Model) jumpTurn(next bool) {
+// long sessions read turn-by-turn instead of line-by-line. Every jump and
+// every boundary reports its landing — the copy target (alt+y) must be
+// verifiable on screen.
+func (m *Model) jumpTurn(next bool) tea.Cmd {
 	if len(m.turnLineIndex) == 0 {
-		return
+		return nil
 	}
 	cur := m.vp.YOffset
 	var target = -1
@@ -1249,7 +1318,7 @@ func (m *Model) jumpTurn(next bool) {
 			}
 		}
 		if target < 0 {
-			return // already at the last turn
+			return m.transientNoteCmd("already at the last turn")
 		}
 	} else {
 		for i := len(m.turnLineIndex) - 1; i >= 0; i-- {
@@ -1261,7 +1330,7 @@ func (m *Model) jumpTurn(next bool) {
 		if target < 0 {
 			m.vp.GotoTop()
 			m.focusTurnAt(m.turnLineIndex[0].line)
-			return
+			return m.transientNoteCmd(fmt.Sprintf("turn 1/%d", len(m.turnLineIndex)))
 		}
 	}
 	if target > 0 {
@@ -1270,6 +1339,14 @@ func (m *Model) jumpTurn(next bool) {
 	m.vp.SetYOffset(target)
 	m.focusTurnAt(target + 1) // the head line we landed under
 	m.refresh()
+	rank := 0
+	for i, r := range m.turnLineIndex {
+		if r.msgIdx == m.focusIdx {
+			rank = i + 1
+			break
+		}
+	}
+	return m.transientNoteCmd(fmt.Sprintf("turn %d/%d — alt+y copies this reply", rank, len(m.turnLineIndex)))
 }
 
 // focusTurnAt records the turn head at the given viewport line as the copy

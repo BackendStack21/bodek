@@ -1,10 +1,10 @@
 package tui
 
 import (
-	"fmt"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 )
 
 // findState is the transcript search bar. alt+f opens it; typed runes filter
@@ -50,6 +50,10 @@ func (m *Model) handleFindKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "N":
 		m.findGoto(-1)
 		return m, nil
+	case "n":
+		// vim/less reflex: lowercase is next — never query text while open.
+		m.findGoto(1)
+		return m, nil
 	case "backspace":
 		if n := len(m.find.query); n > 0 {
 			m.find.query = m.find.query[:n-1]
@@ -70,6 +74,17 @@ func (m *Model) handleFindKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.find.query = append(m.find.query, msg.Runes...)
 		m.findRescan()
 		m.refresh()
+	}
+	// Scrolling stays live while searching — the same passthrough the
+	// approval panel grants, so the bar is never a scroll dead-end.
+	switch msg.String() {
+	case "up", "down", "pgup", "pgdown", "ctrl+u", "ctrl+d":
+		var cmd tea.Cmd
+		m.vp, cmd = m.vp.Update(msg)
+		return m, cmd
+	case "ctrl+g":
+		m.vp.GotoBottom()
+		return m, nil
 	}
 	return m, nil // swallow everything else while the bar is open
 }
@@ -151,7 +166,7 @@ func (m *Model) msgLine(idx int) int {
 func (m *Model) findBar() string {
 	th := m.th
 	q := string(m.find.query)
-	if w := m.width - 52; w > 0 && len(q) > w {
+	if w := m.width - 52; w > 0 && lipgloss.Width(q) > w {
 		q = truncate(q, w)
 	}
 	count := "type to search the transcript"
@@ -159,9 +174,9 @@ func (m *Model) findBar() string {
 		if n := len(m.find.matches); n == 0 {
 			count = th.footerDanger.Render("no matches")
 		} else {
-			count = fmt.Sprintf("%d matches", n)
+			count = plural(n, "match", "matches")
 		}
 	}
 	return " " + th.footerKey.Render("find") +
-		th.footer.Render(" '"+q+"' · "+count+" · ⏎ next · N prev · esc close")
+		th.footer.Render(" '"+q+"' · "+count+" · ⏎/n next · N prev · ↑↓ scroll · esc close")
 }

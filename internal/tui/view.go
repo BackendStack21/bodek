@@ -91,10 +91,10 @@ func (m *Model) header() string {
 	// A subtle, persistent marker while extended thinking is enabled — the
 	// same ✳ glyph the per-turn stat line uses to flag a thought turn.
 	if m.thinkOn {
-		tail += th.headerMeta.Render(" · ✳ think")
+		tail += th.headerMeta.Render("  ·  ✳ think")
 	}
 	if m.odekVersion != "" {
-		tail += th.headerMeta.Render(" · odek ") + th.headerKey.Render(m.odekVersion)
+		tail += th.headerMeta.Render("  ·  odek ") + th.headerKey.Render(m.odekVersion)
 	}
 	// Sandbox status, prominently colored: green ● when isolated, amber ▲
 	// when the agent has host access.
@@ -262,8 +262,12 @@ func (m *Model) statusBadge() string {
 		}
 		return th.badgeDanger.Render("● disconnected")
 	case m.curApproval() != nil:
+		// The badge carries the count only — the panel head owns the state
+		// sentence and the "N more waiting" figure. The queue always answers
+		// its head, so no position is shown.
 		if n := len(m.approvals); n > 1 {
-			return th.statusBusy.Render(fmt.Sprintf("⚠ approval %d/%d", 1, n))
+			// State only — the count lives in exactly one place, the panel head.
+			return th.statusBusy.Render("⚠ approval required")
 		}
 		return th.statusBusy.Render("⚠ approval required")
 	case m.busy:
@@ -312,8 +316,11 @@ func (m *Model) statusLine() string {
 		strip = th.acDetail.Render("   ▸ " + s)
 	}
 	// A blank row above separates the indicator from the transcript tail —
-	// inputAreaHeight accounts for it so the layout math stays exact.
-	return "\n" + th.spinner.Render(m.sp.View()) + " " + th.statusBusy.Render(label) + el + q + strip
+	// inputAreaHeight accounts for it so the layout math stays exact. The
+	// row itself is hard-clamped: a wrapped status row costs a second line
+	// and breaks the height contract inputAreaHeight promised.
+	row := th.spinner.Render(m.sp.View()) + " " + th.statusBusy.Render(label) + el + q + strip
+	return "\n" + lipgloss.NewStyle().MaxWidth(max(m.width, 1)).Render(row)
 }
 
 // statusLineVisible reports whether the status line occupies a row, keeping
@@ -395,7 +402,7 @@ func (m *Model) conversation() string {
 		for i := 0; i < tail; i++ {
 			collectTurn(i, lineOffset)
 			s, r := m.renderMessage(m.msgs[i], i, lineOffset)
-			blocks = append(blocks, s)
+			blocks = append(blocks, m.clampLines(s))
 			refs = append(refs, r...)
 			lineOffset += lineCount(s) + 1 // blank separator between blocks
 		}
@@ -424,14 +431,14 @@ func (m *Model) conversation() string {
 		}
 		collectTurn(i, lineOffset)
 		s, r := m.renderMessage(m.msgs[i], i, lineOffset)
-		blocks = append(blocks, s)
+		blocks = append(blocks, m.clampLines(s))
 		refs = append(refs, r...)
 		lineOffset += lineCount(s) + 1
 	}
 	m.msgLineIndex = msgsIdx
 	if len(m.notices) > 0 {
 		if notes := m.renderNotices(); notes != "" {
-			blocks = append(blocks, notes)
+			blocks = append(blocks, m.clampLines(notes))
 		}
 	}
 	m.stepLineIndex = refs
@@ -632,6 +639,17 @@ func lineCount(s string) int {
 	return strings.Count(s, "\n") + 1
 }
 
+// clampLines hard-clamps every line of a rendered block to the viewport
+// width. Renderers wrap to their own budgets; this is the backstop that
+// keeps a logical line from ever physically wrapping, so lineCount stays
+// the source of truth for the click/scroll hit-test indices below the block.
+func (m *Model) clampLines(s string) string {
+	if s == "" || m.vp.Width < 1 {
+		return s
+	}
+	return lipgloss.NewStyle().MaxWidth(m.vp.Width).Render(s)
+}
+
 // statLine renders the compact telemetry row shown beneath a finalized
 // assistant turn. Glyphs carry the hue; values and separators recede in faint.
 // Segments self-suppress when empty and drop in priority order (tools, then
@@ -770,25 +788,28 @@ func (m *Model) renderStep(s step, streaming bool, msgIdx, stepIdx, startLine in
 	if expanded {
 		chevron = th.stepTree.Render("▼")
 	}
-	left := chevron + " " + icon + " " + th.toolIcon.Render(toolGlyph(s.name)) + " " + th.stepName.Render(s.name)
-	if s.subagent {
-		left += th.stepArg.Render(" · sub-agent")
-		if r := agentRollup(&s); r != "" {
-			left += th.stepArg.Render(" · " + r)
-		}
-	}
-	// Right rail: the typed chip (diffstat / test verdict), right-aligned.
-	// Tool execution time is internal telemetry — recorded on the step but
-	// deliberately never rendered.
+	// Right rail first: the left side yields to it, and the tool name is
+	// budgeted before assembly — a long (or resumed, wire-borne) name must
+	// never push the head past the viewport, because a physically wrapped
+	// head shifts every hit-test line below it.
 	right := ""
 	if s.done {
 		if chip := stepHeadSuffix(s.name, s.arg, s.result, th); chip != "" {
 			right = chip
 		}
 	}
+	rightW := lipgloss.Width(right)
+	pre := chevron + " " + icon + " " + th.toolIcon.Render(toolGlyph(s.name)) + " "
+	nameBudget := max(m.vp.Width-4-rightW-lipgloss.Width(pre)-8, 4) // 8: " · sub-agent" reserve
+	left := pre + th.stepName.Render(truncate(s.name, nameBudget))
+	if s.subagent {
+		left += th.stepArg.Render(" · sub-agent")
+		if r := agentRollup(&s); r != "" {
+			left += th.stepArg.Render(" · " + r)
+		}
+	}
 	// The left side yields to the right rail, then the pair pads to the
 	// full step width; ANSI-safe width math throughout.
-	rightW := lipgloss.Width(right)
 	budget := max(m.vp.Width-4-rightW-2, 4)
 	if s.arg != "" {
 		left += th.stepArg.Render("  " + truncate(s.arg, budget-lipgloss.Width(chevron+" "+icon+" "+toolGlyph(s.name)+" "+s.name)-2))
@@ -973,9 +994,9 @@ func (m *Model) approvalBody() string {
 	if a == nil {
 		return ""
 	}
-	head := th.apprHead.Render(fmt.Sprintf("⚠ approval required · risk: %s", orDash(a.Risk)))
+	head := th.apprHead.Render(fmt.Sprintf("⚠ approval required · risk: %s", orDash(collapse(a.Risk))))
 	if n := len(m.approvals); n > 1 {
-		head += th.apprBody.Render(fmt.Sprintf(" · 1 of %d queued", n))
+		head += th.apprBody.Render(fmt.Sprintf(" · %d of %d queued", 1, n))
 	}
 	if a.IsOperation {
 		head += th.apprBody.Render(" · ") + th.opChip.Render("⚙ operation")
@@ -1073,6 +1094,12 @@ func (m *Model) footer() string {
 		return "  " + hints
 	}
 	if m.disconn {
+		if m.status == "server shut down" {
+			// Deliberate shutdown — ⏎ respawns a fresh instance, the same
+			// promise the shutdown note makes; "retry" would contradict it.
+			return "  " + th.footer.Render("server shut down · ") +
+				th.footerKey.Render("⏎") + th.footer.Render(" fresh instance · ^C to quit")
+		}
 		hints := []string{th.footer.Render("connection closed")}
 		// Retry rides ⏎ on an empty input — a character key would hijack
 		// typing, and a preserved draft must keep typing normally.
@@ -1260,6 +1287,15 @@ func (m *Model) footer() string {
 			th.footer.Render("any other key cancels"),
 		)
 	}
+	if m.confirm == confirmStopAgent && m.panel == panelNone {
+		// ^S arms from the composer — the gate must render where it captured
+		// the keyboard, not only inside the agents panel.
+		return m.panelFooter(
+			th.footerDanger.Render(strings.Split(m.panelMsg, "?")[0]+"?"),
+			th.footerKey.Render("y")+th.footerDanger.Render(" stop"),
+			th.footer.Render("any other key cancels"),
+		)
+	}
 	// The status bar carries no static key cheatsheet (the welcome splash and
 	// /help cover that) — only the live run state: a cancel hint while busy on
 	// the left, and latency / scroll position on the right.
@@ -1320,6 +1356,16 @@ func (m *Model) panelFooter(hints ...string) string {
 }
 
 // ── small helpers ──────────────────────────────────────────────────────────
+
+// plural renders a count with its noun inflected: plural(1, "match",
+// "matches"), plural(3, "approval", "approvals"). Every "%d <noun>" surface
+// goes through this so a single hit can never read as "1 matches" again.
+func plural(n int, one, many string) string {
+	if n == 1 {
+		return fmt.Sprintf("1 %s", one)
+	}
+	return fmt.Sprintf("%d %s", n, many)
+}
 
 // wrapText hard-wraps s to n columns by runes, keeping existing line breaks.
 // It always returns at least one line, so an empty input still claims its row.

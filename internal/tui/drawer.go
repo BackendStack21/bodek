@@ -430,7 +430,7 @@ func (m *Model) runRows(w int) []string {
 			meta += fmt.Sprintf(" · ⇥%s ↦%s", human(int(r.InputTokens)), human(int(r.OutputTokens)))
 		}
 		if n := len(r.PendingApprovals); n > 0 {
-			meta += fmt.Sprintf(" · ⚠ %d approval", n)
+			meta += " · ⚠ " + plural(n, "approval", "approvals")
 		}
 		label := runStatusGlyph(r) + "  " + orDash(r.Model)
 		if r.Result != "" {
@@ -526,7 +526,7 @@ func (m *Model) eventRows(w int) []string {
 	rows := make([]string, 0, len(m.feed))
 	// Newest last (server order is oldest-first) so the ring reads like a log
 	// tail; the selection windows around whatever the user picks.
-	for _, ev := range m.feed {
+	for i, ev := range m.feed {
 		ts := ""
 		if !ev.Timestamp.IsZero() {
 			ts = ev.Timestamp.Format("15:04:05")
@@ -542,7 +542,12 @@ func (m *Model) eventRows(w int) []string {
 		if ev.SessionID != "" {
 			detail = "  " + shortID(ev.SessionID)
 		}
-		rows = append(rows, th.acItem.Render("  "+truncate(label, w-2-lipgloss.Width(detail)))+th.acDetail.Render(detail))
+		row := truncate(label, w-2-lipgloss.Width(detail))
+		if i == m.panelSel {
+			rows = append(rows, th.acSel.Render("› "+row)+th.acDetail.Render(detail))
+			continue
+		}
+		rows = append(rows, th.acItem.Render("  "+row)+th.acDetail.Render(detail))
 	}
 	return rows
 }

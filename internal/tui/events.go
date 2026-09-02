@@ -45,7 +45,7 @@ func (m *Model) handleEvent(ev client.Event) (tea.Model, tea.Cmd) {
 			m.planResetPending = true // switch/attach: drop + refetch at the tail
 		}
 		if ev.Model != "" {
-			m.model = ev.Model
+			m.model = collapse(ev.Model)
 			m.resolveMaxContext()
 		}
 		m.sandbox = ev.Sandbox
@@ -90,9 +90,10 @@ func (m *Model) handleEvent(ev client.Event) (tea.Model, tea.Cmd) {
 				arg = s // semantic one-liner replaces the JSON blob (docs §4A)
 			}
 		}
+		nm := collapse(ev.Name) // tool names are wire-borne; collapse before anything renders them
 		if i := m.cur(); i >= 0 {
 			m.msgs[i].steps = append(m.msgs[i].steps,
-				step{name: ev.Name, arg: arg, subagent: isSubagent(ev.Name), started: time.Now()})
+				step{name: nm, arg: arg, subagent: isSubagent(nm), started: time.Now()})
 			last := len(m.msgs[i].steps) - 1
 			if m.msgs[i].steps[last].subagent {
 				// Per-task identity (goals, profiles) lives in the parent's
@@ -101,14 +102,14 @@ func (m *Model) handleEvent(ev client.Event) (tea.Model, tea.Cmd) {
 			}
 			m.msgs[i].items = append(m.msgs[i].items, turnItem{stepIdx: last})
 		}
-		m.lastTool = ev.Name
+		m.lastTool = nm
 		m.lastArg = arg
 		if ev.Name == "plan" {
 			// Every engine plan mutation rides an ordinary tool_call: schedule
 			// the debounced structured-view refresh (see plan.go).
 			m.planTrig = true
 		}
-		m.status = "running " + ev.Name
+		m.status = "running " + nm
 
 	case "tool_result":
 		if i := m.cur(); i >= 0 {
@@ -212,10 +213,10 @@ func (m *Model) handleEvent(ev client.Event) (tea.Model, tea.Cmd) {
 			m.pingSentAt = time.Time{}
 		}
 		if ev.Version != "" {
-			m.odekVersion = ev.Version
+			m.odekVersion = collapse(ev.Version)
 		}
 		if ev.Model != "" && m.model == "" {
-			m.model = ev.Model // only until the first session/prompt reports the live one
+			m.model = collapse(ev.Model) // only until the first session/prompt reports the live one
 			m.resolveMaxContext()
 		}
 		m.sandbox = ev.Sandbox
@@ -250,7 +251,7 @@ func (m *Model) handleEvent(ev client.Event) (tea.Model, tea.Cmd) {
 			if cancelled {
 				markCancel(&m.msgs[i])
 			} else if m.msgs[i].content == "" {
-				setTurnMarker(&m.msgs[i], "**Error:** "+ev.Message)
+				setTurnMarker(&m.msgs[i], "**Error:** "+sanitize(ev.Message))
 			} else {
 				m.addNote("error: " + ev.Message)
 			}
@@ -285,6 +286,8 @@ func (m *Model) handleEvent(ev client.Event) (tea.Model, tea.Cmd) {
 	case "skill_event":
 		if ev.SubType == "suggested" {
 			e := ev
+			e.SkillName = collapse(e.SkillName) // model-controlled wire text renders on the card
+			e.Detail = collapse(e.Detail)
 			m.skillSuggest = &e // the card shows until answered or the next prompt
 			m.relayout()
 		}
@@ -597,7 +600,7 @@ func (m *Model) finalize() {
 }
 
 // swarmVerdict summarizes a turn's sub-agent outcomes as a turn marker —
-// "**swarm: 5 ✓ · 1 ✗ — SA4 error**" — so a failure in a multi-agent turn
+// "**sub-agents: 5 ✓ · 1 ✗ — #4 error**" — so a failure in a multi-agent turn
 // can't scroll by uncounted. "" when the turn delegated nothing.
 func (m *Model) swarmVerdict(msg *message) string {
 	var ok, partial, failed, cancelled, timed, live, lostN int
@@ -620,13 +623,13 @@ func (m *Model) swarmVerdict(msg *message) string {
 				partial++
 			case a.status == "error":
 				failed++
-				bad = append(bad, fmt.Sprintf("SA%d %s", a.idx+1, a.status))
+				bad = append(bad, fmt.Sprintf("#%d %s", a.idx+1, a.status))
 			case a.status == "timeout":
 				timed++
-				bad = append(bad, fmt.Sprintf("SA%d %s", a.idx+1, a.status))
+				bad = append(bad, fmt.Sprintf("#%d %s", a.idx+1, a.status))
 			case a.status == "cancelled":
 				cancelled++
-				bad = append(bad, fmt.Sprintf("SA%d %s", a.idx+1, a.status))
+				bad = append(bad, fmt.Sprintf("#%d %s", a.idx+1, a.status))
 			}
 		}
 	}
@@ -656,7 +659,7 @@ func (m *Model) swarmVerdict(msg *message) string {
 	if live > 0 {
 		parts = append(parts, fmt.Sprintf("%d live", live))
 	}
-	line := "swarm: " + strings.Join(parts, " · ")
+	line := "sub-agents: " + strings.Join(parts, " · ")
 	if len(bad) > 0 {
 		line += " — " + strings.Join(bad, ", ")
 	}
@@ -709,7 +712,9 @@ func (m *Model) transientNoteCmd(s string) tea.Cmd {
 }
 
 func (m *Model) pushNote(s string, exp time.Time) {
-	m.notices = append(m.notices, sanitize(s))
+	// Provider errors routinely embed full 4xx bodies — cap the size so one
+	// verbose notice cannot flood the transcript tail (count caps below).
+	m.notices = append(m.notices, truncate(sanitize(s), 400))
 	m.noticeExp = append(m.noticeExp, exp)
 	if len(m.notices) > 6 {
 		m.notices = m.notices[len(m.notices)-6:]
