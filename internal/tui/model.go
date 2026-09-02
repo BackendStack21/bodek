@@ -577,9 +577,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.handleJobsTick(msg)
 
 	case jobsFetchedMsg:
-		m.applyJobs(msg.jobs, msg.err)
+		attn := m.applyJobs(msg.jobs, msg.err)
 		m.refresh()
-		return m, tea.Batch(m.rearmJobs(), m.noticeSweep())
+		return m, tea.Batch(m.rearmJobs(), m.noticeSweep(), attn)
 
 	case jobOutputMsg:
 		return m, m.handleJobOutput(msg)

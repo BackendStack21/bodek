@@ -18,8 +18,9 @@ import (
 // agent-side completion notice never leaves the LLM payload. bodek therefore
 // watches GET /api/jobs itself: a 10s cadence whenever a session is live —
 // the canonical case is a job finishing while the operator reads output —
-// stepping up to 3s while the tab is visible. Diffs surface as transient
-// notes; the tab is the full surface (rows, output detail, stop).
+// stepping up to 3s while the tab is visible. Terminal transitions surface
+// as alert-tier notes naming the command and fire the attention layer; the
+// tab is the full surface (rows, output detail, stop).
 
 const (
 	jobsPollEvery  = 3 * time.Second  // tab visible: live view
@@ -91,10 +92,12 @@ func (m *Model) fetchJobs() tea.Cmd {
 	}
 }
 
-// applyJobs stores a snapshot; watcher diffs become transient notes. The
-// first successful snapshot baselines silently — jobs that predate the
-// attach belong to the tab, not the transcript.
-func (m *Model) applyJobs(jobs []client.Job, err error) {
+// applyJobs stores a snapshot; watcher diffs become alert-tier notes — a
+// finished job is actionable, not housekeeping — and terminal transitions
+// fire the attention layer (bell / OSC 9). The first successful snapshot
+// baselines silently — jobs that predate the attach belong to the tab, not
+// the transcript. Returns the attention cmd (nil without a transition).
+func (m *Model) applyJobs(jobs []client.Job, err error) tea.Cmd {
 	if err != nil {
 		if errors.Is(err, client.ErrJobsUnavailable) {
 			m.jobsOff = true
@@ -103,7 +106,7 @@ func (m *Model) applyJobs(jobs []client.Job, err error) {
 				m.panelMsg = "background commands need odek ≥ v1.38.0"
 				m.refresh()
 			}
-			return
+			return nil
 		}
 		if m.panel == panelJobs {
 			// Transient network blips surface here only when the operator
@@ -111,9 +114,10 @@ func (m *Model) applyJobs(jobs []client.Job, err error) {
 			m.panelMsg = "error: " + err.Error()
 			m.refresh()
 		}
-		return
+		return nil
 	}
 	m.jobs = jobs
+	var attn tea.Cmd
 	if m.jobsPrev == nil {
 		m.jobsPrev = make(map[string]string, len(jobs))
 		for _, j := range jobs {
@@ -133,7 +137,10 @@ func (m *Model) applyJobs(jobs []client.Job, err error) {
 			case !seen:
 				m.addTransientNote("bg · " + jobStatusGlyph(j.Status) + " " + sanitize(j.ID) + " · " + sanitize(j.Command))
 			case old == "running" && j.Status != "running":
-				m.addTransientNote(jobExitNote(j))
+				// Alert tier + attention: a finished job must survive a
+				// glance-away, and the operator opted into knowing.
+				m.addNote(jobExitNote(j))
+				attn = m.attentionCmd(m.attentionFor(jobAttentionKind(j)))
 			}
 			m.jobsPrev[j.ID] = j.Status
 		}
@@ -147,6 +154,7 @@ func (m *Model) applyJobs(jobs []client.Job, err error) {
 	if m.panelSel >= m.panelLen() {
 		m.panelSel = max(m.panelLen()-1, 0)
 	}
+	return attn
 }
 
 // rearmJobs schedules the next fetch: the fast chain while the tab is
@@ -339,14 +347,27 @@ func jobStatusGlyph(status string) string {
 	return "·"
 }
 
-// jobExitNote is the watcher's terminal-transition note: glyph, id, terminal
-// status, exit code when the server reported one, humanized runtime.
+// jobExitNote is the watcher's terminal-transition note: glyph, id, command
+// head, terminal status, exit code when the server reported one, humanized
+// runtime.
 func jobExitNote(j client.Job) string {
-	s := jobStatusGlyph(j.Status) + " " + sanitize(j.ID) + " " + j.Status
+	s := jobStatusGlyph(j.Status) + " " + sanitize(j.ID) + " · " + truncate(sanitize(j.Command), 48)
 	if j.ExitCode != nil {
-		s += fmt.Sprintf(" %d", *j.ExitCode)
+		s += " — " + j.Status + fmt.Sprintf(" %d", *j.ExitCode)
+	} else {
+		s += " — " + j.Status
 	}
 	return s + " · " + fmtRuntime(j.RuntimeS)
+}
+
+// jobAttentionKind maps a terminal job status to its attention kind.
+func jobAttentionKind(j client.Job) attentionKind {
+	switch j.Status {
+	case "failed", "timeout", "killed":
+		return attentionJobFailed
+	default:
+		return attentionJobDone
+	}
 }
 
 // fmtRuntime humanizes seconds the way the transcript does durations.
