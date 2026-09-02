@@ -169,6 +169,7 @@ func (m *Model) runCommandLine(text string) tea.Cmd {
 // runCommand finds and executes a command by name, resetting the input.
 func (m *Model) runCommand(name, args string) tea.Cmd {
 	m.ta.Reset()
+	m.syncComposer()
 	m.closeAC()
 	for _, c := range slashCommands() {
 		if c.name == name {

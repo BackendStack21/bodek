@@ -482,7 +482,14 @@ func (m *Model) renderMessage(msg message, msgIdx, lineOffset int) (string, []st
 		if !msg.sentAt.IsZero() {
 			label += th.acDetail.Render(" · " + ago(msg.sentAt))
 		}
-		return label + "\n" + th.userBar.Render(msg.content), nil
+		// Word-wrap the prompt to the viewport: without it clampLines
+		// hard-truncates over-wide lines and the transcript silently hides
+		// the tail of a long prompt.
+		body := msg.content
+		if w := m.vp.Width; w > 0 {
+			body = ansi.Wrap(body, w, "")
+		}
+		return label + "\n" + th.userBar.Render(body), nil
 
 	case roleNote:
 		return th.sysBar.Width(m.vp.Width - 2).Render(msg.content), nil

@@ -218,6 +218,11 @@ own front-end settings are separate; see [Configuration](#configuration).
   (`r`), export a transcript (`e` markdown, `E` JSON), and search server-side
   (`/`); `n` loads the next page. Resuming sends a `session_switch` so the
   server-side memory buffer is restored before you type.
+- **Auto-fitting composer** — the input box rests at three rows and grows
+  with your prompt (multi-line or a single long line, wide-char aware) up to
+  twelve rows or what the terminal can spare; it shrinks back after send,
+  history recall, and `/`-commands. Prompts wrap in the transcript at the
+  viewport width — long lines are never clipped from view.
 - **Skill suggestions** — when odek's learn loop proposes a skill, a passive
   card above the composer answers on `alt+s` (save) / `alt+x` (skip); it
   never blocks sending, and auto-save governs real persistence.

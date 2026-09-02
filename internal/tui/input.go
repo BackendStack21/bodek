@@ -7,6 +7,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/BackendStack21/bodek/internal/client"
 )
@@ -48,7 +49,61 @@ func (m *Model) handleACKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// filter, backspace widens it, a space ends command completion.
 	var cmd tea.Cmd
 	m.ta, cmd = m.ta.Update(msg)
+	m.syncComposer()
 	return m, tea.Batch(cmd, m.syncAC())
+}
+
+// ── composer auto-fit ───────────────────────────────────────────────────────
+
+// Composer growth bounds: the box rests at three rows, grows with its
+// content, and never eats the screen (syncComposer).
+const (
+	composerMinRows = 3
+	composerMaxRows = 12
+)
+
+// composerRows counts the wrapped rows the composer needs for its content:
+// each logical line contributes ceil(cell width / box width) rows, so both
+// multi-line prompts and a single very long line grow the box.
+func (m *Model) composerRows() int {
+	usable := m.ta.Width()
+	rows := 0
+	for _, ln := range strings.Split(m.ta.Value(), "\n") {
+		if w := ansi.StringWidth(ln); usable > 0 && w > usable {
+			rows += (w + usable - 1) / usable
+		} else {
+			rows++
+		}
+	}
+	return rows
+}
+
+// desiredComposerHeight is the content-driven box height, clamped to the
+// growth bounds and by what the terminal can spare around the fixed chrome
+// (header, footer, status line, and one row of margin).
+func (m *Model) desiredComposerHeight() int {
+	rows := m.composerRows()
+	if rows < composerMinRows {
+		rows = composerMinRows
+	}
+	capRows := composerMaxRows
+	if room := m.height - headerHeight - footerHeight - 6; room < capRows {
+		capRows = max(composerMinRows, room)
+	}
+	return min(rows, capRows)
+}
+
+// syncComposer resizes the composer to fit its content and re-flows the
+// layout. Every composer mutation site calls it; when the terminal itself
+// runs out of rows, the degradation ladder in relayout still wins.
+func (m *Model) syncComposer() {
+	if m.curApproval() != nil {
+		return // the approval panel replaced the composer; the ladder owns rows
+	}
+	if h := m.desiredComposerHeight(); m.ta.Height() != h {
+		m.ta.SetHeight(h)
+		m.relayout()
+	}
 }
 
 // acMode selects what the completion popup is completing.
@@ -133,12 +188,14 @@ func (m *Model) submit() tea.Cmd {
 		// rationale as the disconnected-draft warning below).
 		m.queue = append(m.queue, text)
 		m.ta.Reset()
+		m.syncComposer()
 		m.closeAC()
 		m.refresh()
 		m.vp.GotoBottom() // Enter means "show me the latest", even mid-turn
 		return m.transientNoteCmd("queued — it sends when the turn ends")
 	}
 	m.ta.Reset()
+	m.syncComposer()
 	m.closeAC()
 	return m.sendPrompt(text)
 }
@@ -264,6 +321,7 @@ func (m *Model) historyPrev() bool {
 	}
 	m.ta.SetValue(m.history[m.histIdx])
 	m.ta.CursorEnd()
+	m.syncComposer()
 	return true
 }
 
@@ -282,6 +340,7 @@ func (m *Model) historyNext() {
 		m.histDraft = ""
 	}
 	m.ta.CursorEnd()
+	m.syncComposer()
 }
 
 // ── @-reference autocomplete ────────────────────────────────────────────────

@@ -707,6 +707,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// Forward anything else to the focused input.
 	var cmd tea.Cmd
 	m.ta, cmd = m.ta.Update(msg)
+	m.syncComposer()
 	return m, cmd
 }
 
@@ -792,6 +793,7 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// Insert a newline into the textarea.
 		var cmd tea.Cmd
 		m.ta, cmd = m.ta.Update(tea.KeyMsg{Type: tea.KeyEnter})
+		m.syncComposer()
 		return m, tea.Batch(cmd, m.syncAC())
 	case "ctrl+q":
 		// Queue-strip focus: a chord, so typing a q is never hijacked.
@@ -922,6 +924,7 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// Normal typing — update the input, then re-evaluate @-completion.
 	var cmd tea.Cmd
 	m.ta, cmd = m.ta.Update(msg)
+	m.syncComposer()
 	return m, tea.Batch(cmd, m.syncAC())
 }
 
@@ -1067,6 +1070,7 @@ func (m *Model) resize(w, h int) tea.Cmd {
 		m.ready = true
 	}
 	m.ta.SetWidth(w - 4)
+	m.syncComposer() // the new width re-wraps content — refit the box
 	m.gradRule = ""  // invalidate cached rule for the new width
 	m.convCount = -1 // and the cached transcript prefix (bars are width-dependent)
 	m.relayout()
@@ -1116,9 +1120,10 @@ func (m *Model) relayout() {
 		m.ta.SetHeight(max(1, m.ta.Height()-over))
 		vpH = m.height - headerHeight - footerHeight - m.inputAreaHeight()
 	}
-	// Ladder, restore: with room again the composer returns to full height.
-	if vpH >= 4 && m.ta.Height() < 3 {
-		m.ta.SetHeight(3)
+	// Ladder, restore: with room again the composer returns to its
+	// content-fitted height (syncComposer's bounds — not the old fixed 3).
+	if vpH >= 4 && m.ta.Height() < m.desiredComposerHeight() {
+		m.ta.SetHeight(m.desiredComposerHeight())
 		vpH = m.height - headerHeight - footerHeight - m.inputAreaHeight()
 	}
 	// Floor of 1, not 3: below the old floor the View was guaranteed taller
@@ -1137,7 +1142,7 @@ func (m *Model) inputAreaHeight() int {
 	if m.curApproval() != nil {
 		return lineCount(m.approvalBody()) + 2 // panel border
 	}
-	h := inputHeight
+	h := m.ta.Height() + 2 // composer box: text rows + top/bottom border
 	if m.statusLineVisible() {
 		h += 2 // busy status line + blank separator row above the input box
 	}

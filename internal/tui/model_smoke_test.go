@@ -29,6 +29,7 @@ func newTestModel() *Model {
 	// render the production input box.
 	ta.Prompt = " "
 	ta.ShowLineNumbers = false
+	ta.Focus() // mirror New(): a blurred textarea drops every key
 	m := &Model{
 		th:     newTheme(),
 		ta:     ta,
