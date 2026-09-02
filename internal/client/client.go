@@ -167,6 +167,9 @@ type Client struct {
 	serveToken string
 	http       *http.Client
 	Events     chan Event
+
+	stopOnce   sync.Once    // lazy: only jobs-stop pays the longer timeout budget
+	stopClient *http.Client // 12s — odek's stop endpoint blocks stopGrace+4s
 }
 
 // Dial connects to an odek serve WebSocket. wsURL is the ws:// endpoint,
