@@ -125,9 +125,9 @@ func TestSanitizeStripsControlSequences(t *testing.T) {
 			t.Errorf("sanitize left control byte %q in %q", bad, got)
 		}
 	}
-	if !strings.Contains(got, "plain") || !strings.Contains(got, "    tab") || !strings.Contains(got, "\n") {
-		// Tabs expand to four spaces (width-discipline contract) — whitespace
-		// must still survive, just in unambiguous form.
+	if !strings.Contains(got, "plain") || !strings.Contains(got, "\t") || !strings.Contains(got, "\n") {
+		// Tabs survive sanitize — copy fidelity beats display convenience;
+		// display paths expand them where cell math happens.
 		t.Errorf("sanitize dropped legitimate text/whitespace: %q", got)
 	}
 	// Fast path: clean input is returned unchanged.

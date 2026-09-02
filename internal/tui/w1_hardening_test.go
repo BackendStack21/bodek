@@ -18,7 +18,7 @@ func TestSanitizeStripsInvisibleClasses(t *testing.T) {
 		{"bidi override", "safe\u202Efoo", "safefoo"},
 		{"zero-width family", "a\u200Bb\u2060c\uFEFFd\u00ADe", "abcde"},
 		{"line separators", "l\u2028x\u2029y", "lxy"},
-		{"tab expands", "a\tb", "a    b"},
+		{"tab kept for copy fidelity", "a\tb", "a\tb"},
 		{"newline kept", "a\nb", "a\nb"},
 		{"cjk and emoji survive", "中文 ✅", "中文 ✅"},
 	}

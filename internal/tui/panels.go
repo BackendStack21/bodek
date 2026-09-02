@@ -771,8 +771,8 @@ func writeExport(dir, id, format string, data []byte) (string, error) {
 	base := fmt.Sprintf("bodek-%s-%s", shortID(id), time.Now().Format("20060102-150405"))
 	path := filepath.Join(dir, base+"."+format)
 	for i := 1; ; i++ {
-		if _, err := os.Stat(path); os.IsNotExist(err) {
-			break
+		if _, err := os.Stat(path); err != nil {
+			break // missing — or stat failed and the write reports the real error
 		}
 		path = filepath.Join(dir, fmt.Sprintf("%s-%d.%s", base, i, format))
 	}

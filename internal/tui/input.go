@@ -209,6 +209,7 @@ func (m *Model) sendQueued() tea.Cmd {
 	text := m.queue[0]
 	m.queue = m.queue[1:]
 	m.qsel = clampSel(m.qsel, len(m.queue))
+	m.qarm = -1 // the head just drained — never mis-aim the armed confirm
 	if len(m.queue) == 0 {
 		m.qfocus = false
 	}

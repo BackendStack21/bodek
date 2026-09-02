@@ -73,7 +73,9 @@ func (m *Model) queueStripView() string {
 	rows := make([]string, 0, window+2)
 	for i := range window {
 		marker, num := "  ", th.footer.Render(fmt.Sprintf("%d ", i+1))
-		if m.qfocus && m.qsel == i {
+		if m.qfocus && m.qarm == i {
+			marker = th.footerDanger.Render("! ") // armed for delete — visible in mouse mode too
+		} else if m.qfocus && m.qsel == i {
 			marker = "▸ "
 		}
 		text := th.footer.Render(truncate(m.queue[i], max(1, m.width-cw-5)))
@@ -131,6 +133,7 @@ func (m *Model) queueMove(i, delta int) {
 	if m.qsel == i {
 		m.qsel = j
 	}
+	m.qarm = -1 // the armed row moved — disarm rather than mis-aim the confirm
 	m.refresh()
 }
 

@@ -853,11 +853,9 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "alt+up":
 		// Turn-to-turn navigation on arrow chords — never characters, so
 		// prompts like "[TODO] fix" or array literals always type.
-		m.jumpTurn(false)
-		return m, nil
+		return m, m.jumpTurn(false)
 	case "alt+down":
-		m.jumpTurn(true)
-		return m, nil
+		return m, m.jumpTurn(true)
 	case "alt+f":
 		// Transcript search — a chord, so a bare f always types.
 		m.openFind()
@@ -1078,7 +1076,9 @@ func (m *Model) relayout() {
 	// Degradation ladder, step 1: when the layout doesn't fit, give the
 	// transcript rows back by shrinking the composer first — a one-visible-
 	// row terminal beats a View that never fits (judge-5 E1).
-	if vpH < 1 && m.ta.Height() > 1 {
+	if vpH < 1 && m.ta.Height() > 1 && m.curApproval() == nil {
+		// The approval panel replaces the composer entirely — shrinking the
+		// hidden textarea cannot help; clamp the approval body instead.
 		over := 1 - vpH
 		m.ta.SetHeight(max(1, m.ta.Height()-over))
 		vpH = m.height - headerHeight - footerHeight - m.inputAreaHeight()
@@ -1145,6 +1145,8 @@ func (m *Model) elapsed() string {
 // Unicode line separators) are dropped so displayed text can never disagree
 // with itself. Newlines are kept; tabs expand to four spaces so width math
 // never meets an ambiguous tab stop. Readable text survives untouched.
+// Tabs are kept — copied prose (Makefiles, gofmt output) must paste intact;
+// display paths expand them where cell math happens (truncate, clampLines).
 func sanitize(s string) string {
 	if !strings.ContainsFunc(s, needsSanitize) {
 		return s
@@ -1152,12 +1154,7 @@ func sanitize(s string) string {
 	var b strings.Builder
 	b.Grow(len(s))
 	for _, r := range s {
-		switch {
-		case r == '\n':
-			b.WriteRune(r)
-		case r == '\t':
-			b.WriteString("    ")
-		case !isControl(r) && !isInvisible(r):
+		if !needsSanitize(r) {
 			b.WriteRune(r)
 		}
 	}
@@ -1167,7 +1164,7 @@ func sanitize(s string) string {
 // needsSanitize is the fast-path predicate: whether the rune is anything
 // sanitize would rewrite.
 func needsSanitize(r rune) bool {
-	return isControl(r) || isInvisible(r) || r == '\t'
+	return isControl(r) || isInvisible(r)
 }
 
 // isControl reports whether r is a control character we strip from untrusted
@@ -1231,6 +1228,9 @@ func formatStepDur(d time.Duration) string {
 func truncate(s string, n int) string {
 	if n < 1 {
 		return "" // no room even for the ellipsis (very narrow terminal)
+	}
+	if strings.Contains(s, "\t") {
+		s = strings.ReplaceAll(s, "\t", "    ") // tabs are columns 1–8; width math needs a fixed pitch
 	}
 	if lipgloss.Width(s) <= n {
 		return s

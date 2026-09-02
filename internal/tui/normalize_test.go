@@ -17,7 +17,7 @@ func TestResultPreviewJSONEnvelope(t *testing.T) {
 	if !strings.Contains(got, "⚠ untrusted: /path/to/file.go") {
 		t.Errorf("missing source badge:\n%s", got)
 	}
-	if !strings.Contains(got, "218|    ta := textarea.New()") { // tab expands per sanitize contract
+	if !strings.Contains(got, "218|\tta := textarea.New()") { // tabs survive sanitize (copy fidelity)
 		t.Errorf("body line numbers not intact:\n%s", got)
 	}
 	if !strings.Contains(got, "total_lines: 300") {

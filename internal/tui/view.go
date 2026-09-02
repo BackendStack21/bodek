@@ -6,6 +6,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/charmbracelet/lipgloss"
 )
 
@@ -402,9 +403,10 @@ func (m *Model) conversation() string {
 		for i := 0; i < tail; i++ {
 			collectTurn(i, lineOffset)
 			s, r := m.renderMessage(m.msgs[i], i, lineOffset)
-			blocks = append(blocks, m.clampLines(s))
+			c := m.clampLines(s)
+			blocks = append(blocks, c)
 			refs = append(refs, r...)
-			lineOffset += lineCount(s) + 1 // blank separator between blocks
+			lineOffset += lineCount(c) + 1 // offsets track what is displayed
 		}
 		m.convPrefix = strings.Join(blocks, "\n\n")
 		m.convPrefixRefs = refs
@@ -431,9 +433,10 @@ func (m *Model) conversation() string {
 		}
 		collectTurn(i, lineOffset)
 		s, r := m.renderMessage(m.msgs[i], i, lineOffset)
-		blocks = append(blocks, m.clampLines(s))
+		c := m.clampLines(s)
+		blocks = append(blocks, c)
 		refs = append(refs, r...)
-		lineOffset += lineCount(s) + 1
+		lineOffset += lineCount(c) + 1
 	}
 	m.msgLineIndex = msgsIdx
 	if len(m.notices) > 0 {
@@ -643,11 +646,23 @@ func lineCount(s string) int {
 // width. Renderers wrap to their own budgets; this is the backstop that
 // keeps a logical line from ever physically wrapping, so lineCount stays
 // the source of truth for the click/scroll hit-test indices below the block.
+// Per-line truncate — never pad — so the line count is strictly preserved.
 func (m *Model) clampLines(s string) string {
 	if s == "" || m.vp.Width < 1 {
 		return s
 	}
-	return lipgloss.NewStyle().MaxWidth(m.vp.Width).Render(s)
+	if !strings.Contains(s, "\x1b[") && lipgloss.Width(s) <= m.vp.Width {
+		return s // single short line, nothing styled: untouched
+	}
+	lines := strings.Split(s, "\n")
+	for i, ln := range lines {
+		if w := lipgloss.Width(ln); w > m.vp.Width {
+			lines[i] = ansi.Truncate(strings.ReplaceAll(ln, "\t", "    "), m.vp.Width, "")
+		} else if strings.Contains(ln, "\t") {
+			lines[i] = strings.ReplaceAll(ln, "\t", "    ")
+		}
+	}
+	return strings.Join(lines, "\n")
 }
 
 // statLine renders the compact telemetry row shown beneath a finalized
