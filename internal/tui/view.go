@@ -1332,6 +1332,11 @@ func (m *Model) footer() string {
 		if n := len(m.queue); n > 0 {
 			left += th.footerSep.Render(" · ") + th.scroll.Render(fmt.Sprintf("▸ %d queued", n))
 		}
+	} else if m.status == "error" && m.ta.Value() == "" && m.lastPrompt != "" {
+		// A failed turn with an empty input: ⏎ resends the preserved
+		// prompt — the same contract the error card states. Hidden while a
+		// draft exists so typing is never hijacked by the hint.
+		left = "  " + th.footerKey.Render("⏎") + th.footer.Render(" retry last prompt")
 	}
 	// Persistent expandAll indicator — while the global toggle holds every
 	// step open, per-step toggles look dead unless the chrome says why.

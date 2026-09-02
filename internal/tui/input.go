@@ -163,6 +163,12 @@ func (m *Model) submit() tea.Cmd {
 			m.refresh()
 			return tea.Batch(m.scheduleReconnect(0), note)
 		}
+		// A failed turn leaves the prompt preserved server-side and
+		// lastPrompt set client-side — ⏎ is the one-key resend, the same
+		// promise the error card and the footer hint make.
+		if m.status == "error" && !m.busy && m.lastPrompt != "" {
+			return m.retryLast()
+		}
 		return nil
 	}
 	// Slash commands run locally and are allowed even mid-turn (e.g. /cancel).

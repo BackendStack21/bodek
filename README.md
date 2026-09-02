@@ -231,6 +231,12 @@ own front-end settings are separate; see [Configuration](#configuration).
   trims, tool execution times) stays silent. Info traces fade after 3s;
   errors, warnings, and disconnect notes autoclose after 10s.
 - **Cancellation** (`Esc`) — abort a running turn via odek's cancel API.
+- **Provider-failure cards** — when a turn dies mid-flight (stream stall
+  under parallel load, HTTP 429 after the retry budget, dropped connection,
+  timeout), the failure is classified and attached to the turn in plain
+  language — never a raw LLM-internal error line. The card and the footer
+  show the recovery path: `⏎` on the empty input re-sends the preserved
+  prompt (`/retry` or `alt+r` work too).
 
 ### Safety
 
@@ -319,6 +325,7 @@ own front-end settings are separate; see [Configuration](#configuration).
 | `F1` | Show the help card |
 | `wheel` (with `--mouse`) | Scroll the transcript · click tool rows, turn heads, and the cockpit |
 | `⏎` (disconnected, empty input) | Retry the connection |
+| `⏎` (after a failed turn, empty input) | Re-send the failed prompt |
 | `^C` | Quit (confirm: `y` or a second `^C`) |
 
 **Every printable character always types.** No bare letter, digit, or

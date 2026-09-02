@@ -437,12 +437,14 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case errMsg:
 		m.busy = false
 		m.status = "error"
-		m.addNote("error: " + msg.err.Error())
 		// Close out the turn sendPrompt opened — otherwise the transcript
 		// keeps a phantom streaming assistant message with no reply. Same
-		// inline styling as a server-side error event.
-		if i := m.cur(); i >= 0 && m.msgs[i].content == "" {
-			setTurnMarker(&m.msgs[i], "**Error:** "+msg.err.Error())
+		// classified card as a server-side error event; the note is the
+		// fallback when no turn is open to hold it.
+		if i := m.cur(); i >= 0 {
+			setTurnMarker(&m.msgs[i], m.errorCard(msg.err.Error()))
+		} else {
+			m.addNote("error: " + msg.err.Error())
 		}
 		m.finalize()
 		m.relayout() // the busy status line releases its row

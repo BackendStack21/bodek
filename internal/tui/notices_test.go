@@ -87,12 +87,13 @@ func TestTrimSignalSilenced(t *testing.T) {
 }
 
 // TestNoticesAutoclose is the regression for the never-disappearing
-// "error: iteration 22: llm: stream idle…" notice: every addNote path —
-// errors with and without an open turn, disconnects — posts into the strip
-// as an alert that fades after alertTTL. Durable state stays in the header
-// badge; the strip holds only bounded messages.
+// notices: every addNote path — errors without an open turn, disconnects —
+// posts into the strip as an alert that fades after alertTTL. Errors on an
+// open turn are deliberately NOT here: they attach to the turn as a
+// classified card instead of degrading to a strip note.
 func TestNoticesAutoclose(t *testing.T) {
-	// Error on a turn that already produced prose → strip note.
+	// Error on a turn that already produced prose → classified card on the
+	// turn; the strip stays out of it.
 	m := newTestModel()
 	m.msgs = append(m.msgs,
 		message{role: roleUser, content: "go"},
@@ -100,7 +101,15 @@ func TestNoticesAutoclose(t *testing.T) {
 	m.curIdx = 1
 	_, cmd := m.handleEvent(client.Event{Type: "error",
 		Message: "iteration 22: llm: stream idle for over 1m0s without an event"})
-	assertAlertDwell(t, m, cmd != nil, "error: iteration 22")
+	_ = cmd // the event-loop batch — always non-nil, unrelated to note posting
+	if card := m.msgs[1].content; !strings.Contains(card, "Provider stream stalled") {
+		t.Errorf("classified card missing from the turn: %q", card)
+	}
+	for _, n := range m.notices {
+		if strings.Contains(n, "iteration 22") {
+			t.Errorf("error degraded to a strip note: %v", m.notices)
+		}
+	}
 
 	// Error with no open turn → the other addNote path.
 	m2 := newTestModel()
