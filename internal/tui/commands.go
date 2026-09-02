@@ -77,6 +77,9 @@ func slashCommands() []command {
 		{"events", "runtime event feed", func(m *Model, _ string) tea.Cmd {
 			return m.openEvents()
 		}},
+		{"jobs", "background jobs — status, output & stop", func(m *Model, _ string) tea.Cmd {
+			return m.openJobs()
+		}},
 		{"plan", "structured task plan of this session", func(m *Model, _ string) tea.Cmd {
 			return m.openPlan()
 		}},

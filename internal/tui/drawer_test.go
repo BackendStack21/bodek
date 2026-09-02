@@ -4,6 +4,8 @@ import (
 	"strings"
 	"testing"
 
+	tea "github.com/charmbracelet/bubbletea"
+
 	"github.com/BackendStack21/bodek/internal/client"
 )
 
@@ -11,6 +13,9 @@ import (
 // (status glyphs, approval badge), and drives a remote approval + cancel.
 func TestDrawerRunsTab(t *testing.T) {
 	m := wired(t)
+	// Ten tabs: widen the window so the full tab strip renders (it collapses
+	// behind an ellipsis when it doesn't fit — by design).
+	m.Update(tea.WindowSizeMsg{Width: 240, Height: 30})
 	m.Update(exec(m.openRuns()))
 	if m.panel != panelRuns {
 		t.Fatalf("panel = %d, want runs", m.panel)
@@ -71,16 +76,16 @@ func TestDrawerEventsTab(t *testing.T) {
 	}
 }
 
-// TestDrawerTabCycling verifies ]/[ and digit jumps move between ALL nine
+// TestDrawerTabCycling verifies ]/[ and digit jumps move between ALL ten
 // drawer tabs (management panels included — they are full tabs, not loose
 // overlays) and esc closes from any of them.
 func TestDrawerTabCycling(t *testing.T) {
 	m := wired(t)
 	m.Update(exec(m.openRuns()))
 
-	// ] walks the full ring: runs → agents → events → plan → memory →
-	// skills → tools → config → sessions.
-	want := []panelMode{panelAgents, panelEvents, panelPlan, panelMemory, panelSkills, panelTools, panelConfig, panelSessions}
+	// ] walks the full ring: runs → agents → jobs → events → plan →
+	// memory → skills → tools → config → sessions.
+	want := []panelMode{panelAgents, panelJobs, panelEvents, panelPlan, panelMemory, panelSkills, panelTools, panelConfig, panelSessions}
 	for _, w := range want {
 		_, cmd := m.Update(key("]"))
 		m.Update(exec(cmd))
@@ -94,11 +99,11 @@ func TestDrawerTabCycling(t *testing.T) {
 	if m.panel != panelConfig {
 		t.Errorf("[ did not wrap to config: %d", m.panel)
 	}
-	// Digits jump straight to any tab.
+	// Digits jump straight to any tab — "0" reaches the tenth.
 	for d, w := range map[string]panelMode{
-		"1": panelSessions, "2": panelRuns, "3": panelAgents, "4": panelEvents,
-		"5": panelPlan, "6": panelMemory, "7": panelSkills, "8": panelTools,
-		"9": panelConfig,
+		"1": panelSessions, "2": panelRuns, "3": panelAgents, "4": panelJobs,
+		"5": panelEvents, "6": panelPlan, "7": panelMemory, "8": panelSkills,
+		"9": panelTools, "0": panelConfig,
 	} {
 		_, cmd := m.Update(key(d))
 		m.Update(exec(cmd))
@@ -106,16 +111,18 @@ func TestDrawerTabCycling(t *testing.T) {
 			t.Errorf("digit %s: panel = %d, want %d", d, m.panel, w)
 		}
 	}
-	// The strip renders every tab name, and r refreshes a management tab
-	// the same as a core tab (they are drawer tabs now).
+	// The strip renders every tab name — at a width where it cannot
+	// collapse (ten tabs overflow narrow panes, and which tab the digit
+	// walk above ends on is map-order random).
+	m.Update(tea.WindowSizeMsg{Width: 240, Height: 30})
 	out := plain(m.View())
-	for _, name := range []string{"sessions", "runs", "agents", "events", "plan", "memory", "skills", "tools", "config"} {
+	for _, name := range []string{"sessions", "runs", "agents", "jobs", "events", "plan", "memory", "skills", "tools", "config"} {
 		if !strings.Contains(out, name) {
 			t.Errorf("tab strip missing %q:\n%s", name, out)
 		}
 	}
 	m.Update(exec(m.fetchSessionsPage("", 0, false)))
-	_, cmd = m.Update(key("6")) // memory tab (agents shifted the digits)
+	_, cmd = m.Update(key("7")) // memory tab (agents+jobs shifted the digits)
 	m.Update(exec(cmd))
 	_, cmd = m.Update(key("r"))
 	if cmd == nil {

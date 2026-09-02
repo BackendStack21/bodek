@@ -354,6 +354,7 @@ full command and press `⏎`.
 | `/runs` | Headless REST runs — live status, remote approvals, cancel |
 | `/run <prompt>` | Start a headless run (fresh session) and watch it in the runs tab |
 | `/events` | The `odek.event/v1` runtime feed |
+| `/jobs` | Background jobs — live status, output viewer, `s` stop (requires odek ≥ v1.38) |
 | `/plan` | Structured task plan of this session (live status) |
 | `/memory` | Facts by target, pending-episode promote, consolidate |
 | `/skills` | Skill provenance badges & promote |
@@ -370,10 +371,12 @@ full command and press `⏎`.
 
 ### The management drawer
 
-`/sessions`, `/runs`, `/agents`, `/events`, `/plan`, `/memory`, `/skills`,
-`/tools`, and `/config` all open tabs of **one drawer** with a shared grammar:
+`/sessions`, `/runs`, `/agents`, `/jobs`, `/events`, `/plan`, `/memory`,
+`/skills`, `/tools`, and `/config` all open tabs of **one drawer** with a
+shared grammar:
 
-- `]` / `[` cycle tabs · `1`–`9` jump · `r` refresh · `esc` closes.
+- `]` / `[` cycle tabs · `1`–`9` jump · `0` jumps to the tenth (config) ·
+  `r` refresh · `esc` closes.
 - **Every management row opens a detail view on `⏎`** — the full text
   behind the gate: a skill's description and provenance, a fact or pending
   episode's body, an MCP server's command/args/limits, raw JSON for nested
@@ -388,6 +391,11 @@ full command and press `⏎`.
   `c` stop the highlighted row (two-step, same gate as `/stop`), `o` jump to
   the delegating transcript step, `⏎` the full registry record — trust,
   budget, cost, and artifact lines included.
+- **Jobs** — the session's background commands (odek ≥ v1.38), live-polled
+  every 3s; a background watcher surfaces starts and exits as transcript
+  notes even with the tab closed. `⏎` opens the job's output viewer (`f`
+  pages further output), `s` stops a running job (two-step, same gate as
+  `/stop`). Jobs are session-scoped: other sessions' jobs never appear.
 - **Events** — the `odek.event/v1` ring: `f` filter to this session, `x`
   clear filters (a runs-tab drill-in scopes it to one run).
 - **Plan** — the engine's structured task plan (Telegram-parity renderer):

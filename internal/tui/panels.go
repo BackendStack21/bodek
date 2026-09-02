@@ -28,6 +28,7 @@ const (
 	panelTools
 	panelConfig
 	panelAgents
+	panelJobs
 )
 
 // panelEditMode is the text-entry submode a panel can capture: `/` search in
@@ -53,6 +54,7 @@ const (
 	confirmClear
 	confirmCancel
 	confirmStopAgent
+	confirmStopJob
 	confirmQuit
 )
 
@@ -81,6 +83,11 @@ func (m *Model) handleConfirmKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			// armed degrades to a notice — the terminal state still comes
 			// from subagent_state, never from the ack.
 			return m, m.stopAgent(m.stopTarget)
+		case confirmStopJob:
+			// fireJobStop self-guards: the armed id is captured and cleared
+			// here, so a job that finished while the gate sat armed just
+			// reports its terminal state from the server.
+			return m, m.fireJobStop()
 		case confirmQuit:
 			m.quitting = true
 			return m, tea.Quit
@@ -114,7 +121,7 @@ func (m *Model) armConfirm(kind confirmKind, what string) tea.Cmd {
 		verb = "clear "
 	case confirmCancel:
 		verb = "cancel "
-	case confirmStopAgent:
+	case confirmStopAgent, confirmStopJob:
 		verb = "stop "
 	case confirmQuit:
 		verb = "quit "
@@ -296,12 +303,21 @@ func (m *Model) handlePanelKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				return m, m.skillPromote(true)
 			}
 			return m, nil
+		case "f", "F":
+			if m.panel == panelJobs {
+				// 0 cursor = ring end: refetching would duplicate the head.
+				if m.jobsOutCursor == 0 {
+					return m, nil
+				}
+				return m, m.fetchJobOutput(m.jobsOutCursor)
+			}
+			return m, nil
 		}
 		// Everything else is swallowed by the detail view — except the
 		// drawer navigation keys, which fall through to switch tabs.
 		s := msg.String()
 		drawerNav := s == "]" || s == "[" || s == "left" || s == "right" ||
-			(len(s) == 1 && s[0] >= '1' && s[0] <= '9')
+			(len(s) == 1 && s[0] >= '1' && s[0] <= '9') || s == "0"
 		if !drawerNav {
 			return m, nil
 		}
@@ -319,6 +335,9 @@ func (m *Model) handlePanelKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			if idx := int(d[0] - '1'); idx < len(tabs) {
 				return m, m.switchDrawerTab(tabs[idx].mode)
 			}
+		} else if d := msg.String(); d == "0" && len(tabs) > 9 {
+			// The tenth tab teaches "0" — the strip renders it, not "10".
+			return m, m.switchDrawerTab(tabs[9].mode)
 		}
 	}
 	switch msg.String() {
@@ -405,6 +424,7 @@ func (m *Model) handlePanelKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.panel == panelEvents {
 			return m, m.toggleEventFilter()
 		}
+		// jobs detail handles its own paging above (detail submode).
 	case "/":
 		if m.panel == panelSessions {
 			m.panelEdit = panelEditSearch
@@ -432,6 +452,9 @@ func (m *Model) handlePanelKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "s", "S":
 		if m.panel == panelConfig {
 			return m, m.startShutdownConfirm()
+		}
+		if m.panel == panelJobs {
+			return m, m.stopSelectedJob()
 		}
 	case "e":
 		if m.panel == panelSessions {
@@ -562,6 +585,8 @@ func (m *Model) panelLen() int {
 		return len(m.cfgRows)
 	case panelAgents:
 		return len(m.agentsReg)
+	case panelJobs:
+		return len(m.jobs)
 	}
 	return 0
 }
@@ -658,6 +683,11 @@ func (m *Model) panelSelect() tea.Cmd {
 			m.refresh()
 		}
 		return nil
+	case panelJobs:
+		if m.panelDetail || m.panelLen() == 0 {
+			return nil
+		}
+		return m.openJobDetail()
 	case panelMemory, panelSkills, panelTools, panelConfig:
 		// Enter expands the selected row into its detail view — the
 		// promote/delete gates assume the human can read what they gate.
@@ -1174,6 +1204,9 @@ func (m *Model) renderPanel(w, h int) string {
 	case panelAgents:
 		title = "◈ agents"
 		rows = m.agentRowsRender(w - 6)
+	case panelJobs:
+		title = "◍ jobs"
+		rows = m.jobRowsRender(w - 6)
 	}
 
 	header := th.acTitle.Render(title)
