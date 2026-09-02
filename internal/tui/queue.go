@@ -36,8 +36,8 @@ func (m *Model) queueStripHeight() int {
 	if len(m.queue) > queueStripCap {
 		h++ // the overflow tail
 	}
-	if !m.mouse {
-		h++ // the ^Q hint row replaces the ▲▼✕ controls
+	if !m.mouse || m.qarm >= 0 {
+		h++ // the ^Q hint row replaces the ▲▼✕ controls; the armed hint renders in both modes
 	}
 	return h
 }
@@ -88,10 +88,12 @@ func (m *Model) queueStripView() string {
 		}
 		rows = append(rows, th.acDetail.Render(s))
 	}
-	if !m.mouse {
-		if m.qarm >= 0 {
-			rows = append(rows, th.footerDanger.Render("  d again deletes · esc cancels"))
-		} else if m.qfocus {
+	if m.qarm >= 0 {
+		// The armed state must be explained in mouse mode too — the ! marker
+		// alone reads as an error, not a pending confirm.
+		rows = append(rows, th.footerDanger.Render("  y deletes · esc cancels"))
+	} else if !m.mouse {
+		if m.qfocus {
 			rows = append(rows, th.acDetail.Render("  ↑↓ select · ←→ move · d delete · esc done"))
 		} else {
 			rows = append(rows, th.acDetail.Render("  ^q to manage the queue"))
@@ -114,6 +116,7 @@ func (m *Model) queueDeleteAt(i int) {
 	if i < 0 || i >= len(m.queue) {
 		return
 	}
+	m.qarm = -1 // the armed row is gone — never leave a stale confirm
 	m.queue = append(m.queue[:i], m.queue[i+1:]...)
 	m.qsel = clampSel(m.qsel, len(m.queue))
 	if len(m.queue) == 0 {
@@ -253,14 +256,20 @@ func (m *Model) queueStripKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.queueMove(m.qsel, 1)
 	case "d":
 		// Two-step delete, like every destructive action here: the first
-		// press arms the row, the second confirms; anything else disarms.
+		// press arms the row (marked ! on the strip), y — or a second d —
+		// confirms; anything else disarms.
 		if m.qarm == m.qsel {
 			m.qarm = -1
 			m.queueDeleteAt(m.qsel)
 			break
 		}
 		m.qarm = m.qsel
-		return m, m.transientNoteCmd("press d again to delete")
+	case "y", "Y":
+		// The confirm verb matches every other gate in the app.
+		if m.qarm == m.qsel {
+			m.qarm = -1
+			m.queueDeleteAt(m.qsel)
+		}
 	}
 	m.refresh()
 	return m, nil

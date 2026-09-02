@@ -769,14 +769,26 @@ func (m *Model) exportSelected(format string) tea.Cmd {
 // can carry sensitive tool output, matching the tokens store standard.
 func writeExport(dir, id, format string, data []byte) (string, error) {
 	base := fmt.Sprintf("bodek-%s-%s", shortID(id), time.Now().Format("20060102-150405"))
-	path := filepath.Join(dir, base+"."+format)
-	for i := 1; ; i++ {
-		if _, err := os.Stat(path); err != nil {
-			break // missing — or stat failed and the write reports the real error
+	for i := 0; i < 1000; i++ { // O_EXCL: never a racing truncating overwrite
+		suffix := ""
+		if i > 0 {
+			suffix = fmt.Sprintf("-%d", i)
 		}
-		path = filepath.Join(dir, fmt.Sprintf("%s-%d.%s", base, i, format))
+		path := filepath.Join(dir, base+suffix+"."+format)
+		f, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+		if os.IsExist(err) {
+			continue
+		}
+		if err != nil {
+			return "", err
+		}
+		if _, werr := f.Write(data); werr != nil {
+			_ = f.Close() // the write error is the one that matters
+			return "", werr
+		}
+		return path, f.Close()
 	}
-	return path, os.WriteFile(path, data, 0o600)
+	return "", fmt.Errorf("no free export name for %s", base)
 }
 
 // cancelRun aborts the in-flight prompt: the WebSocket cancel first (the

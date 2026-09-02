@@ -5,6 +5,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 )
 
 // findState is the transcript search bar. alt+f opens it; typed runes filter
@@ -162,13 +163,13 @@ func (m *Model) msgLine(idx int) int {
 	return 0
 }
 
-// findBar renders the one-row search strip above the input box.
+// findBar renders the one-row search strip above the input box. The query
+// gets whatever the fixed chrome leaves; the assembled row is then
+// hard-clamped — a wrapped bar costs a second line and breaks the
+// inputAreaHeight contract.
 func (m *Model) findBar() string {
 	th := m.th
-	q := string(m.find.query)
-	if w := m.width - 52; w > 0 && lipgloss.Width(q) > w {
-		q = truncate(q, w)
-	}
+	suffix := " · ⏎/n next · N prev · ↑↓ scroll · esc close"
 	count := "type to search the transcript"
 	if len(m.find.query) > 0 {
 		if n := len(m.find.matches); n == 0 {
@@ -177,6 +178,24 @@ func (m *Model) findBar() string {
 			count = plural(n, "match", "matches")
 		}
 	}
-	return " " + th.footerKey.Render("find") +
-		th.footer.Render(" '"+q+"' · "+count+" · ⏎/n next · N prev · ↑↓ scroll · esc close")
+	head := " " + th.footerKey.Render("find") + th.footer.Render(" ")
+	tail := th.footer.Render(count + suffix)
+	budget := m.width - lipgloss.Width(head) - lipgloss.Width(tail) - 5 // the '" · ' decorations
+	if budget < 1 {
+		budget = 1
+	}
+	q := sanitize(string(m.find.query)) // pasted runes can carry escapes
+	q = strings.ReplaceAll(q, "\t", "    ")
+	if lipgloss.Width(q) > budget {
+		q = truncate(q, budget)
+	}
+	mid := ""
+	if q != "" {
+		mid = "'" + q + "' · " // no empty quotes for an empty query
+	}
+	row := head + th.footer.Render(mid) + tail
+	if w := lipgloss.Width(row); w > m.width {
+		row = ansi.Truncate(row, m.width, "")
+	}
+	return row
 }

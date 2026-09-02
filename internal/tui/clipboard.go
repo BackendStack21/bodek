@@ -98,10 +98,20 @@ func (m *Model) copyViaExec(tool, text string) tea.Cmd {
 	if err != nil {
 		return m.copyTextOSC52(text)
 	}
-	go func() {
-		_, _ = io.WriteString(stdin, text)
+	if len(text) <= 32_000 {
+		// Small payloads fit the pipe buffer: write synchronously — nothing
+		// can leak if the helper fails to start.
+		_, _ = stdin.Write([]byte(text))
 		_ = stdin.Close()
-	}()
+	} else {
+		// Large payloads need a concurrent writer; a failed start unblocks
+		// it when Wait closes the pipe. The helper was on PATH moments ago
+		// and consumes stdin on success, so this is bounded in practice.
+		go func() {
+			_, _ = io.WriteString(stdin, text)
+			_ = stdin.Close()
+		}()
+	}
 	return tea.ExecProcess(c, func(err error) tea.Msg {
 		return copyResultMsg{n: len(text), tool: tool, err: err}
 	})

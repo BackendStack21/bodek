@@ -6,8 +6,8 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/x/ansi"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 )
 
 // View composes the full screen: header, scrollable transcript, the busy
@@ -321,7 +321,10 @@ func (m *Model) statusLine() string {
 	// row itself is hard-clamped: a wrapped status row costs a second line
 	// and breaks the height contract inputAreaHeight promised.
 	row := th.spinner.Render(m.sp.View()) + " " + th.statusBusy.Render(label) + el + q + strip
-	return "\n" + lipgloss.NewStyle().MaxWidth(max(m.width, 1)).Render(row)
+	if w := lipgloss.Width(row); w > m.width {
+		row = ansi.Truncate(row, m.width-1, "") + "…" // shear with a marker, not silently
+	}
+	return "\n" + row
 }
 
 // statusLineVisible reports whether the status line occupies a row, keeping
@@ -651,16 +654,18 @@ func (m *Model) clampLines(s string) string {
 	if s == "" || m.vp.Width < 1 {
 		return s
 	}
-	if !strings.Contains(s, "\x1b[") && lipgloss.Width(s) <= m.vp.Width {
-		return s // single short line, nothing styled: untouched
+	if !strings.Contains(s, "\x1b[") && !strings.Contains(s, "\t") && lipgloss.Width(s) <= m.vp.Width {
+		return s // single short unstyled line: untouched
 	}
 	lines := strings.Split(s, "\n")
 	for i, ln := range lines {
-		if w := lipgloss.Width(ln); w > m.vp.Width {
-			lines[i] = ansi.Truncate(strings.ReplaceAll(ln, "\t", "    "), m.vp.Width, "")
-		} else if strings.Contains(ln, "\t") {
-			lines[i] = strings.ReplaceAll(ln, "\t", "    ")
+		if strings.Contains(ln, "\t") {
+			ln = strings.ReplaceAll(ln, "\t", "    ") // expand BEFORE measuring — a tab is up to 8 columns
 		}
+		if w := lipgloss.Width(ln); w > m.vp.Width {
+			ln = ansi.Truncate(ln, m.vp.Width, "")
+		}
+		lines[i] = ln
 	}
 	return strings.Join(lines, "\n")
 }
@@ -1306,7 +1311,7 @@ func (m *Model) footer() string {
 		// ^S arms from the composer — the gate must render where it captured
 		// the keyboard, not only inside the agents panel.
 		return m.panelFooter(
-			th.footerDanger.Render(strings.Split(m.panelMsg, "?")[0]+"?"),
+			th.footerDanger.Render(strings.SplitN(m.panelMsg, "?  ", 2)[0]+"?"),
 			th.footerKey.Render("y")+th.footerDanger.Render(" stop"),
 			th.footer.Render("any other key cancels"),
 		)

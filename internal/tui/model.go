@@ -1077,8 +1077,9 @@ func (m *Model) relayout() {
 	// transcript rows back by shrinking the composer first — a one-visible-
 	// row terminal beats a View that never fits (judge-5 E1).
 	if vpH < 1 && m.ta.Height() > 1 && m.curApproval() == nil {
-		// The approval panel replaces the composer entirely — shrinking the
-		// hidden textarea cannot help; clamp the approval body instead.
+		// The approval panel replaces the composer entirely (its body lines
+		// are pre-wrapped by approvalBody) — shrinking the hidden textarea
+		// cannot help; the ladder only guards the composer path.
 		over := 1 - vpH
 		m.ta.SetHeight(max(1, m.ta.Height()-over))
 		vpH = m.height - headerHeight - footerHeight - m.inputAreaHeight()
@@ -1339,14 +1340,14 @@ func (m *Model) jumpTurn(next bool) tea.Cmd {
 	m.vp.SetYOffset(target)
 	m.focusTurnAt(target + 1) // the head line we landed under
 	m.refresh()
-	rank := 0
 	for i, r := range m.turnLineIndex {
-		if r.msgIdx == m.focusIdx {
-			rank = i + 1
-			break
+		if r.line == target+1 { // key off the landed line, not prior focus state
+			return m.transientNoteCmd(fmt.Sprintf("turn %d/%d — alt+y copies this reply", i+1, len(m.turnLineIndex)))
 		}
 	}
-	return m.transientNoteCmd(fmt.Sprintf("turn %d/%d — alt+y copies this reply", rank, len(m.turnLineIndex)))
+	// The focus did not land (degenerate layout) — never claim alt+y will
+	// copy something it won't.
+	return m.transientNoteCmd("top of transcript — alt+y copies the latest reply")
 }
 
 // focusTurnAt records the turn head at the given viewport line as the copy
