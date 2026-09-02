@@ -404,8 +404,10 @@ shared grammar:
   the delegating transcript step, `⏎` the full registry record — trust,
   budget, cost, and artifact lines included.
 - **Jobs** — the session's background commands (odek ≥ v1.38), live-polled
-  every 3s; a background watcher surfaces starts and exits as transcript
-  notes even with the tab closed. `⏎` opens the job's output viewer (`f`
+  every 3s; a background watcher surfaces starts as transcript notes and
+  exits as **alert-tier notes naming the command** — with a bell / desktop
+  notification (same gates as turns) so a finished job is never missed,
+  even with the tab closed. `⏎` opens the job's output viewer (`f`
   pages further output), `s` stops a running job (two-step, same gate as
   `/stop`). Jobs are session-scoped: other sessions' jobs never appear.
 - **Events** — the `odek.event/v1` ring: `f` filter to this session, `x`

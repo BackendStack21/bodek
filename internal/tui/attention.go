@@ -11,8 +11,10 @@ import (
 type attentionKind int
 
 const (
-	attentionDone     attentionKind = iota // a turn finished (done event)
-	attentionApproval                      // an approval is waiting (approval_request)
+	attentionDone      attentionKind = iota // a turn finished (done event)
+	attentionApproval                       // an approval is waiting (approval_request)
+	attentionJobDone                        // a background job exited cleanly (jobs watcher)
+	attentionJobFailed                      // a background job failed / timed out / was killed
 )
 
 // attention is the plan of terminal-attention effects for one state change.
@@ -58,6 +60,10 @@ func (m *Model) attentionFor(kind attentionKind) attention {
 		prefix, note = "⚠ approval needed", "bodek: approval needed"
 	case attentionDone:
 		prefix, note = "✓ done", "bodek: turn complete"
+	case attentionJobDone:
+		prefix, note = "✓ bg job done", "bodek: background job finished"
+	case attentionJobFailed:
+		prefix, note = "✗ bg job failed", "bodek: background job failed"
 	default:
 		return attention{}
 	}
