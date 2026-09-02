@@ -218,6 +218,18 @@ type Model struct {
 	agentsReg []client.SubagentEntry // agents tab: sub-agent registry snapshot
 	agentsSeq int                    // agents-tab poll generation; stale ticks drop
 
+	// Background jobs tab + lifecycle watcher (odek v1.38+ /api/jobs — the
+	// engine pushes nothing for job lifecycle, so bodek watches REST).
+	jobs          []client.Job
+	jobsPrev      map[string]string // watcher diff state: id → last status
+	jobsSeq       int               // tab poll generation
+	jobsWatchSeq  int               // 10s watcher generation
+	jobsOff       bool              // server predates /api/jobs — stop watching
+	jobsOut       string            // detail: fetched output (sanitized at render)
+	jobsOutID     string            // detail: which job the output belongs to
+	jobsOutCursor int               // detail: next chunk cursor (0 = end)
+	stopJobID     string            // job armed by confirmStopJob
+
 	liveTasks map[string]*agentCard // every unfinished card, any turn: stop paths resolve across turns
 
 	// Drawer state: runs polling + the events feed.
@@ -559,6 +571,20 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
+	case jobsTickMsg:
+		return m, m.handleJobsTick(msg)
+
+	case jobsFetchedMsg:
+		m.applyJobs(msg.jobs, msg.err)
+		m.refresh()
+		return m, tea.Batch(m.rearmJobs(), m.noticeSweep())
+
+	case jobOutputMsg:
+		return m, m.handleJobOutput(msg)
+
+	case jobStopDoneMsg:
+		return m, m.handleJobStopDone(msg)
+
 	case mgmtActionMsg:
 		if m.panel == msg.tab {
 			return m, m.afterMgmtAction(msg)
@@ -614,6 +640,12 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		mm, cmd := m.handleEvent(ev)
 		if pm := mm.(*Model); pm.plain {
 			cmd = tea.Batch(cmd, pm.plainPrintCmd(ev))
+		}
+		if ev.Type == "session" && m.sessionID != "" && m.authToken != "" {
+			// (Re)bind the jobs watcher to the live session — connect,
+			// reconnect, and session switches all re-fire this frame;
+			// stale generations just drop.
+			cmd = tea.Batch(cmd, m.armJobsWatch())
 		}
 		return mm, cmd
 

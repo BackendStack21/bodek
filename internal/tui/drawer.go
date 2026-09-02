@@ -25,7 +25,13 @@ func (m *Model) tabBar(maxw int) string {
 	var parts []string
 	active := ""
 	for i, t := range drawerTabs() {
-		label := fmt.Sprintf("%d %s", i+1, t.name)
+		// The tenth tab teaches "0" — the strip renders the shortcut the
+		// digit jump actually accepts, never a "10" no key can type.
+		shot := fmt.Sprintf("%d", i+1)
+		if i == 9 {
+			shot = "0"
+		}
+		label := fmt.Sprintf("%s %s", shot, t.name)
 		if t.mode == m.panel {
 			active = m.th.acSel.Render(label)
 			parts = append(parts, active)
@@ -206,6 +212,7 @@ func drawerTabs() []drawerTab {
 		{"sessions", panelSessions, func(m *Model) tea.Cmd { return m.openSessions() }},
 		{"runs", panelRuns, func(m *Model) tea.Cmd { return m.openRuns() }},
 		{"agents", panelAgents, func(m *Model) tea.Cmd { return m.openAgents() }},
+		{"jobs", panelJobs, func(m *Model) tea.Cmd { return m.openJobs() }},
 		{"events", panelEvents, func(m *Model) tea.Cmd { return m.openEvents() }},
 		{"plan", panelPlan, func(m *Model) tea.Cmd { return m.openPlan() }},
 		{"memory", panelMemory, func(m *Model) tea.Cmd { return m.openMemory() }},

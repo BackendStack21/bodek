@@ -290,6 +290,11 @@ func TestE2EAllCommands(t *testing.T) {
 				t.Fatalf("/agents opened panel %d", m.panel)
 			}
 		},
+		"/jobs": func(t *testing.T, m *Model) {
+			if m.panel != panelJobs {
+				t.Fatalf("/jobs opened panel %d", m.panel)
+			}
+		},
 		"/attach": func(t *testing.T, m *Model) {
 			if len(m.attachments) != 1 || m.attachments[0].Name != "notes.txt" {
 				t.Fatalf("/attach staged = %+v", m.attachments)

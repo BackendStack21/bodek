@@ -112,6 +112,8 @@ func (m *Model) basePaletteEntries() []palEntry {
 			run: func(m *Model) tea.Cmd { return m.openRuns() }},
 		{title: "events — runtime feed", hint: "/events", kind: "view",
 			run: func(m *Model) tea.Cmd { return m.openEvents() }},
+		{title: "jobs — background commands", hint: "/jobs", kind: "view",
+			run: func(m *Model) tea.Cmd { return m.openJobs() }},
 		{title: "memory — facts & episodes", hint: "/memory", kind: "view",
 			run: func(m *Model) tea.Cmd { return m.openMemory() }},
 		{title: "skills — provenance & promote", hint: "/skills", kind: "view",

@@ -543,7 +543,7 @@ func (m *Model) cfgRowsRender(w int) []string {
 // mgmtPanel reports whether p is a management drawer tab.
 func mgmtPanel(p panelMode) bool {
 	switch p {
-	case panelAgents, panelPlan, panelMemory, panelSkills, panelTools, panelConfig:
+	case panelAgents, panelJobs, panelPlan, panelMemory, panelSkills, panelTools, panelConfig:
 		return true
 	}
 	return false
@@ -692,6 +692,29 @@ func (m *Model) mgmtDetailLines(w int) []string {
 			out = append(out, "")
 			out = append(out, wrapText(sanitize(d), w)...)
 		}
+	case panelJobs:
+		if m.panelSel >= len(m.jobs) {
+			return []string{th.acDim.Render("no job selected")}
+		}
+		j := m.jobs[m.panelSel]
+		out = append(out, th.acSel.Render("› "+jobStatusGlyph(j.Status)+" "+sanitize(j.ID)))
+		meta := []string{j.Status, fmtRuntime(j.RuntimeS)}
+		if j.ExitCode != nil {
+			meta = append(meta, fmt.Sprintf("exit %d", *j.ExitCode))
+		}
+		out = append(out, th.acDetail.Render(strings.Join(meta, " · ")))
+		out = append(out, th.acDetail.Render("command: "+sanitize(j.Command)))
+		out = append(out, "")
+		switch {
+		case m.jobsOutID != j.ID:
+			out = append(out, th.acDim.Render("(output not loaded — fold and reopen)"))
+		case m.jobsOut != "":
+			out = append(out, wrapText(sanitize(m.jobsOut), w)...)
+		default:
+			out = append(out, th.acDim.Render("(no output yet)"))
+		}
+		out = append(out, "")
+		out = append(out, th.acDim.Render("f · more output · esc folds back"))
 	case panelMemory:
 		r := m.memSelected()
 		if r == nil {
