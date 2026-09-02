@@ -989,10 +989,15 @@ func (m *Model) handleSessionDetail(msg sessionDetailMsg) tea.Cmd {
 	m.lastLatency = 0
 	m.msgs = m.msgs[:0]
 	m.convCount = -1 // transcript swapped for the resumed one — drop the cache
+	// The plan surface is session-scoped knowledge: drop it and refetch for
+	// the resumed session. Neither live path covers a resume — the replayed
+	// transcript bypasses the WS trigger, and the adopt's session event
+	// carries the already-swapped id (no switch delta → no reset).
+	m.resetPlanState()
 	m.replayTranscript(msg.sess.Messages)
 	note := m.transientNoteCmd("resumed session " + shortID(msg.sess.ID))
 	m.closePanel()
-	return tea.Batch(note, m.adoptSession())
+	return tea.Batch(note, m.adoptSession(), m.fetchPlan())
 }
 
 // handleSessionUpdated applies a pin/unpin outcome to the list in place.
