@@ -107,7 +107,7 @@ func TestSubagentStateStray(t *testing.T) {
 	m.busy = true
 	m.handleEvent(client.Event{Type: "subagent_state", TaskID: "t9", TaskIdx: 2, Phase: "started", Status: "running"})
 	got := strings.Join(m.notices, "\n")
-	if !strings.Contains(got, "state SA3") || !strings.Contains(got, "started") {
+	if !strings.Contains(got, "sub-agent #3") || !strings.Contains(got, "started") {
 		t.Errorf("stray state frame not noticed: %q", got)
 	}
 
@@ -115,7 +115,7 @@ func TestSubagentStateStray(t *testing.T) {
 	m.handleEvent(client.Event{Type: "tool_result", Name: "delegate_tasks", Data: `{"status":"success"}`})
 	m.handleEvent(client.Event{Type: "subagent_state", TaskID: "t1", TaskIdx: 0, Phase: "finished", Status: "success"})
 	got = strings.Join(m.notices, "\n")
-	if !strings.Contains(got, "state SA1") || !strings.Contains(got, "finished") {
+	if !strings.Contains(got, "sub-agent #1") || !strings.Contains(got, "finished") {
 		t.Errorf("late frame not noticed: %q", got)
 	}
 }

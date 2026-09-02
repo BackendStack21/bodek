@@ -149,7 +149,7 @@ func TestLostOnDisconnect(t *testing.T) {
 		t.Errorf("disconnect note missing: %q", got)
 	}
 	// The verdict counts lost cards as lost, not live.
-	if !strings.Contains(m.msgs[0].content, "swarm: 1 lost") {
+	if !strings.Contains(m.msgs[0].content, "sub-agents: 1 lost") {
 		t.Errorf("verdict missing lost bucket: %q", m.msgs[0].content)
 	}
 	// Frames resuming after a reconnect revive the card.

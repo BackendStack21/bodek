@@ -136,6 +136,17 @@ func TestE2EAllCommands(t *testing.T) {
 				t.Fatal("/copy returned nil cmd with a reply on record")
 			}
 		},
+		"/export": func(t *testing.T, m *Model) {
+			// The e2e model has no live server: with no session on record
+			// the command degrades to an honest note, never a panic.
+			m.sessionID = ""
+			if cmd := runExport(m, "md"); cmd == nil {
+				t.Fatal("/export returned nil cmd on the no-session guard")
+			}
+			if !notePresent(m, "nothing to export") {
+				t.Errorf("no-session note missing: %v", m.notices)
+			}
+		},
 		"/theme": func(t *testing.T, m *Model) {
 			if !notePresent(m, "theme set to classic") {
 				t.Fatalf("no switch note: %v", m.notices)

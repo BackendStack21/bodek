@@ -1,10 +1,11 @@
 package tui
 
 import (
-	"fmt"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 )
 
 // findState is the transcript search bar. alt+f opens it; typed runes filter
@@ -50,6 +51,10 @@ func (m *Model) handleFindKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "N":
 		m.findGoto(-1)
 		return m, nil
+	case "n":
+		// vim/less reflex: lowercase is next — never query text while open.
+		m.findGoto(1)
+		return m, nil
 	case "backspace":
 		if n := len(m.find.query); n > 0 {
 			m.find.query = m.find.query[:n-1]
@@ -70,6 +75,17 @@ func (m *Model) handleFindKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.find.query = append(m.find.query, msg.Runes...)
 		m.findRescan()
 		m.refresh()
+	}
+	// Scrolling stays live while searching — the same passthrough the
+	// approval panel grants, so the bar is never a scroll dead-end.
+	switch msg.String() {
+	case "up", "down", "pgup", "pgdown", "ctrl+u", "ctrl+d":
+		var cmd tea.Cmd
+		m.vp, cmd = m.vp.Update(msg)
+		return m, cmd
+	case "ctrl+g":
+		m.vp.GotoBottom()
+		return m, nil
 	}
 	return m, nil // swallow everything else while the bar is open
 }
@@ -147,21 +163,39 @@ func (m *Model) msgLine(idx int) int {
 	return 0
 }
 
-// findBar renders the one-row search strip above the input box.
+// findBar renders the one-row search strip above the input box. The query
+// gets whatever the fixed chrome leaves; the assembled row is then
+// hard-clamped — a wrapped bar costs a second line and breaks the
+// inputAreaHeight contract.
 func (m *Model) findBar() string {
 	th := m.th
-	q := string(m.find.query)
-	if w := m.width - 52; w > 0 && len(q) > w {
-		q = truncate(q, w)
-	}
+	suffix := " · ⏎/n next · N prev · ↑↓ scroll · esc close"
 	count := "type to search the transcript"
 	if len(m.find.query) > 0 {
 		if n := len(m.find.matches); n == 0 {
 			count = th.footerDanger.Render("no matches")
 		} else {
-			count = fmt.Sprintf("%d matches", n)
+			count = plural(n, "match", "matches")
 		}
 	}
-	return " " + th.footerKey.Render("find") +
-		th.footer.Render(" '"+q+"' · "+count+" · ⏎ next · N prev · esc close")
+	head := " " + th.footerKey.Render("find") + th.footer.Render(" ")
+	tail := th.footer.Render(count + suffix)
+	budget := m.width - lipgloss.Width(head) - lipgloss.Width(tail) - 5 // the '" · ' decorations
+	if budget < 1 {
+		budget = 1
+	}
+	q := sanitize(string(m.find.query)) // pasted runes can carry escapes
+	q = strings.ReplaceAll(q, "\t", "    ")
+	if lipgloss.Width(q) > budget {
+		q = truncate(q, budget)
+	}
+	mid := ""
+	if q != "" {
+		mid = "'" + q + "' · " // no empty quotes for an empty query
+	}
+	row := head + th.footer.Render(mid) + tail
+	if w := lipgloss.Width(row); w > m.width {
+		row = ansi.Truncate(row, m.width, "")
+	}
+	return row
 }

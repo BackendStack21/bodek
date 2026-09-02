@@ -380,7 +380,7 @@ func (s *step) cardByIdx(idx int) *agentCard {
 // stateNoticeLine renders a subagent_state frame that had nowhere to attach
 // as a transient notice line.
 func stateNoticeLine(ev client.Event) string {
-	parts := []string{fmt.Sprintf("state SA%d", ev.TaskIdx+1), ev.Phase, ev.Status}
+	parts := []string{fmt.Sprintf("sub-agent #%d", ev.TaskIdx+1), ev.Phase, ev.Status}
 	if ev.Step > 0 {
 		parts = append(parts, fmt.Sprintf("step %d", ev.Step))
 	}
@@ -679,7 +679,7 @@ func firstJSONObject(s string) string {
 // the policy denials the run hit.
 func agentResultLines(m *Model, r *agentResult, budget int) []string {
 	th := m.th
-	parts := []string{r.status, fmt.Sprintf("%d files", len(r.files))}
+	parts := []string{r.status, plural(len(r.files), "file", "files")}
 	if r.iters > 0 {
 		parts = append(parts, fmt.Sprintf("%d it", r.iters))
 	}

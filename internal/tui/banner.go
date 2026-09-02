@@ -47,6 +47,7 @@ func welcome(th theme, width int, cwd string) string {
 		{"type a task", "and press enter to run the agent"},
 		{"^K palette", "everything: commands, sessions, models, drawer tabs"},
 		{"alt+↑↓", "jump turn-to-turn · ^F folds the last turn"},
+		{"^Y copy", "the latest reply — alt+y copies any focused turn"},
 		{"/ commands", "/server cockpit · /runs · /memory · /skills · /events"},
 		{"@ to attach", "attach files, e.g. @main.go — or /attach <path>"},
 		{"⏎ send", "^J newline  ·  ^T toggle thinking  ·  tab opens reasoning"},

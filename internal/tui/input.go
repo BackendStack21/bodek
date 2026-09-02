@@ -95,7 +95,15 @@ func (m *Model) submit() tea.Cmd {
 		// Enter with an empty input is the manual retry while disconnected —
 		// a character key can never carry this job without hijacking typing.
 		if m.disconn && m.opts.Reconnect != nil {
-			m.status = "reconnecting"
+			if m.status == "server shut down" {
+				// The note and footer both promise a fresh instance here —
+				// ⏎ respawns via the reconnect hook, it does not redial.
+				m.status = "starting fresh instance…"
+				note := m.transientNoteCmd("starting a fresh instance…")
+				m.refresh()
+				return tea.Batch(m.scheduleReconnect(0), note)
+			}
+			m.status = "reconnecting…"
 			note := m.transientNoteCmd("retrying connection…")
 			m.refresh()
 			return tea.Batch(m.scheduleReconnect(0), note)
@@ -140,7 +148,7 @@ func (m *Model) submit() tea.Cmd {
 func (m *Model) sendPrompt(text string) tea.Cmd {
 	m.lastPrompt = text
 	m.recordHistory(text)
-	shown := text
+	shown := sanitize(text) // pasted payloads can carry escapes — same rule as resumed transcripts
 	if n := len(m.attachments); n > 0 {
 		shown = fmt.Sprintf("%s  📎×%d", shown, n)
 	}
@@ -201,6 +209,7 @@ func (m *Model) sendQueued() tea.Cmd {
 	text := m.queue[0]
 	m.queue = m.queue[1:]
 	m.qsel = clampSel(m.qsel, len(m.queue))
+	m.qarm = -1 // the head just drained — never mis-aim the armed confirm
 	if len(m.queue) == 0 {
 		m.qfocus = false
 	}

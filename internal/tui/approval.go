@@ -23,7 +23,7 @@ func (m *Model) approvalOptions() []approvalOption {
 		{"deny", "deny"},
 	}
 	if a := m.curApproval(); a != nil && a.AllowTrust && !a.Friction {
-		opts = append(opts, approvalOption{"trust class", "trust"})
+		opts = append(opts, approvalOption{"always allow", "trust"})
 	}
 	return opts
 }

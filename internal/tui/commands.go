@@ -50,9 +50,10 @@ func slashCommands() []command {
 			}
 			return m.startFreshSession()
 		}},
-		{"copy", "copy the last reply to the clipboard (OSC 52)", func(m *Model, _ string) tea.Cmd {
+		{"copy", "copy the last reply to the clipboard", func(m *Model, _ string) tea.Cmd {
 			return m.copyLastReply()
 		}},
+		{"export", "save the session transcript — /export [md|json]", runExport},
 		{"theme", "switch the color theme — /theme [name]", runTheme},
 		{"retry", "re-send the last prompt (alt+r)", func(m *Model, _ string) tea.Cmd {
 			return m.retryLast()
@@ -273,7 +274,7 @@ func (m *Model) showHelp() {
 	}
 	b.WriteString(rule)
 	b.WriteString("\n" + th.statsLabel.Render("keys"))
-	const keyW = 4
+	const keyW = 8 // clears the widest chord in the table (alt+↑↓, --mouse)
 	for _, k := range [][2]string{
 		{"⏎", "send · queue mid-turn · run a /command"},
 		{"^J", "newline in the input"},
@@ -281,6 +282,7 @@ func (m *Model) showHelp() {
 		{"↑↓", "scroll the transcript"},
 		{"alt+↑↓", "jump to the previous/next turn"},
 		{"alt+y", "copy the focused turn's reply (falls back to the latest)"},
+		{"^Y", "copy the latest reply"},
 		{"alt+r", "re-send the last prompt (/retry)"},
 		{"^F", "fold/unfold the latest turn card"},
 		{"tab", "open/close the latest reasoning block"},
@@ -290,11 +292,13 @@ func (m *Model) showHelp() {
 		{"^R", "browse & resume sessions"},
 		{"^Q", "manage the queue strip (select · move · delete)"},
 		{"^O", "switch model"},
+		{"^K", "command palette"},
 		{"^T", "toggle extended thinking"},
+		{"^S", "stop the running sub-agent"},
 		{"^L", "clear the conversation"},
 		{"^E", "toggle tool details"},
-		{"esc", "cancel the running turn"},
-		{"r", "retry a lost connection"},
+		{"alt+f", "find in the transcript"},
+		{"esc", "cancel the running turn (y confirms)"},
 		{"/server", "cockpit — server, link, budget, session"},
 		{"F1", "this help card"},
 		{"^C", "quit"},
@@ -306,6 +310,40 @@ func (m *Model) showHelp() {
 	card := th.acBox.Width(boxW - 2).Render(b.String())
 	m.msgs = append(m.msgs, message{role: roleAsst, content: card, rendered: card, raw: true})
 	m.refresh()
+}
+
+// runExport saves the current session transcript next to the user —
+// /export [md|json], markdown by default. The server renders the document;
+// the write is local, owner-only, and never overwrites.
+func runExport(m *Model, arg string) tea.Cmd {
+	format := strings.ToLower(strings.TrimSpace(arg))
+	if format == "" {
+		format = "md"
+	}
+	if format != "md" && format != "json" {
+		return m.transientNoteCmd("unknown format '" + format + "' — usage: /export [md|json]")
+	}
+	if m.sessionID == "" || m.cl == nil {
+		return m.transientNoteCmd("nothing to export yet — no session")
+	}
+	cl := m.cl
+	id := m.sessionID
+	token := m.tokens.Get(id)
+	return func() tea.Msg {
+		_, eff, err := cl.SessionDetail(id, token)
+		if err != nil {
+			return sessionExportedMsg{id: id, err: err}
+		}
+		data, err := cl.ExportSession(id, eff, format)
+		if err != nil {
+			return sessionExportedMsg{id: id, err: err}
+		}
+		path, err := writeExport(".", id, format, data)
+		if err != nil {
+			return sessionExportedMsg{id: id, err: err}
+		}
+		return sessionExportedMsg{id: id, path: path}
+	}
 }
 
 // showStats appends a session dashboard card to the transcript.

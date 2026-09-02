@@ -104,8 +104,8 @@ func TestDisconnectedRetry(t *testing.T) {
 	if cmd == nil {
 		t.Fatal("enter while disconnected with empty input should schedule a redial")
 	}
-	if m.status != "reconnecting" {
-		t.Errorf("status = %q, want reconnecting", m.status)
+	if m.status != "reconnecting…" {
+		t.Errorf("status = %q, want reconnecting…", m.status)
 	}
 
 	// r types like any other character while disconnected.

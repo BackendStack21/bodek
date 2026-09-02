@@ -126,6 +126,8 @@ func TestSanitizeStripsControlSequences(t *testing.T) {
 		}
 	}
 	if !strings.Contains(got, "plain") || !strings.Contains(got, "\t") || !strings.Contains(got, "\n") {
+		// Tabs survive sanitize — copy fidelity beats display convenience;
+		// display paths expand them where cell math happens.
 		t.Errorf("sanitize dropped legitimate text/whitespace: %q", got)
 	}
 	// Fast path: clean input is returned unchanged.

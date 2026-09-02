@@ -94,7 +94,7 @@ func (m *Model) unattachFile(name string) tea.Cmd {
 		}
 		n := len(m.attachments)
 		m.attachments = nil
-		return m.transientNoteCmd(fmt.Sprintf("dropped %d staged file(s)", n))
+		return m.transientNoteCmd("dropped " + plural(n, "staged file", "staged files"))
 	}
 	for i := range m.attachments {
 		if m.attachments[i].Name == name {

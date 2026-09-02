@@ -295,17 +295,18 @@ own front-end settings are separate; see [Configuration](#configuration).
 | `alt+↑` / `alt+↓` | Jump to the previous / next turn |
 | `alt+y` | Copy the **focused** turn's reply — the one you last jumped to (falls back to the latest reply) |
 | `alt+r` | Re-send the last prompt (`/retry`) |
-| `alt+f` | Search the transcript (`⏎` next match · `N` previous) |
+| `alt+f` | Search the transcript (`⏎`/`n` next match · `N` previous · scrolling stays live) |
 | `^F` | Fold/unfold the most recent turn card (click any turn head with `--mouse`) |
 | `tab` | Open/close the latest reasoning block (live turns auto-expand) |
 | `^R` | Browse & resume saved sessions |
 | `^O` | Switch the model |
-| `^Q` | Focus the queue strip (`↑↓`/`jk` select · `←→`/`hl` move · `d` delete · `esc`/`⏎` back to the input) |
+| `^Q` | Focus the queue strip (`↑↓`/`jk` select · `←→`/`hl` move · `d d` two-step delete · `esc`/`⏎` back to the input) |
+| `^S` | Stop the running sub-agent (two-step confirm: `y` stops, any other key continues) |
 | `^T` | Toggle extended thinking for the next turn |
 | `^J` | Insert a newline in the input |
 | `^L` | Clear the conversation (two-step confirm: `y` clears, any other key cancels) |
 | `^E` | Toggle tool details — every step expands to its full output/logs |
-| `^Y` | Copy the last reply to the clipboard (OSC 52 — needs a supporting terminal) |
+| `^Y` | Copy the last reply to the clipboard (local helper — `pbcopy`/`wl-copy`/`clip` — with OSC 52 fallback) |
 | `Esc` | Cancel the running turn (two-step confirm: `y` cancels, any other key keeps running; queued prompts return to the input) |
 | `↑` / `↓` / `PgUp` / `PgDn` / `^U` / `^D` | Scroll the transcript (arrows at the input's edge lines) |
 | `^P` / `^N` | Recall previous prompts (prompt history) |
@@ -343,7 +344,8 @@ full command and press `⏎`.
 | `/help` | Show available commands and key bindings |
 | `/clear` | Clear the conversation (two-step confirm; idle only) |
 | `/new` | Start a fresh session — new ID, empty context; the old one stays resumable via `/sessions` (idle only) |
-| `/copy` | Copy the last reply to the clipboard (OSC 52) |
+| `/copy` | Copy the last reply to the clipboard |
+| `/export` | Save the session transcript next to you — `/export [md|json]` (markdown by default, never overwrites) |
 | `/retry` | Re-send the last prompt (queues it if a turn is running) |
 | `/theme [name]` | Switch the color theme at runtime and persist it (`ember-dark` · `ember-light` · `high-contrast` · `classic`) |
 | `/stats` | Session metrics card (cost, cache, context gauge) |
@@ -494,8 +496,10 @@ never become the weakest link:
 - **Auth errors when attaching** — copy the *full* token URL `odek serve`
   printed (`--url 'http://…/?token=…'`) or pass the token via `--token`.
   Spawned instances adopt the token automatically.
-- **Clipboard (`^Y` / `alt+y`) does nothing** — it uses OSC 52, which needs
-  a supporting terminal; over SSH your terminal must pass OSC 52 through.
+- **Clipboard (`^Y` / `alt+y`) pastes something stale** — locally bodek pipes
+  through `pbcopy`/`wl-copy`/`clip` when installed; without one (or over SSH)
+  it falls back to OSC 52, which some terminals ignore — pass it through or
+  install a helper. The copy note always says which path ran.
 - **Mouse scrolling eats text selection** — that's the `--mouse` trade-off
   (terminals can't have both). Launch without it when you need to copy.
 - **Colors look wrong** — try `/theme classic`, check `TERM`; `NO_COLOR=1`
