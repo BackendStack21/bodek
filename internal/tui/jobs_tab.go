@@ -92,6 +92,17 @@ func (m *Model) fetchJobs() tea.Cmd {
 	}
 }
 
+// kickJobsFetch returns an immediate snapshot fetch for a bg_job push
+// frame (odek ≥ v1.40). The REST watcher stays as the fallback; nil when
+// the surface is unavailable or there is no live session to fetch with
+// (fetchJobs no-ops on both).
+func (m *Model) kickJobsFetch() tea.Cmd {
+	if m.jobsOff {
+		return nil
+	}
+	return m.fetchJobs()
+}
+
 // applyJobs stores a snapshot; watcher diffs become alert-tier notes — a
 // finished job is actionable, not housekeeping — and terminal transitions
 // fire the attention layer (bell / OSC 9). The first successful snapshot

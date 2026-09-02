@@ -49,6 +49,9 @@ func (m *Model) handleEvent(ev client.Event) (tea.Model, tea.Cmd) {
 			m.resolveMaxContext()
 		}
 		m.sandbox = ev.Sandbox
+		if ev.SystemInitiated && m.cur() < 0 && !m.busy {
+			m.openWakeTurn() // server-started turn: open the card from the wire
+		}
 
 	case "thinking", "thinking_delta":
 		// Bulk reasoning and live streamed fragments (streaming on) share one
@@ -346,6 +349,22 @@ func (m *Model) handleEvent(ev client.Event) (tea.Model, tea.Cmd) {
 			m.addTransientNote("stop declined · sub-agent already finished")
 		}
 
+	case "bg_wake":
+		// odek ≥ v1.40 enqueued a wake turn for a finished background job:
+		// the stamped session frame that follows opens the card; this note
+		// gives the operator the context for the unprompted activity.
+		m.addTransientNote("background job finished · agent waking")
+
+	case "bg_job":
+		// Push notification of a job start/exit (≥ v1.40): refresh the
+		// snapshot now instead of waiting for the next watcher tick. The
+		// REST watcher stays as the fallback; applyJobs diffs the
+		// transition into notes/attention as before.
+		if cmd := m.kickJobsFetch(); cmd != nil {
+			m.refresh()
+			return m, tea.Batch(listen(m.events), m.noticeSweep(), cmd)
+		}
+
 	case client.EventDisconnected:
 		m.disconn = true
 		m.busy = false
@@ -404,6 +423,27 @@ func (m *Model) handleEvent(ev client.Event) (tea.Model, tea.Cmd) {
 	m.refresh()
 	// A turn that just ended (done / error) drains the next queued prompt.
 	return m, tea.Batch(listen(m.events), m.noticeSweep(), m.approvalSweep(), m.sendQueued(), m.planFollowup(), attn)
+}
+
+// openWakeTurn opens a streaming assistant card for a server-initiated turn
+// (background-job wake): without it, every streaming event would find no
+// open card and drop — cards historically opened only on the local send
+// path. The card carries the systemWake marker so the unprompted turn is
+// never mistaken for an operator exchange.
+func (m *Model) openWakeTurn() {
+	m.msgs = append(m.msgs, message{role: roleAsst, streaming: true, systemWake: true})
+	m.curIdx = len(m.msgs) - 1
+	m.busy = true
+	m.cancelAck = false  // a wake run's errors are real errors again
+	m.skillSuggest = nil // the suggestion's window closed with the last turn
+	m.status = "waking for bg job"
+	m.runStart = time.Now()
+	if m.sessionStart.IsZero() {
+		m.sessionStart = m.runStart
+	}
+	m.relayout() // the busy status line claims a row above the input
+	m.refresh()
+	m.vp.GotoBottom() // new activity: show it even when reading scrollback
 }
 
 // stepGlyphs returns up to 4 deduped tool glyphs for a turn's steps, in

@@ -39,6 +39,10 @@ type Event struct {
 	Model     string `json:"model"`
 	Sandbox   bool   `json:"sandbox"`
 
+	// session — true when odek itself started the turn (wake-on-complete,
+	// ≥ v1.40); absent on operator turns.
+	SystemInitiated bool `json:"system_initiated,omitempty"`
+
 	// done — token economics for the turn and the session. ContextTokens is
 	// cumulative prompt tokens across all LLM calls of the run (the live
 	// window fill is the delta between consecutive reports); the Session*

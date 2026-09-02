@@ -89,6 +89,11 @@ func (m *Model) plainEventLines(ev client.Event) []string {
 		}
 		return []string{plainClip("· subagent · " + line + eventTail(ev))}
 
+	case "session":
+		if ev.SystemInitiated {
+			return []string{"[wake] background job finished — agent turning"}
+		}
+
 	case "done":
 		var lines []string
 		if reply := m.lastReply(); reply != "" {

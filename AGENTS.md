@@ -117,12 +117,21 @@ feat(tui): compact tool steps with Ctrl+E details toggle
   text, MCP args, raw config JSON — everything through `sanitize()`),
   `esc`/`q` folds back, `p` promotes in place. Tab switches reset it
   (`switchDrawerTab`); keep that reset when adding new open paths.
-- The jobs tab pairs with a REST lifecycle watcher (`jobs_tab.go`): odek
-  pushes no WS frames for background jobs and its completion notice never
-  leaves the LLM payload, so the TUI polls `/api/jobs` (10s in background,
-  3s while the tab is visible) and diffs status transitions into transient
-  notes. Generation counters (`jobsSeq`/`jobsWatchSeq`) drop stale ticks —
-  keep both chains generation-guarded when touching the cadence.
+- The jobs tab pairs with a REST lifecycle watcher (`jobs_tab.go`): the
+  TUI polls `/api/jobs` (10s in background, 3s while the tab is visible)
+  and diffs status transitions into transient notes. odek ≥ v1.40 also
+  pushes `bg_job` frames on start/exit — `handleEvent` routes them through
+  `kickJobsFetch()` for an immediate snapshot, watcher tick as fallback;
+  `bg_wake` frames become transient notes. Generation counters
+  (`jobsSeq`/`jobsWatchSeq`) drop stale ticks — keep both chains
+  generation-guarded when touching the cadence.
+- Server-initiated wake turns (odek ≥ v1.40, `system_initiated` on the
+  session frame) open a streaming card from the wire (`openWakeTurn` in
+  `events.go`): without it every streamed event drops, because cards only
+  opened on the local send path. The card carries the `systemWake` marker
+  (renders `⬡ odek · wake`); wake turns are never rendered as user
+  messages, and a wake frame arriving during an operator turn opens
+  nothing.
 
 ## Workflow rules for agents
 

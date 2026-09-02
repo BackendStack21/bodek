@@ -82,17 +82,18 @@ type turnStats struct {
 
 // message is one entry in the transcript.
 type message struct {
-	role      role
-	content   string // raw text/markdown
-	rendered  string // cached glamour render (assistant, finalized)
-	thinking  string // captured reasoning for this turn (finalized)
-	steps     []step
-	items     []turnItem // chronological timeline of reasoning blocks and tool calls
-	streaming bool
-	stats     *turnStats // finalized-turn telemetry; nil while streaming / for history
-	raw       bool       // content is pre-styled; render verbatim, never re-render
-	sentAt    time.Time  // user turns: when the prompt was submitted (drives the head's age)
-	collapsed bool       // turn card folded to its head + summary line (c)
+	role       role
+	content    string // raw text/markdown
+	rendered   string // cached glamour render (assistant, finalized)
+	thinking   string // captured reasoning for this turn (finalized)
+	steps      []step
+	items      []turnItem // chronological timeline of reasoning blocks and tool calls
+	streaming  bool
+	stats      *turnStats // finalized-turn telemetry; nil while streaming / for history
+	raw        bool       // content is pre-styled; render verbatim, never re-render
+	sentAt     time.Time  // user turns: when the prompt was submitted (drives the head's age)
+	collapsed  bool       // turn card folded to its head + summary line (c)
+	systemWake bool       // server-initiated turn (background-job wake): marker on the card
 }
 
 // Options carries startup display info into the model.

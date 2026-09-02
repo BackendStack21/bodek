@@ -500,6 +500,12 @@ func (m *Model) renderMessage(msg message, msgIdx, lineOffset int) (string, []st
 		// segments shed in priority order under width pressure, exactly like
 		// the old foot line.
 		label := th.asstLabel.Render("⬡ odek")
+		if msg.systemWake {
+			// Server-initiated wake (background-job completion): the marker
+			// is the card's identity, so it sits left of the telemetry and
+			// sheds last.
+			label += th.asstLabel.Render(" · wake")
+		}
 		if msg.stats != nil {
 			limit := m.vp.Width - lipgloss.Width(label) - 4
 			if s := m.joinStatSegs(m.statSegments(*msg.stats), limit); s != "" {
