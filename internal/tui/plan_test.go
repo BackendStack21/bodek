@@ -2,6 +2,7 @@ package tui
 
 import (
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/BackendStack21/bodek/internal/client"
@@ -18,6 +19,46 @@ var errTestPlanRoute = errors.New("session plan: status 404 Not Found")
 
 func planCallEvent(name string) client.Event {
 	return client.Event{Type: "tool_call", Name: name, Data: "{}"}
+}
+
+// TestPlanSurface_SessionResumeResetsAndRefetches pins the resume path:
+// handleSessionDetail drops the previous session's plan knowledge and seeds
+// a fresh fetch, so the strip reflects the resumed session instead of
+// leaking the old one (and never showing anything until a live plan call).
+func TestPlanSurface_SessionResumeResetsAndRefetches(t *testing.T) {
+	m := newTestModel()
+	m.cl = &client.Client{} // fetch closures are built but never executed
+	m.sessionID = "s1"
+	acceptPlan(m, planFixture())
+
+	// Resume an interrupted session: transcript swap + adopt.
+	cmd := m.handleSessionDetail(sessionDetailMsg{sess: client.Session{ID: "s2"}, token: "a2"})
+	if cmd == nil {
+		t.Fatal("resume must return the adopt/fetch command batch")
+	}
+	if m.planInit || m.planVer != 0 {
+		t.Fatalf("resume must drop stale plan knowledge: init=%v ver=%d", m.planInit, m.planVer)
+	}
+	if m.planReqSeq == 0 {
+		t.Fatal("resume must seed a plan fetch for the resumed session")
+	}
+
+	// Until the resumed session's snapshot arrives, the old plan must not
+	// leak into the strip even while busy.
+	m.busy = true
+	if got := m.planStripLabel(); got != "" {
+		t.Fatalf("stale pre-resume plan leaked into the strip: %q", got)
+	}
+
+	snap := planFixture()
+	snap.SessionID = "s2"
+	acceptPlan(m, snap)
+	got := m.planStripLabel()
+	for _, want := range []string{"plan 1/4", "wire flag parsing"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("resumed-session strip %q missing %q", got, want)
+		}
+	}
 }
 
 func TestPlanWSTrigger_DebouncedRefresh(t *testing.T) {
