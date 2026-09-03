@@ -121,26 +121,26 @@ func TestAgentsTabJump(t *testing.T) {
 	}
 }
 
-// TestStickyFailureAndVerdict: terminal errors/timeout stick until the turn
-// finalizes (user cancels stay transient), and finalize appends the swarm
-// verdict marker to the turn.
-func TestStickyFailureAndVerdict(t *testing.T) {
+// TestFailureNoteBoundedAndVerdict: terminal error/timeout notes surface at
+// alert tier (bounded dwell — nothing sticky in the strip; user cancels stay
+// transient), and finalize appends the swarm verdict marker to the turn.
+func TestFailureNoteBoundedAndVerdict(t *testing.T) {
 	m := manifestFixture(t)
 	m.handleEvent(client.Event{Type: "subagent_state", TaskID: "t1", TaskIdx: 0, Phase: "finished", Status: "error"})
 	m.handleEvent(client.Event{Type: "subagent_state", TaskID: "t2", TaskIdx: 1, Phase: "finished", Status: "cancelled"})
 
-	sticky := 0
+	bounded := 0
 	for i, exp := range m.noticeExp {
-		if exp.IsZero() && strings.Contains(m.notices[i], "SA1") {
-			sticky++
+		if !exp.IsZero() && strings.Contains(m.notices[i], "SA1") {
+			bounded++
 		}
 	}
-	if sticky != 1 {
-		t.Fatalf("sticky error notes = %d, want 1: %q", sticky, m.notices)
+	if bounded != 1 {
+		t.Fatalf("bounded error notes = %d, want 1: %q", bounded, m.notices)
 	}
 	for i, n := range m.notices {
-		if strings.Contains(n, "SA2") && m.noticeExp[i].IsZero() {
-			t.Errorf("cancelled surfaced sticky, want transient: %q (exp %v)", n, m.noticeExp[i])
+		if exp := m.noticeExp[i]; exp.IsZero() {
+			t.Errorf("sticky note in the strip: %q", n)
 		}
 	}
 
@@ -148,11 +148,6 @@ func TestStickyFailureAndVerdict(t *testing.T) {
 	msg := m.msgs[0]
 	if !strings.Contains(msg.content, "**sub-agents: 1 ✗ · 1 ⊘ — #1 error, #2 cancelled**") {
 		t.Errorf("swarm verdict missing: %q", msg.content)
-	}
-	for i, exp := range m.noticeExp {
-		if exp.IsZero() {
-			t.Errorf("sticky note survived finalize: %q", m.notices[i])
-		}
 	}
 }
 

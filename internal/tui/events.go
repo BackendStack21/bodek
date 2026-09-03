@@ -663,8 +663,7 @@ func markCancel(msg *message) {
 
 // finalize closes out the streaming assistant message and drops the cursor:
 // the swarm verdict (when the turn delegated sub-agents) lands as the turn
-// marker, and sticky sub-agent failure notices retire — the verdict line
-// supersedes them.
+// marker.
 func (m *Model) finalize() {
 	if i := m.cur(); i >= 0 {
 		if v := m.swarmVerdict(&m.msgs[i]); v != "" {
@@ -674,7 +673,6 @@ func (m *Model) finalize() {
 	}
 	m.curIdx = -1
 	m.wakeArmed = false // the window closed with the turn
-	m.clearStickyNotes()
 }
 
 // swarmVerdict summarizes a turn's sub-agent outcomes as a turn marker —
@@ -808,21 +806,6 @@ func (m *Model) pruneNotices(now time.Time) {
 		if exp := m.noticeExp[i]; exp.IsZero() || now.Before(exp) {
 			kept = append(kept, n)
 			keptExp = append(keptExp, exp)
-		}
-	}
-	m.notices = kept
-	m.noticeExp = keptExp
-}
-
-// clearStickyNotes retires zero-expiry notes (sticky sub-agent failures) —
-// used when the context that made them sticky is gone (turn finalized).
-func (m *Model) clearStickyNotes() {
-	kept := m.notices[:0]
-	keptExp := m.noticeExp[:0]
-	for i, n := range m.notices {
-		if !m.noticeExp[i].IsZero() {
-			kept = append(kept, n)
-			keptExp = append(keptExp, m.noticeExp[i])
 		}
 	}
 	m.notices = kept
