@@ -131,7 +131,13 @@ feat(tui): compact tool steps with Ctrl+E details toggle
   opened on the local send path. The card carries the `systemWake` marker
   (renders `⬡ odek · wake`); wake turns are never rendered as user
   messages, and a wake frame arriving during an operator turn opens
-  nothing.
+  nothing. If the stamped frame is missed (reconnect race, wire quirk),
+  `ensureWireTurn` lazily opens the card from the first streamed event —
+  idle-plus-stream proves a server-initiated turn, since every operator
+  turn starts with a local send — keeping the wake marker when `bg_wake`
+  armed it, healing the (normally unreachable) busy-without-card state,
+  and labelling a stampless stream as a plain remote card instead of
+  dropping it.
 
 ## Workflow rules for agents
 
