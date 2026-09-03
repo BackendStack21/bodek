@@ -43,6 +43,14 @@ type Event struct {
 	// ≥ v1.40); absent on operator turns.
 	SystemInitiated bool `json:"system_initiated,omitempty"`
 
+	// turn_started (≥ the turn_started protocol): identity and provenance
+	// of every turn — initiated is "system" for wake turns, "operator"
+	// otherwise. turn_id also annotates thinking/token/tool_call/
+	// tool_result/done/error while the turn is live (R3) for mid-turn
+	// attribution; the TUI currently keys only off turn_started itself.
+	TurnID    string `json:"turn_id,omitempty"`
+	Initiated string `json:"initiated,omitempty"`
+
 	// done — token economics for the turn and the session. ContextTokens is
 	// cumulative prompt tokens across all LLM calls of the run (the live
 	// window fill is the delta between consecutive reports); the Session*

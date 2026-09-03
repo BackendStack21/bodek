@@ -53,6 +53,19 @@ func (m *Model) handleEvent(ev client.Event) (tea.Model, tea.Cmd) {
 			m.openWakeTurn() // server-started turn: open the card from the wire
 		}
 
+	case "turn_started":
+		// odek ≥ the turn_started protocol announces EVERY turn right after
+		// the session frame (R1): initiated=system is a wake, operator a
+		// plain turn — including turns prompted from another client on this
+		// session, which now open a visible remote card instead of waiting
+		// for the lazy fallback. The guards make replays idempotent (R2);
+		// the stamped session frame and ensureWireTurn stay as fallbacks,
+		// so a turn must be missed by all three paths to drop.
+		if m.cur() >= 0 || m.busy {
+			break
+		}
+		m.beginWireTurn(ev.Initiated == "system")
+
 	case "thinking", "thinking_delta":
 		// Bulk reasoning and live streamed fragments (streaming on) share one
 		// path: append to the open reasoning block (the last timeline item
