@@ -60,6 +60,7 @@ func (m *Model) handleEvent(ev client.Event) (tea.Model, tea.Cmd) {
 		// The full text is stored; only the rendered excerpt is capped (see
 		// maxThinkingLen), so expandAll can unfold the complete block once the
 		// turn finalizes.
+		m.ensureWireTurn()
 		if i := m.cur(); i >= 0 {
 			msg := &m.msgs[i]
 			if n := len(msg.items); n > 0 && msg.items[n-1].thinking {
@@ -79,6 +80,7 @@ func (m *Model) handleEvent(ev client.Event) (tea.Model, tea.Cmd) {
 		// the timeline as its own reply segment — appended to the open one,
 		// or opened fresh after reasoning/tools — so each think→reply cycle
 		// renders independently (appendReply keeps msg.content in sync).
+		m.ensureWireTurn()
 		if i := m.cur(); i >= 0 {
 			appendReply(&m.msgs[i], sanitize(ev.Content))
 			m.msgs[i].streaming = true
@@ -94,6 +96,7 @@ func (m *Model) handleEvent(ev client.Event) (tea.Model, tea.Cmd) {
 			}
 		}
 		nm := collapse(ev.Name) // tool names are wire-borne; collapse before anything renders them
+		m.ensureWireTurn()
 		if i := m.cur(); i >= 0 {
 			m.msgs[i].steps = append(m.msgs[i].steps,
 				step{name: nm, arg: arg, subagent: isSubagent(nm), started: time.Now()})
@@ -352,7 +355,10 @@ func (m *Model) handleEvent(ev client.Event) (tea.Model, tea.Cmd) {
 	case "bg_wake":
 		// odek ≥ v1.40 enqueued a wake turn for a finished background job:
 		// the stamped session frame that follows opens the card; this note
-		// gives the operator the context for the unprompted activity.
+		// gives the operator the context for the unprompted activity. The
+		// flag also arms the lazy marker (ensureWireTurn) so the wake keeps
+		// its identity even when the stamped frame is missed.
+		m.wakeArmed = true
 		m.addTransientNote("background job finished · agent waking")
 
 	case "bg_job":
@@ -431,12 +437,42 @@ func (m *Model) handleEvent(ev client.Event) (tea.Model, tea.Cmd) {
 // path. The card carries the systemWake marker so the unprompted turn is
 // never mistaken for an operator exchange.
 func (m *Model) openWakeTurn() {
-	m.msgs = append(m.msgs, message{role: roleAsst, streaming: true, systemWake: true})
+	m.beginWireTurn(true)
+}
+
+// ensureWireTurn lazily opens a streaming card when events arrive for a turn
+// that has no card: in bodek every operator turn begins with a local send,
+// so idle-plus-stream proves a server-initiated turn whose stamped session
+// frame was missed (reconnect race, wire quirk). It also heals the corrupt
+// busy-without-card state, which the normal flow can never produce —
+// sendPrompt/openWakeTurn set both atomically and done/error clear both.
+// Without this, thinking/token/tool_call would drop silently while m.status
+// still mutated, leaving a phantom "running <tool>" line over an empty
+// transcript and sub-agent frames degraded to transient notes.
+func (m *Model) ensureWireTurn() {
+	if m.cur() >= 0 {
+		return // live operator/wake turn: keep absorbing
+	}
+	wake := m.wakeArmed
+	m.busy = false // heal corrupt state before reopening
+	m.beginWireTurn(wake)
+}
+
+// beginWireTurn appends the streaming card and arms the busy turn state
+// shared by the stamped-frame path (openWakeTurn) and the lazy path
+// (ensureWireTurn). wake decides the systemWake marker and status line.
+func (m *Model) beginWireTurn(wake bool) {
+	m.msgs = append(m.msgs, message{role: roleAsst, streaming: true, systemWake: wake})
 	m.curIdx = len(m.msgs) - 1
 	m.busy = true
 	m.cancelAck = false  // a wake run's errors are real errors again
 	m.skillSuggest = nil // the suggestion's window closed with the last turn
-	m.status = "waking for bg job"
+	m.wakeArmed = false  // consumed: the marker lives on the card now
+	if wake {
+		m.status = "waking for bg job"
+	} else {
+		m.status = "remote turn"
+	}
 	m.runStart = time.Now()
 	if m.sessionStart.IsZero() {
 		m.sessionStart = m.runStart
@@ -637,6 +673,7 @@ func (m *Model) finalize() {
 		m.closeTurn(&m.msgs[i])
 	}
 	m.curIdx = -1
+	m.wakeArmed = false // the window closed with the turn
 	m.clearStickyNotes()
 }
 

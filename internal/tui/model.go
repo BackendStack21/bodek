@@ -155,12 +155,13 @@ type Model struct {
 	sp   spinner.Model
 	glam *glamour.TermRenderer
 
-	msgs     []message
-	curIdx   int // index of the streaming assistant message, -1 when idle
-	busy     bool
-	runStart time.Time
-	lastTool string
-	lastArg  string
+	msgs      []message
+	curIdx    int // index of the streaming assistant message, -1 when idle
+	busy      bool
+	wakeArmed bool // bg_wake seen but its turn not carded yet: arms the lazy wake marker
+	runStart  time.Time
+	lastTool  string
+	lastArg   string
 
 	approvals     []client.Event // pending approval queue — odek runs parallel tools, so requests FIFO
 	apprDeadlines []time.Time    // per-approval expiry, stamped on arrival (parallel to approvals)
