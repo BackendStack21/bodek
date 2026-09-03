@@ -294,10 +294,11 @@ own front-end settings are separate; see [Configuration](#configuration).
   idle (odek ≥ v1.40), the engine wakes the model on its own; bodek opens
   the turn from the wire, marks the card `⬡ odek · wake`, and streams the
   model's report like any other turn — never rendered as a user message.
-  The open is self-healing: even if the wire's wake stamp is missed, the
-  first streamed event opens the card (wake-marked when a `bg_wake` note
-  preceded it, a plain remote card otherwise) instead of the loop
-  silently vanishing from the transcript.
+  Card opening is self-healing: the `turn_started` announcement is the
+  primary signal (wake-marked for system turns, a plain remote card for
+  turns prompted from other clients), with the wake stamp and a
+  first-streamed-event fallback behind it — a turn cannot silently
+  vanish from the transcript.
 
 ---
 
