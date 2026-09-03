@@ -1262,6 +1262,15 @@ func (m *Model) footer() string {
 			th.footer.Render("]/[ tabs · esc close"),
 		)
 	}
+	if m.panel == panelQueue {
+		return m.panelFooter(
+			th.footerKey.Render("↑↓")+th.footer.Render(" select · "),
+			th.footerKey.Render("←→")+th.footer.Render(" priority · "),
+			th.footerKey.Render("⏎")+th.footer.Render(" send now · "),
+			th.footerKey.Render("d")+th.footer.Render(" delete → y · "),
+			th.footer.Render("esc close"),
+		)
+	}
 	if m.panel == panelSkills {
 		if m.panelDetail {
 			return m.panelFooter(

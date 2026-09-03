@@ -324,6 +324,17 @@ func TestE2EAllCommands(t *testing.T) {
 				t.Fatal("freshStart not armed for the reconnect note")
 			}
 		},
+		"/queue": func(t *testing.T, m *Model) {
+			if m.panel != panelQueue {
+				t.Fatalf("/queue opened panel %d", m.panel)
+			}
+			if m.panelLen() != 2 {
+				t.Fatalf("/queue panelLen = %d, want 2", m.panelLen())
+			}
+			if m.queueStripVisible() {
+				t.Fatal("the strip must stand down while the /queue panel is open")
+			}
+		},
 		"/plan": func(t *testing.T, m *Model) {
 			if m.panel != panelPlan {
 				t.Fatalf("/plan opened panel %d", m.panel)
@@ -360,6 +371,8 @@ func TestE2EAllCommands(t *testing.T) {
 			case "/new":
 				m.sessionID, m.authToken = "s1", "a1"
 				m.msgs = append(m.msgs, message{role: roleUser, content: "x"})
+			case "/queue":
+				m.queue = []string{"one", "two"}
 			case "/attach":
 				dir := t.TempDir()
 				path := filepath.Join(dir, "notes.txt")

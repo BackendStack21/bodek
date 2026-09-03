@@ -20,6 +20,15 @@ func queueStripRows(m *Model) []string {
 	return strings.Split(m.queueStripView(), "\n")
 }
 
+// stripHeightOK asserts the strip's layout contract: the rendered row count
+// matches queueStripHeight, the number relayout and the mouse math budget.
+func stripHeightOK(t *testing.T, m *Model) {
+	t.Helper()
+	if got, want := len(queueStripRows(m)), m.queueStripHeight(); got != want {
+		t.Fatalf("strip renders %d rows, height budget says %d", got, want)
+	}
+}
+
 // clickQueueControl sends a left press on the given control glyph within the
 // given strip row, using the same screen math the mouse dispatcher uses.
 // Bubbletea reports X in terminal CELLS, so the column is the display width
@@ -395,6 +404,44 @@ func TestQueueStripHidesControlsWithoutMouse(t *testing.T) {
 	})
 	if !strings.EqualFold(strings.Join(m.queue, "|"), strings.Join(before, "|")) {
 		t.Errorf("hint-row click mutated the queue: %v → %v", before, m.queue)
+	}
+}
+
+// TestQueueStripOneLinePerItem pins the one-line rule: multi-line queued
+// prompts collapse to a single strip row, never overflow the row budget.
+func TestQueueStripOneLinePerItem(t *testing.T) {
+	m := newTestModel()
+	busyTurn(m)
+	m.queue = []string{"alpha\nbeta\ngamma", "plain prompt"}
+	m.refresh()
+
+	stripHeightOK(t, m)
+	if rows := queueStripRows(m); len(rows) != 2 {
+		t.Fatalf("strip rows = %d, want 2 (one per queued prompt)", len(rows))
+	}
+	if v := plain(strings.Join(queueStripRows(m), "\n")); !strings.Contains(v, "alpha beta gamma") {
+		t.Errorf("multi-line prompt must collapse to one line, got %q", v)
+	}
+	stripHeightOK(t, m)
+}
+
+// TestQueueStripTailPreviewOneLine applies the same rule to the overflow
+// tail's selected-item preview.
+func TestQueueStripTailPreviewOneLine(t *testing.T) {
+	m := newTestModel()
+	busyTurn(m)
+	for i := 0; i < queueStripCap; i++ {
+		m.queue = append(m.queue, "filler")
+	}
+	m.queue = append(m.queue, "overflow\nspans\nlines")
+	m.qfocus = true
+	m.qsel = len(m.queue) - 1 // force the tail preview to show this item
+	m.refresh()
+
+	stripHeightOK(t, m)
+	tail := queueStripRows(m)[queueStripCap]
+	if v := plain(tail); !strings.Contains(v, "overflow spans lines") {
+		t.Errorf("tail preview must collapse newlines, got %q", v)
 	}
 }
 
