@@ -542,16 +542,18 @@ func (m *Model) loseLiveAgents() int {
 	return n
 }
 
-// subagentTerminalNote surfaces a card's terminal state: failures stick (no
-// autoclose) until the turn finalizes — a ✗ buried in an eight-agent swarm
-// must not scroll by; user-initiated cancels stay transient (you did that).
+// subagentTerminalNote surfaces a card's terminal state as a strip note:
+// failures dwell at alert tier — long enough to read, bounded like every
+// notice in the strip. A ✗ buried in an eight-agent swarm is not lost when
+// the note fades: it stays on the card's agent chip and the turn's swarm
+// verdict. User-initiated cancels stay transient (you did that).
 func (m *Model) subagentTerminalNote(ev client.Event) {
 	if ev.Phase != "finished" {
 		return
 	}
 	switch ev.Status {
 	case "error", "timeout":
-		m.pushNote(fmt.Sprintf("sub-agent SA%d %s", ev.TaskIdx+1, ev.Status), time.Time{})
+		m.addNote(fmt.Sprintf("sub-agent SA%d %s", ev.TaskIdx+1, ev.Status))
 	case "cancelled":
 		m.addTransientNote(fmt.Sprintf("sub-agent SA%d cancelled", ev.TaskIdx+1))
 	}
