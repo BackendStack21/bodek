@@ -29,6 +29,7 @@ const (
 	panelConfig
 	panelAgents
 	panelJobs
+	panelQueue
 )
 
 // panelEditMode is the text-entry submode a panel can capture: `/` search in
@@ -55,6 +56,7 @@ const (
 	confirmCancel
 	confirmStopAgent
 	confirmStopJob
+	confirmQueueDelete
 	confirmQuit
 )
 
@@ -88,6 +90,11 @@ func (m *Model) handleConfirmKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			// here, so a job that finished while the gate sat armed just
 			// reports its terminal state from the server.
 			return m, m.fireJobStop()
+		case confirmQueueDelete:
+			// queueDeleteAt self-guards: a queue that drained while the
+			// gate sat armed turns this into a no-op.
+			m.queueDeleteAt(m.panelSel)
+			return m, nil
 		case confirmQuit:
 			m.quitting = true
 			return m, tea.Quit
@@ -359,6 +366,17 @@ func (m *Model) handlePanelKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.refresh()
 		}
 		return m, nil
+	case "h", "left":
+		// The queue sends head-first, so ←/h raises the prompt's priority.
+		if m.panel == panelQueue {
+			m.queueMove(m.panelSel, -1)
+		}
+		return m, nil
+	case "l", "right":
+		if m.panel == panelQueue {
+			m.queueMove(m.panelSel, 1)
+		}
+		return m, nil
 	case "enter":
 		return m, m.panelSelect()
 	case "a":
@@ -387,6 +405,12 @@ func (m *Model) handlePanelKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.panel == panelEvents {
 			// No deletes here — x doubles as the filter-clear key.
 			return m, m.clearEventFilters()
+		}
+		if m.panel == panelQueue {
+			if m.panelSel < len(m.queue) {
+				return m, m.armConfirm(confirmQueueDelete, "queued prompt")
+			}
+			return m, nil
 		}
 		if m.panel == panelSessions {
 			if m.panelSel < len(m.sessions) {
@@ -588,6 +612,8 @@ func (m *Model) panelLen() int {
 		return len(m.agentsReg)
 	case panelJobs:
 		return len(m.jobs)
+	case panelQueue:
+		return len(m.queue)
 	}
 	return 0
 }
@@ -645,6 +671,9 @@ func (m *Model) modelEntries() []modelEntry {
 
 func (m *Model) panelSelect() tea.Cmd {
 	switch m.panel {
+	case panelQueue:
+		// ⏎ sends the selected prompt now — the "this one next" verb.
+		return m.queueSendSelected()
 	case panelSessions:
 		if m.panelSel < len(m.sessions) {
 			return m.resumeSession(m.sessions[m.panelSel].ID)
@@ -1213,6 +1242,9 @@ func (m *Model) renderPanel(w, h int) string {
 	case panelJobs:
 		title = "◍ jobs"
 		rows = m.jobRowsRender(w - 6)
+	case panelQueue:
+		title = "≡ queue"
+		rows = m.queuePanelRows(w - 6)
 	}
 
 	header := th.acTitle.Render(title)

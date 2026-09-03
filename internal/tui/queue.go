@@ -20,9 +20,10 @@ import (
 const queueStripCap = 8
 
 // queueStripVisible reports whether the strip occupies rows: it needs queued
-// prompts and stays out of the way while an approval owns the input area.
+// prompts and stays out of the way while an approval owns the input area or
+// the /queue panel manages the queue.
 func (m *Model) queueStripVisible() bool {
-	return len(m.queue) > 0 && m.curApproval() == nil
+	return len(m.queue) > 0 && m.curApproval() == nil && m.panel != panelQueue
 }
 
 // queueStripHeight is the number of rows the strip claims above the input,
@@ -78,13 +79,15 @@ func (m *Model) queueStripView() string {
 		} else if m.qfocus && m.qsel == i {
 			marker = "▸ "
 		}
-		text := th.footer.Render(truncate(m.queue[i], max(1, m.width-cw-5)))
+		// collapse first: a queued prompt may span lines, but the strip's
+		// row budget counts one row per prompt — never more.
+		text := th.footer.Render(truncate(collapse(m.queue[i]), max(1, m.width-cw-5)))
 		rows = append(rows, th.footer.Render(marker)+num+text+controls)
 	}
 	if tail := len(m.queue) - window; tail > 0 {
 		s := fmt.Sprintf("… and %d more", tail)
 		if m.qfocus && m.qsel >= window && m.qsel < len(m.queue) {
-			s += " · ▸ " + truncate(m.queue[m.qsel], max(1, m.width-lipgloss.Width(s)-2))
+			s += " · ▸ " + truncate(collapse(m.queue[m.qsel]), max(1, m.width-lipgloss.Width(s)-2))
 		}
 		rows = append(rows, th.acDetail.Render(s))
 	}
@@ -119,6 +122,9 @@ func (m *Model) queueDeleteAt(i int) {
 	m.qarm = -1 // the armed row is gone — never leave a stale confirm
 	m.queue = append(m.queue[:i], m.queue[i+1:]...)
 	m.qsel = clampSel(m.qsel, len(m.queue))
+	if m.panel == panelQueue {
+		m.panelSel = clampSel(m.panelSel, len(m.queue))
+	}
 	if len(m.queue) == 0 {
 		m.qfocus = false
 	}
@@ -135,6 +141,9 @@ func (m *Model) queueMove(i, delta int) {
 	m.queue[i], m.queue[j] = m.queue[j], m.queue[i]
 	if m.qsel == i {
 		m.qsel = j
+	}
+	if m.panel == panelQueue && m.panelSel == i {
+		m.panelSel = j // the panel selection rides the moved item too
 	}
 	m.qarm = -1 // the armed row moved — disarm rather than mis-aim the confirm
 	m.refresh()
@@ -273,4 +282,71 @@ func (m *Model) queueStripKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 	m.refresh()
 	return m, nil
+}
+
+// ── /queue management panel ──────────────────────────────────────────────
+//
+// The full-area counterpart of the strip: same queue state, room to breathe
+// — arrow selection, ←/→ priority moves, a gated delete, and ⏎ to send the
+// selected prompt ahead of the queue when idle. Index 0 ships first.
+
+// openQueue shows the queue manager. The strip stands down while the panel
+// is open — one queue surface at a time.
+func (m *Model) openQueue() tea.Cmd {
+	m.panel = panelQueue
+	m.panelSel = 0
+	m.panelMsg = ""
+	m.panelEdit = panelEditNone
+	m.panelDetail = false // a detail view never survives the tab change
+	m.detailScroll = 0
+	m.qfocus = false // the panel replaces the strip's keyboard mode
+	m.qarm = -1
+	m.relayout()
+	m.refresh()
+	return nil
+}
+
+// queuePanelRows renders one row per queued prompt in send order. Every
+// prompt collapses to a single line — the panel manages, it does not preview.
+func (m *Model) queuePanelRows(w int) []string {
+	th := m.th
+	rows := make([]string, 0, len(m.queue))
+	for i, q := range m.queue {
+		num := th.footer.Render(fmt.Sprintf("%d. ", i+1))
+		lab := truncate(collapse(q), max(1, w-2-lipgloss.Width(num)))
+		prefix, body := "  ", th.acItem.Render(lab)
+		if i == m.panelSel {
+			prefix, body = "› ", th.acSel.Render(lab)
+		}
+		rows = append(rows, prefix+num+body)
+	}
+	if len(rows) == 0 {
+		rows = append(rows, th.acDim.Render("queue is empty — ⏎ mid-turn queues a prompt here"))
+	}
+	return rows
+}
+
+// queueSendSelected fires the selected prompt now. Mid-turn it refuses and
+// names the escape hatch: ← raises the prompt's priority instead.
+func (m *Model) queueSendSelected() tea.Cmd {
+	if m.panelSel >= len(m.queue) {
+		return nil
+	}
+	if m.disconn {
+		return m.transientNoteCmd("disconnected — reconnect before sending")
+	}
+	if m.busy {
+		return m.transientNoteCmd("a turn is running — this sends when it ends · ← raises its priority")
+	}
+	i := m.panelSel
+	text := m.queue[i]
+	m.queue = append(m.queue[:i], m.queue[i+1:]...)
+	m.qsel = clampSel(m.qsel, len(m.queue))
+	m.panelSel = clampSel(m.panelSel, len(m.queue))
+	m.qarm = -1
+	if len(m.queue) == 0 {
+		m.qfocus = false
+	}
+	m.closePanel() // the turn is the point — the transcript gets its screen back
+	return m.sendPrompt(text)
 }

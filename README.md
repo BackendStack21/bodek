@@ -320,7 +320,7 @@ own front-end settings are separate; see [Configuration](#configuration).
 | `tab` | Open/close the latest reasoning block (live turns auto-expand) |
 | `^R` | Browse & resume saved sessions |
 | `^O` | Switch the model |
-| `^Q` | Focus the queue strip (`↑↓`/`jk` select · `←→`/`hl` move · `d d` two-step delete · `esc`/`⏎` back to the input) |
+| `^Q` | Focus the queue strip (`↑↓`/`jk` select · `←→`/`hl` move · `d d` two-step delete · `esc`/`⏎` back to the input; full manager: `/queue`) |
 | `^S` | Stop the running sub-agent (two-step confirm: `y` stops, any other key continues) |
 | `^T` | Toggle extended thinking for the next turn |
 | `^J` | Insert a newline in the input |
@@ -348,9 +348,12 @@ Prompts sent while a turn is running are **queued** and sent automatically
 when the turn ends — a transient note acknowledges each hold, and the count
 rides both the busy status line and the footer (one drains per turn-end).
 Queued prompts stay visible in a **strip directly above the input area**: one
-row per prompt with per-row `▲ ▼ ✕` controls (`--mouse`) to reorder or
-delete, and a `^Q` keyboard focus mode for the same actions (`↑↓` select,
-`←→` move, `d` delete). The strip collapses to zero rows when the queue is
+row per prompt (long prompts collapse to a single line) with per-row `▲ ▼ ✕`
+controls (`--mouse`) to reorder or delete, and a `^Q` keyboard focus mode for
+the same actions (`↑↓` select, `←→` move, `d` delete). For full management,
+`/queue` opens a dedicated window: `↑↓` select, `←→`/`hl` change priority,
+`d`→`y` delete, and `⏎` sends the selected prompt ahead of the queue when
+idle. The strip collapses to zero rows when the queue is
 empty. While the transcript is scrolled up mid-run, the footer flags
 `↓ new output`; press `^G` to jump to the latest.
 
@@ -368,6 +371,7 @@ full command and press `⏎`.
 | `/copy` | Copy the last reply to the clipboard |
 | `/export` | Save the session transcript next to you — `/export [md|json]` (markdown by default, never overwrites) |
 | `/retry` | Re-send the last prompt (queues it if a turn is running) |
+| `/queue` | Manage the prompt queue — priority, delete, send now (the full manager over the `^Q` strip) |
 | `/theme [name]` | Switch the color theme at runtime and persist it (`ember-dark` · `ember-light` · `high-contrast` · `classic`) |
 | `/stats` | Session metrics card (cost, cache, context gauge) |
 | `/server` | Cockpit — server, link, budget & session in one card (or click the header) |

@@ -46,7 +46,7 @@ func slashCommands() []command {
 				return m.transientNoteCmd("answer the pending approval first — it dies with the connection")
 			}
 			if len(m.queue) > 0 {
-				return m.transientNoteCmd("drain the prompt queue first (ctrl+q)")
+				return m.transientNoteCmd("drain the prompt queue first (/queue or ctrl+q)")
 			}
 			return m.startFreshSession()
 		}},
@@ -57,6 +57,9 @@ func slashCommands() []command {
 		{"theme", "switch the color theme — /theme [name]", runTheme},
 		{"retry", "re-send the last prompt (alt+r)", func(m *Model, _ string) tea.Cmd {
 			return m.retryLast()
+		}},
+		{"queue", "manage queued prompts — priority, delete, send now", func(m *Model, _ string) tea.Cmd {
+			return m.openQueue()
 		}},
 		{"stats", "session metrics & context gauge", func(m *Model, _ string) tea.Cmd {
 			m.showStats()
@@ -294,7 +297,7 @@ func (m *Model) showHelp() {
 		{"^P^N", "recall prompts"},
 		{"^G", "jump to the latest output"},
 		{"^R", "browse & resume sessions"},
-		{"^Q", "manage the queue strip (select · move · delete)"},
+		{"^Q", "quick-manage the queue strip (full manager: /queue)"},
 		{"^O", "switch model"},
 		{"^K", "command palette"},
 		{"^T", "toggle extended thinking"},
