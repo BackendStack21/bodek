@@ -2,7 +2,6 @@ package tui
 
 import (
 	"strings"
-	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -47,12 +46,11 @@ func verbosityName(v int) string {
 	}
 }
 
-// dialNote pushes a note below the quiet gate (the dial's own feedback and
-// its error messages must be visible from every dial state) and returns the
-// sweep that fades it.
+// dialNote pushes a note on the operator-feedback path (always visible,
+// every dial state — the dial's own ack must survive quiet) and returns
+// the sweep that fades it.
 func (m *Model) dialNote(s string) tea.Cmd {
-	m.pushNote(sanitize(s), time.Now().Add(noticeTTL))
-	return m.noticeSweep()
+	return m.transientNoteCmd(s)
 }
 
 // setVerbosity applies the dial and acknowledges the new state.
@@ -64,11 +62,11 @@ func (m *Model) setVerbosity(v int) tea.Cmd {
 	var desc string
 	switch v {
 	case verbosityQuiet:
-		desc = "info notes hidden · steps compact"
+		desc = "engine traces hidden · steps compact"
 	case verbosityDetailed:
-		desc = "steps expand · info notes shown"
+		desc = "steps expand · engine traces shown"
 	default:
-		desc = "info notes shown · steps compact"
+		desc = "engine traces shown · steps compact"
 	}
 	return m.dialNote("verbosity: " + verbosityName(v) + " — " + desc)
 }

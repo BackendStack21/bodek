@@ -367,7 +367,9 @@ func (m *Model) handleEvent(ev client.Event) (tea.Model, tea.Cmd) {
 		if i := m.cur(); i >= 0 && m.attachSubState(i, ev) {
 			stream = true // coalesce redraws — state frames arrive in bursts
 			m.subagentTerminalNote(ev)
-			m.teach(hintSwarm, "tip: tab cycles sub-agent chips · /agents opens the registry")
+			if ev.Phase == "active" { // teach on live swarms, not terminal frames
+				m.teach(hintSwarm, "tip: tab cycles sub-agent chips · /agents opens the registry")
+			}
 			break
 		}
 		m.addTransientNote("subagent · " + stateNoticeLine(ev))
@@ -810,9 +812,11 @@ func (m *Model) addNote(s string) {
 	m.pushNote(s, time.Now().Add(alertTTL))
 }
 
-// addTransientNote appends an info trace that fades after noticeTTL. The
-// verbosity dial gates it: quiet hides info traces entirely (alerts, hints,
-// and the dial's own ack always show).
+// addTransientNote appends an info trace that fades after noticeTTL. This
+// is the ENGINE path (skill loads, memory merges, sub-agent frames): the
+// verbosity dial gates it, because quiet means "engine chatter off".
+// Operator-originated feedback goes through transientNoteCmd, which always
+// shows — your own actions must answer in every dial state.
 func (m *Model) addTransientNote(s string) {
 	if m.verbosity == verbosityQuiet {
 		return
@@ -822,9 +826,12 @@ func (m *Model) addTransientNote(s string) {
 
 // transientNoteCmd adds a transient note and returns the sweep cmd. Every
 // caller outside handleEvent must batch this cmd or the note only fades on
-// the next unrelated render.
+// the next unrelated render. This is the OPERATOR path — commands, staging,
+// navigation, toggles — so it bypasses the quiet gate: your own actions
+// must answer in every dial state. Engine chatter goes through
+// addTransientNote, which quiet suppresses.
 func (m *Model) transientNoteCmd(s string) tea.Cmd {
-	m.addTransientNote(s)
+	m.pushNote(s, time.Now().Add(noticeTTL))
 	return m.noticeSweep()
 }
 

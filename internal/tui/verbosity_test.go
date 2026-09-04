@@ -42,15 +42,17 @@ func TestVerbosityDialCyclesViaCommand(t *testing.T) {
 	}
 }
 
-func TestQuietSuppressesInfoNotesOnly(t *testing.T) {
+func TestQuietSuppressesEngineNotesOnly(t *testing.T) {
 	m := newTestModel()
 	m.runCommandLine("/verbosity quiet")
 	m.notices, m.noticeExp = nil, nil // drop the dial ack — isolate the effects
 
-	m.addTransientNote("info trace")
-	if countNotices(m, "info trace") != 0 {
-		t.Fatal("quiet must suppress info-tier transient notes")
+	// Engine path: gated.
+	m.addTransientNote("skill · loaded")
+	if countNotices(m, "skill · loaded") != 0 {
+		t.Fatal("quiet must suppress engine-tier transient notes")
 	}
+	// Operator path: every action answers.
 	m.addNote("boom")
 	if countNotices(m, "boom") != 1 {
 		t.Fatal("quiet must keep alert-tier notes (errors, warnings)")
@@ -59,9 +61,15 @@ func TestQuietSuppressesInfoNotesOnly(t *testing.T) {
 	if countNotices(m, "tip: teaching beats silence") != 1 {
 		t.Fatal("quiet must not suppress JIT hints — they are the discovery path")
 	}
+	if c := m.transientNoteCmd("staged: notes.txt"); c == nil {
+		t.Fatal("transientNoteCmd must still return a sweep")
+	}
+	if countNotices(m, "staged: notes.txt") != 1 {
+		t.Fatal("quiet must keep operator feedback (commands, staging, toggles)")
+	}
 }
 
-func TestQuietSuppressesQueuedAck(t *testing.T) {
+func TestQuietKeepsQueuedAck(t *testing.T) {
 	m := newTestModel()
 	m.runCommandLine("/verbosity quiet")
 	m.notices, m.noticeExp = nil, nil
@@ -70,8 +78,8 @@ func TestQuietSuppressesQueuedAck(t *testing.T) {
 	m.busy = true
 	m.ta.SetValue("held prompt")
 	m.submit()
-	if countNotices(m, "queued — it sends") != 0 {
-		t.Fatalf("quiet must suppress the queued ack: %q", m.notices)
+	if countNotices(m, "queued — it sends") != 1 {
+		t.Fatalf("⏎ is the operator's own action — its ack must show even in quiet: %q", m.notices)
 	}
 	if len(m.queue) != 1 {
 		t.Fatalf("the prompt must still queue: %d", len(m.queue))

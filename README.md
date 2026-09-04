@@ -250,9 +250,10 @@ own front-end settings are separate; see [Configuration](#configuration).
   last prompt and receipt, the context gauge, up to three recent sessions
   (titles sanitized), and one action line pointing at the `^K` hub.
 - **Verbosity dial** — `/verbosity` (or `--verbosity quiet|normal|detailed`)
-  sets the whole noise policy in one stroke: quiet hides info traces and
+  sets the whole noise policy in one stroke: quiet hides engine traces and
   keeps steps compact, detailed implies the `^E` expand-all view, normal is
-  the default. Errors, warnings, and hints show in every dial state.
+  the default. Your own commands always answer, and errors, warnings, and
+  hints show in every dial state.
 - **Cancellation** (`Esc`) — abort a running turn via odek's cancel API.
 - **Provider-failure cards** — when a turn dies mid-flight (stream stall
   under parallel load, HTTP 429 after the retry budget, dropped connection,
@@ -398,7 +399,7 @@ full command and press `⏎`.
 | `/retry` | Re-send the last prompt (queues it if a turn is running) |
 | `/queue` | Manage the prompt queue — priority, delete, send now (the full manager over the `^Q` strip) |
 | `/theme [name]` | Switch the color theme at runtime and persist it (`ember-dark` · `ember-light` · `high-contrast` · `classic`) |
-| `/verbosity [quiet\|normal\|detailed]` | One-dial noise policy: quiet hides info notes & keeps steps compact, detailed expands every step (`^E` view); bare `/verbosity` cycles |
+| `/verbosity [quiet\|normal\|detailed]` | One-dial noise policy: quiet hides engine traces & keeps steps compact, detailed expands every step (`^E` view); bare `/verbosity` cycles |
 | `/stats` | Session metrics sheet (cost, cache, context gauge) |
 | `/server` | Cockpit — server, link, budget & session in one card (or click the header) |
 | `/sessions` | Browse, search, pin, rename, export & resume sessions |

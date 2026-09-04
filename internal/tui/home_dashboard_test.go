@@ -79,3 +79,25 @@ func TestClearConversationReturnsFetchCmd(t *testing.T) {
 	}
 	m.Update(exec(cmd))
 }
+
+func TestHomeSessionsGenerationGuard(t *testing.T) {
+	m := newTestModel()
+	first := m.clearConversation() // gen 0 fetch armed
+	m.clearConversation()          // gen 1 fetch armed; gen 0 reply is now stale
+	m.Update(exec(first))          // stale reply lands
+	if m.homeSess != nil {
+		t.Fatalf("a superseded clear's fetch must be dropped: %+v", m.homeSess)
+	}
+}
+
+func TestSwarmHintSkipsTerminalFrames(t *testing.T) {
+	m := manifestFixture(t)
+	m.handleEvent(client.Event{Type: "subagent_state", TaskID: "t1", TaskIdx: 0, Phase: "finished", Status: "ok"})
+	if countNotices(m, "tip: tab cycles sub-agent") != 0 {
+		t.Fatalf("terminal frames must not teach the swarm hint: %q", m.notices)
+	}
+	m.handleEvent(client.Event{Type: "subagent_state", TaskID: "t2", TaskIdx: 1, Phase: "active", Status: "running", Tool: "go test"})
+	if countNotices(m, "tip: tab cycles sub-agent") != 1 {
+		t.Fatalf("the first live swarm frame must teach the hint once: %q", m.notices)
+	}
+}

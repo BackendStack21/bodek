@@ -249,30 +249,33 @@ func (m *Model) modePrefix() string {
 type homeSessionsMsg struct {
 	items []client.Session
 	err   error
+	gen   int // clear generation the fetch was armed under
 }
 
 // fetchHomeSessions arms the once-per-clear recent-sessions fetch that backs
-// the home dashboard. Nil when it already ran — the home is a snapshot of
-// the moment the conversation cleared, not a live poll.
+// the home dashboard. Nil when this clear already armed one; the generation
+// stamp lets a slow reply from a superseded clear be dropped on arrival.
 func (m *Model) fetchHomeSessions() tea.Cmd {
 	if m.homeSessDone {
 		return nil
 	}
 	m.homeSessDone = true
 	cl := m.cl
+	gen := m.homeSessGen
 	return func() tea.Msg {
 		if cl == nil {
-			return homeSessionsMsg{}
+			return homeSessionsMsg{gen: gen}
 		}
 		items, err := cl.Sessions()
-		return homeSessionsMsg{items: items, err: err}
+		return homeSessionsMsg{items: items, err: err, gen: gen}
 	}
 }
 
 // handleHomeSessions stores the fetched recents. Failures stay silent —
-// the dashboard is decorative orientation, never worth a strip note.
+// the dashboard is decorative orientation, never worth a strip note — and
+// a reply from a superseded clear is dropped by generation.
 func (m *Model) handleHomeSessions(msg homeSessionsMsg) {
-	if msg.err != nil {
+	if msg.err != nil || msg.gen != m.homeSessGen {
 		return
 	}
 	m.homeSess = msg.items

@@ -188,8 +188,9 @@ type Model struct {
 	lastPrompt    string           // most recent prompt sent — /retry re-sends it
 	homePrompt    string           // last user prompt, kept across ^L for the session home
 	homeReceipt   string           // last turn's coding receipt, shown on the cleared home
-	homeSess      []client.Session // recent sessions for the home dashboard (cleared-home fetch)
-	homeSessDone  bool             // the once-per-clear fetch already ran
+	homeSess      []client.Session // recent sessions for the home dashboard
+	homeSessDone  bool             // the current clear's fetch already ran
+	homeSessGen   int              // bumped per clear; stale fetches dropped
 	focusIdx      int              // transcript cursor: turn head alt+↑/↓ last jumped to (-1 none)
 
 	history   []string // submitted prompts, newest last (recalled with ↑)
@@ -310,7 +311,7 @@ type Model struct {
 	notices    []string
 	noticeExp  []time.Time     // parallel to notices; when each one fades
 	hintsShown map[string]bool // JIT hints already delivered (hints.go)
-	verbosity  int             // noise dial: 0 quiet · 1 normal · 2 detailed
+	verbosity  int             // noise dial: 0 normal · 1 quiet · 2 detailed
 	disconn    bool
 	quitting   bool
 
@@ -990,7 +991,13 @@ func (m *Model) clearConversation() tea.Cmd {
 	m.runCtxCum = 0
 	m.lastLatency = 0
 	m.refresh()
-	return m.fetchHomeSessions() // the cleared home resumes with orientation
+	// Fresh dashboard snapshot per clear: drop the stale rows, re-arm the
+	// once-guard, and bump the generation so an in-flight older fetch can
+	// never stamp this clear's home.
+	m.homeSess = nil
+	m.homeSessDone = false
+	m.homeSessGen++
+	return m.fetchHomeSessions()
 }
 
 // startFreshSession tears down the current conversation AND its server-side
