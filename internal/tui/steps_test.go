@@ -191,9 +191,9 @@ func renderStepsForTest(m *Model, msg message, startLine, msgIdx int) (string, [
 	var refs []stepRef
 	line := startLine
 	for i, s := range msg.steps {
-		block, ref, n := m.renderStep(s, msg.streaming, msgIdx, i, line)
+		block, stepRefs, n := m.renderStep(s, msg.streaming, msgIdx, i, line)
 		blocks = append(blocks, block)
-		refs = append(refs, ref)
+		refs = append(refs, stepRefs...)
 		line += n
 	}
 	return strings.Join(blocks, "\n"), refs

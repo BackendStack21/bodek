@@ -40,6 +40,7 @@ type step struct {
 	manifest   []taskSlot    // delegate arg parsed at tool-call time: per-task identity
 	resultCard *agentResult  // framed result envelope (delegate tools)
 	expanded   bool          // user has expanded this step to show full output/logs
+	agentSel   int           // focused chip: 0 = none, else 1-based SA number
 	started    time.Time     // when the tool_call arrived; zero for resumed history
 	dur        time.Duration // wall-clock the call took; 0 until the result lands
 }
@@ -47,9 +48,11 @@ type step struct {
 // stepRef maps a rendered transcript line to a specific step for mouse
 // hit-testing.
 type stepRef struct {
-	msgIdx  int
-	stepIdx int
-	line    int
+	msgIdx   int
+	stepIdx  int
+	line     int
+	agentIdx int // chip target (task idx); ignored unless x1 > x0
+	x0, x1   int // chip hit box in viewport columns; 0,0 = head row
 }
 
 // turnItem is one entry in a turn's chronological timeline: a reasoning
@@ -700,6 +703,11 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.refresh()
 					return m, nil
 				}
+				if msgIdx, stepIdx, agentIdx, ok := m.chipAt(line, msg.X); ok {
+					m.selectAgentChip(msgIdx, stepIdx, agentIdx)
+					m.refresh()
+					return m, nil
+				}
 				if msgIdx, stepIdx, ok := m.stepAtLine(line); ok {
 					m.toggleStep(msgIdx, stepIdx)
 					m.refresh()
@@ -913,10 +921,12 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.toggleCollapseLast()
 		return m, nil
 	case "tab":
-		// Open/close the most recent reasoning accordion block (the textarea
-		// ignores tab, and the completion popups capture it while open).
+		// Cycle the latest swarm's focused chip when one is on screen;
+		// otherwise open/close the most recent reasoning accordion.
 		if !m.ac.open {
-			m.toggleThinkingLast()
+			if !m.cycleAgentFocus() {
+				m.toggleThinkingLast()
+			}
 			m.refresh()
 		}
 		return m, nil
@@ -1306,6 +1316,56 @@ func (m *Model) toggleStep(msgIdx, stepIdx int) {
 	m.convCount = -1
 }
 
+func (m *Model) selectAgentChip(msgIdx, stepIdx, agentIdx int) {
+	if msgIdx < 0 || msgIdx >= len(m.msgs) {
+		return
+	}
+	steps := m.msgs[msgIdx].steps
+	if stepIdx < 0 || stepIdx >= len(steps) {
+		return
+	}
+	s := &steps[stepIdx]
+	if s.focusedIdx() == agentIdx {
+		s.clearAgentFocus()
+	} else {
+		s.setAgentFocus(agentIdx)
+	}
+	m.convCount = -1
+}
+
+// cycleAgentFocus walks the latest sub-agent chip strip: none → first →
+// next → none. Returns false when the turn has no swarm to focus.
+func (m *Model) cycleAgentFocus() bool {
+	for i := len(m.msgs) - 1; i >= 0; i-- {
+		if m.msgs[i].role != roleAsst {
+			continue
+		}
+		for j := len(m.msgs[i].steps) - 1; j >= 0; j-- {
+			s := &m.msgs[i].steps[j]
+			chips := s.agentChips()
+			if len(chips) == 0 {
+				continue
+			}
+			cur := s.focusedIdx()
+			next := chips[0].idx
+			if cur >= 0 {
+				next = -1
+				for k, c := range chips {
+					if c.idx == cur && k+1 < len(chips) {
+						next = chips[k+1].idx
+						break
+					}
+				}
+			}
+			s.setAgentFocus(next)
+			m.convCount = -1
+			return true
+		}
+		return false
+	}
+	return false
+}
+
 // toggleCollapseLast folds/unfolds the most recent assistant turn card — the
 // one the reader is most likely looking at.
 func (m *Model) toggleCollapseLast() {
@@ -1442,11 +1502,25 @@ func (m *Model) turnAtLine(line int) (msgIdx int, ok bool) {
 // detail lines or prose below a step must not toggle it.
 func (m *Model) stepAtLine(line int) (msgIdx, stepIdx int, ok bool) {
 	for i := range m.stepLineIndex {
-		if m.stepLineIndex[i].line > line {
+		r := m.stepLineIndex[i]
+		if r.line > line {
 			break
 		}
-		if m.stepLineIndex[i].line == line {
-			return m.stepLineIndex[i].msgIdx, m.stepLineIndex[i].stepIdx, true
+		if r.line == line && r.x1 <= r.x0 {
+			return r.msgIdx, r.stepIdx, true
+		}
+	}
+	return
+}
+
+func (m *Model) chipAt(line, x int) (msgIdx, stepIdx, agentIdx int, ok bool) {
+	for i := range m.stepLineIndex {
+		r := m.stepLineIndex[i]
+		if r.line != line || r.x1 <= r.x0 {
+			continue
+		}
+		if x >= r.x0 && x < r.x1 {
+			return r.msgIdx, r.stepIdx, r.agentIdx, true
 		}
 	}
 	return

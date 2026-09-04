@@ -603,16 +603,17 @@ func (m *Model) renderMessage(msg message, msgIdx, lineOffset int) (string, []st
 				addBlock(th.asstWork.Render(th.statTool.Render(swarmLabel(run, time.Now()))), false)
 				for k := run.start; k <= run.end; k++ {
 					idx := items[k].stepIdx
-					block, _, _ := m.renderStep(msg.steps[idx], msg.streaming, msgIdx, idx, 0)
+					block, stepRefs, _ := m.renderStep(msg.steps[idx], msg.streaming, msgIdx, idx, 0)
 					start := addBlock(th.asstWork.Render(block), false)
-					refs = append(refs, stepRef{msgIdx: msgIdx, stepIdx: idx, line: start})
+					refs = append(refs, offsetStepRefs(stepRefs, start)...)
 				}
 				it = run.end
 				continue
 			}
-			block, _, _ := m.renderStep(msg.steps[items[it].stepIdx], msg.streaming, msgIdx, items[it].stepIdx, 0)
+			idx := items[it].stepIdx
+			block, stepRefs, _ := m.renderStep(msg.steps[idx], msg.streaming, msgIdx, idx, 0)
 			start := addBlock(th.asstWork.Render(block), false)
-			refs = append(refs, stepRef{msgIdx: msgIdx, stepIdx: items[it].stepIdx, line: start})
+			refs = append(refs, offsetStepRefs(stepRefs, start)...)
 		}
 		// Residual prose: hand-built messages carry their reply only in
 		// msg.content (or msg.rendered) — render it as one trailing card.
@@ -625,6 +626,11 @@ func (m *Model) renderMessage(msg message, msgIdx, lineOffset int) (string, []st
 		if strings.TrimSpace(trail) != "" {
 			card, _ := m.answerCardBody(trail)
 			addBlock(card, true)
+		}
+		if !msg.streaming {
+			if rec := swarmVerdict(&msg); rec != "" {
+				addBlock(th.asstWork.Render(th.statsDim.Render(rec)), false)
+			}
 		}
 		var out strings.Builder
 		out.WriteString(label)
@@ -657,6 +663,9 @@ func (m *Model) answerCardBody(body string) (string, int) {
 // form stays informative: steps, reasoning, and a reply preview.
 func (m *Model) collapseSummary(msg message) string {
 	if rec := formatReceipt(scanReceipt(msg)); rec != "" {
+		return "⋯ " + rec
+	}
+	if rec := swarmVerdict(&msg); rec != "" {
 		return "⋯ " + rec
 	}
 	parts := []string{"⋯ collapsed"}
@@ -845,19 +854,23 @@ func max(a, b int) int {
 	return b
 }
 
+func offsetStepRefs(refs []stepRef, start int) []stepRef {
+	out := make([]stepRef, len(refs))
+	for i, r := range refs {
+		r.line += start
+		out[i] = r
+	}
+	return out
+}
+
 // renderStep renders one tool step: live progress + clock while it runs,
 // a typed peek under a finished head, and the full inspect tree on expand.
-// It returns the rendered block, the stepRef for mouse hit-testing
-// (pointing at startLine), and the block's line count.
-func (m *Model) renderStep(s step, streaming bool, msgIdx, stepIdx, startLine int) (string, stepRef, int) {
+// Sub-agent steps always paint a chip strip; a focused chip opens the
+// mini-card. Returns the block, hit refs (head + chips), and line count.
+func (m *Model) renderStep(s step, streaming bool, msgIdx, stepIdx, startLine int) (string, []stepRef, int) {
 	th := m.th
-	// Floors stay at a few chars so truncation genuinely shrinks with the
-	// viewport instead of overflowing tiny widths (truncate handles the rest).
 	detailBudget := max(m.vp.Width-8, 4)
-	// A step shows its details when toggled individually or via the global
-	// Ctrl+E toggle.
 	expanded := s.expanded || m.expandAll
-	// Status glyph: a spinner while the call runs, then ✓ / ✗ once it lands.
 	var icon string
 	switch {
 	case !s.done && streaming:
@@ -869,16 +882,10 @@ func (m *Model) renderStep(s step, streaming bool, msgIdx, stepIdx, startLine in
 	default:
 		icon = th.stepRun.Render("▸")
 	}
-	// Chevron: the expand affordance — shown on running steps too, since they
-	// toggle just like finished ones.
 	chevron := th.stepTree.Render("▶")
 	if expanded {
 		chevron = th.stepTree.Render("▼")
 	}
-	// Right rail first: the left side yields to it, and the tool name is
-	// budgeted before assembly — a long (or resumed, wire-borne) name must
-	// never push the head past the viewport, because a physically wrapped
-	// head shifts every hit-test line below it.
 	right := ""
 	live := !s.done && streaming
 	if s.done {
@@ -892,11 +899,10 @@ func (m *Model) renderStep(s step, streaming bool, msgIdx, stepIdx, startLine in
 	}
 	rightW := lipgloss.Width(right)
 	pre := chevron + " " + icon + " " + th.toolIcon.Render(toolGlyph(s.name)) + " "
-	nameBudget := max(m.vp.Width-4-rightW-lipgloss.Width(pre)-8, 4) // 8: " · sub-agent" reserve
+	chips := s.agentChips()
+	nameBudget := max(m.vp.Width-4-rightW-lipgloss.Width(pre)-8, 4)
 	var left string
 	if live {
-		// In-flight rows speak the same language as the composer status
-		// line — progress copy + ticking clock — instead of a dead name.
 		prog := toolProgress(s.name, s.arg)
 		left = pre + th.statusBusy.Render(truncate(prog, max(m.vp.Width-4-rightW-lipgloss.Width(pre)-2, 4)))
 		if s.subagent {
@@ -906,55 +912,79 @@ func (m *Model) renderStep(s step, streaming bool, msgIdx, stepIdx, startLine in
 		}
 	} else {
 		left = pre + th.stepName.Render(truncate(s.name, nameBudget))
-		if s.subagent {
+		if s.subagent && len(chips) == 0 {
 			left += th.stepArg.Render(" · sub-agent")
+		}
+		if s.subagent {
 			if r := agentRollup(&s); r != "" {
 				left += th.stepArg.Render(" · " + r)
 			}
 		}
 		budget := max(m.vp.Width-4-rightW-2, 4)
-		if s.arg != "" {
+		if s.arg != "" && len(chips) == 0 {
 			left += th.stepArg.Render("  " + truncate(s.arg, budget-lipgloss.Width(chevron+" "+icon+" "+toolGlyph(s.name)+" "+s.name)-2))
 		}
 	}
 	gap := max(m.vp.Width-4-lipgloss.Width(left)-rightW, 1)
 	head := left + strings.Repeat(" ", gap) + right
 	lines := []string{head}
-	if expanded {
-		// Sub-agent logs are plain text — style and truncate here. Tool
-		// output goes through the typed renderers, which return fully
-		// styled, already-truncated lines (truncating styled text would
-		// corrupt ANSI sequences) — append those verbatim.
+	refs := []stepRef{{msgIdx: msgIdx, stepIdx: stepIdx, line: startLine}}
+
+	inner := max(m.cardInner()-2, 8)
+	if len(chips) > 0 {
+		chipLines, chipRefs := m.renderChipStrip(chips, s.focusedIdx(), inner, msgIdx, stepIdx, startLine+len(lines))
+		lines = append(lines, chipLines...)
+		refs = append(refs, chipRefs...)
+	}
+
+	focus := s.focusedIdx()
+	showAll := expanded && focus < 0
+	showFocus := focus >= 0
+	if s.subagent && (showFocus || showAll || expanded) {
 		var details []string
-		for _, a := range s.agents {
-			line := agentCardLine(a)
-			styled := th.stepRes.Render(truncate(line, detailBudget))
-			if a.failed() {
-				styled = th.stepErr.Render(truncate(line, detailBudget))
+		if showAll || (expanded && m.expandAll) {
+			for _, a := range s.agents {
+				details = append(details, m.agentCardDetails(a, &s, true, detailBudget)...)
 			}
-			if badge := cardTrustBadge(a); badge != "" {
-				styled += th.stepArg.Render("  " + badge)
+			for _, ln := range s.pendingAgentLines() {
+				details = append(details, th.stepArg.Render(truncate(ln, detailBudget)))
 			}
-			details = append(details, styled)
-			for _, art := range a.artifacts {
-				al := "⎘ " + art.ID
-				if art.Path != "" {
-					al += " · " + art.Path
+			if !m.expandAll && focus < 0 {
+				for _, lg := range s.logs {
+					if strings.TrimSpace(lg) != "" {
+						details = append(details, th.stepRes.Render(truncate(sanitize(lg), detailBudget)))
+					}
 				}
-				if art.Bytes > 0 {
-					al += fmt.Sprintf(" (%s)", human(int(art.Bytes)))
+			}
+			if s.resultCard != nil {
+				details = append(details, agentResultLines(m, s.resultCard, detailBudget)...)
+			} else if s.result != "" {
+				details = append(details, stepDetail(s.name, s.result, m.vp.Width, th)...)
+			}
+		} else if showFocus {
+			if a := s.cardByIdx(focus); a != nil {
+				details = append(details, m.agentCardDetails(a, &s, expanded, detailBudget)...)
+				if expanded && s.resultCard != nil && lastFinishedAgent(&s, a) {
+					details = append(details, agentResultLines(m, s.resultCard, detailBudget)...)
 				}
-				details = append(details, th.stepArg.Render(truncate(collapse(al), detailBudget)))
+			} else if focus < len(s.manifest) {
+				details = append(details, th.stepArg.Render(truncate(pendingChipLine(focus, s.manifest[focus]), detailBudget)))
 			}
 		}
-		for _, ln := range s.pendingAgentLines() {
-			details = append(details, th.stepArg.Render(truncate(ln, detailBudget)))
+		if len(details) > 200 {
+			details = details[:200]
+			details = append(details, th.stepArg.Render("… output truncated"))
 		}
-		for _, lg := range s.logs {
-			if strings.TrimSpace(lg) != "" {
-				details = append(details, th.stepRes.Render(truncate(lg, detailBudget)))
+		for i, d := range details {
+			conn := "    "
+			if i == 0 {
+				conn = "  ⎿ "
 			}
+			lines = append(lines, th.stepTree.Render(conn)+
+				lipgloss.NewStyle().MaxWidth(detailBudget).Render(d))
 		}
+	} else if expanded {
+		var details []string
 		if s.resultCard != nil {
 			details = append(details, agentResultLines(m, s.resultCard, detailBudget)...)
 		} else {
@@ -969,14 +999,10 @@ func (m *Model) renderStep(s step, streaming bool, msgIdx, stepIdx, startLine in
 			if i == 0 {
 				conn = "  ⎿ "
 			}
-			// MaxWidth clamps ANSI-safely — styled renderer output must never
-			// be rune-truncated (that would cut escape sequences mid-way).
 			lines = append(lines, th.stepTree.Render(conn)+
 				lipgloss.NewStyle().MaxWidth(detailBudget).Render(d))
 		}
-	} else if s.done {
-		// Always-on peek: the first beat of the typed renderer, so a
-		// finished step is scannable without ^E. Expand still owns the dump.
+	} else if s.done && len(chips) == 0 {
 		for i, d := range stepPeek(s.name, s.result, m.vp.Width, th) {
 			conn := "    "
 			if i == 0 {
@@ -986,7 +1012,97 @@ func (m *Model) renderStep(s step, streaming bool, msgIdx, stepIdx, startLine in
 				lipgloss.NewStyle().MaxWidth(detailBudget).Render(d))
 		}
 	}
-	return strings.Join(lines, "\n"), stepRef{msgIdx: msgIdx, stepIdx: stepIdx, line: startLine}, len(lines)
+	return strings.Join(lines, "\n"), refs, len(lines)
+}
+
+func lastFinishedAgent(s *step, a *agentCard) bool {
+	if a == nil || !a.finished() {
+		return false
+	}
+	for i := len(s.agents) - 1; i >= 0; i-- {
+		if s.agents[i].finished() {
+			return s.agents[i] == a
+		}
+	}
+	return false
+}
+
+func pendingChipLine(idx int, slot taskSlot) string {
+	line := fmt.Sprintf("◌ SA%d · pending", idx+1)
+	if slot.goal != "" {
+		line += " · " + sanitize(slot.goal)
+	}
+	return line
+}
+
+func (m *Model) agentCardDetails(a *agentCard, s *step, expanded bool, budget int) []string {
+	th := m.th
+	ident := agentIdentityLine(a)
+	style := th.stepRes
+	if a.failed() {
+		style = th.stepErr
+	}
+	out := []string{style.Render(truncate(ident, budget))}
+	if beat := agentBeatLine(a); beat != "" {
+		out = append(out, th.stepArg.Render(truncate(beat, budget)))
+	}
+	if !expanded {
+		return out
+	}
+	for _, art := range a.artifacts {
+		al := "⎘ " + sanitize(art.ID)
+		if art.Path != "" {
+			al += " · " + sanitize(art.Path)
+		}
+		if art.Bytes > 0 {
+			al += fmt.Sprintf(" (%s)", human(int(art.Bytes)))
+		}
+		out = append(out, th.stepArg.Render(truncate(collapse(al), budget)))
+	}
+	mine, unscoped := scopedLogs(s.logs, a.idx)
+	for _, lg := range append(mine, unscoped...) {
+		out = append(out, th.stepRes.Render(truncate(sanitize(lg), budget)))
+	}
+	return out
+}
+
+func (m *Model) renderChipStrip(chips []agentChip, focus, width, msgIdx, stepIdx, startLine int) ([]string, []stepRef) {
+	th := m.th
+	rows := packChipRows(chips, width)
+	var lines []string
+	var refs []stepRef
+	// asstWork pads 2; the strip itself indents 2 — mouse X is viewport-absolute.
+	const xBase = 4
+	for _, row := range rows {
+		var b strings.Builder
+		x := 0
+		for i, c := range row {
+			if i > 0 {
+				b.WriteString("   ")
+				x += 3
+			}
+			cell := truncateChip(c, width-x)
+			txt := cell.text()
+			w := lipgloss.Width(txt)
+			styled := th.stepArg.Render(txt)
+			if c.failed {
+				styled = th.stepErr.Render(txt)
+			} else if !c.pending && c.glyph == "✓" {
+				styled = th.stepDone.Render(txt)
+			}
+			if focus == c.idx {
+				styled = th.acSel.Render(txt)
+			}
+			b.WriteString(styled)
+			refs = append(refs, stepRef{
+				msgIdx: msgIdx, stepIdx: stepIdx, line: startLine + len(lines),
+				agentIdx: c.idx, x0: xBase + x, x1: xBase + x + w,
+			})
+			x += w
+		}
+		lines = append(lines, "  "+b.String())
+	}
+	return lines, refs
 }
 
 // resultExcerpt turns sanitized tool output into a compact, blank-stripped

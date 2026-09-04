@@ -146,8 +146,8 @@ func TestBudgetExhaustedStatus(t *testing.T) {
 		t.Errorf("glyph = %q, want ◐", s.agents[0].glyph())
 	}
 	m.finalize()
-	if !strings.Contains(m.msgs[0].content, "sub-agents: 1 ◐") {
-		t.Errorf("verdict missing budget_exhausted: %q", m.msgs[0].content)
+	if !strings.Contains(swarmVerdict(&m.msgs[0]), "sub-agents: 1 ◐") {
+		t.Errorf("verdict missing budget_exhausted: %q", swarmVerdict(&m.msgs[0]))
 	}
 }
 

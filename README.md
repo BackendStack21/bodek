@@ -198,27 +198,23 @@ own front-end settings are separate; see [Configuration](#configuration).
 - **Context-aware progress** — while the agent works, a status line right
   below your last message shows what it's actually doing (`🧪 running
   tests`, `📖 reading client.go`, `🚀 pushing`) with a live elapsed timer.
-- **Sub-agents** — delegations are labelled and their `subagent_log` activity
-  nests beneath the delegating call, so a sub-agent's progress reads as its
-  own branch of the step tree. Each card carries its task's goal (parsed
-  from the `delegate_tasks` argument; tasks the wire hasn't confirmed yet
-  show as `pending`), live step/tool/iterations/tokens telemetry from
-  `subagent_state` frames (odek v1.30+), a client-side elapsed timer between
-  frame bursts, and terminal status glyphs (`✓` success, `◐` partial, `✗`
-  error, `⊘` cancelled, `⏱` timeout). The collapsed rollup counts failures —
-  `2/3 · 1 ✗ · 8.1k tok` — a terminal failure sticks to the notice strip
-  until the turn ends, and every delegating turn closes with a
-  `swarm: 5 ✓ · 1 ✗ — SA4 error` verdict. A disconnect retires in-flight
-  cards (`× lost on disconnect`) instead of leaving ghost spinners. Wire v2
-  (odek): queued tasks render as `◌ · queued` and count in the rollup
-  (`0/8 agents · 6 queued`); cards carry trust badges (resolved profile +
-  effective risk ceiling, in the expanded details), budget horizons
-  (`it 9/15`, `12s/30m`), and per-task cost (`~$0.0421/$0.5` when priced);
-  result cards list artifacts (`⎘`) and policy denials (`⊘ N denied`) —
-  sub-agents are deny-not-prompt: they never block on approvals.
-  `ctrl+s` (or `/stop <SA#>`, two-step confirmed) stops one running
-  sub-agent of the current turn; the `/agents` tab's `c` reaches any live
-  task through the instance registry.
+- **Sub-agents** — a delegation paints an always-on chip strip under the
+  parent step (`⟳ SA1 explore · ✓ SA2 lint · ✗ SA3 types`), so you can
+  see who is running or who failed without expanding. Click a chip or
+  `tab` (on a swarm turn) focuses one agent: identity + live beat
+  (current tool, step, budget, cost). `^E` / expand still dumps that
+  agent's logs, artifacts, and the framed result. Tasks the wire hasn't
+  confirmed yet show as `◌` pending chips from the `delegate_tasks`
+  argument. Glyphs: `✓` success, `◐` partial, `✗` error, `⊘` cancelled,
+  `⏱` timeout, `×` lost on disconnect. The parent rollup still counts
+  failures (`2/3 · 1 ✗ · 8.1k tok`). A finished swarm turn closes with a
+  receipt rail (`sub-agents: 5 ✓ · 1 ✗ — #4 error`), not a markdown
+  marker in the answer. Wire v2 (odek): queued chips, quiet profile/risk
+  on the focused card, budget horizons (`it 9/15`, `12s/30m`), per-task
+  cost, artifacts (`⎘`), and policy denials (`⊘ N denied`) — sub-agents
+  are deny-not-prompt. `ctrl+s` (or `/stop <SA#>`, two-step) stops one
+  running agent; `/agents` uses the same chip grammar and `o` jumps to
+  the transcript chip.
 - **Model switcher** (`^O`) — change the model for the next turn. The picker
   merges the server's configured model with its built-in profile catalog
   (`/api/profiles`), each annotated with its context window.
@@ -334,7 +330,7 @@ own front-end settings are separate; see [Configuration](#configuration).
 | `alt+r` | Re-send the last prompt (`/retry`) |
 | `alt+f` | Search the transcript (`⏎`/`n` next match · `N` previous · scrolling stays live) |
 | `^F` | Fold/unfold the most recent turn card (click any turn head with `--mouse`) |
-| `tab` | Open/close the latest reasoning block (live turns auto-expand) |
+| `tab` | Focus the next sub-agent chip on a swarm turn; otherwise open/close the latest reasoning block |
 | `^R` | Browse & resume saved sessions |
 | `^O` | Switch the model |
 | `^Q` | Unfold the queue strip from the composer shelf (`↑↓`/`jk` select · `←→`/`hl` move · `d d` two-step delete · `esc`/`⏎` folds it back; full manager: `/queue`) |

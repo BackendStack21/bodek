@@ -98,8 +98,12 @@ feat(tui): compact tool steps with Ctrl+E details toggle
   segments (appendReply maintains it) for export, stats, and hand-built
   messages; turn markers (`**Cancelled.**` etc.) attach to the last reply.
   Render-only layers (intent rail, always-on step peek, turn receipt, live
-  swarm band) must not reorder `items[]` — the swarm is a consecutive
-  overlay on unfinished steps and dissolves when one leftover remains.
+  swarm band, sub-agent chip strip, swarm receipt rail) must not reorder
+  `items[]` — the parallel-tool swarm is a consecutive overlay on unfinished
+  parent steps and dissolves when one leftover remains. Sub-agent children
+  live on `step.agents` and always paint as chips; `agentSel` (1-based, 0 =
+  none) focuses one mini-card. The swarm verdict is a receipt rail, never
+  stuffed into `msg.content`.
 - Events arrive from `internal/client` already in chronological order —
   keep ingestion order-dependent and idempotent.
 - `internal/tui` is split by responsibility: `model.go` holds the core
@@ -126,9 +130,9 @@ feat(tui): compact tool steps with Ctrl+E details toggle
 - ESC closes the topmost window, then inspect chrome, then (if busy)
   arms cancel. Order: confirm disarm → palette → drawer edit/detail/tab
   → cockpit → find → `@`/`/` popup → queue strip → approval (collapse
-  expand, then deny) → skill chip / `^E` / open thinking / expanded
-  step / help card → cancel gate. Do not let a leftover overlay
-  swallow ESC without dismissing.
+  expand, then deny) → skill chip / `^E` / open thinking / agent
+  focus / expanded step / help card → cancel gate. Do not let a leftover
+  overlay swallow ESC without dismissing.
 - Management drawer tabs (memory/skills/tools/config — and jobs) have a detail
   submode: `⏎` expands the selected row (skill description, full fact
   text, MCP args, raw config JSON — everything through `sanitize()`),

@@ -290,7 +290,7 @@ func (m *Model) showHelp() {
 		{"^Y", "copy the latest reply"},
 		{"alt+r", "re-send the last prompt (/retry)"},
 		{"^F", "fold/unfold the latest turn card"},
-		{"tab", "open/close the latest reasoning block"},
+		{"tab", "focus the next sub-agent chip · else open/close reasoning"},
 		{"Pg↑↓", "page the transcript"},
 		{"^P^N", "recall prompts"},
 		{"^G", "jump to the latest output"},

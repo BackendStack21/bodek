@@ -486,6 +486,15 @@ func (m *Model) dismissChrome() (bool, tea.Cmd) {
 	}
 	for i := len(m.msgs) - 1; i >= 0; i-- {
 		for j := len(m.msgs[i].steps) - 1; j >= 0; j-- {
+			if m.msgs[i].steps[j].clearAgentFocus() {
+				m.convCount = -1
+				m.refresh()
+				return true, nil
+			}
+		}
+	}
+	for i := len(m.msgs) - 1; i >= 0; i-- {
+		for j := len(m.msgs[i].steps) - 1; j >= 0; j-- {
 			if m.msgs[i].steps[j].expanded {
 				m.msgs[i].steps[j].expanded = false
 				m.convCount = -1

@@ -109,6 +109,8 @@ func TestAgentsTabJump(t *testing.T) {
 	}
 	if s := stateStep(t, m); !s.expanded {
 		t.Fatal("target step not expanded")
+	} else if s.focusedIdx() != 0 {
+		t.Fatalf("jump did not focus SA1: agentSel=%d", s.agentSel)
 	}
 
 	m.openAgents()
@@ -145,9 +147,12 @@ func TestFailureNoteBoundedAndVerdict(t *testing.T) {
 	}
 
 	m.finalize()
-	msg := m.msgs[0]
-	if !strings.Contains(msg.content, "**sub-agents: 1 ✗ · 1 ⊘ — #1 error, #2 cancelled**") {
-		t.Errorf("swarm verdict missing: %q", msg.content)
+	got := swarmVerdict(&m.msgs[0])
+	if !strings.Contains(got, "sub-agents: 1 ✗ · 1 ⊘ — #1 error, #2 cancelled") {
+		t.Errorf("swarm verdict missing: %q", got)
+	}
+	if strings.Contains(m.msgs[0].content, "**sub-agents:") {
+		t.Errorf("verdict leaked into the answer: %q", m.msgs[0].content)
 	}
 }
 

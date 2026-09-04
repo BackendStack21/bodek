@@ -142,6 +142,24 @@ func TestEveryWindowClosesWithEsc(t *testing.T) {
 			t.Error("esc did not fold the reasoning block")
 		}
 	})
+	t.Run("agent focus", func(t *testing.T) {
+		m := newTestModel()
+		m.msgs = []message{{role: roleAsst, steps: []step{
+			{name: "delegate_tasks", subagent: true, agentSel: 1, expanded: true,
+				agents: []*agentCard{{taskID: "t1", idx: 0, phase: "active", status: "running"}}},
+		}}}
+		m.Update(key("esc"))
+		if m.msgs[0].steps[0].agentSel != 0 {
+			t.Error("esc did not clear agent focus")
+		}
+		if !m.msgs[0].steps[0].expanded {
+			t.Error("first esc should keep the parent step expanded")
+		}
+		m.Update(key("esc"))
+		if m.msgs[0].steps[0].expanded {
+			t.Error("second esc did not fold the step")
+		}
+	})
 	t.Run("expanded step", func(t *testing.T) {
 		m := newTestModel()
 		m.msgs = []message{{role: roleAsst, steps: []step{

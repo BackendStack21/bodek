@@ -601,11 +601,24 @@ func (m *Model) agentRowsRender(w int) []string {
 		if goal == "" {
 			goal = "(no goal recorded)"
 		}
+		sa := i + 1
+		if a := m.liveCard(e.TaskID); a != nil {
+			sa = a.idx + 1
+		} else if a := m.cardByTask(e.TaskID); a != nil {
+			sa = a.idx + 1
+		}
 		var detail string
 		if e.Phase == "finished" {
 			detail = fmt.Sprintf("  %s · %d it · %s tok", e.Status, e.Iterations, human(e.TokensUsed))
 		} else {
-			detail = fmt.Sprintf("  running · step %d · %s", e.Step, e.LastTool)
+			tool := e.LastTool
+			if tool == "" && e.Step > 0 {
+				tool = fmt.Sprintf("step %d", e.Step)
+			}
+			if tool == "" {
+				tool = "running"
+			}
+			detail = "  running · " + tool
 		}
 		if e.DurationSeconds > 0 {
 			detail += fmt.Sprintf(" · %.1fs", e.DurationSeconds)
@@ -614,7 +627,7 @@ func (m *Model) agentRowsRender(w int) []string {
 			detail += " · " + fmtCost(e.CostUSD)
 		}
 		budget := w - 2 - lipgloss.Width(detail)
-		label := agentStatusGlyph(e.Phase, e.Status) + " " + goal
+		label := agentStatusGlyph(e.Phase, e.Status) + fmt.Sprintf(" SA%d ", sa) + goal
 		prefix, lab := "  ", th.acItem.Render(truncate(label, budget))
 		if i == m.panelSel {
 			prefix, lab = th.acSel.Render("› "), th.acSel.Render(truncate(label, budget))
@@ -622,6 +635,17 @@ func (m *Model) agentRowsRender(w int) []string {
 		rows = append(rows, prefix+lab+th.acDetail.Render(detail))
 	}
 	return rows
+}
+
+func (m *Model) cardByTask(taskID string) *agentCard {
+	for i := range m.msgs {
+		for j := range m.msgs[i].steps {
+			if a := m.msgs[i].steps[j].card(taskID); a != nil {
+				return a
+			}
+		}
+	}
+	return nil
 }
 
 // agentStatusGlyph mirrors the live-card glyph set.

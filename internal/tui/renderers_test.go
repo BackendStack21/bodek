@@ -251,7 +251,7 @@ func TestStepExpansionTypedRenderers(t *testing.T) {
 	m := newTestModel()
 	m.msgs = append(m.msgs, message{role: roleAsst})
 	s := step{name: "patch", arg: "auth.go", result: diffFixture, done: true, expanded: true}
-	block, ref, n := m.renderStep(s, false, 0, 0, 0)
+	block, refs, n := m.renderStep(s, false, 0, 0, 0)
 	out := plain(block)
 	if !strings.Contains(out, "+2 −1") {
 		t.Errorf("step line missing diffstat:\n%s", out)
@@ -262,7 +262,7 @@ func TestStepExpansionTypedRenderers(t *testing.T) {
 	if n != lineCount(block) {
 		t.Errorf("line count = %d, want %d", n, lineCount(block))
 	}
-	if ref.line != 0 {
-		t.Errorf("stepRef line = %d", ref.line)
+	if len(refs) == 0 || refs[0].line != 0 {
+		t.Errorf("stepRef = %+v", refs)
 	}
 }

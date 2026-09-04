@@ -691,19 +691,16 @@ func markCancel(msg *message) {
 // marker.
 func (m *Model) finalize() {
 	if i := m.cur(); i >= 0 {
-		if v := m.swarmVerdict(&m.msgs[i]); v != "" {
-			setTurnMarker(&m.msgs[i], v)
-		}
 		m.closeTurn(&m.msgs[i])
 	}
 	m.curIdx = -1
 	m.wakeArmed = false // the window closed with the turn
 }
 
-// swarmVerdict summarizes a turn's sub-agent outcomes as a turn marker —
-// "**sub-agents: 5 ✓ · 1 ✗ — #4 error**" — so a failure in a multi-agent turn
+// swarmVerdict summarizes a turn's sub-agent outcomes as a receipt rail —
+// "sub-agents: 5 ✓ · 1 ✗ — #4 error" — so a failure in a multi-agent turn
 // can't scroll by uncounted. "" when the turn delegated nothing.
-func (m *Model) swarmVerdict(msg *message) string {
+func swarmVerdict(msg *message) string {
 	var ok, partial, failed, cancelled, timed, live, lostN int
 	var bad []string
 	for j := range msg.steps {
@@ -764,7 +761,7 @@ func (m *Model) swarmVerdict(msg *message) string {
 	if len(bad) > 0 {
 		line += " — " + strings.Join(bad, ", ")
 	}
-	return "**" + line + "**"
+	return line
 }
 
 // closeTurn renders finalized markdown for one assistant turn: each reply
