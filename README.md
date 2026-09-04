@@ -217,8 +217,8 @@ own front-end settings are separate; see [Configuration](#configuration).
   running agent; `/agents` uses the same chip grammar and `o` jumps to
   the transcript chip.
 - **Model switcher** (`^O`) — change the model for the next turn. The picker
-  merges the server's configured model with its built-in profile catalog
-  (`/api/profiles`), each annotated with its context window.
+  lists the server's `/api/models` catalog (configured model marked current,
+  plus the provider listing), each annotated with its context window.
 - **Session browser** (`^R`) — resume, replay, delete, pin (`p`), rename
   (`r`), export a transcript (`e` markdown, `E` JSON), and search server-side
   (`/`); `n` loads the next page. Resuming sends a `session_switch` so the

@@ -9,8 +9,7 @@ update it when either side changes.
 | Endpoint | Client method | UI surface |
 |----------|--------------|------------|
 | `GET /api/resources` | `Resources` | `@` completion popup |
-| `GET /api/models` | `Models` | model picker, context gauge |
-| `GET /api/profiles` | `Profiles` | model picker (merged catalog), gauge fallback |
+| `GET /api/models` | `Models` | model picker + context gauge (configured + provider catalog) |
 | `GET /api/sessions` (bare) | `Sessions` | palette session entries |
 | `GET /api/sessions?q&limit&offset` | `SearchSessions` | sessions tab (search, load-more) |
 | `GET /api/sessions/{id}` | `SessionDetail` | resume (token bootstrap via `X-Session-Token`) |

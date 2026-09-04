@@ -130,25 +130,6 @@ func (c *Client) ExportSession(id, token, format string) ([]byte, error) {
 // maxExportBytes bounds an exported transcript read into memory.
 const maxExportBytes = 64 << 20
 
-// Profile is a built-in model profile from /api/profiles — the known-model
-// catalog for pickers (ID is a model-id prefix).
-type Profile struct {
-	ID         string `json:"id"`
-	Label      string `json:"label"`
-	MaxContext int    `json:"max_context"`
-}
-
-// Profiles lists the server's built-in model profiles.
-func (c *Client) Profiles() ([]Profile, error) {
-	var out struct {
-		Profiles []Profile `json:"profiles"`
-	}
-	if err := c.getJSON(c.baseURL+"/api/profiles", "", &out); err != nil {
-		return nil, err
-	}
-	return out.Profiles, nil
-}
-
 // Health is the /api/health server snapshot (never carries secrets).
 type Health struct {
 	Status        string    `json:"status"`
@@ -207,7 +188,8 @@ func (c *Client) DeleteSession(id, token string) error {
 	return nil
 }
 
-// Models lists models advertised by the server.
+// Models lists the server's model catalog (configured model marked current,
+// plus provider ListModels entries). Same shape as odek GET /api/models.
 func (c *Client) Models() ([]ModelInfo, error) {
 	var out []ModelInfo
 	if err := c.getJSON(c.baseURL+"/api/models", "", &out); err != nil {

@@ -117,13 +117,10 @@ func standIn(t *testing.T, token string) *Model {
 		w.Write([]byte("# transcript\n"))
 	}))
 	mux.HandleFunc("/api/models", guard(func(w http.ResponseWriter, r *http.Request) {
-		json.NewEncoder(w).Encode([]client.ModelInfo{{ID: "m1", Description: "one", Current: true}})
-	}))
-	mux.HandleFunc("/api/profiles", guard(func(w http.ResponseWriter, r *http.Request) {
-		json.NewEncoder(w).Encode(map[string]any{"profiles": []client.Profile{
-			{ID: "m1", Label: "one", MaxContext: 64000}, // duplicate of configured — deduped
-			{ID: "glm", Label: "GLM", MaxContext: 200000},
-		}})
+		json.NewEncoder(w).Encode([]client.ModelInfo{
+			{ID: "m1", Description: "one", MaxContext: 64000, Current: true},
+			{ID: "glm-4.7", Description: "GLM", MaxContext: 200000},
+		})
 	}))
 	mux.HandleFunc("/api/resources", guard(func(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode([]client.Resource{{ID: "@main.go", Type: "file", Label: "main.go", Detail: "1 KB"}})
@@ -295,7 +292,7 @@ func TestStandInWithoutTokenEnforcement(t *testing.T) {
 	// /ws and /api/* without any token checks.
 	m := standIn(t, "")
 	m.Update(exec(m.openModels()))
-	if len(m.models) != 1 {
+	if len(m.models) != 2 {
 		t.Fatalf("models against an unenforced stand-in: %d", len(m.models))
 	}
 }
@@ -703,7 +700,7 @@ func TestSessionDetailReplay(t *testing.T) {
 func TestModelsPanel(t *testing.T) {
 	m := wired(t)
 	m.Update(exec(m.openModels()))
-	if m.panel != panelModels || len(m.models) != 1 {
+	if m.panel != panelModels || len(m.models) != 2 {
 		t.Fatalf("models panel: panel=%d n=%d", m.panel, len(m.models))
 	}
 	_ = plain(m.View())

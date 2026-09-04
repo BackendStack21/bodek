@@ -230,7 +230,6 @@ type Model struct {
 	confirm     confirmKind   // armed destructive action: y fires, any other key disarms
 	stopTarget  string        // task_id armed by confirmStopAgent
 
-	profiles  []client.Profile       // built-in model catalog (picker + context gauge)
 	agentsReg []client.SubagentEntry // agents tab: sub-agent registry snapshot
 	agentsSeq int                    // agents-tab poll generation; stale ticks drop
 
@@ -394,7 +393,7 @@ func New(cl *client.Client, opts Options) *Model {
 
 func (m *Model) Init() tea.Cmd {
 	return tea.Batch(textarea.Blink, m.sp.Tick, listen(m.events),
-		m.fetchModels(), m.fetchProfiles(), m.fetchLimits(), m.checkUpdate(),
+		m.fetchModels(), m.fetchLimits(), m.checkUpdate(),
 		m.armHeartbeat())
 }
 
@@ -497,20 +496,6 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case modelsMsg:
 		m.handleModelsMsg(msg)
 		m.refresh()
-		return m, nil
-
-	case pickerMsg:
-		// The picker's combined fetch: reuse the per-list handlers so panel
-		// state and the context gauge update exactly as on separate fetches.
-		m.handleModelsMsg(modelsMsg{items: msg.models, err: msg.err})
-		m.handleProfilesMsg(profilesMsg{items: msg.profiles})
-		if m.panel == panelModels {
-			m.refresh()
-		}
-		return m, nil
-
-	case profilesMsg:
-		m.handleProfilesMsg(msg)
 		return m, nil
 
 	case sessionUpdatedMsg:
@@ -1036,11 +1021,8 @@ func (m *Model) curApproval() *client.Event {
 
 // ── helpers ────────────────────────────────────────────────────────────────
 
-// resolveMaxContext sets m.maxContext from the active model's advertised
-// context window: an exact /api/models match wins; otherwise the first
-// built-in profile whose id prefixes the model id (profiles are prefix
-// entries by contract). No match leaves 0, which hides the gauge rather
-// than guessing.
+// resolveMaxContext sets m.maxContext from an exact /api/models id match.
+// No match leaves 0, which hides the gauge rather than guessing a window.
 func (m *Model) resolveMaxContext() {
 	m.maxContext = 0
 	for _, md := range m.models {
@@ -1049,32 +1031,16 @@ func (m *Model) resolveMaxContext() {
 			return
 		}
 	}
-	for _, p := range m.profiles {
-		if p.MaxContext > 0 && strings.HasPrefix(m.model, p.ID) {
-			m.maxContext = p.MaxContext
-			return
-		}
-	}
 }
 
-// fetchModels loads the advertised model list at startup so the context-window
-// gauge knows the active model's budget without the picker ever being opened.
+// fetchModels loads the advertised model catalog at startup so the
+// context-window gauge knows the active model's budget without the picker
+// ever being opened. The same list is the picker source (^O).
 func (m *Model) fetchModels() tea.Cmd {
 	cl := m.cl
 	return func() tea.Msg {
 		items, err := cl.Models()
 		return modelsMsg{items: items, err: err}
-	}
-}
-
-// fetchProfiles loads the built-in model catalog (id prefixes + context
-// windows) — picker entries beyond the configured model, and the fallback
-// source for the header gauge after a model switch.
-func (m *Model) fetchProfiles() tea.Cmd {
-	cl := m.cl
-	return func() tea.Msg {
-		items, err := cl.Profiles()
-		return profilesMsg{items: items, err: err}
 	}
 }
 

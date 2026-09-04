@@ -204,7 +204,7 @@ func TestFetchModelsCmd(t *testing.T) {
 	if !ok {
 		t.Fatal("fetchModels did not return a modelsMsg")
 	}
-	if msg.err != nil || len(msg.items) != 1 {
+	if msg.err != nil || len(msg.items) != 2 {
 		t.Errorf("fetchModels = %d items, err %v", len(msg.items), msg.err)
 	}
 }

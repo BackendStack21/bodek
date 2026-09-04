@@ -287,13 +287,12 @@ func TestSessionsPanelPagination(t *testing.T) {
 	}
 }
 
-func TestModelEntriesMergeProfiles(t *testing.T) {
+func TestModelEntriesFromCatalog(t *testing.T) {
 	m := newTestModel()
-	m.models = []client.ModelInfo{{ID: "glm-5.3", MaxContext: 1000000, Current: true}}
-	m.profiles = []client.Profile{
-		{ID: "glm", Label: "GLM", MaxContext: 200000},
-		{ID: "glm-5.3", Label: "GLM 5.3 (dup)", MaxContext: 999}, // exact dup — dropped
-		{ID: "dsv", Label: "DeepSeek", MaxContext: 128000},
+	m.models = []client.ModelInfo{
+		{ID: "glm-5.3", MaxContext: 1000000, Current: true, Description: "configured"},
+		{ID: "glm-4.7", MaxContext: 200000},
+		{ID: "deepseek-v4-flash", MaxContext: 128000},
 	}
 	entries := m.modelEntries()
 	if len(entries) != 3 {
@@ -302,18 +301,23 @@ func TestModelEntriesMergeProfiles(t *testing.T) {
 	if entries[0].id != "glm-5.3" || !entries[0].current || entries[0].detail == "" {
 		t.Errorf("configured model not first with context: %+v", entries[0])
 	}
-	if entries[1].id != "glm" || entries[1].current {
-		t.Errorf("profile entry wrong: %+v", entries[1])
+	if entries[1].id != "glm-4.7" || entries[1].current {
+		t.Errorf("catalog entry wrong: %+v", entries[1])
 	}
-	if entries[2].id != "dsv" || entries[2].detail == "" {
-		t.Errorf("profile entry missing context: %+v", entries[2])
+	if entries[2].id != "deepseek-v4-flash" || entries[2].detail == "" {
+		t.Errorf("catalog entry missing context: %+v", entries[2])
 	}
 
-	// The gauge falls back to a profile's window for a switched model.
-	m.model = "dsv4-flash"
+	// Exact catalog id match only — no prefix fallback.
+	m.model = "deepseek-v4-flash"
 	m.resolveMaxContext()
 	if m.maxContext != 128000 {
-		t.Errorf("profile context not resolved: %d", m.maxContext)
+		t.Errorf("catalog context not resolved: %d", m.maxContext)
+	}
+	m.model = "dsv4-flash"
+	m.resolveMaxContext()
+	if m.maxContext != 0 {
+		t.Errorf("unknown id should hide the gauge: %d", m.maxContext)
 	}
 }
 

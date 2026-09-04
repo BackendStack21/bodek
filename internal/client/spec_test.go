@@ -102,7 +102,7 @@ func TestClientV2Messages(t *testing.T) {
 }
 
 // TestSearchSessionsEnvelope covers the paginated /api/sessions contract:
-// params present → envelope, plus the pin/rename POST and export/profiles/
+// params present → envelope, plus the pin/rename POST and export/models/
 // health endpoints bodek now speaks.
 func TestSearchSessionsEnvelope(t *testing.T) {
 	mux := http.NewServeMux()
@@ -162,7 +162,7 @@ func TestUpdateSessionShape(t *testing.T) {
 	}
 }
 
-func TestExportProfilesHealth(t *testing.T) {
+func TestExportModelsHealth(t *testing.T) {
 	mux := http.NewServeMux()
 	mux.Handle("/ws", ws.Handler(func(c *ws.Conn) {}))
 	mux.HandleFunc("/api/sessions/s1/export", func(w http.ResponseWriter, r *http.Request) {
@@ -171,10 +171,11 @@ func TestExportProfilesHealth(t *testing.T) {
 		}
 		_, _ = io.WriteString(w, "# transcript\n")
 	})
-	mux.HandleFunc("/api/profiles", func(w http.ResponseWriter, r *http.Request) {
-		_ = json.NewEncoder(w).Encode(map[string]any{"profiles": []Profile{
-			{ID: "glm", Label: "GLM", MaxContext: 200000},
-		}})
+	mux.HandleFunc("/api/models", func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode([]ModelInfo{
+			{ID: "glm-5.3", MaxContext: 1000000, Current: true},
+			{ID: "glm-4.7", MaxContext: 200000},
+		})
 	})
 	mux.HandleFunc("/api/health", func(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewEncoder(w).Encode(map[string]any{
@@ -188,9 +189,9 @@ func TestExportProfilesHealth(t *testing.T) {
 	if err != nil || string(data) != "# transcript\n" {
 		t.Fatalf("ExportSession = %q, %v", data, err)
 	}
-	profiles, err := cl.Profiles()
-	if err != nil || len(profiles) != 1 || profiles[0].MaxContext != 200000 {
-		t.Fatalf("Profiles = %+v, %v", profiles, err)
+	models, err := cl.Models()
+	if err != nil || len(models) != 2 || models[0].MaxContext != 1000000 || !models[0].Current {
+		t.Fatalf("Models = %+v, %v", models, err)
 	}
 	h, err := cl.Health()
 	if err != nil || h.Version != "1.24.0" || !h.Stream || h.WSConnections != 2 {

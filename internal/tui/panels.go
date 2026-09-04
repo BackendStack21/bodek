@@ -162,19 +162,6 @@ type modelsMsg struct {
 	err   error
 }
 
-// pickerMsg carries the model picker's combined fetch: the configured model
-// and the built-in profile catalog (profiles failing is soft).
-type pickerMsg struct {
-	models   []client.ModelInfo
-	profiles []client.Profile
-	err      error
-}
-
-type profilesMsg struct {
-	items []client.Profile
-	err   error
-}
-
 type limitsMsg struct {
 	resp client.LimitsResponse
 	err  error
@@ -247,15 +234,7 @@ func (m *Model) openModels() tea.Cmd {
 	m.panelMsg = "loading models…"
 	m.relayout()
 	m.refresh()
-	cl := m.cl
-	return func() tea.Msg {
-		// One picker fetch: the configured model plus the built-in catalog.
-		// A profiles failure is soft — the picker shows the configured model.
-		items, err := cl.Models()
-		msg := pickerMsg{models: items, err: err}
-		msg.profiles, _ = cl.Profiles()
-		return msg
-	}
+	return m.fetchModels()
 }
 
 func (m *Model) openStats() tea.Cmd {
@@ -630,8 +609,7 @@ func (m *Model) panelLen() int {
 	return 0
 }
 
-// modelEntry is one row of the model picker: the server's configured model
-// plus the built-in profile catalog (ids are model-id prefixes).
+// modelEntry is one row of the model picker from GET /api/models.
 type modelEntry struct {
 	id      string
 	label   string
@@ -639,11 +617,10 @@ type modelEntry struct {
 	current bool
 }
 
-// modelEntries merges /api/models (the configured model, with its window)
-// with /api/profiles (the built-in catalog), configured first, duplicates
-// skipped, each annotated with its context size.
+// modelEntries maps the /api/models catalog into picker rows, each annotated
+// with description and advertised context window.
 func (m *Model) modelEntries() []modelEntry {
-	out := make([]modelEntry, 0, len(m.models)+len(m.profiles))
+	out := make([]modelEntry, 0, len(m.models))
 	for _, md := range m.models {
 		e := modelEntry{id: md.ID, label: md.ID, current: md.Current}
 		if md.MaxContext > 0 {
@@ -651,30 +628,6 @@ func (m *Model) modelEntries() []modelEntry {
 		}
 		if md.Description != "" {
 			e.detail = strings.TrimSpace(md.Description + "  " + e.detail)
-		}
-		out = append(out, e)
-	}
-	for _, p := range m.profiles {
-		dup := false
-		for _, md := range m.models {
-			if md.ID == p.ID {
-				dup = true
-				break
-			}
-		}
-		if dup {
-			continue
-		}
-		label := p.Label
-		if label == "" {
-			label = p.ID
-		}
-		e := modelEntry{id: p.ID, label: label}
-		if p.MaxContext > 0 {
-			e.detail = fmt.Sprintf("%s ctx", humanCtx(p.MaxContext))
-		}
-		if p.ID == m.model {
-			e.current = true
 		}
 		out = append(out, e)
 	}
@@ -974,17 +927,6 @@ func (m *Model) handleModelsMsg(msg modelsMsg) {
 	} else {
 		m.panelMsg = ""
 	}
-}
-
-// handleProfilesMsg stores the built-in catalog. Errors are soft: the picker
-// simply lists only the configured model, and the gauge falls back to
-// /api/models.
-func (m *Model) handleProfilesMsg(msg profilesMsg) {
-	if msg.err != nil {
-		return
-	}
-	m.profiles = msg.items
-	m.resolveMaxContext()
 }
 
 // handleLimitsMsg stores the server's budget limits and token prices. Errors

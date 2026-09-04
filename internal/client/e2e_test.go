@@ -18,7 +18,7 @@ import (
 // TestE2ERealServe drives bodek's client against a real `odek serve` process
 // (ODEK_BIN, default "odek") — the contract check that the in-process
 // stand-ins can't provide: real server_info/pong frames, the sessions
-// envelope, profiles, limits with effective_prices, and health.
+// envelope, models catalog, limits with effective_prices, and health.
 //
 // Gate: BODEK_E2E=true. No LLM call is made — only the connection hello,
 // heartbeat, and read-only REST surface.
@@ -87,9 +87,9 @@ func TestE2ERealServe(t *testing.T) {
 	} else if page.Limit != 50 {
 		t.Errorf("envelope limit = %d", page.Limit)
 	}
-	profiles, err := cl.Profiles()
-	if err != nil || len(profiles) == 0 {
-		t.Errorf("Profiles = %+v, %v", profiles, err)
+	models, err := cl.Models()
+	if err != nil || len(models) == 0 {
+		t.Errorf("Models = %+v, %v", models, err)
 	}
 	limits, err := cl.Limits()
 	if err != nil {
