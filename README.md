@@ -281,7 +281,9 @@ own front-end settings are separate; see [Configuration](#configuration).
   `plan N/M` and `● N jobs` / `✗ job` instruments ride the same bar when
   a plan or background job is active.
 - **Per-turn footers & `/stats`** — token counts and latency ride every turn
-  head; `/stats` opens a sheet that rolls up the session (cost, cache, context).
+  head (`⚡` latency, `⌂` context, `↳` output tokens, `⚒` tools); `/stats`
+  opens a sheet that rolls up the session (cost, cache, context). The `⎇`
+  glyph is reserved for git commits in the transcript.
 - **Cost tracking** — when odek has token prices configured, the header shows
   the running session spend, each turn footer its estimated cost, and
   `/stats` adds the `max_cost_usd` cap when set; hidden entirely otherwise.

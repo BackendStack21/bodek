@@ -777,7 +777,7 @@ func (m *Model) statSegments(ts turnStats) []statSeg {
 	// wall-clock lives on the /stats card — the head stays quiet
 	// context + output tokens — always present
 	add(th.statCtx.Render("⌂")+th.statLine.Render(" "+human(ts.ctxTok)), 0)
-	add(th.statCtx.Render("⎇")+th.statLine.Render(" "+human(ts.outTok)), 0)
+	add(th.statCtx.Render("↳")+th.statLine.Render(" "+human(ts.outTok)), 0)
 	// tools — count plus the deduped glyph cluster
 	if ts.toolCount > 0 {
 		tools := th.statTool.Render("⚒") + th.statLine.Render(" "+fmt.Sprintf("%d", ts.toolCount))
@@ -1565,7 +1565,7 @@ func (m *Model) footer() string {
 	if m.lastLatency > 0 {
 		seg := th.statTime.Render("⚡") + th.footer.Render(fmt.Sprintf(" %.1fs", m.lastLatency))
 		if n := len(m.turnStats); n > 0 {
-			seg += th.footerSep.Render(" · ") + th.statCtx.Render("⎇") +
+			seg += th.footerSep.Render(" · ") + th.statCtx.Render("↳") +
 				th.footer.Render(" "+human(m.turnStats[n-1].outTok))
 		}
 		segs = append(segs, seg)
