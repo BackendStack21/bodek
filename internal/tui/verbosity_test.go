@@ -17,8 +17,8 @@ func TestVerbosityFromNames(t *testing.T) {
 		"normal":    verbosityNormal,
 		"":          verbosityNormal,
 		"nonsense":  verbosityNormal,
+		"verbose":   verbosityNormal, // undocumented alias dropped — exact names only
 		"detailed":  verbosityDetailed,
-		"verbose":   verbosityDetailed,
 		" detailed": verbosityDetailed,
 	}
 	for name, want := range cases {

@@ -28,7 +28,7 @@ func verbosityFrom(name string) int {
 	switch strings.ToLower(strings.TrimSpace(name)) {
 	case "quiet":
 		return verbosityQuiet
-	case "detailed", "verbose":
+	case "detailed":
 		return verbosityDetailed
 	default:
 		return verbosityNormal
