@@ -41,18 +41,11 @@ func welcome(th theme, width int, cwd string) string {
 	}
 	b.WriteByte('\n')
 
-	// key column is left-aligned to a fixed width so both the keys and their
-	// descriptions line up on a flush left edge.
+	// First-run home teaches one next action, not a keybinding museum.
+	// F1 / /help still carry the full cheatsheet.
 	tips := [][2]string{
 		{"type a task", "and press enter to run the agent"},
-		{"^K palette", "everything: commands, sessions, models, drawer tabs"},
-		{"alt+↑↓", "jump turn-to-turn · ^F folds the last turn"},
-		{"^Y copy", "the latest reply — alt+y copies any focused turn"},
-		{"/ commands", "/server cockpit · /runs · /memory · /skills · /events"},
-		{"@ to attach", "attach files, e.g. @main.go — or /attach <path>"},
-		{"⏎ send", "^J newline  ·  ^T toggle thinking  ·  tab opens reasoning"},
-		{"^L clear", "↑/↓ scroll  ·  PgUp/PgDn page  ·  ^C quit"},
-		{"approvals", "A approve · D deny · T trust — typing never decides"},
+		{"^K palette", "commands, sessions, models, drawer tabs"},
 	}
 	const keyW = 11
 	for _, t := range tips {

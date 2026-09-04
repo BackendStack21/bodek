@@ -70,8 +70,8 @@ func TestRunStatsCommand(t *testing.T) {
 	if cmd := m.runCommand("stats", ""); cmd != nil {
 		t.Error("/stats should be a local command with no tea.Cmd")
 	}
-	if len(m.msgs) == 0 {
-		t.Error("/stats did not append the dashboard card")
+	if m.panel != panelStats {
+		t.Error("/stats did not open the dashboard sheet")
 	}
 }
 
@@ -91,11 +91,11 @@ func TestShowStatsBranches(t *testing.T) {
 		{latency: 6.0}, // peak 6.0 > mean 3.5 + 0.05 → "slowest" suffix
 	}
 	m.showStats()
-	if len(m.msgs) != 1 {
-		t.Fatalf("showStats appended %d messages", len(m.msgs))
+	if m.panel != panelStats {
+		t.Fatal("showStats did not open the sheet")
 	}
-	out := plain(m.msgs[0].rendered)
-	for _, want := range []string{"sess-123", "slowest 6.0s", "think on", "100%"} {
+	out := plain(m.View())
+	for _, want := range []string{"sess-123", "slowest", "6.0s", "think on", "100%"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("stats card missing %q", want)
 		}

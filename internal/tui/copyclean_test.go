@@ -54,7 +54,7 @@ func TestAnswerSeparatedFromReasoning(t *testing.T) {
 	thinkIdx, stepIdx, ansIdx := -1, -1, -1
 	for i, ln := range lines {
 		trim := strings.TrimSpace(ln)
-		if strings.HasPrefix(trim, "…") && strings.Contains(trim, "hmm") {
+		if strings.Contains(trim, "┊") && strings.Contains(trim, "hmm") {
 			thinkIdx = i
 		}
 		if strings.Contains(trim, "shell") && stepIdx < 0 {

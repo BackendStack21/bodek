@@ -277,10 +277,7 @@ func (m *Model) handlePaletteKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 // palHeight so the layout math stays exact.
 func (m *Model) palPopup() string {
 	th := m.th
-	innerW := m.width - 6
-	if innerW < 20 {
-		innerW = 20
-	}
+	innerW := m.cardInner()
 
 	title := th.acTitle.Render("⌘ everything")
 	hint := "  ↑↓ select · ⏎ run · esc close"
@@ -308,7 +305,7 @@ func (m *Model) palPopup() string {
 			rows = append(rows, th.acDim.Render("  … loading sessions"))
 		}
 	}
-	return th.acBox.Width(m.width - 2).Render(title + "\n" + strings.Join(rows, "\n"))
+	return th.acBox.Width(m.cardWidth()).Render(title + "\n" + strings.Join(rows, "\n"))
 }
 
 // windowEntries windows entries around sel without changing indices.

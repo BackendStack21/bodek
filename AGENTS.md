@@ -97,12 +97,27 @@ feat(tui): compact tool steps with Ctrl+E details toggle
   alongside it. `msg.content` stays the "\n\n"-joined blob of all reply
   segments (appendReply maintains it) for export, stats, and hand-built
   messages; turn markers (`**Cancelled.**` etc.) attach to the last reply.
+  Render-only layers (intent rail, always-on step peek, turn receipt, live
+  swarm band, sub-agent chip strip, swarm receipt rail) must not reorder
+  `items[]` — the parallel-tool swarm is a consecutive overlay on unfinished
+  parent steps and dissolves when one leftover remains. Sub-agent children
+  live on `step.agents` and always paint as chips; `agentSel` (1-based, 0 =
+  none) focuses one mini-card. The swarm verdict is a receipt rail, never
+  stuffed into `msg.content`.
 - Events arrive from `internal/client` already in chronological order —
   keep ingestion order-dependent and idempotent.
 - `internal/tui` is split by responsibility: `model.go` holds the core
   model, `events.go` event handling, `input.go` key/text input,
-  `approval.go` the approval flow, `reconnect.go` socket recovery. Put
-  new code in the matching file instead of growing `model.go`.
+  `approval.go` the approval flow, `chrome.go` drawer-sheet / shelf /
+  header-instrument / session-home layout, `reconnect.go` socket recovery.
+  Put new code in the matching file instead of growing `model.go`.
+- The management drawer is a bottom sheet: keep ~8 transcript rows above
+  it (`sheetTranscriptMin`); full-bleed only when the terminal cannot
+  fit transcript + sheet. Layout-only — tab grammar (`]`/`[`/`⏎`/`esc`)
+  stays. Approvals render as a card above a live composer: `A`/`D`/`T`
+  decide, other printables type a follow-up draft (friction still
+  captures typing into `apprTyped`). The unfocused queue is a shelf
+  chip; `^Q` unfolds the strip (`qfocus`).
 - The TUI reconnects with backoff and resumes the session after a socket
   drop (`reconnect.go`) — don't break that by assuming a single
   connection per run.
@@ -112,6 +127,12 @@ feat(tui): compact tool steps with Ctrl+E details toggle
 - The slash-completion popup holds key capture while open; typed keys
   must keep flowing to the input. Route keys through the popup first,
   then fall through to normal input handling.
+- ESC closes the topmost window, then inspect chrome, then (if busy)
+  arms cancel. Order: confirm disarm → palette → drawer edit/detail/tab
+  → cockpit → find → `@`/`/` popup → queue strip → approval (collapse
+  expand, then deny) → skill chip / `^E` / open thinking / agent
+  focus / expanded step / help card → cancel gate. Do not let a leftover
+  overlay swallow ESC without dismissing.
 - Management drawer tabs (memory/skills/tools/config — and jobs) have a detail
   submode: `⏎` expands the selected row (skill description, full fact
   text, MCP args, raw config JSON — everything through `sanitize()`),

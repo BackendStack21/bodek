@@ -80,8 +80,9 @@ func (m *Model) handleEvent(ev client.Event) (tea.Model, tea.Cmd) {
 			if n := len(msg.items); n > 0 && msg.items[n-1].thinking {
 				msg.items[n-1].text += sanitize(ev.Content)
 			} else {
+				sealThinking(msg)
 				msg.items = append(msg.items, turnItem{thinking: true,
-					text: sanitize(ev.Content)})
+					text: sanitize(ev.Content), started: time.Now()})
 			}
 		}
 		m.status = "thinking"
@@ -112,6 +113,7 @@ func (m *Model) handleEvent(ev client.Event) (tea.Model, tea.Cmd) {
 		nm := collapse(ev.Name) // tool names are wire-borne; collapse before anything renders them
 		m.ensureWireTurn()
 		if i := m.cur(); i >= 0 {
+			sealThinking(&m.msgs[i])
 			m.msgs[i].steps = append(m.msgs[i].steps,
 				step{name: nm, arg: arg, subagent: isSubagent(nm), started: time.Now()})
 			last := len(m.msgs[i].steps) - 1
@@ -645,6 +647,7 @@ func appendReply(msg *message, s string) {
 		msg.content += s
 		return
 	}
+	sealThinking(msg)
 	if msg.content != "" {
 		msg.content += "\n\n"
 	}
@@ -666,6 +669,7 @@ func setTurnMarker(msg *message, marker string) {
 		msg.items[n-1].text += "\n\n" + marker
 		return
 	}
+	sealThinking(msg)
 	msg.items = append(msg.items, turnItem{reply: true, text: marker})
 }
 
@@ -687,19 +691,16 @@ func markCancel(msg *message) {
 // marker.
 func (m *Model) finalize() {
 	if i := m.cur(); i >= 0 {
-		if v := m.swarmVerdict(&m.msgs[i]); v != "" {
-			setTurnMarker(&m.msgs[i], v)
-		}
 		m.closeTurn(&m.msgs[i])
 	}
 	m.curIdx = -1
 	m.wakeArmed = false // the window closed with the turn
 }
 
-// swarmVerdict summarizes a turn's sub-agent outcomes as a turn marker —
-// "**sub-agents: 5 ✓ · 1 ✗ — #4 error**" — so a failure in a multi-agent turn
+// swarmVerdict summarizes a turn's sub-agent outcomes as a receipt rail —
+// "sub-agents: 5 ✓ · 1 ✗ — #4 error" — so a failure in a multi-agent turn
 // can't scroll by uncounted. "" when the turn delegated nothing.
-func (m *Model) swarmVerdict(msg *message) string {
+func swarmVerdict(msg *message) string {
 	var ok, partial, failed, cancelled, timed, live, lostN int
 	var bad []string
 	for j := range msg.steps {
@@ -760,7 +761,7 @@ func (m *Model) swarmVerdict(msg *message) string {
 	if len(bad) > 0 {
 		line += " — " + strings.Join(bad, ", ")
 	}
-	return "**" + line + "**"
+	return line
 }
 
 // closeTurn renders finalized markdown for one assistant turn: each reply
@@ -777,6 +778,9 @@ func (m *Model) closeTurn(msg *message) {
 		switch {
 		case msg.items[j].thinking:
 			thoughts = append(thoughts, msg.items[j].text)
+			if !msg.items[j].started.IsZero() && msg.items[j].dur == 0 {
+				msg.items[j].dur = time.Since(msg.items[j].started)
+			}
 			msg.items[j].open = false
 		case msg.items[j].reply:
 			msg.items[j].rendered = m.render(msg.items[j].text)

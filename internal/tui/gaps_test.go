@@ -9,15 +9,17 @@ import (
 
 func TestApprovalDecisionLetters(t *testing.T) {
 	m := wired(t)
-	// Redesign policy: the composer is hidden while an approval is pending,
-	// so the dedicated decision letters a/d/t (WebUI parity) resolve it.
-	// Every other letter — including y/n — still must never decide.
+	// Decision letters a/d/t resolve the card; every other letter types
+	// into the composer so a follow-up draft survives the gate.
 	m.approvals = []client.Event{{Type: "approval_request", AllowTrust: false}}
 	m.Update(key("y"))
 	m.Update(key("n"))
 	m.Update(key("z"))
 	if m.curApproval() == nil {
 		t.Fatal("a non-decision letter resolved the approval")
+	}
+	if m.ta.Value() != "ynz" {
+		t.Fatalf("non-decision letters must type into the composer, got %q", m.ta.Value())
 	}
 	_, cmd := m.Update(key("a")) // approve
 	exec(cmd)

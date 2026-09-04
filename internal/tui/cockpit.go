@@ -89,9 +89,9 @@ func (m *Model) popoverView(w, h int) string {
 	th := m.th
 	var b strings.Builder
 	b.WriteString(th.acTitle.Render("⬡ cockpit"))
-	// acBox adds border(2) + padding(2): Width(w-2) leaves w-4 of text —
-	// the rule fills it exactly so the card's right edge stays flush.
-	b.WriteString("\n" + th.rule.Render(strings.Repeat("─", max(w-4, 8))))
+	// Same framed-card contract as the composer: Width(term-2) leaves
+	// term-4 of text — the rule fills it so the right edge stays flush.
+	b.WriteString("\n" + th.rule.Render(strings.Repeat("─", boxInner(w))))
 
 	b.WriteString("\n" + m.cockpitServerSection())
 	b.WriteString("\n" + m.cockpitBudgetSection())
@@ -102,7 +102,7 @@ func (m *Model) popoverView(w, h int) string {
 	b.WriteString("\n\n" + m.statsBody())
 	b.WriteString("\n\n" + th.acDetail.Render("r refresh · esc close"))
 
-	return th.acBox.Width(w - 2).Height(h - 2).Render(b.String())
+	return th.acBox.Width(boxWidth(w)).Height(h - 2).Render(b.String())
 }
 
 // cockpitServerSection is the server/link card: identity and liveness from

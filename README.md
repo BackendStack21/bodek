@@ -158,9 +158,11 @@ own front-end settings are separate; see [Configuration](#configuration).
   and persisted to `~/.bodek/config.json`.
 - **The palette (`^K`)** — every command, session, model, and drawer tab one
   fuzzy search away; every row teaches its chord.
-- **Turn cards** — telemetry rides the turn head, `^F` folds noisy turns,
-  `alt+↑`/`alt+↓` jump turn-to-turn, reasoning accordions auto-expand live
-  and collapse on the next turn, and `^E` expands every tool step's details.
+- **Turn cards** — telemetry rides the turn head, a coding receipt
+  (`touched 4 · +82 −19 · tests ✓`) scans what the turn changed, `^F`
+  folds noisy turns to that receipt, `alt+↑`/`alt+↓` jump turn-to-turn,
+  reasoning renders as an intent rail (last sentences, `beat N/M`), and
+  `^E` expands every tool step's full details.
 - **Typed tool renderers** — diffs tint with a `+N −M` chip, file reads get
   line numbers, JSON pretty-prints, and step lines earn typed chips from
   structured output only: test verdicts (`✓ 5 passed · 2 skipped`, go
@@ -170,9 +172,12 @@ own front-end settings are separate; see [Configuration](#configuration).
 - **Streaming answers** rendered as Markdown
   ([glamour](https://github.com/charmbracelet/glamour)).
 - **Tool activity** — every `tool_call`/`tool_result` shown live with a glyph
-  per tool, a spinner, an argument preview, and a result excerpt rendered as
-  a tree (`⎿`) — multi-line, blank-stripped, capped with a `+N more lines`
-  footer, and tinted with a `✗` when the call fails.
+  per tool, a spinner, and a result peek (`⎿`, first 1–2 typed-renderer
+  beats) so a finished step is scannable without `^E`. Running steps speak
+  the same progress copy as the status line (`🧪 running tests`) and tick
+  their own elapsed clock. Two or more in-flight calls wrap in a parallel
+  swarm band that shrinks as members finish and dissolves on the last
+  leftover. Full output stays behind expand.
 - **Fluent by default** — gradient wordmark, smooth braille spinner, smart
   autoscroll that never yanks you while you read history, and a
   scroll-position indicator.
@@ -183,34 +188,33 @@ own front-end settings are separate; see [Configuration](#configuration).
 
 ### Working with the agent
 
-- **Live reasoning** — the model's pre-tool thinking streams in dimmed text
-  with an elapsed timer and cycling status. Long turns keep every
-  think→reply pair intact: each reasoning block is followed by its own
-  answer card, in arrival order.
+- **Live reasoning** — the model's pre-tool thinking streams as an intent
+  rail (last two sentences, never flattened) with elapsed time. The clock
+  freezes when that think cycle yields (a tool or the reply). A turn that
+  thinks more than once labels each block `beat 2/3` — one beat is one
+  think→act cycle. Tab / `^E` still unfolds the stored full block. Long
+  turns keep every think→reply pair intact: each reasoning block is
+  followed by its own answer card, in arrival order.
 - **Context-aware progress** — while the agent works, a status line right
   below your last message shows what it's actually doing (`🧪 running
   tests`, `📖 reading client.go`, `🚀 pushing`) with a live elapsed timer.
-- **Sub-agents** — delegations are labelled and their `subagent_log` activity
-  nests beneath the delegating call, so a sub-agent's progress reads as its
-  own branch of the step tree. Each card carries its task's goal (parsed
-  from the `delegate_tasks` argument; tasks the wire hasn't confirmed yet
-  show as `pending`), live step/tool/iterations/tokens telemetry from
-  `subagent_state` frames (odek v1.30+), a client-side elapsed timer between
-  frame bursts, and terminal status glyphs (`✓` success, `◐` partial, `✗`
-  error, `⊘` cancelled, `⏱` timeout). The collapsed rollup counts failures —
-  `2/3 · 1 ✗ · 8.1k tok` — a terminal failure sticks to the notice strip
-  until the turn ends, and every delegating turn closes with a
-  `swarm: 5 ✓ · 1 ✗ — SA4 error` verdict. A disconnect retires in-flight
-  cards (`× lost on disconnect`) instead of leaving ghost spinners. Wire v2
-  (odek): queued tasks render as `◌ · queued` and count in the rollup
-  (`0/8 agents · 6 queued`); cards carry trust badges (resolved profile +
-  effective risk ceiling, in the expanded details), budget horizons
-  (`it 9/15`, `12s/30m`), and per-task cost (`~$0.0421/$0.5` when priced);
-  result cards list artifacts (`⎘`) and policy denials (`⊘ N denied`) —
-  sub-agents are deny-not-prompt: they never block on approvals.
-  `ctrl+s` (or `/stop <SA#>`, two-step confirmed) stops one running
-  sub-agent of the current turn; the `/agents` tab's `c` reaches any live
-  task through the instance registry.
+- **Sub-agents** — a delegation paints an always-on chip strip under the
+  parent step (`⟳ SA1 explore · ✓ SA2 lint · ✗ SA3 types`), so you can
+  see who is running or who failed without expanding. Click a chip or
+  `tab` (on a swarm turn) focuses one agent: identity + live beat
+  (current tool, step, budget, cost). `^E` / expand still dumps that
+  agent's logs, artifacts, and the framed result. Tasks the wire hasn't
+  confirmed yet show as `◌` pending chips from the `delegate_tasks`
+  argument. Glyphs: `✓` success, `◐` partial, `✗` error, `⊘` cancelled,
+  `⏱` timeout, `×` lost on disconnect. The parent rollup still counts
+  failures (`2/3 · 1 ✗ · 8.1k tok`). A finished swarm turn closes with a
+  receipt rail (`sub-agents: 5 ✓ · 1 ✗ — #4 error`), not a markdown
+  marker in the answer. Wire v2 (odek): queued chips, quiet profile/risk
+  on the focused card, budget horizons (`it 9/15`, `12s/30m`), per-task
+  cost, artifacts (`⎘`), and policy denials (`⊘ N denied`) — sub-agents
+  are deny-not-prompt. `ctrl+s` (or `/stop <SA#>`, two-step) stops one
+  running agent; `/agents` uses the same chip grammar and `o` jumps to
+  the transcript chip.
 - **Model switcher** (`^O`) — change the model for the next turn. The picker
   merges the server's configured model with its built-in profile catalog
   (`/api/profiles`), each annotated with its context window.
@@ -218,14 +222,21 @@ own front-end settings are separate; see [Configuration](#configuration).
   (`r`), export a transcript (`e` markdown, `E` JSON), and search server-side
   (`/`); `n` loads the next page. Resuming sends a `session_switch` so the
   server-side memory buffer is restored before you type.
+- **Session home** — first-run teaches `type a task` and `^K palette`.
+  After `^L`, the cleared transcript keeps the last prompt and coding
+  receipt so the session is still oriented; `/new` returns to the
+  first-run splash. The footer leads with a mode pill
+  (`composer` / `approval` / `jobs` / …).
 - **Auto-fitting composer** — the input box rests at three rows and grows
   with your prompt (multi-line or a single long line, wide-char aware) up to
   twelve rows or what the terminal can spare; it shrinks back after send,
-  history recall, and `/`-commands. Prompts wrap in the transcript at the
+  history recall, and `/`-commands. A one-row shelf above it carries staged
+  files, the folded queue count (`^Q` unfolds the strip), a `↓ new output`
+  hint, and a pending skill chip. Prompts wrap in the transcript at the
   viewport width — long lines are never clipped from view.
-- **Skill suggestions** — when odek's learn loop proposes a skill, a passive
-  card above the composer answers on `alt+s` (save) / `alt+x` (skip); it
-  never blocks sending, and auto-save governs real persistence.
+- **Skill suggestions** — when odek's learn loop proposes a skill, a
+  passive shelf chip answers on `alt+s` (save) / `alt+x` (skip); it never
+  blocks sending, and auto-save governs real persistence.
 - **Engine notices** — skill loads, memory merges, and actionable agent
   signals appear as quiet status lines; internal housekeeping (context
   trims, tool execution times) stays silent. Info traces fade after 3s;
@@ -240,9 +251,9 @@ own front-end settings are separate; see [Configuration](#configuration).
 
 ### Safety
 
-- **Inline approvals** — odek's `danger` engine prompts surface where the
-  context is; decisions go straight back over the socket. See
-  [Approvals](#approvals).
+- **Inline approvals** — odek's `danger` engine prompts sit as a card
+  above the still-usable composer: `A`/`D`/`T` decide, every other letter
+  types a follow-up draft. See [Approvals](#approvals).
 - **Friction & expiry** — repeated same-class approvals require typing
   `approve`; every request is time-boxed, autocloses on expiry, and can
   never collect an approval for a prompt the engine already abandoned.
@@ -253,9 +264,11 @@ own front-end settings are separate; see [Configuration](#configuration).
 ### Telemetry & cost
 
 - **Context gauge** — a pressure-tinted context-window gauge in the header
-  (`ctx █▉░░░ 38% 380/1k`, eighth-block fill, green→amber→red).
+  (`ctx █▉░░░ 38% 380/1k`, eighth-block fill, green→amber→red). Live
+  `plan N/M` and `● N jobs` / `✗ job` instruments ride the same bar when
+  a plan or background job is active.
 - **Per-turn footers & `/stats`** — token counts and latency ride every turn
-  head; `/stats` rolls up the session (cost, cache, context).
+  head; `/stats` opens a sheet that rolls up the session (cost, cache, context).
 - **Cost tracking** — when odek has token prices configured, the header shows
   the running session spend, each turn footer its estimated cost, and
   `/stats` adds the `max_cost_usd` cap when set; hidden entirely otherwise.
@@ -317,17 +330,17 @@ own front-end settings are separate; see [Configuration](#configuration).
 | `alt+r` | Re-send the last prompt (`/retry`) |
 | `alt+f` | Search the transcript (`⏎`/`n` next match · `N` previous · scrolling stays live) |
 | `^F` | Fold/unfold the most recent turn card (click any turn head with `--mouse`) |
-| `tab` | Open/close the latest reasoning block (live turns auto-expand) |
+| `tab` | Focus the next sub-agent chip on a swarm turn; otherwise open/close the latest reasoning block |
 | `^R` | Browse & resume saved sessions |
 | `^O` | Switch the model |
-| `^Q` | Focus the queue strip (`↑↓`/`jk` select · `←→`/`hl` move · `d d` two-step delete · `esc`/`⏎` back to the input; full manager: `/queue`) |
+| `^Q` | Unfold the queue strip from the composer shelf (`↑↓`/`jk` select · `←→`/`hl` move · `d d` two-step delete · `esc`/`⏎` folds it back; full manager: `/queue`) |
 | `^S` | Stop the running sub-agent (two-step confirm: `y` stops, any other key continues) |
 | `^T` | Toggle extended thinking for the next turn |
 | `^J` | Insert a newline in the input |
 | `^L` | Clear the conversation (two-step confirm: `y` clears, any other key cancels) |
 | `^E` | Toggle tool details — every step expands to its full output/logs |
 | `^Y` | Copy the last reply to the clipboard (local helper — `pbcopy`/`wl-copy`/`clip` — with OSC 52 fallback) |
-| `Esc` | Cancel the running turn (two-step confirm: `y` cancels, any other key keeps running; queued prompts return to the input) |
+| `Esc` | Close the topmost window (palette, drawer, find, `@`, queue, stats, expanded details, help, skill chip). Bare composer: cancel the running turn (two-step: `y` confirms). Approvals: collapse the expanded command, then deny. |
 | `↑` / `↓` / `PgUp` / `PgDn` / `^U` / `^D` | Scroll the transcript (arrows at the input's edge lines) |
 | `^P` / `^N` | Recall previous prompts (prompt history) |
 | `^G` / `End` (empty input) | Jump to the latest output |
@@ -373,7 +386,7 @@ full command and press `⏎`.
 | `/retry` | Re-send the last prompt (queues it if a turn is running) |
 | `/queue` | Manage the prompt queue — priority, delete, send now (the full manager over the `^Q` strip) |
 | `/theme [name]` | Switch the color theme at runtime and persist it (`ember-dark` · `ember-light` · `high-contrast` · `classic`) |
-| `/stats` | Session metrics card (cost, cache, context gauge) |
+| `/stats` | Session metrics sheet (cost, cache, context gauge) |
 | `/server` | Cockpit — server, link, budget & session in one card (or click the header) |
 | `/sessions` | Browse, search, pin, rename, export & resume sessions |
 | `/runs` | Headless REST runs — live status, remote approvals, cancel |
@@ -397,7 +410,9 @@ full command and press `⏎`.
 ### The management drawer
 
 `/sessions`, `/runs`, `/agents`, `/jobs`, `/events`, `/plan`, `/memory`,
-`/skills`, `/tools`, and `/config` all open tabs of **one drawer** with a
+`/skills`, `/tools`, and `/config` all open tabs of **one drawer** that
+sits as a **bottom sheet** — about eight transcript rows stay visible
+above it (full-bleed only when the terminal is too short) — with a
 shared grammar:
 
 - `]` / `[` cycle tabs · `1`–`9` jump · `0` jumps to the tenth (config) ·
@@ -456,8 +471,9 @@ sessions are resumed via `/sessions` or `^R`, not `@`.)
 
 ### Approvals
 
-When the agent requests approval for a dangerous operation, pick an outcome
-from the panel and confirm — typing never answers by accident:
+When the agent requests approval for a dangerous operation, the card sits
+above the composer. `A` / `D` / `T` (and `⏎` / `Esc`) decide; every other
+letter types into the draft so a follow-up survives the gate:
 
 | Key | Action |
 |-----|--------|

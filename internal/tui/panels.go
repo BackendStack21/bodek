@@ -30,6 +30,7 @@ const (
 	panelAgents
 	panelJobs
 	panelQueue
+	panelStats
 )
 
 // panelEditMode is the text-entry submode a panel can capture: `/` search in
@@ -256,6 +257,18 @@ func (m *Model) openModels() tea.Cmd {
 		msg.profiles, _ = cl.Profiles()
 		return msg
 	}
+}
+
+func (m *Model) openStats() tea.Cmd {
+	m.panel = panelStats
+	m.panelSel = 0
+	m.panelMsg = ""
+	m.panelEdit = panelEditNone
+	m.panelDetail = false
+	m.detailScroll = 0
+	m.relayout()
+	m.refresh()
+	return nil
 }
 
 func (m *Model) closePanel() {
@@ -1246,6 +1259,11 @@ func (m *Model) renderPanel(w, h int) string {
 	case panelQueue:
 		title = "≡ queue"
 		rows = m.queuePanelRows(w - 6)
+	case panelStats:
+		title = "⬡ stats"
+		if id := shortID(m.sessionID); id != "" {
+			title += th.acDetail.Render("  ·  " + id)
+		}
 	}
 
 	header := th.acTitle.Render(title)
@@ -1266,6 +1284,10 @@ func (m *Model) renderPanel(w, h int) string {
 	}
 	if m.panelMsg != "" {
 		body += "\n" + th.acDim.Render(m.panelMsg)
+	}
+	if m.panel == panelStats {
+		body += "\n" + m.statsBody()
+		return th.acBox.Width(boxWidth(w)).Height(h - 2).Render(body)
 	}
 	if m.panelDetail && mgmtPanel(m.panel) {
 		// Detail view replaces the list: window the wrapped block by the
@@ -1300,7 +1322,7 @@ func (m *Model) renderPanel(w, h int) string {
 	}
 
 	// acBox is exactly the rounded brand box this panel used to hand-build.
-	return th.acBox.Width(w - 2).Height(h - 2).Render(body)
+	return th.acBox.Width(boxWidth(w)).Height(h - 2).Render(body)
 }
 
 func (m *Model) sessionRows(w int) []string {

@@ -30,9 +30,9 @@ func (m *Model) approvalOptions() []approvalOption {
 
 // handleApprovalKey drives the head of the approval queue: arrows move the
 // highlight, enter confirms, esc denies, tab expands the full
-// command/description, and the transcript scroll keys keep working. The
-// composer is replaced while an approval is pending, so bare decision keys
-// (a/d/t) are safe — no prompt can leak into a decision.
+// command/description, and the transcript scroll keys keep working.
+// Decision keys (a/d/t) stay on the card; other printable runes, backspace,
+// and ctrl+j type into the composer so a follow-up draft survives the gate.
 //
 // Friction mode (server flag: 3+ same-class approvals inside 60s) replaces
 // the selection UI entirely: the literal word "approve" must be typed and
@@ -67,6 +67,11 @@ func (m *Model) handleApprovalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, m.answer("trust")
 		}
 	case "esc":
+		if m.apprExpanded {
+			m.apprExpanded = false
+			m.relayout()
+			return m, nil
+		}
 		return m, m.answer("deny")
 	case "tab":
 		m.apprExpanded = !m.apprExpanded
@@ -80,6 +85,23 @@ func (m *Model) handleApprovalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case "ctrl+c":
 		return m, m.armConfirm(confirmQuit, "bodek")
+	case "ctrl+j":
+		var cmd tea.Cmd
+		m.ta, cmd = m.ta.Update(tea.KeyMsg{Type: tea.KeyEnter})
+		m.syncComposer()
+		return m, cmd
+	case "backspace", "delete", "ctrl+w":
+		var cmd tea.Cmd
+		m.ta, cmd = m.ta.Update(msg)
+		m.syncComposer()
+		return m, cmd
+	default:
+		if s := msg.String(); len([]rune(s)) == 1 {
+			var cmd tea.Cmd
+			m.ta, cmd = m.ta.Update(msg)
+			m.syncComposer()
+			return m, cmd
+		}
 	}
 	return m, nil
 }
@@ -98,6 +120,11 @@ func (m *Model) handleFrictionKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		m.apprTyped = ""
 	case "esc":
+		if m.apprExpanded {
+			m.apprExpanded = false
+			m.relayout()
+			return m, nil
+		}
 		return m, m.answer("deny")
 	case "backspace":
 		if n := len(m.apprTyped); n > 0 {

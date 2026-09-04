@@ -37,7 +37,7 @@ func TestSkillSuggestionCard(t *testing.T) {
 		t.Fatal("suggested event did not arm the card")
 	}
 	out := plain(m.View())
-	for _, want := range []string{"skill suggested", "deploy-helper", "alt+s", "alt+x"} {
+	for _, want := range []string{"✦", "deploy-helper", "alt+s", "alt+x"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("suggestion card missing %q:\n%s", want, out)
 		}

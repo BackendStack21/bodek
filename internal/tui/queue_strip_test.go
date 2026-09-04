@@ -60,6 +60,15 @@ func clickQueueControl(t *testing.T, m *Model, row int, glyph rune) {
 	})
 }
 
+// unfoldQueue opens the full strip (^Q) so tests that click or count strip
+// rows see the same chrome a focused operator would.
+func unfoldQueue(m *Model) {
+	m.qfocus = true
+	m.qsel = 0
+	m.relayout()
+	m.refresh()
+}
+
 func TestQueueStripHiddenWhenEmpty(t *testing.T) {
 	m := newTestModel()
 	if m.queueStripVisible() {
@@ -82,7 +91,7 @@ func TestQueueStripRendersAboveInput(t *testing.T) {
 	m := newTestModel()
 	busyTurn(m)
 	m.queue = []string{"first queued", "second queued"}
-	m.refresh()
+	unfoldQueue(m)
 
 	if !m.queueStripVisible() {
 		t.Fatal("strip should be visible with queued prompts")
@@ -135,7 +144,7 @@ func TestQueueStripDeleteViaMouse(t *testing.T) {
 	m := newTestModel()
 	busyTurn(m)
 	m.queue = []string{"alpha", "beta", "gamma"}
-	m.refresh()
+	unfoldQueue(m)
 
 	clickQueueControl(t, m, 1, '✕') // arms (two-step delete)
 	clickQueueControl(t, m, 1, '✕') // confirms
@@ -158,7 +167,7 @@ func TestQueueStripReorderViaMouse(t *testing.T) {
 	m := newTestModel()
 	busyTurn(m)
 	m.queue = []string{"alpha", "beta", "gamma"}
-	m.refresh()
+	unfoldQueue(m)
 
 	// Move the tail up one: alpha,gamma,beta.
 	clickQueueControl(t, m, 2, '▲')
@@ -185,10 +194,16 @@ func TestQueueStripKeyboardFocus(t *testing.T) {
 	m.queue = []string{"alpha", "beta"}
 	m.refresh()
 
-	// While unfocused, typing still reaches the composer.
+	// While unfocused, the count rides the shelf and typing reaches the composer.
+	if m.queueStripVisible() {
+		t.Fatal("unfocused queue must not unfold the strip")
+	}
+	if got := plain(m.View()); !strings.Contains(got, "queued") {
+		t.Fatalf("unfocused queue missing the shelf chip:\n%s", got)
+	}
 	m.Update(key("x"))
 	if m.ta.Value() != "x" {
-		t.Fatalf("strip visible but unfocused: typing must reach the input, got %q", m.ta.Value())
+		t.Fatalf("shelf visible but unfocused: typing must reach the input, got %q", m.ta.Value())
 	}
 	m.ta.Reset()
 
@@ -260,7 +275,7 @@ func TestQueueStripDrainStepsDown(t *testing.T) {
 	m := newTestModel()
 	busyTurn(m)
 	m.queue = []string{"next up", "after that"}
-	m.refresh()
+	unfoldQueue(m)
 
 	// Turn end: the head pops and fires (sendQueued pops synchronously when
 	// the done event is handled; the returned cmd is not executed — the test
@@ -284,7 +299,7 @@ func TestQueueStripOverflowCap(t *testing.T) {
 		"one", "two", "three", "four", "five",
 		"six", "seven", "eight", "nine", "ten",
 	}
-	m.refresh()
+	unfoldQueue(m)
 
 	rows := queueStripRows(m)
 	if len(rows) != queueStripCap+1 {
@@ -295,7 +310,6 @@ func TestQueueStripOverflowCap(t *testing.T) {
 	}
 
 	// Keyboard selection reaches past the visible cap.
-	m.Update(key("ctrl+q"))
 	for i := 0; i < 9; i++ {
 		m.Update(key("j"))
 	}
@@ -317,7 +331,7 @@ func TestQueueStripPlainParity(t *testing.T) {
 	m := newTestModel()
 	m.plain = true
 	m.queue = []string{"linear mode queued"}
-	m.refresh()
+	unfoldQueue(m)
 
 	if v := m.plainView(); !strings.Contains(plain(v), "linear mode queued") {
 		t.Errorf("plainView missing the queue strip: %q", plain(v))
@@ -333,7 +347,7 @@ func TestQueueStripClickUsesCellColumns(t *testing.T) {
 		m := newTestModel()
 		busyTurn(m)
 		m.queue = []string{text, "second queued"}
-		m.refresh()
+		unfoldQueue(m)
 
 		// ▼ on the head row swaps the two entries.
 		clickQueueControl(t, m, 0, '▼')
@@ -372,25 +386,25 @@ func TestQueueStripHidesControlsWithoutMouse(t *testing.T) {
 	m.queue = []string{"held one", "held two"}
 	m.refresh()
 
+	if m.queueStripVisible() {
+		t.Fatal("unfocused queue must ride the shelf, even without mouse")
+	}
+	if got := plain(m.View()); !strings.Contains(got, "queued") {
+		t.Fatalf("unfocused queue missing the shelf chip:\n%s", got)
+	}
+	unfoldQueue(m)
 	if !m.queueStripVisible() {
 		t.Fatal("strip must stay visible without mouse — the queue is real")
 	}
 	if v := m.queueStripView(); strings.ContainsAny(plain(v), "▲▼✕") {
 		t.Errorf("controls must be hidden without --mouse: %q", plain(v))
 	}
-	if v := plain(m.queueStripView()); !strings.Contains(v, "^q") {
-		t.Errorf("missing the ^Q hint row: %q", v)
+	if v := plain(m.queueStripView()); !strings.Contains(v, "delete") {
+		t.Errorf("focused strip should show the key legend, not mouse glyphs: %q", v)
 	}
-	// Hint row costs a row: two queue rows + the hint.
+	// Legend row costs a row: two queue rows + the hint.
 	if h := m.queueStripHeight(); h != 3 {
 		t.Errorf("strip height = %d, want 3 (2 rows + hint)", h)
-	}
-
-	// Focused: the hint becomes the key legend.
-	m.qfocus, m.qsel = true, 0
-	m.refresh()
-	if v := plain(m.queueStripView()); !strings.Contains(v, "delete") {
-		t.Errorf("focused hint should show the key legend: %q", v)
 	}
 
 	// Clicks on the hint row are inert: no delete, no move, no focus change.
@@ -413,7 +427,7 @@ func TestQueueStripOneLinePerItem(t *testing.T) {
 	m := newTestModel()
 	busyTurn(m)
 	m.queue = []string{"alpha\nbeta\ngamma", "plain prompt"}
-	m.refresh()
+	unfoldQueue(m)
 
 	stripHeightOK(t, m)
 	if rows := queueStripRows(m); len(rows) != 2 {

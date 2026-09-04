@@ -95,7 +95,7 @@ func TestNonStreamingEventsRenderImmediately(t *testing.T) {
 	if m.renderPending {
 		t.Error("tool_call should render immediately, not queue a flush")
 	}
-	if vp := plain(m.vp.View()); !strings.Contains(vp, "shell") {
+	if vp := plain(m.vp.View()); !strings.Contains(vp, "looking around") && !strings.Contains(vp, "shell") {
 		t.Error("tool_call not visible without a flush")
 	}
 

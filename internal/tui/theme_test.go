@@ -46,7 +46,7 @@ func TestThemeSelection(t *testing.T) {
 // TestWelcomeTeachesPalette guards the first-run teaching surface.
 func TestWelcomeTeachesPalette(t *testing.T) {
 	out := plain(welcome(newTheme(), 100, "/somewhere"))
-	for _, want := range []string{"^K palette", "approvals", "@ to attach"} {
+	for _, want := range []string{"^K palette", "type a task"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("welcome missing %q:\n%s", want, out)
 		}

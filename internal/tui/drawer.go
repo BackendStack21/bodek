@@ -186,6 +186,9 @@ func (m *Model) jumpToAgentStep() tea.Cmd {
 			if m.msgs[i].steps[j].card(taskID) == nil {
 				continue
 			}
+			if a := m.msgs[i].steps[j].card(taskID); a != nil {
+				m.msgs[i].steps[j].setAgentFocus(a.idx)
+			}
 			m.msgs[i].steps[j].expanded = true
 			m.panel = panelNone
 			m.relayout()

@@ -62,8 +62,7 @@ func slashCommands() []command {
 			return m.openQueue()
 		}},
 		{"stats", "session metrics & context gauge", func(m *Model, _ string) tea.Cmd {
-			m.showStats()
-			return nil
+			return m.openStats()
 		}},
 		{"sessions", "browse & resume saved sessions", func(m *Model, _ string) tea.Cmd {
 			return m.openSessions()
@@ -261,14 +260,13 @@ func (m *Model) switchTheme(name string) tea.Cmd {
 	return m.transientNoteCmd("theme set to " + canonical)
 }
 
-// showHelp appends a help card listing commands and key bindings. Like /stats
-// it is pre-styled to the brand palette (raw), not glamour's stock dark style.
+// showHelp appends a help card listing commands and key bindings. It is
+// pre-styled to the brand palette (raw), not glamour's stock dark style.
 func (m *Model) showHelp() {
 	th := m.th
-	// Same box math as the /stats card: Width(boxW-2) renders boxW wide with a
-	// boxW-4 content column the rules must match.
-	boxW := max(min(m.vp.Width-2, 60), 28)
-	innerW := boxW - 4
+	// Same framed-card contract as the composer, palette, and drawer: the
+	// box spans the terminal and the rule fills the inner text column.
+	innerW := m.cardInner()
 	rule := "\n" + th.rule.Render(strings.Repeat("─", innerW))
 
 	var b strings.Builder
@@ -292,12 +290,12 @@ func (m *Model) showHelp() {
 		{"^Y", "copy the latest reply"},
 		{"alt+r", "re-send the last prompt (/retry)"},
 		{"^F", "fold/unfold the latest turn card"},
-		{"tab", "open/close the latest reasoning block"},
+		{"tab", "focus the next sub-agent chip · else open/close reasoning"},
 		{"Pg↑↓", "page the transcript"},
 		{"^P^N", "recall prompts"},
 		{"^G", "jump to the latest output"},
 		{"^R", "browse & resume sessions"},
-		{"^Q", "quick-manage the queue strip (full manager: /queue)"},
+		{"^Q", "unfold the queue strip (full manager: /queue)"},
 		{"^O", "switch model"},
 		{"^K", "command palette"},
 		{"^T", "toggle extended thinking"},
@@ -305,7 +303,7 @@ func (m *Model) showHelp() {
 		{"^L", "clear the conversation"},
 		{"^E", "toggle tool details"},
 		{"alt+f", "find in the transcript"},
-		{"esc", "cancel the running turn (y confirms)"},
+		{"esc", "close overlay · cancel the running turn (y confirms)"},
 		{"/server", "cockpit — server, link, budget, session"},
 		{"F1", "this help card"},
 		{"^C", "quit"},
@@ -314,7 +312,7 @@ func (m *Model) showHelp() {
 		b.WriteString("\n" + th.tipKey.Render(padRight(k[0], keyW)) + " " + th.tipText.Render(k[1]))
 	}
 
-	card := th.acBox.Width(boxW - 2).Render(b.String())
+	card := th.acBox.Width(m.cardWidth()).Render(b.String())
 	m.msgs = append(m.msgs, message{role: roleAsst, content: card, rendered: card, raw: true})
 	m.refresh()
 }
@@ -353,34 +351,18 @@ func runExport(m *Model, arg string) tea.Cmd {
 	}
 }
 
-// showStats appends a session dashboard card to the transcript.
+// showStats opens the session dashboard as a bottom sheet — the same
+// chrome /sessions and /queue use — so /stats is not a transcript card.
 func (m *Model) showStats() {
-	card := m.statsCardBody()
-	m.msgs = append(m.msgs, message{role: roleAsst, content: card, rendered: card, raw: true})
-	m.refresh()
-}
-
-// statsCardBody builds the session dashboard: context-window usage, token and
-// tool totals, latency, thinking ratio, session age, and model/sandbox. It is
-// built as pre-styled lines (raw) so its colors and column alignment are exact
-// and survive width changes untouched.
-func (m *Model) statsCardBody() string {
-	card := m.statsBody()
-	// Same box math the card always used — changing it re-wraps the
-	// pre-styled rows at narrow widths.
-	return m.th.acBox.Width(max(min(m.vp.Width-2, 60), 28) - 2).Render(card)
+	_ = m.openStats()
 }
 
 // statsBody renders the session dashboard content without a frame — the
-// cockpit embeds it directly; /stats wraps it in its card.
+// cockpit embeds it directly; the /stats sheet wraps it in the drawer box.
 func (m *Model) statsBody() string {
 	th := m.th
-	// boxW is the total rendered width (incl. border). lipgloss .Width(w) makes
-	// the text content w-2 wide (padding) and adds 2 for the border, so passing
-	// boxW-2 yields a box exactly boxW wide with a boxW-4 content column — which
-	// the divider and rows must match exactly to keep the right edge flush.
-	boxW := max(min(m.vp.Width-2, 60), 28)
-	innerW := boxW - 4
+	// Same inner column as every other framed card.
+	innerW := m.cardInner()
 
 	// A labelled row: an accent-tinted glyph, a muted word, then the value.
 	type row struct {
@@ -500,12 +482,14 @@ func (m *Model) statsBody() string {
 	gutter++ // one space before the value column
 
 	var b strings.Builder
-	title := th.acTitle.Render("⬡ session")
-	if id := shortID(m.sessionID); id != "" {
-		title += " " + th.statsDim.Render(id)
+	if m.panel != panelStats {
+		title := th.acTitle.Render("⬡ session")
+		if id := shortID(m.sessionID); id != "" {
+			title += " " + th.statsDim.Render(id)
+		}
+		b.WriteString(title)
+		b.WriteString("\n" + th.rule.Render(strings.Repeat("─", innerW)))
 	}
-	b.WriteString(title)
-	b.WriteString("\n" + th.rule.Render(strings.Repeat("─", innerW)))
 
 	if len(rows) == 0 {
 		b.WriteString("\n" + th.statsDim.Render("no turns yet — ask odek something"))
@@ -526,6 +510,5 @@ func (m *Model) statsBody() string {
 		b.WriteString("\n" + idline)
 	}
 
-	_ = boxW
 	return b.String()
 }

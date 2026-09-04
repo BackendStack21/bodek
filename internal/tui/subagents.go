@@ -13,6 +13,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 
 	"github.com/BackendStack21/bodek/internal/client"
 )
@@ -239,6 +240,239 @@ func agentCardLine(a *agentCard) string {
 	return b.String()
 }
 
+// focusedIdx is the focused chip's task index, or -1 when none is selected.
+func (s *step) focusedIdx() int {
+	if s.agentSel <= 0 {
+		return -1
+	}
+	return s.agentSel - 1
+}
+
+func (s *step) setAgentFocus(idx int) {
+	if idx < 0 {
+		s.agentSel = 0
+		return
+	}
+	s.agentSel = idx + 1
+}
+
+func (s *step) clearAgentFocus() bool {
+	if s.agentSel <= 0 {
+		return false
+	}
+	s.agentSel = 0
+	return true
+}
+
+// agentChip is one always-on swarm chip: glyph + SA# + goal (or live tool).
+type agentChip struct {
+	idx     int
+	pending bool
+	failed  bool
+	glyph   string
+	label   string // "SA1 explore repo" — goal first after the id
+}
+
+func (c agentChip) text() string { return c.glyph + " " + c.label }
+
+// agentChips builds the scannable strip: live cards first (arrival order),
+// then manifest slots the wire has not confirmed. Goal is the label; a
+// running card prefers its current tool so the strip answers "what now".
+func (s *step) agentChips() []agentChip {
+	if !s.subagent {
+		return nil
+	}
+	var out []agentChip
+	seen := map[int]bool{}
+	for _, a := range s.agents {
+		label := sanitize(a.goal)
+		if !a.finished() && a.tool != "" {
+			label = sanitize(a.tool)
+		}
+		if label == "" {
+			switch {
+			case a.lost:
+				label = "lost"
+			case a.phase == "queued":
+				label = "queued"
+			default:
+				label = a.phase
+			}
+		}
+		out = append(out, agentChip{
+			idx: a.idx, failed: a.failed(), glyph: a.glyph(),
+			label: fmt.Sprintf("SA%d %s", a.idx+1, label),
+		})
+		seen[a.idx] = true
+	}
+	for k, slot := range s.manifest {
+		if seen[k] {
+			continue
+		}
+		label := sanitize(slot.goal)
+		if label == "" {
+			label = "pending"
+		}
+		out = append(out, agentChip{
+			idx: k, pending: true, glyph: "◌",
+			label: fmt.Sprintf("SA%d %s", k+1, label),
+		})
+	}
+	return out
+}
+
+// packChipRows wraps chips so a single chip never splits mid-label.
+func packChipRows(chips []agentChip, width int) [][]agentChip {
+	if width < 8 {
+		width = 8
+	}
+	var rows [][]agentChip
+	var row []agentChip
+	used := 0
+	for _, c := range chips {
+		w := lipgloss.Width(c.text())
+		if w > width {
+			w = width
+		}
+		gap := 0
+		if len(row) > 0 {
+			gap = 3
+		}
+		if len(row) > 0 && used+gap+w > width {
+			rows = append(rows, row)
+			row = nil
+			used, gap = 0, 0
+		}
+		row = append(row, c)
+		used += gap + w
+	}
+	if len(row) > 0 {
+		rows = append(rows, row)
+	}
+	return rows
+}
+
+func truncateChip(c agentChip, width int) agentChip {
+	budget := width - lipgloss.Width(c.glyph) - 1
+	if budget < 4 {
+		budget = 4
+	}
+	c.label = truncate(c.label, budget)
+	return c
+}
+
+// agentIdentityLine is the focused-card head: glyph, SA#, goal, quiet trust.
+func agentIdentityLine(a *agentCard) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "%s SA%d", a.glyph(), a.idx+1)
+	if a.goal != "" {
+		b.WriteString("  " + a.goal)
+	}
+	if t := cardTrustChips(a); t != "" {
+		b.WriteString("  " + t)
+	}
+	return b.String()
+}
+
+// agentBeatLine is the live/terminal telemetry without the goal garnish.
+func agentBeatLine(a *agentCard) string {
+	var parts []string
+	if !a.finished() {
+		switch {
+		case a.lost:
+			parts = append(parts, "lost on disconnect")
+		case a.phase == "queued":
+			parts = append(parts, "queued")
+		default:
+			if a.step > 0 {
+				parts = append(parts, fmt.Sprintf("step %d", a.step))
+			}
+			if a.tool != "" {
+				parts = append(parts, a.tool)
+			}
+			if !a.seen.IsZero() {
+				elapsed := formatStepDur(time.Since(a.seen))
+				if a.budgetS > 0 {
+					elapsed += "/" + formatStepDur(time.Duration(a.budgetS)*time.Second)
+				}
+				parts = append(parts, elapsed)
+			}
+		}
+		if a.stopSent {
+			parts = append(parts, "stop sent")
+		}
+	} else if a.status != "" && a.status != "success" {
+		parts = append(parts, a.status)
+	}
+	if a.iters > 0 {
+		if a.budgetIt > 0 {
+			parts = append(parts, fmt.Sprintf("it %d/%d", a.iters, a.budgetIt))
+		} else {
+			parts = append(parts, fmt.Sprintf("%d it", a.iters))
+		}
+	}
+	if a.tokens > 0 {
+		parts = append(parts, human(a.tokens)+" tok")
+	}
+	if a.durS > 0 {
+		parts = append(parts, formatStepDur(time.Duration(a.durS*float64(time.Second))))
+	}
+	if a.costUSD > 0 {
+		c := fmtCost(a.costUSD)
+		if a.budgetCostUSD > 0 {
+			c += "/" + strings.TrimPrefix(fmtCost(a.budgetCostUSD), "~")
+		}
+		parts = append(parts, c)
+	}
+	return strings.Join(parts, " · ")
+}
+
+func cardTrustChips(a *agentCard) string {
+	var parts []string
+	if a.profile != "" {
+		parts = append(parts, sanitize(a.profile))
+	}
+	if a.maxRisk != "" {
+		parts = append(parts, sanitize(a.maxRisk))
+	}
+	return strings.Join(parts, " · ")
+}
+
+func logMentionsAgent(lg string, idx int) bool {
+	if strings.Contains(lg, fmt.Sprintf("SA%d", idx+1)) {
+		return true
+	}
+	if idx <= 0 {
+		return false
+	}
+	token := fmt.Sprintf(" #%d", idx)
+	i := strings.Index(lg, token)
+	if i < 0 {
+		return false
+	}
+	after := i + len(token)
+	return after >= len(lg) || lg[after] < '0' || lg[after] > '9'
+}
+
+func logIsScoped(lg string) bool {
+	return strings.Contains(lg, "SA") || strings.Contains(lg, " #")
+}
+
+func scopedLogs(logs []string, idx int) (mine, unscoped []string) {
+	for _, lg := range logs {
+		if strings.TrimSpace(lg) == "" {
+			continue
+		}
+		switch {
+		case logMentionsAgent(lg, idx):
+			mine = append(mine, lg)
+		case !logIsScoped(lg):
+			unscoped = append(unscoped, lg)
+		}
+	}
+	return mine, unscoped
+}
+
 // agentRollup is the collapsed-head aggregate: "1/2 agents · 6.3k tok",
 // with the failure count spelled out once one exists — "2/3 · 1 ✗ · 8.1k tok".
 func agentRollup(s *step) string {
@@ -437,10 +671,21 @@ func (m *Model) stopAgent(taskID string) tea.Cmd {
 // step's first live card, else the first live card of any in-flight step.
 func (m *Model) firstLiveAgent() (id, label string, ok bool) {
 	if i := m.cur(); i >= 0 {
+		for j := range m.msgs[i].steps {
+			s := &m.msgs[i].steps[j]
+			if !s.subagent || s.done {
+				continue
+			}
+			if idx := s.focusedIdx(); idx >= 0 {
+				if a := s.cardByIdx(idx); a != nil && !a.finished() {
+					return a.taskID, fmt.Sprintf("SA%d", a.idx+1), true
+				}
+			}
+		}
 		for pass := 0; pass < 2; pass++ {
 			for j := range m.msgs[i].steps {
 				s := &m.msgs[i].steps[j]
-				if !s.subagent || s.done || (pass == 0 && !s.expanded && !m.expandAll) {
+				if !s.subagent || s.done || (pass == 0 && !s.expanded && !m.expandAll && s.focusedIdx() < 0) {
 					continue
 				}
 				for _, a := range s.agents {

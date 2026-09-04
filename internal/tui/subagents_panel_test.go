@@ -28,7 +28,7 @@ func TestAgentsTabFlow(t *testing.T) {
 	}
 	rows := m.agentRowsRender(120)
 	joined := strings.Join(rows, "\n")
-	for _, want := range []string{"✓", "explore the repo", "1.5k tok", "⟳", "read"} {
+	for _, want := range []string{"✓", "SA1", "explore the repo", "1.5k tok", "⟳", "SA2", "read"} {
 		if !strings.Contains(joined, want) {
 			t.Errorf("rows missing %q: %q", want, joined)
 		}

@@ -40,6 +40,7 @@ type step struct {
 	manifest   []taskSlot    // delegate arg parsed at tool-call time: per-task identity
 	resultCard *agentResult  // framed result envelope (delegate tools)
 	expanded   bool          // user has expanded this step to show full output/logs
+	agentSel   int           // focused chip: 0 = none, else 1-based SA number
 	started    time.Time     // when the tool_call arrived; zero for resumed history
 	dur        time.Duration // wall-clock the call took; 0 until the result lands
 }
@@ -47,21 +48,25 @@ type step struct {
 // stepRef maps a rendered transcript line to a specific step for mouse
 // hit-testing.
 type stepRef struct {
-	msgIdx  int
-	stepIdx int
-	line    int
+	msgIdx   int
+	stepIdx  int
+	line     int
+	agentIdx int // chip target (task idx); ignored unless x1 > x0
+	x0, x1   int // chip hit box in viewport columns; 0,0 = head row
 }
 
 // turnItem is one entry in a turn's chronological timeline: a reasoning
 // block, a tool call, or a response text segment (one think→reply cycle),
 // in arrival order.
 type turnItem struct {
-	thinking bool   // true = reasoning block
-	reply    bool   // true = response text segment
-	text     string // thinking / reply text (stored in full)
-	stepIdx  int    // index into msg.steps when a tool call
-	open     bool   // reasoning: user wants the full block (live turns auto-open)
-	rendered string // cached glamour render (finalized reply segments)
+	thinking bool          // true = reasoning block
+	reply    bool          // true = response text segment
+	text     string        // thinking / reply text (stored in full)
+	stepIdx  int           // index into msg.steps when a tool call
+	open     bool          // reasoning: user wants the full block (live turns auto-open)
+	rendered string        // cached glamour render (finalized reply segments)
+	started  time.Time     // reasoning: when the block opened; zero on replay
+	dur      time.Duration // reasoning: sealed when the cycle yields; 0 while live
 }
 
 // turnStats is the telemetry of one finalized assistant turn, captured from the
@@ -177,6 +182,8 @@ type Model struct {
 	qsel          int            // selected strip row while qfocus
 	qarm          int            // armed-for-delete row while qfocus (-1 = none)
 	lastPrompt    string         // most recent prompt sent — /retry re-sends it
+	homePrompt    string         // last user prompt, kept across ^L for the session home
+	homeReceipt   string         // last turn's coding receipt, shown on the cleared home
 	focusIdx      int            // transcript cursor: turn head alt+↑/↓ last jumped to (-1 none)
 
 	history   []string // submitted prompts, newest last (recalled with ↑)
@@ -696,6 +703,11 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.refresh()
 					return m, nil
 				}
+				if msgIdx, stepIdx, agentIdx, ok := m.chipAt(line, msg.X); ok {
+					m.selectAgentChip(msgIdx, stepIdx, agentIdx)
+					m.refresh()
+					return m, nil
+				}
 				if msgIdx, stepIdx, ok := m.stepAtLine(line); ok {
 					m.toggleStep(msgIdx, stepIdx)
 					m.refresh()
@@ -778,8 +790,11 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "ctrl+c":
 		return m, m.armConfirm(confirmQuit, "bodek")
 	case "esc":
-		// The run's kill switch sits behind the same two-step gate as every
-		// other destructive action — esc is too easy to hit by accident.
+		// Overlays and inspect chrome close first. Only a bare composer
+		// ESC while busy arms the cancel gate.
+		if ok, cmd := m.dismissChrome(); ok {
+			return m, cmd
+		}
 		if m.busy {
 			return m, m.armConfirm(confirmCancel, "the running turn")
 		}
@@ -802,9 +817,10 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "ctrl+q":
 		// Queue-strip focus: a chord, so typing a q is never hijacked.
 		// Only latches when there is something queued to manage.
-		if m.queueStripVisible() {
+		if m.queueHeld() {
 			m.qfocus = true
 			m.qsel = 0
+			m.relayout()
 			m.refresh()
 		}
 		return m, nil
@@ -905,10 +921,12 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.toggleCollapseLast()
 		return m, nil
 	case "tab":
-		// Open/close the most recent reasoning accordion block (the textarea
-		// ignores tab, and the completion popups capture it while open).
+		// Cycle the latest swarm's focused chip when one is on screen;
+		// otherwise open/close the most recent reasoning accordion.
 		if !m.ac.open {
-			m.toggleThinkingLast()
+			if !m.cycleAgentFocus() {
+				m.toggleThinkingLast()
+			}
 			m.refresh()
 		}
 		return m, nil
@@ -939,6 +957,7 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 // of reporting turns, tools, tokens, and age from before it (mirrors the
 // reset done when resuming a session).
 func (m *Model) clearConversation() {
+	captureHome(m)
 	m.msgs = nil
 	m.curIdx = -1
 	m.convCount = -1 // transcript replaced — drop the cached prefix
@@ -971,7 +990,9 @@ func (m *Model) startFreshSession() tea.Cmd {
 	m.pendModel = m.model // the new session re-asserts the active model
 	m.resetPlanState()
 	m.resetJobsState()
+	clearHome(m)
 	m.freshStart = true
+	m.refresh() // drop the session-home snapshot clearConversation just painted
 	cl := m.cl
 	return func() tea.Msg {
 		if cl != nil {
@@ -1113,23 +1134,23 @@ func (m *Model) relayout() {
 	if !m.ready {
 		return
 	}
-	vpH := m.height - headerHeight - footerHeight - m.inputAreaHeight()
+	sheet := m.drawerLayoutBudget()
+	vpH := m.height - headerHeight - footerHeight - m.inputAreaHeight() - sheet
 	// Degradation ladder, step 1: when the layout doesn't fit, give the
 	// transcript rows back by shrinking the composer first — a one-visible-
 	// row terminal beats a View that never fits (judge-5 E1).
-	if vpH < 1 && m.ta.Height() > 1 && m.curApproval() == nil {
-		// The approval panel replaces the composer entirely (its body lines
-		// are pre-wrapped by approvalBody) — shrinking the hidden textarea
-		// cannot help; the ladder only guards the composer path.
+	if vpH < 1 && m.ta.Height() > 1 {
 		over := 1 - vpH
 		m.ta.SetHeight(max(1, m.ta.Height()-over))
-		vpH = m.height - headerHeight - footerHeight - m.inputAreaHeight()
+		sheet = m.drawerLayoutBudget()
+		vpH = m.height - headerHeight - footerHeight - m.inputAreaHeight() - sheet
 	}
 	// Ladder, restore: with room again the composer returns to its
 	// content-fitted height (syncComposer's bounds — not the old fixed 3).
 	if vpH >= 4 && m.ta.Height() < m.desiredComposerHeight() {
 		m.ta.SetHeight(m.desiredComposerHeight())
-		vpH = m.height - headerHeight - footerHeight - m.inputAreaHeight()
+		sheet = m.drawerLayoutBudget()
+		vpH = m.height - headerHeight - footerHeight - m.inputAreaHeight() - sheet
 	}
 	// Floor of 1, not 3: below the old floor the View was guaranteed taller
 	// than the terminal (permanent scroll-jitter in alt-screen).
@@ -1144,23 +1165,23 @@ func (m *Model) relayout() {
 // input area plus the busy status line when it shows — so the viewport
 // shrinks by exactly the right amount and the footer never moves.
 func (m *Model) inputAreaHeight() int {
-	if m.curApproval() != nil {
-		return lineCount(m.approvalBody()) + 2 // panel border
-	}
 	h := m.ta.Height() + 2 // composer box: text rows + top/bottom border
+	if m.curApproval() != nil {
+		h += lineCount(m.approvalPanel()) // boxed card sits above the composer
+	}
 	if m.statusLineVisible() {
 		h += 2 // busy status line + blank separator row above the input box
 	}
 	if m.pal.open {
 		h += m.palHeight()
 	}
-	h += m.suggestionCardHeight()
 	if m.ac.open {
 		h += m.ac.height()
 	}
 	if m.find.open {
 		h++ // the one-row search strip above the input box
 	}
+	h += m.shelfHeight()
 	h += m.queueStripHeight()
 	return h
 }
@@ -1293,6 +1314,56 @@ func (m *Model) toggleStep(msgIdx, stepIdx int) {
 	}
 	steps[stepIdx].expanded = !steps[stepIdx].expanded
 	m.convCount = -1
+}
+
+func (m *Model) selectAgentChip(msgIdx, stepIdx, agentIdx int) {
+	if msgIdx < 0 || msgIdx >= len(m.msgs) {
+		return
+	}
+	steps := m.msgs[msgIdx].steps
+	if stepIdx < 0 || stepIdx >= len(steps) {
+		return
+	}
+	s := &steps[stepIdx]
+	if s.focusedIdx() == agentIdx {
+		s.clearAgentFocus()
+	} else {
+		s.setAgentFocus(agentIdx)
+	}
+	m.convCount = -1
+}
+
+// cycleAgentFocus walks the latest sub-agent chip strip: none → first →
+// next → none. Returns false when the turn has no swarm to focus.
+func (m *Model) cycleAgentFocus() bool {
+	for i := len(m.msgs) - 1; i >= 0; i-- {
+		if m.msgs[i].role != roleAsst {
+			continue
+		}
+		for j := len(m.msgs[i].steps) - 1; j >= 0; j-- {
+			s := &m.msgs[i].steps[j]
+			chips := s.agentChips()
+			if len(chips) == 0 {
+				continue
+			}
+			cur := s.focusedIdx()
+			next := chips[0].idx
+			if cur >= 0 {
+				next = -1
+				for k, c := range chips {
+					if c.idx == cur && k+1 < len(chips) {
+						next = chips[k+1].idx
+						break
+					}
+				}
+			}
+			s.setAgentFocus(next)
+			m.convCount = -1
+			return true
+		}
+		return false
+	}
+	return false
 }
 
 // toggleCollapseLast folds/unfolds the most recent assistant turn card — the
@@ -1431,11 +1502,25 @@ func (m *Model) turnAtLine(line int) (msgIdx int, ok bool) {
 // detail lines or prose below a step must not toggle it.
 func (m *Model) stepAtLine(line int) (msgIdx, stepIdx int, ok bool) {
 	for i := range m.stepLineIndex {
-		if m.stepLineIndex[i].line > line {
+		r := m.stepLineIndex[i]
+		if r.line > line {
 			break
 		}
-		if m.stepLineIndex[i].line == line {
-			return m.stepLineIndex[i].msgIdx, m.stepLineIndex[i].stepIdx, true
+		if r.line == line && r.x1 <= r.x0 {
+			return r.msgIdx, r.stepIdx, true
+		}
+	}
+	return
+}
+
+func (m *Model) chipAt(line, x int) (msgIdx, stepIdx, agentIdx int, ok bool) {
+	for i := range m.stepLineIndex {
+		r := m.stepLineIndex[i]
+		if r.line != line || r.x1 <= r.x0 {
+			continue
+		}
+		if x >= r.x0 && x < r.x1 {
+			return r.msgIdx, r.stepIdx, r.agentIdx, true
 		}
 	}
 	return
