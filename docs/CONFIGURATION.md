@@ -52,13 +52,13 @@ left off unless a flag or `BODEK_THEME` overrides it.
 | `BODEK_CONFIG` | settings path | Alternative path for the settings file (used by tests and shared-dotfile setups). |
 | `NO_COLOR` | all rendering | Any non-empty value degrades the color profile to plain text in every mode — standard nocolor.org semantics. |
 | `NO_MOTION` | animations | Any non-empty value replaces animated spinners/progress with single static frames. |
-| `ODEK_API_KEY` | odek (not bodek) | Read by the `odek serve` engine bodek spawns — any OpenAI-compatible provider key. |
+| `DEEPSEEK_API_KEY` / `OPENAI_API_KEY` / `ZAI_API_KEY` / … | odek (not bodek) | Provider keys read by the `odek serve` engine bodek spawns. Set `ODEK_PROVIDER` to match. `ODEK_API_KEY` is a v1 selected-provider override only. |
 
 ## odek-side configuration
 
 Everything the agent does is configured on the odek side
-(`~/.odek/config.json` → `./odek.json` → `ODEK_*` env vars): model, base
-URL, API keys, MCP servers, memory, skills, sandbox. bodek inherits it
+(`~/.odek/config.json` → `./odek.json` → `ODEK_*` env vars): provider, model,
+provider keys, MCP servers, memory, skills, sandbox. bodek inherits it
 unchanged — see the
 [odek repository](https://github.com/BackendStack21/odek) for the full
 server configuration reference.

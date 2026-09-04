@@ -28,8 +28,8 @@ behaviour (tools, danger gating, sandbox, skills, memory, sessions) comes from
 go install github.com/BackendStack21/odek/cmd/odek@latest
 go install github.com/BackendStack21/bodek/cmd/bodek@latest
 
-# 2 · Provide an LLM key (any OpenAI-compatible provider)
-export ODEK_API_KEY=<your-key>
+# 2 · Provide an LLM key (odek v2: provider env key)
+export DEEPSEEK_API_KEY=<your-key>
 
 # 3 · Chat
 bodek
@@ -75,7 +75,7 @@ bodek reuses that exact protocol from the terminal, which means:
 
 **Prerequisite:** bodek is only the front-end — you also need the `odek`
 engine. See [odek's install instructions](https://github.com/BackendStack21/odek)
-(any OpenAI-compatible provider key via `ODEK_API_KEY`).
+(provider env key such as `DEEPSEEK_API_KEY` / `ZAI_API_KEY` — see odek's [PROVIDERS.md](https://github.com/BackendStack21/odek/blob/main/docs/PROVIDERS.md)).
 
 ### Prebuilt binaries
 
@@ -105,8 +105,8 @@ releases page and put `bodek.exe` on your `PATH`.
 go install github.com/BackendStack21/odek/cmd/odek@latest
 go install github.com/BackendStack21/bodek/cmd/bodek@latest
 
-# Provide an LLM key (any OpenAI-compatible provider)
-export ODEK_API_KEY=<your-key>
+# Provide an LLM key (odek v2: provider env key)
+export DEEPSEEK_API_KEY=<your-key>
 
 bodek
 ```
