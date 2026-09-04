@@ -76,6 +76,21 @@ func TestToolNameWireSanitized(t *testing.T) {
 	}
 }
 
+// tool_call stores collapse(name); tool_result must compare the same way
+// or a padded/hostile wire name never completes the step.
+func TestToolResultMatchesCollapsedName(t *testing.T) {
+	m := newTestModel()
+	busyTurn(m)
+	m.handleEvent(client.Event{Type: "tool_call", Name: "  shell  ", Data: `{"command":"ls"}`})
+	if len(m.msgs[1].steps) != 1 || m.msgs[1].steps[0].name != "shell" {
+		t.Fatalf("collapsed step name = %+v", m.msgs[1].steps)
+	}
+	m.handleEvent(client.Event{Type: "tool_result", Name: "  shell  ", Data: "ok"})
+	if !m.msgs[1].steps[0].done {
+		t.Fatal("tool_result did not complete the step — name match ignored collapse()")
+	}
+}
+
 func TestErrorMarkerSanitized(t *testing.T) {
 	m := newTestModel()
 	m.msgs = append(m.msgs, message{role: roleAsst, streaming: true})

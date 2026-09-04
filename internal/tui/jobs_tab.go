@@ -103,6 +103,15 @@ func (m *Model) kickJobsFetch() tea.Cmd {
 	return m.fetchJobs()
 }
 
+// resetJobsState drops the snapshot and the watcher diff map so the next
+// applyJobs re-baselines silently. Jobs are session-scoped: a switch,
+// resume, or /new must not treat the next session's pre-existing jobs as
+// fresh starts, nor keep the previous session's rows on the tab.
+func (m *Model) resetJobsState() {
+	m.jobs = nil
+	m.jobsPrev = nil
+}
+
 // applyJobs stores a snapshot; watcher diffs become alert-tier notes — a
 // finished job is actionable, not housekeeping — and terminal transitions
 // fire the attention layer (bell / OSC 9). The first successful snapshot

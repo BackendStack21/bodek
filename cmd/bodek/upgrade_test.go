@@ -163,6 +163,24 @@ func TestUpgradeAlreadyUpToDate(t *testing.T) {
 	}
 }
 
+func TestUpgradeSkipsWhenLocalIsNewer(t *testing.T) {
+	setVersion(t, "99.0.0")
+	assetName := archiveName("0.0.1", runtime.GOOS, runtime.GOARCH)
+	srv := upgradeServer(t, "v0.0.1", assetName, buildTarGz(t, "bodek", []byte("older")), false)
+	exe := installFake(t, []byte("current bodek"))
+
+	var out bytes.Buffer
+	if err := upgrade(context.Background(), srv.Client(), srv.URL+"/latest", exe, &out); err != nil {
+		t.Fatalf("upgrade returned error: %v", err)
+	}
+	if !strings.Contains(out.String(), "already up to date") {
+		t.Errorf("expected already-up-to-date skip, got %q", out.String())
+	}
+	if got := readFile(t, exe); string(got) != "current bodek" {
+		t.Errorf("newer local build must not be downgraded, got %q", got)
+	}
+}
+
 func TestUpgradeFromDevBuild(t *testing.T) {
 	setVersion(t, "")
 	assetName := archiveName("9.9.9", runtime.GOOS, runtime.GOARCH)

@@ -183,3 +183,26 @@ func TestDoRequestBuildError(t *testing.T) {
 		t.Error("expected request-build error")
 	}
 }
+
+func TestDeleteMemoryFactSetsJSONContentType(t *testing.T) {
+	var gotType string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotType = r.Header.Get("Content-Type")
+		if r.Method != http.MethodDelete || r.URL.Path != "/api/memory/facts" {
+			t.Errorf("unexpected %s %s", r.Method, r.URL.Path)
+		}
+		if gotType != "application/json" {
+			w.WriteHeader(http.StatusUnsupportedMediaType)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer srv.Close()
+	c := &Client{baseURL: srv.URL, http: &http.Client{Timeout: time.Second}}
+	if err := c.DeleteMemoryFact("user", "old fact"); err != nil {
+		t.Fatalf("DeleteMemoryFact: %v", err)
+	}
+	if gotType != "application/json" {
+		t.Errorf("Content-Type = %q, want application/json", gotType)
+	}
+}

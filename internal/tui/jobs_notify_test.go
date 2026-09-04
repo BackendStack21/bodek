@@ -103,3 +103,43 @@ func TestJobAttentionKinds(t *testing.T) {
 		t.Errorf("notify disabled but OSC 9 emitted: %q", a.sequence())
 	}
 }
+
+// The first snapshot after attach/resume baselines silently. A session
+// switch that keeps the previous session's jobsPrev treats every job on
+// the new session as a fresh start.
+func TestSessionSwitchResetsJobsBaseline(t *testing.T) {
+	m := newTestModel()
+	m.sessionID = "s1"
+	m.applyJobs([]client.Job{{ID: "bg_old", Status: "running", Command: "sleep 99"}}, nil)
+	if m.jobsPrev == nil {
+		t.Fatal("precondition: first snapshot must seed jobsPrev")
+	}
+
+	m.handleEvent(client.Event{Type: "session", SessionID: "s2"})
+	m.applyJobs([]client.Job{{ID: "bg_new", Status: "running", Command: "make test"}}, nil)
+
+	for _, n := range m.notices {
+		if strings.Contains(n, "bg_new") {
+			t.Fatalf("pre-existing job notified on session switch: %q", n)
+		}
+	}
+}
+
+func TestSessionResumeResetsJobsBaseline(t *testing.T) {
+	m := newTestModel()
+	m.cl = &client.Client{}
+	m.sessionID = "s1"
+	m.applyJobs([]client.Job{{ID: "bg_old", Status: "running", Command: "sleep 99"}}, nil)
+
+	_ = m.handleSessionDetail(sessionDetailMsg{sess: client.Session{ID: "s2"}, token: "a2"})
+	m.applyJobs([]client.Job{{ID: "bg_new", Status: "running", Command: "make test"}}, nil)
+
+	for _, n := range m.notices {
+		if strings.Contains(n, "bg_new") {
+			t.Fatalf("pre-existing job notified on session resume: %q", n)
+		}
+	}
+	if len(m.jobs) != 1 || m.jobs[0].ID != "bg_new" {
+		t.Fatalf("resume must not keep the previous session's job rows: %+v", m.jobs)
+	}
+}
