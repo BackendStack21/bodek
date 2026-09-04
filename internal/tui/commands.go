@@ -428,7 +428,7 @@ func (m *Model) statsBody() string {
 
 		rows = []row{
 			{"⌂", th.statCtx, "context", ctxVal},
-			{"⎇", th.statCtx, "output", th.statsValue.Render(human(m.sessOutTok))},
+			{"↳", th.statCtx, "output", th.statsValue.Render(human(m.sessOutTok))},
 			{"↻", th.statsLabel, "turns", th.statsValue.Render(fmt.Sprintf("%d", len(m.turnStats)))},
 			{"⚒", th.statTool, "tools", th.statsValue.Render(fmt.Sprintf("%d", m.toolTotal))},
 			{"⚡", th.statTime, "latency", latVal},

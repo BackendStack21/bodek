@@ -67,7 +67,7 @@ func TestTurnStatLine(t *testing.T) {
 	}
 
 	out := plain(m.View())
-	for _, want := range []string{"⚡ 2.5s", "⌂ 1.2k", "⎇ 340", "⚒ 1", "✳"} {
+	for _, want := range []string{"⚡ 2.5s", "⌂ 1.2k", "↳ 340", "⚒ 1", "✳"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("stat line missing %q in:\n%s", want, out)
 		}
@@ -238,11 +238,11 @@ func TestContextGauge(t *testing.T) {
 		}
 	}
 	// The gauge is the header's sole token metric: the cumulative session
-	// summary (∑ ⌂ … · ⎇ …) lives in /stats and the per-turn stat line, not
+	// summary (∑ ⌂ … · ↳ …) lives in /stats and the per-turn stat line, not
 	// here — a fresh session must not flash placeholder zeros in the bar.
 	m.sessCtxTok, m.sessOutTok = 0, 0
 	out = plain(m.header())
-	for _, banned := range []string{"∑", "⌂ 0", "⎇ 0"} {
+	for _, banned := range []string{"∑", "⌂ 0", "↳ 0"} {
 		if strings.Contains(out, banned) {
 			t.Errorf("header still carries session summary %q:\n%s", banned, out)
 		}
@@ -370,7 +370,7 @@ func TestStatLineWidthDegradation(t *testing.T) {
 	// At a comfortable width all three essentials survive.
 	m := newTestModel()
 	m.resize(80, 20)
-	if line := plain(m.statLine(ts)); !strings.Contains(line, "⌂") || !strings.Contains(line, "⎇") {
+	if line := plain(m.statLine(ts)); !strings.Contains(line, "⌂") || !strings.Contains(line, "↳") {
 		t.Errorf("essentials missing at width 80: %q", line)
 	}
 }

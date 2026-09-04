@@ -28,8 +28,8 @@ behaviour (tools, danger gating, sandbox, skills, memory, sessions) comes from
 go install github.com/BackendStack21/odek/cmd/odek@latest
 go install github.com/BackendStack21/bodek/cmd/bodek@latest
 
-# 2 · Provide an LLM key (any OpenAI-compatible provider)
-export ODEK_API_KEY=<your-key>
+# 2 · Provide an LLM key (odek v2: provider env key)
+export DEEPSEEK_API_KEY=<your-key>
 
 # 3 · Chat
 bodek
@@ -75,7 +75,7 @@ bodek reuses that exact protocol from the terminal, which means:
 
 **Prerequisite:** bodek is only the front-end — you also need the `odek`
 engine. See [odek's install instructions](https://github.com/BackendStack21/odek)
-(any OpenAI-compatible provider key via `ODEK_API_KEY`).
+(provider env key such as `DEEPSEEK_API_KEY` / `ZAI_API_KEY` — see odek's [PROVIDERS.md](https://github.com/BackendStack21/odek/blob/main/docs/PROVIDERS.md)).
 
 ### Prebuilt binaries
 
@@ -105,8 +105,8 @@ releases page and put `bodek.exe` on your `PATH`.
 go install github.com/BackendStack21/odek/cmd/odek@latest
 go install github.com/BackendStack21/bodek/cmd/bodek@latest
 
-# Provide an LLM key (any OpenAI-compatible provider)
-export ODEK_API_KEY=<your-key>
+# Provide an LLM key (odek v2: provider env key)
+export DEEPSEEK_API_KEY=<your-key>
 
 bodek
 ```
@@ -281,7 +281,9 @@ own front-end settings are separate; see [Configuration](#configuration).
   `plan N/M` and `● N jobs` / `✗ job` instruments ride the same bar when
   a plan or background job is active.
 - **Per-turn footers & `/stats`** — token counts and latency ride every turn
-  head; `/stats` opens a sheet that rolls up the session (cost, cache, context).
+  head (`⚡` latency, `⌂` context, `↳` output tokens, `⚒` tools); `/stats`
+  opens a sheet that rolls up the session (cost, cache, context). The `⎇`
+  glyph is reserved for git commits in the transcript.
 - **Cost tracking** — when odek has token prices configured, the header shows
   the running session spend, each turn footer its estimated cost, and
   `/stats` adds the `max_cost_usd` cap when set; hidden entirely otherwise.
