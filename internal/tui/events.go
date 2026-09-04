@@ -141,7 +141,7 @@ func (m *Model) handleEvent(ev client.Event) (tea.Model, tea.Cmd) {
 				if steps[j].name == nm && !steps[j].done {
 					steps[j].done = true
 					steps[j].result = resultPreview(ev.Data)
-					steps[j].isErr = looksLikeError(steps[j].result)
+					steps[j].isErr = looksLikeError(steps[j].result) || hasFailedExit(ev.Data)
 					if steps[j].isErr && !steps[j].expanded {
 						// A failing step is why anyone expands anything —
 						// unfold it once so the diagnosis is on screen
@@ -552,20 +552,24 @@ func eventTail(ev client.Event) string {
 }
 
 // normalizeToolResult prepares raw tool output for DISPLAY ONLY — the stored
-// and forwarded data is never touched. It handles two render-noise shapes:
+// and forwarded data is never touched. It handles three render-noise shapes:
 //  1. JSON envelopes (read_file, search_files, …): Go's encoding/json
 //     HTML-escapes <, >, & in string values, so the odek prompt-injection
 //     wrapper shows up as <untrusted_content_… — the envelope is
 //     decoded and the real content rendered, with remaining scalar metadata
 //     as a one-line footer.
-//  2. untrusted_content wrappers, folded into a "⚠ untrusted: <source>"
-//     badge line. Both the literal tag form (live stream events) and the
+//  2. parallel-tool envelopes (parallel_shell, delegate_tasks): a top-level
+//     "results" array is extracted item by item — each item renders only its
+//     display body (stdout, stderr, non-zero exit codes); command echoes,
+//     indexes, and durations stay hidden.
+//  3. untrusted_content wrappers, folded away entirely
+//     body renders. Both the literal tag form (live stream events) and the
 //     < escaped form (undecoded JSON envelopes) are recognized.
 //
 // Fail-safe: anything that does not match a known shape exactly is returned
 // unchanged — normalization is never lossy.
 func normalizeToolResult(data string) string {
-	return foldUntrustedWrappers(decodeToolEnvelope(data))
+	return foldUntrustedWrappers(decodeToolEnvelope(decodeResultsArray(data)))
 }
 
 // decodeToolEnvelope unwraps a JSON object with a string "content" field,
@@ -616,25 +620,128 @@ func decodeToolEnvelope(data string) string {
 	return content + "\n(" + strings.Join(parts, " · ") + ")"
 }
 
+// resultsItemFields lists, in priority order, the per-item string fields a
+// parallel-tool result may carry; the first non-empty one is the item's
+// display body (shell stdout, delegate headline, …).
+var resultsItemFields = []string{
+	"stdout", "content", "result", "output", "text", "headline", "summary",
+}
+
+// decodeResultsArray unwraps a parallel-tool envelope: a JSON object whose
+// "results" field is an array of per-call objects (odek parallel_shell and
+// delegate_tasks shapes). Each item renders as its display body plus stderr
+// and non-zero exit-code lines; items are labelled [1], [2], … only when
+// there are several. Metadata beside "results" is ignored — the items are
+// the payload. Any foreign shape — empty arrays, non-object items, items
+// without a known display field — is returned unchanged: never lossy.
+func decodeResultsArray(data string) string {
+	t := strings.TrimSpace(data)
+	if len(t) < 2 || t[0] != '{' {
+		return data
+	}
+	var env map[string]any
+	if err := json.Unmarshal([]byte(t), &env); err != nil {
+		return data
+	}
+	raw, ok := env["results"].([]any)
+	if !ok || len(raw) == 0 {
+		return data
+	}
+	items := make([]string, 0, len(raw))
+	for _, r := range raw {
+		obj, ok := r.(map[string]any)
+		if !ok {
+			return data
+		}
+		var body string
+		known := false
+		for _, k := range resultsItemFields {
+			v, ok := obj[k]
+			if !ok {
+				continue
+			}
+			known = true
+			if s, ok := v.(string); ok && s != "" {
+				body = s
+				break
+			}
+		}
+		if !known {
+			return data
+		}
+		if body != "" {
+			body = decodeToolEnvelope(body) // item stdout may itself be an envelope
+		}
+		parts := make([]string, 0, 3)
+		if f, ok := obj["exit_code"].(float64); ok && f != 0 {
+			// Leading line, not a suffix: looksLikeError keys off the "exit
+			// status" prefix, so failed items tint red and auto-expand.
+			parts = append(parts, "exit status "+strconv.Itoa(int(f)))
+		}
+		if body != "" {
+			parts = append(parts, body)
+		}
+		if s, ok := obj["stderr"].(string); ok && s != "" {
+			parts = append(parts, "stderr: "+s)
+		}
+		if len(parts) == 0 {
+			parts = append(parts, "(no output)")
+		}
+		items = append(items, strings.Join(parts, "\n"))
+	}
+	if len(items) == 1 {
+		return items[0]
+	}
+	var b strings.Builder
+	for i, it := range items {
+		if i > 0 {
+			b.WriteString("\n\n")
+		}
+		b.WriteString("[")
+		b.WriteString(strconv.Itoa(i + 1))
+		b.WriteString("] ")
+		b.WriteString(it)
+	}
+	return b.String()
+}
+
+// hasFailedExit reports whether a raw parallel-tool envelope carries any
+// non-zero exit_code — the extracted display text can otherwise read as
+// innocuous and slip past looksLikeError.
+func hasFailedExit(data string) bool {
+	t := strings.TrimSpace(data)
+	if len(t) < 2 || t[0] != '{' {
+		return false
+	}
+	var env struct {
+		Results []struct {
+			ExitCode int `json:"exit_code"`
+		} `json:"results"`
+	}
+	if err := json.Unmarshal([]byte(t), &env); err != nil {
+		return false
+	}
+	for _, r := range env.Results {
+		if r.ExitCode != 0 {
+			return true
+		}
+	}
+	return false
+}
+
 // untrustedWrapperRe matches an odek prompt-injection wrapper in either its
 // literal form or the < escaped form produced by encoding/json.
 // Capture groups: 1 = source attribute, 2 = wrapped body.
 var untrustedWrapperRe = regexp.MustCompile(
 	`(?s)(?:<|\\u003c)untrusted_content_[0-9a-f]+ source=\\?"([^"]*)\\?"(?:>|\\u003e)\n?(.*?)\n?(?:<|\\u003c)/untrusted_content_[0-9a-f]+(?:>|\\u003e)`)
 
-// foldUntrustedWrappers replaces each untrusted_content wrapper with a badge
-// line naming the source, followed by the wrapped body.
+// foldUntrustedWrappers strips each untrusted_content wrapper with the wrapped body only — display stays content-only under the peek framing.
 func foldUntrustedWrappers(s string) string {
 	if !strings.Contains(s, "untrusted_content_") {
 		return s
 	}
 	return untrustedWrapperRe.ReplaceAllStringFunc(s, func(m string) string {
-		sub := untrustedWrapperRe.FindStringSubmatch(m)
-		badge := "⚠ untrusted: " + sub[1]
-		if body := sub[2]; body != "" {
-			return badge + "\n" + body
-		}
-		return badge
+		return untrustedWrapperRe.FindStringSubmatch(m)[2]
 	})
 }
 
