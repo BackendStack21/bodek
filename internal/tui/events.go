@@ -43,6 +43,7 @@ func (m *Model) handleEvent(ev client.Event) (tea.Model, tea.Cmd) {
 		}
 		if prevSession != "" && ev.SessionID != prevSession {
 			m.planResetPending = true // switch/attach: drop + refetch at the tail
+			m.resetJobsState()        // jobs are session-scoped; re-baseline on the next snapshot
 		}
 		if ev.Model != "" {
 			m.model = collapse(ev.Model)
@@ -131,10 +132,11 @@ func (m *Model) handleEvent(ev client.Event) (tea.Model, tea.Cmd) {
 		m.status = "running " + nm
 
 	case "tool_result":
+		nm := collapse(ev.Name) // same collapse() tool_call stored the step under
 		if i := m.cur(); i >= 0 {
 			steps := m.msgs[i].steps
 			for j := len(steps) - 1; j >= 0; j-- {
-				if steps[j].name == ev.Name && !steps[j].done {
+				if steps[j].name == nm && !steps[j].done {
 					steps[j].done = true
 					steps[j].result = resultPreview(ev.Data)
 					steps[j].isErr = looksLikeError(steps[j].result)
@@ -390,6 +392,12 @@ func (m *Model) handleEvent(ev client.Event) (tea.Model, tea.Cmd) {
 		m.renderPending = false
 		m.cancelAck = false // stale: the error it muted died with the socket
 		m.skillSuggest = nil
+		// Pending approvals die with the socket — the same contract /new
+		// documents. Leaving them armed captures the keyboard (and the
+		// footer) so ⏎ retry never runs.
+		m.approvals = nil
+		m.apprDeadlines = nil
+		m.resetApprovalInput()
 		if m.shutdownReq {
 			// The user asked for this drop: no reconnect spiral, just the
 			// fresh-start affordance (⏎ respawns in spawn mode).

@@ -40,8 +40,11 @@ func upgrade(ctx context.Context, client *http.Client, apiURL, exePath string, s
 	}
 	latest := strings.TrimPrefix(tag, "v")
 	current := strings.TrimPrefix(currentVersion(), "v")
-	if current == latest {
-		_, _ = fmt.Fprintf(stdout, "bodek is already up to date (v%s)\n", latest)
+	// Dev/unstamped builds always fetch. Anything else only upgrades when
+	// GitHub is actually newer — equality used to downgrade local builds
+	// stamped ahead of the latest release.
+	if current != "dev" && !update.Newer(latest, current) {
+		_, _ = fmt.Fprintf(stdout, "bodek is already up to date (v%s)\n", current)
 		return nil
 	}
 	if current == "dev" {

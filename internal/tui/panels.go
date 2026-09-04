@@ -1023,6 +1023,7 @@ func (m *Model) handleSessionDetail(msg sessionDetailMsg) tea.Cmd {
 	// transcript bypasses the WS trigger, and the adopt's session event
 	// carries the already-swapped id (no switch delta → no reset).
 	m.resetPlanState()
+	m.resetJobsState() // jobs are session-scoped; the next snapshot re-baselines
 	m.replayTranscript(msg.sess.Messages)
 	note := m.transientNoteCmd("resumed session " + shortID(msg.sess.ID))
 	m.closePanel()
@@ -1158,7 +1159,7 @@ func (m *Model) replayTranscript(msgs []client.SessionMessage) {
 			}
 			if !ok {
 				for j := len(cur.steps) - 1; j >= 0; j-- {
-					if cur.steps[j].name == mm.Name && !cur.steps[j].done {
+					if cur.steps[j].name == collapse(mm.Name) && !cur.steps[j].done {
 						idx, ok = j, true
 						break
 					}

@@ -53,6 +53,7 @@ func (c *Client) DeleteMemoryFact(target, oldText string) error {
 	if err != nil {
 		return err
 	}
+	req.Header.Set("Content-Type", "application/json")
 	c.authHeaders(req, "")
 	resp, err := c.http.Do(req)
 	if err != nil {

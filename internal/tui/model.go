@@ -970,6 +970,7 @@ func (m *Model) startFreshSession() tea.Cmd {
 	m.authToken = ""
 	m.pendModel = m.model // the new session re-asserts the active model
 	m.resetPlanState()
+	m.resetJobsState()
 	m.freshStart = true
 	cl := m.cl
 	return func() tea.Msg {

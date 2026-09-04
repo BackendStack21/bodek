@@ -195,3 +195,32 @@ func TestDisconnectFinalizesTurn(t *testing.T) {
 		t.Errorf("empty turn marker = %q", got)
 	}
 }
+
+// Approvals die with the socket — the same contract /new already documents.
+// Leaving the queue armed after a drop captures the keyboard (and the
+// footer) so ⏎ retry never runs.
+func TestDisconnectClearsStaleApprovals(t *testing.T) {
+	m := newTestModel()
+	m.opts.Reconnect = func() (*client.Client, error) { return nil, errors.New("down") }
+	m.handleEvent(client.Event{Type: "approval_request", ID: "apr-1",
+		Risk: "shell_exec", Command: "rm x"})
+	if m.curApproval() == nil {
+		t.Fatal("precondition: approval_request must arm the queue")
+	}
+
+	m.handleEvent(client.Event{Type: client.EventDisconnected})
+
+	if m.curApproval() != nil {
+		t.Fatal("disconnect must drop stale approvals")
+	}
+	if len(m.apprDeadlines) != 0 {
+		t.Fatalf("disconnect left %d approval deadlines", len(m.apprDeadlines))
+	}
+	foot := plain(m.footer())
+	if strings.Contains(foot, "pprove") || strings.Contains(foot, "eny") {
+		t.Errorf("footer still shows approval hints after disconnect: %q", foot)
+	}
+	if !strings.Contains(foot, "retry") {
+		t.Errorf("footer missing ⏎ retry after disconnect: %q", foot)
+	}
+}
