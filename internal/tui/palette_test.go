@@ -7,6 +7,35 @@ import (
 	"github.com/BackendStack21/bodek/internal/client"
 )
 
+// TestPaletteCoversChordOnlyActions: every chord-only affordance needs a
+// palette row — the palette is the single grammar, chords are the shortcut.
+func TestPaletteCoversChordOnlyActions(t *testing.T) {
+	m := wired(t)
+	_, cmd := m.Update(key("ctrl+k"))
+	m.Update(exec(cmd)) // sessions fetch lands
+
+	want := []struct{ title, hint string }{
+		{"find in transcript", "alt+f"},
+		{"fold the latest turn", "^F"},
+	}
+	for _, w := range want {
+		found := false
+		for _, e := range m.pal.all {
+			if e.title != w.title {
+				continue
+			}
+			found = true
+			if e.hint != w.hint {
+				t.Errorf("entry %q hint = %q, want %q", w.title, e.hint, w.hint)
+			}
+			e.run(m) // must execute without panic
+		}
+		if !found {
+			t.Errorf("palette missing the %q entry", w.title)
+		}
+	}
+}
+
 func TestFuzzyScore(t *testing.T) {
 	cases := []struct {
 		query, s string

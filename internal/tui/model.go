@@ -126,6 +126,10 @@ type Options struct {
 	// settings file — the same order /theme persists into.
 	Theme string
 
+	// Verbosity names the startup noise dial (quiet, normal, detailed).
+	// Empty keeps the default: normal.
+	Verbosity string
+
 	// OnThemeChange persists a runtime /theme switch. Nil (tests, embedded
 	// uses) skips persistence; an error surfaces as a note while the
 	// switch still applies for this run.
@@ -168,23 +172,26 @@ type Model struct {
 	lastTool  string
 	lastArg   string
 
-	approvals     []client.Event // pending approval queue — odek runs parallel tools, so requests FIFO
-	apprDeadlines []time.Time    // per-approval expiry, stamped on arrival (parallel to approvals)
-	apprSel       int            // highlighted option in the approval panel
-	apprExpanded  bool           // tab: show the full command/description text
-	apprTyped     string         // friction mode: the literal word being typed ("approve")
-	ac            autocomplete   // @-reference completion state
-	pal           palState       // ⌘K command palette — the navigation spine
-	skillSuggest  *client.Event  // pending skill suggestion card (skill_event "suggested")
-	queue         []string       // prompts typed mid-turn, sent when the turn ends
-	mouse         bool           // the terminal reports mouse events (--mouse)
-	qfocus        bool           // the queue strip owns the keyboard (ctrl+q)
-	qsel          int            // selected strip row while qfocus
-	qarm          int            // armed-for-delete row while qfocus (-1 = none)
-	lastPrompt    string         // most recent prompt sent — /retry re-sends it
-	homePrompt    string         // last user prompt, kept across ^L for the session home
-	homeReceipt   string         // last turn's coding receipt, shown on the cleared home
-	focusIdx      int            // transcript cursor: turn head alt+↑/↓ last jumped to (-1 none)
+	approvals     []client.Event   // pending approval queue — odek runs parallel tools, so requests FIFO
+	apprDeadlines []time.Time      // per-approval expiry, stamped on arrival (parallel to approvals)
+	apprSel       int              // highlighted option in the approval panel
+	apprExpanded  bool             // tab: show the full command/description text
+	apprTyped     string           // friction mode: the literal word being typed ("approve")
+	ac            autocomplete     // @-reference completion state
+	pal           palState         // ⌘K command palette — the navigation spine
+	skillSuggest  *client.Event    // pending skill suggestion card (skill_event "suggested")
+	queue         []string         // prompts typed mid-turn, sent when the turn ends
+	mouse         bool             // the terminal reports mouse events (--mouse)
+	qfocus        bool             // the queue strip owns the keyboard (ctrl+q)
+	qsel          int              // selected strip row while qfocus
+	qarm          int              // armed-for-delete row while qfocus (-1 = none)
+	lastPrompt    string           // most recent prompt sent — /retry re-sends it
+	homePrompt    string           // last user prompt, kept across ^L for the session home
+	homeReceipt   string           // last turn's coding receipt, shown on the cleared home
+	homeSess      []client.Session // recent sessions for the home dashboard
+	homeSessDone  bool             // the current clear's fetch already ran
+	homeSessGen   int              // bumped per clear; stale fetches dropped
+	focusIdx      int              // transcript cursor: turn head alt+↑/↓ last jumped to (-1 none)
 
 	history   []string // submitted prompts, newest last (recalled with ↑)
 	histNav   bool     // true while ^P/^N is walking the history
@@ -300,11 +307,13 @@ type Model struct {
 	planReqSeq       int                 // fetch request sequence
 	planPollSeq      int                 // armed poll tick sequence
 
-	status    string
-	notices   []string
-	noticeExp []time.Time // parallel to notices; when each one fades
-	disconn   bool
-	quitting  bool
+	status     string
+	notices    []string
+	noticeExp  []time.Time     // parallel to notices; when each one fades
+	hintsShown map[string]bool // JIT hints already delivered (hints.go)
+	verbosity  int             // noise dial: 0 normal · 1 quiet · 2 detailed
+	disconn    bool
+	quitting   bool
 
 	gradRule  string // cached full-width gradient rule
 	gradRuleW int
@@ -372,6 +381,8 @@ func New(cl *client.Client, opts Options) *Model {
 		sandbox:      opts.Sandbox,
 		mouse:        opts.Mouse,
 		thinkOn:      false,
+		verbosity:    verbosityFrom(opts.Verbosity),
+		expandAll:    verbosityFrom(opts.Verbosity) == verbosityDetailed,
 		status:       "ready",
 		odekVersion:  opts.OdekVersion,
 		bodekVersion: opts.Version,
@@ -524,6 +535,10 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case palSessionsMsg:
 		return m, m.handlePalSessions(msg)
+
+	case homeSessionsMsg:
+		m.handleHomeSessions(msg)
+		return m, nil
 
 	case runsMsg:
 		if m.panel == panelRuns {
@@ -922,10 +937,12 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case "tab":
 		// Cycle the latest swarm's focused chip when one is on screen;
-		// otherwise open/close the most recent reasoning accordion.
+		// otherwise open/close the most recent reasoning accordion; with
+		// neither, toggle the latest step (keyboard parity for
+		// click-to-expand).
 		if !m.ac.open {
-			if !m.cycleAgentFocus() {
-				m.toggleThinkingLast()
+			if !m.cycleAgentFocus() && !m.toggleThinkingLast() {
+				m.toggleLastStep()
 			}
 			m.refresh()
 		}
@@ -956,7 +973,7 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 // /stats, the header gauge, and the footer start fresh after a clear instead
 // of reporting turns, tools, tokens, and age from before it (mirrors the
 // reset done when resuming a session).
-func (m *Model) clearConversation() {
+func (m *Model) clearConversation() tea.Cmd {
 	captureHome(m)
 	m.msgs = nil
 	m.curIdx = -1
@@ -974,6 +991,13 @@ func (m *Model) clearConversation() {
 	m.runCtxCum = 0
 	m.lastLatency = 0
 	m.refresh()
+	// Fresh dashboard snapshot per clear: drop the stale rows, re-arm the
+	// once-guard, and bump the generation so an in-flight older fetch can
+	// never stamp this clear's home.
+	m.homeSess = nil
+	m.homeSessDone = false
+	m.homeSessGen++
+	return m.fetchHomeSessions()
 }
 
 // startFreshSession tears down the current conversation AND its server-side
@@ -984,7 +1008,7 @@ func (m *Model) clearConversation() {
 // (new ID, empty history and memory buffer) on the connection's first prompt.
 // The old session stays on disk, resumable via /sessions.
 func (m *Model) startFreshSession() tea.Cmd {
-	m.clearConversation()
+	homeFetch := m.clearConversation()
 	m.sessionID = ""
 	m.authToken = ""
 	m.pendModel = m.model // the new session re-asserts the active model
@@ -994,12 +1018,12 @@ func (m *Model) startFreshSession() tea.Cmd {
 	m.freshStart = true
 	m.refresh() // drop the session-home snapshot clearConversation just painted
 	cl := m.cl
-	return func() tea.Msg {
+	return tea.Batch(homeFetch, func() tea.Msg {
 		if cl != nil {
 			_ = cl.Close() // the drop runs the standard disconnect→reconnect flow
 		}
 		return nil
-	}
+	})
 }
 
 // curApproval returns the head of the approval queue, or nil when empty.
@@ -1395,8 +1419,9 @@ func (m *Model) toggleCollapseAt(msgIdx int) {
 }
 
 // toggleThinkingLast opens/closes the most recent reasoning accordion block
-// (tab): manual opens persist across the renderer's auto-collapse.
-func (m *Model) toggleThinkingLast() {
+// (tab): manual opens persist across the renderer's auto-collapse. Reports
+// whether a block was found, so tab can fall through to the last step.
+func (m *Model) toggleThinkingLast() bool {
 	for i := len(m.msgs) - 1; i >= 0; i-- {
 		if m.msgs[i].role != roleAsst {
 			continue
@@ -1405,11 +1430,31 @@ func (m *Model) toggleThinkingLast() {
 			if m.msgs[i].items[j].thinking && strings.TrimSpace(m.msgs[i].items[j].text) != "" {
 				m.msgs[i].items[j].open = !m.msgs[i].items[j].open
 				m.convCount = -1
-				return
+				return true
 			}
 		}
-		return
+		return false
 	}
+	return false
+}
+
+// toggleLastStep flips the most recent step's expansion — tab's final
+// fallback, keyboard parity for click-to-expand aimed at the step the user
+// just watched finish. Same latest-assistant-message scope as
+// toggleThinkingLast; false when there is no step to toggle.
+func (m *Model) toggleLastStep() bool {
+	for i := len(m.msgs) - 1; i >= 0; i-- {
+		if m.msgs[i].role != roleAsst {
+			continue
+		}
+		if n := len(m.msgs[i].steps); n > 0 {
+			m.msgs[i].steps[n-1].expanded = !m.msgs[i].steps[n-1].expanded
+			m.convCount = -1
+			return true
+		}
+		return false
+	}
+	return false
 }
 
 // jumpTurn scrolls to the previous ([) or next (]) assistant turn head, so

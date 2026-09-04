@@ -101,8 +101,13 @@ func TestStopAck(t *testing.T) {
 	m := stateFixture(t)
 	m.handleEvent(client.Event{Type: "subagent_state", TaskID: "t1", TaskIdx: 0, Phase: "active", Status: "running"})
 	m.handleEvent(client.Event{Type: "subagent_cancelled", TaskID: "t1", Accepted: true})
-	if got := strings.Join(m.notices, "\n"); got != "" {
-		t.Errorf("accepted ack should stay silent, notices=%q", got)
+	// An accepted ack adds no operational note — the strip may only hold
+	// the swarm JIT hint the state frame legitimately taught.
+	for _, n := range m.notices {
+		if !isHintNote(n) {
+			t.Errorf("accepted ack should stay silent, notices=%q", m.notices)
+			break
+		}
 	}
 	m.handleEvent(client.Event{Type: "subagent_cancelled", TaskID: "t9", Accepted: false})
 	if got := strings.Join(m.notices, "\n"); !strings.Contains(got, "already finished") {

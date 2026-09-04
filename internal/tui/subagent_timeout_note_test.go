@@ -21,11 +21,19 @@ func TestSubagentTimeoutNoteIsBounded(t *testing.T) {
 	if n := len(m.notices); n == 0 {
 		t.Fatal("timeout note missing")
 	}
-	note := m.notices[len(m.notices)-1]
-	if note != "sub-agent SA1 timeout" {
-		t.Fatalf("note = %q, want %q", note, "sub-agent SA1 timeout")
+	// The strip may also carry a JIT hint from the state frame; the
+	// timeout note itself must exist verbatim, at alert tier.
+	idx := -1
+	for i, n := range m.notices {
+		if n == "sub-agent SA1 timeout" {
+			idx = i
+			break
+		}
 	}
-	if exp := m.noticeExp[len(m.noticeExp)-1]; exp.IsZero() {
+	if idx == -1 {
+		t.Fatalf("note = %q, want it to contain %q", m.notices, "sub-agent SA1 timeout")
+	}
+	if exp := m.noticeExp[idx]; exp.IsZero() {
 		t.Fatal("timeout note is sticky (zero expiry) — it would never disappear")
 	}
 	// The failure itself stays on the card's agent chip regardless.

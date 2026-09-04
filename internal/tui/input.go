@@ -196,6 +196,7 @@ func (m *Model) submit() tea.Cmd {
 		m.closeAC()
 		m.refresh()
 		m.vp.GotoBottom() // Enter means "show me the latest", even mid-turn
+		m.teach(hintQueue, "tip: ^Q manages the queue · /queue opens the full panel")
 		return m.transientNoteCmd("queued — it sends when the turn ends")
 	}
 	m.ta.Reset()

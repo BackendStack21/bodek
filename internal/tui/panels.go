@@ -75,8 +75,7 @@ func (m *Model) handleConfirmKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case confirmFactDelete:
 			return m, m.memDeleteSelected()
 		case confirmClear:
-			m.clearConversation()
-			return m, m.transientNoteCmd("conversation cleared")
+			return m, tea.Batch(m.clearConversation(), m.transientNoteCmd("conversation cleared"))
 		case confirmCancel:
 			// cancelRun self-guards: if the run settled while the gate sat
 			// armed, it degrades to the "nothing to cancel" note.
