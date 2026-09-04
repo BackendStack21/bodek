@@ -97,6 +97,9 @@ feat(tui): compact tool steps with Ctrl+E details toggle
   alongside it. `msg.content` stays the "\n\n"-joined blob of all reply
   segments (appendReply maintains it) for export, stats, and hand-built
   messages; turn markers (`**Cancelled.**` etc.) attach to the last reply.
+  Render-only layers (intent rail, always-on step peek, turn receipt, live
+  swarm band) must not reorder `items[]` — the swarm is a consecutive
+  overlay on unfinished steps and dissolves when one leftover remains.
 - Events arrive from `internal/client` already in chronological order —
   keep ingestion order-dependent and idempotent.
 - `internal/tui` is split by responsibility: `model.go` holds the core

@@ -81,7 +81,7 @@ func (m *Model) handleEvent(ev client.Event) (tea.Model, tea.Cmd) {
 				msg.items[n-1].text += sanitize(ev.Content)
 			} else {
 				msg.items = append(msg.items, turnItem{thinking: true,
-					text: sanitize(ev.Content)})
+					text: sanitize(ev.Content), started: time.Now()})
 			}
 		}
 		m.status = "thinking"
@@ -777,6 +777,9 @@ func (m *Model) closeTurn(msg *message) {
 		switch {
 		case msg.items[j].thinking:
 			thoughts = append(thoughts, msg.items[j].text)
+			if !msg.items[j].started.IsZero() && msg.items[j].dur == 0 {
+				msg.items[j].dur = time.Since(msg.items[j].started)
+			}
 			msg.items[j].open = false
 		case msg.items[j].reply:
 			msg.items[j].rendered = m.render(msg.items[j].text)

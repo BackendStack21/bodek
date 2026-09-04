@@ -512,6 +512,12 @@ func (m *Model) renderMessage(msg message, msgIdx, lineOffset int) (string, []st
 				label += "  " + s
 			}
 		}
+		if rec := formatReceipt(scanReceipt(msg)); rec != "" {
+			room := m.vp.Width - lipgloss.Width(label) - 4
+			if room > 8 {
+				label += "  " + th.statsDim.Render(truncate(rec, room))
+			}
+		}
 		if msg.collapsed {
 			return label + "\n" + th.statsDim.Render(m.collapseSummary(msg)), nil
 		}
@@ -553,22 +559,19 @@ func (m *Model) renderMessage(msg message, msgIdx, lineOffset int) (string, []st
 			prevCard = card
 			return start
 		}
-		for it := range items {
+		for it := 0; it < len(items); it++ {
 			if items[it].thinking {
 				t := strings.TrimSpace(items[it].text)
 				if t == "" {
 					continue
 				}
-				// Accordion: the live stream renders the full block
-				// (auto-follow while its turn runs); finalized turns show a
-				// capped excerpt unless the user opened the block (or ^E).
-				body := collapse(capThinkingText(t, maxThinkingLen))
-				full := msg.streaming || items[it].open || m.expandAll
-				if full {
+				// Intent rail: last two sentences (live and finalized).
+				// Manual open / ^E still unfolds the stored full block.
+				body := thinkingExcerpt(t)
+				if items[it].open || m.expandAll {
 					body = t
 				}
-				excerpt := th.thinkStyle.Width(max(m.vp.Width-4, 8)).Render("… " + body)
-				addBlock(th.asstWork.Render(excerpt), false)
+				addBlock(th.asstWork.Render(m.renderIntentRail(body, items[it], msg)), false)
 				continue
 			}
 			if items[it].reply {
@@ -586,6 +589,19 @@ func (m *Model) renderMessage(msg message, msgIdx, lineOffset int) (string, []st
 				continue
 			}
 			if items[it].stepIdx < 0 || items[it].stepIdx >= len(msg.steps) {
+				continue
+			}
+			// Parallel unfinished steps render as a swarm band that
+			// dissolves once a single leftover remains.
+			if run, ok := nextSwarm(items, msg.steps, it, msg.streaming); ok {
+				addBlock(th.asstWork.Render(th.statTool.Render(swarmLabel(run, time.Now()))), false)
+				for k := run.start; k <= run.end; k++ {
+					idx := items[k].stepIdx
+					block, _, _ := m.renderStep(msg.steps[idx], msg.streaming, msgIdx, idx, 0)
+					start := addBlock(th.asstWork.Render(block), false)
+					refs = append(refs, stepRef{msgIdx: msgIdx, stepIdx: idx, line: start})
+				}
+				it = run.end
 				continue
 			}
 			block, _, _ := m.renderStep(msg.steps[items[it].stepIdx], msg.streaming, msgIdx, items[it].stepIdx, 0)
@@ -634,6 +650,9 @@ func (m *Model) answerCardBody(body string) (string, int) {
 // collapseSummary describes what a folded turn card hides, so the collapsed
 // form stays informative: steps, reasoning, and a reply preview.
 func (m *Model) collapseSummary(msg message) string {
+	if rec := formatReceipt(scanReceipt(msg)); rec != "" {
+		return "⋯ " + rec
+	}
 	parts := []string{"⋯ collapsed"}
 	if n := len(msg.steps); n > 0 {
 		parts = append(parts, fmt.Sprintf("%d tool steps", n))
@@ -645,6 +664,32 @@ func (m *Model) collapseSummary(msg message) string {
 		parts = append(parts, "reply: "+truncate(collapse(c), 60))
 	}
 	return strings.Join(parts, " · ")
+}
+
+// renderIntentRail paints a reasoning block as a whispered plan: a faint
+// left rail, the excerpt (or full text when opened), and a meta line.
+func (m *Model) renderIntentRail(body string, it turnItem, msg message) string {
+	th := m.th
+	w := max(m.vp.Width-6, 8)
+	var lines []string
+	for _, ln := range strings.Split(body, "\n") {
+		if strings.TrimSpace(ln) == "" {
+			continue
+		}
+		lines = append(lines, th.thinkStyle.Width(w).Render("┊  "+ln))
+	}
+	if len(lines) == 0 {
+		return ""
+	}
+	meta := "thinking"
+	if d := thinkingDur(it, msg.streaming); d > 0 {
+		meta += " · " + formatStepDur(d)
+	}
+	if n := thinkingBeats(msg); n > 1 {
+		meta += fmt.Sprintf(" · %d beats", n)
+	}
+	lines = append(lines, th.statsDim.Render(meta))
+	return strings.Join(lines, "\n")
 }
 
 // lineCount returns the number of newline-terminated lines in a rendered block.
@@ -790,11 +835,10 @@ func max(a, b int) int {
 	return b
 }
 
-// renderStep renders one tool step as a one-line summary (expand chevron,
-// status icon, tool glyph, name, arg, and — once done — its response time),
-// plus its full output/logs when expanded. It returns the rendered block, the
-// stepRef for mouse hit-testing (pointing at startLine), and the block's line
-// count.
+// renderStep renders one tool step: live progress + clock while it runs,
+// a typed peek under a finished head, and the full inspect tree on expand.
+// It returns the rendered block, the stepRef for mouse hit-testing
+// (pointing at startLine), and the block's line count.
 func (m *Model) renderStep(s step, streaming bool, msgIdx, stepIdx, startLine int) (string, stepRef, int) {
 	th := m.th
 	// Floors stay at a few chars so truncation genuinely shrinks with the
@@ -826,26 +870,42 @@ func (m *Model) renderStep(s step, streaming bool, msgIdx, stepIdx, startLine in
 	// never push the head past the viewport, because a physically wrapped
 	// head shifts every hit-test line below it.
 	right := ""
+	live := !s.done && streaming
 	if s.done {
 		if chip := stepHeadSuffix(s.name, s.arg, s.result, th); chip != "" {
 			right = chip
+		}
+	} else if live && !s.started.IsZero() {
+		if d := time.Since(s.started); d >= 50*time.Millisecond {
+			right = th.statTime.Render(formatStepDur(d))
 		}
 	}
 	rightW := lipgloss.Width(right)
 	pre := chevron + " " + icon + " " + th.toolIcon.Render(toolGlyph(s.name)) + " "
 	nameBudget := max(m.vp.Width-4-rightW-lipgloss.Width(pre)-8, 4) // 8: " · sub-agent" reserve
-	left := pre + th.stepName.Render(truncate(s.name, nameBudget))
-	if s.subagent {
-		left += th.stepArg.Render(" · sub-agent")
-		if r := agentRollup(&s); r != "" {
-			left += th.stepArg.Render(" · " + r)
+	var left string
+	if live {
+		// In-flight rows speak the same language as the composer status
+		// line — progress copy + ticking clock — instead of a dead name.
+		prog := toolProgress(s.name, s.arg)
+		left = pre + th.statusBusy.Render(truncate(prog, max(m.vp.Width-4-rightW-lipgloss.Width(pre)-2, 4)))
+		if s.subagent {
+			if r := agentRollup(&s); r != "" {
+				left += th.stepArg.Render(" · " + r)
+			}
 		}
-	}
-	// The left side yields to the right rail, then the pair pads to the
-	// full step width; ANSI-safe width math throughout.
-	budget := max(m.vp.Width-4-rightW-2, 4)
-	if s.arg != "" {
-		left += th.stepArg.Render("  " + truncate(s.arg, budget-lipgloss.Width(chevron+" "+icon+" "+toolGlyph(s.name)+" "+s.name)-2))
+	} else {
+		left = pre + th.stepName.Render(truncate(s.name, nameBudget))
+		if s.subagent {
+			left += th.stepArg.Render(" · sub-agent")
+			if r := agentRollup(&s); r != "" {
+				left += th.stepArg.Render(" · " + r)
+			}
+		}
+		budget := max(m.vp.Width-4-rightW-2, 4)
+		if s.arg != "" {
+			left += th.stepArg.Render("  " + truncate(s.arg, budget-lipgloss.Width(chevron+" "+icon+" "+toolGlyph(s.name)+" "+s.name)-2))
+		}
 	}
 	gap := max(m.vp.Width-4-lipgloss.Width(left)-rightW, 1)
 	head := left + strings.Repeat(" ", gap) + right
@@ -901,6 +961,17 @@ func (m *Model) renderStep(s step, streaming bool, msgIdx, stepIdx, startLine in
 			}
 			// MaxWidth clamps ANSI-safely — styled renderer output must never
 			// be rune-truncated (that would cut escape sequences mid-way).
+			lines = append(lines, th.stepTree.Render(conn)+
+				lipgloss.NewStyle().MaxWidth(detailBudget).Render(d))
+		}
+	} else if s.done {
+		// Always-on peek: the first beat of the typed renderer, so a
+		// finished step is scannable without ^E. Expand still owns the dump.
+		for i, d := range stepPeek(s.name, s.result, m.vp.Width, th) {
+			conn := "    "
+			if i == 0 {
+				conn = "  ⎿ "
+			}
 			lines = append(lines, th.stepTree.Render(conn)+
 				lipgloss.NewStyle().MaxWidth(detailBudget).Render(d))
 		}

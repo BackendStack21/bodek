@@ -7,10 +7,9 @@ import (
 	"github.com/BackendStack21/bodek/internal/client"
 )
 
-// TestThinkingAccordion verifies the reasoning accordion contract: a LIVE
-// stream renders the full block (auto-follow — thinking models read as they
-// generate), the block is stored in full, and finalizing collapses it back to
-// a capped head-oriented excerpt.
+// TestThinkingAccordion verifies the intent-rail contract: the full block
+// is stored, live and finalized renders show the last sentences on a rail,
+// and expandAll / a manual open still unfolds the stored text.
 func TestThinkingAccordion(t *testing.T) {
 	m := newTestModel()
 	m.msgs = append(m.msgs, message{role: roleAsst, streaming: true})
@@ -28,23 +27,31 @@ func TestThinkingAccordion(t *testing.T) {
 		t.Errorf("thinking block should be stored in full, got %d of %d bytes", len(block), len(chunk))
 	}
 
-	// LIVE: the full block renders — both head and tail are visible.
+	// LIVE: the intent rail shows the tail (last sentences), not the firehose.
 	rendered, _ := m.renderMessage(m.msgs[0], 0, 0)
 	out := plain(rendered)
-	if !strings.Contains(out, "head-marker") || !strings.Contains(out, "tail-marker") {
-		t.Errorf("live stream should render the full reasoning block:\n%s", out[:200])
+	if !strings.Contains(out, "tail-marker") {
+		t.Errorf("live rail should show the last sentences:\n%s", out[:200])
+	}
+	if strings.Contains(out, "head-marker") {
+		t.Errorf("live rail should not dump the full head:\n%s", out[:200])
+	}
+	if !strings.Contains(out, "┊") {
+		t.Errorf("live rail missing the intent glyph:\n%s", out[:200])
 	}
 
-	// Finalize: the renderer closes the block — a capped excerpt showing the
-	// head, not the tail.
+	// Finalize: same tail excerpt, plus a thinking meta line.
 	m.handleEvent(client.Event{Type: "done", Latency: 0.5, ContextTokens: 10, OutputTokens: 1})
 	rendered, _ = m.renderMessage(m.msgs[0], 0, 0)
 	out = plain(rendered)
-	if !strings.Contains(out, "head-marker") {
-		t.Errorf("finalized excerpt lost the head:\n%s", out)
+	if !strings.Contains(out, "tail-marker") {
+		t.Errorf("finalized rail lost the last sentences:\n%s", out)
 	}
-	if strings.Contains(out, "tail-marker") {
-		t.Errorf("finalized excerpt should collapse before the tail:\n%s", out)
+	if strings.Contains(out, "head-marker") {
+		t.Errorf("finalized rail should stay on the tail excerpt:\n%s", out)
+	}
+	if !strings.Contains(out, "thinking") {
+		t.Errorf("finalized rail missing the thinking meta:\n%s", out)
 	}
 	if m.msgs[0].items[0].open {
 		t.Error("finalize should close the renderer-opened block")
@@ -95,11 +102,11 @@ func TestThinkingManualOpenPersists(t *testing.T) {
 		t.Errorf("expandAll should render the full thinking text:\n%s", out[:200])
 	}
 
-	// Collapsed again: back to the capped head excerpt.
+	// Collapsed again: back to the tail excerpt.
 	m.expandAll = false
 	rendered, _ = m.renderMessage(m.msgs[0], 0, 0)
-	if out := plain(rendered); !strings.Contains(out, "head-marker") || strings.Contains(out, "tail-marker") {
-		t.Errorf("collapsed render should show the capped head excerpt:\n%s", out[:200])
+	if out := plain(rendered); !strings.Contains(out, "tail-marker") || strings.Contains(out, "head-marker") {
+		t.Errorf("collapsed render should show the tail excerpt:\n%s", out[:200])
 	}
 }
 

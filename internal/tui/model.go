@@ -56,12 +56,14 @@ type stepRef struct {
 // block, a tool call, or a response text segment (one think→reply cycle),
 // in arrival order.
 type turnItem struct {
-	thinking bool   // true = reasoning block
-	reply    bool   // true = response text segment
-	text     string // thinking / reply text (stored in full)
-	stepIdx  int    // index into msg.steps when a tool call
-	open     bool   // reasoning: user wants the full block (live turns auto-open)
-	rendered string // cached glamour render (finalized reply segments)
+	thinking bool          // true = reasoning block
+	reply    bool          // true = response text segment
+	text     string        // thinking / reply text (stored in full)
+	stepIdx  int           // index into msg.steps when a tool call
+	open     bool          // reasoning: user wants the full block (live turns auto-open)
+	rendered string        // cached glamour render (finalized reply segments)
+	started  time.Time     // reasoning: when the block opened; zero on replay
+	dur      time.Duration // reasoning: stamped on finalize; 0 while live
 }
 
 // turnStats is the telemetry of one finalized assistant turn, captured from the

@@ -158,9 +158,11 @@ own front-end settings are separate; see [Configuration](#configuration).
   and persisted to `~/.bodek/config.json`.
 - **The palette (`^K`)** — every command, session, model, and drawer tab one
   fuzzy search away; every row teaches its chord.
-- **Turn cards** — telemetry rides the turn head, `^F` folds noisy turns,
-  `alt+↑`/`alt+↓` jump turn-to-turn, reasoning accordions auto-expand live
-  and collapse on the next turn, and `^E` expands every tool step's details.
+- **Turn cards** — telemetry rides the turn head, a coding receipt
+  (`touched 4 · +82 −19 · tests ✓`) scans what the turn changed, `^F`
+  folds noisy turns to that receipt, `alt+↑`/`alt+↓` jump turn-to-turn,
+  reasoning renders as an intent rail (last sentences, beat count), and
+  `^E` expands every tool step's full details.
 - **Typed tool renderers** — diffs tint with a `+N −M` chip, file reads get
   line numbers, JSON pretty-prints, and step lines earn typed chips from
   structured output only: test verdicts (`✓ 5 passed · 2 skipped`, go
@@ -170,9 +172,12 @@ own front-end settings are separate; see [Configuration](#configuration).
 - **Streaming answers** rendered as Markdown
   ([glamour](https://github.com/charmbracelet/glamour)).
 - **Tool activity** — every `tool_call`/`tool_result` shown live with a glyph
-  per tool, a spinner, an argument preview, and a result excerpt rendered as
-  a tree (`⎿`) — multi-line, blank-stripped, capped with a `+N more lines`
-  footer, and tinted with a `✗` when the call fails.
+  per tool, a spinner, and a result peek (`⎿`, first 1–2 typed-renderer
+  beats) so a finished step is scannable without `^E`. Running steps speak
+  the same progress copy as the status line (`🧪 running tests`) and tick
+  their own elapsed clock. Two or more in-flight calls wrap in a parallel
+  swarm band that shrinks as members finish and dissolves on the last
+  leftover. Full output stays behind expand.
 - **Fluent by default** — gradient wordmark, smooth braille spinner, smart
   autoscroll that never yanks you while you read history, and a
   scroll-position indicator.
@@ -183,10 +188,11 @@ own front-end settings are separate; see [Configuration](#configuration).
 
 ### Working with the agent
 
-- **Live reasoning** — the model's pre-tool thinking streams in dimmed text
-  with an elapsed timer and cycling status. Long turns keep every
-  think→reply pair intact: each reasoning block is followed by its own
-  answer card, in arrival order.
+- **Live reasoning** — the model's pre-tool thinking streams as an intent
+  rail (last two sentences, never flattened) with elapsed time and a beat
+  count when the turn thinks more than once. Tab / `^E` still unfolds the
+  stored full block. Long turns keep every think→reply pair intact: each
+  reasoning block is followed by its own answer card, in arrival order.
 - **Context-aware progress** — while the agent works, a status line right
   below your last message shows what it's actually doing (`🧪 running
   tests`, `📖 reading client.go`, `🚀 pushing`) with a live elapsed timer.
