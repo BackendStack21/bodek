@@ -10,8 +10,9 @@ import (
 	"github.com/charmbracelet/x/ansi"
 )
 
-// View composes the full screen: header, scrollable transcript, the busy
-// status line (while a turn runs), input (or approval prompt), and footer.
+// View composes the full screen: header, scrollable transcript (plus the
+// drawer sheet when a tab is open), the busy status line, the approval
+// card above a live composer, and footer.
 func (m *Model) View() string {
 	if !m.ready {
 		return "\n  starting bodek…"
@@ -20,8 +21,10 @@ func (m *Model) View() string {
 		return m.plainView()
 	}
 	body := m.vp.View()
-	if m.panel != panelNone {
-		body = m.renderPanel(m.width, m.vp.Height)
+	if m.panel != panelNone && m.drawerFullBleed() {
+		body = m.renderPanel(m.width, max(1, m.drawerAvail()))
+	} else if m.panel != panelNone {
+		body += "\n" + m.renderPanel(m.width, m.drawerSheetHeight())
 	} else if m.popover {
 		body = m.popoverView(m.width, m.vp.Height)
 	}
@@ -93,6 +96,9 @@ func (m *Model) header() string {
 	// same ✳ glyph the per-turn stat line uses to flag a thought turn.
 	if m.thinkOn {
 		tail += th.headerMeta.Render("  ·  ✳ think")
+	}
+	if inst := m.headerInstruments(); inst != "" {
+		tail += th.headerMeta.Render("  ·  ") + th.headerKey.Render(truncate(inst, 28))
 	}
 	if m.odekVersion != "" {
 		tail += th.headerMeta.Render("  ·  odek ") + th.headerKey.Render(m.odekVersion)
@@ -328,9 +334,9 @@ func (m *Model) statusLine() string {
 }
 
 // statusLineVisible reports whether the status line occupies a row, keeping
-// View and inputAreaHeight in agreement. While an approval panel owns the
-// input area or the socket is down, the header badge carries the state and
-// the row stays hidden.
+// View and inputAreaHeight in agreement. While an approval card is up or
+// the socket is down, the header badge carries the busy state and the row
+// stays hidden.
 func (m *Model) statusLineVisible() bool {
 	return m.busy && m.curApproval() == nil && !m.disconn
 }
@@ -380,7 +386,7 @@ func (m *Model) conversation() string {
 	if len(m.msgs) == 0 {
 		m.stepLineIndex = nil
 		m.turnLineIndex = nil
-		return welcome(m.th, m.vp.Width, m.opts.CWD)
+		return m.home()
 	}
 	// Everything before the in-flight streaming message is stable, so cache its
 	// rendering (convPrefix) and re-render only the tail — a spinner tick would
@@ -492,7 +498,7 @@ func (m *Model) renderMessage(msg message, msgIdx, lineOffset int) (string, []st
 		return label + "\n" + th.userBar.Render(body), nil
 
 	case roleNote:
-		return th.sysBar.Width(m.vp.Width - 2).Render(msg.content), nil
+		return th.sysBar.Width(m.cardSpan()).Render(msg.content), nil
 
 	default: // assistant
 		// The turn head carries the telemetry (WebUI parity: what a turn cost
@@ -571,7 +577,7 @@ func (m *Model) renderMessage(msg message, msgIdx, lineOffset int) (string, []st
 				if items[it].open || m.expandAll {
 					body = t
 				}
-				addBlock(th.asstWork.Render(m.renderIntentRail(body, items[it], msg)), false)
+				addBlock(th.asstWork.Render(m.renderIntentRail(body, it, msg)), false)
 				continue
 			}
 			if items[it].reply {
@@ -642,7 +648,7 @@ func (m *Model) answerCardBody(body string) (string, int) {
 	// Glamour resets styling after each span; without re-asserting the
 	// surface after every reset, the text would sit on the terminal's own
 	// background instead of the card.
-	card := m.th.answerCard.Width(m.vp.Width - 2)
+	card := m.th.answerCard.Width(m.cardSpan())
 	styled := card.Render(weaveSurface(body, surfaceSGR(m.th.answerCard)))
 	return styled, lineCount(styled)
 }
@@ -668,9 +674,13 @@ func (m *Model) collapseSummary(msg message) string {
 
 // renderIntentRail paints a reasoning block as a whispered plan: a faint
 // left rail, the excerpt (or full text when opened), and a meta line.
-func (m *Model) renderIntentRail(body string, it turnItem, msg message) string {
+func (m *Model) renderIntentRail(body string, itemIdx int, msg message) string {
 	th := m.th
 	w := max(m.vp.Width-6, 8)
+	var it turnItem
+	if itemIdx >= 0 && itemIdx < len(msg.items) {
+		it = msg.items[itemIdx]
+	}
 	var lines []string
 	for _, ln := range strings.Split(body, "\n") {
 		if strings.TrimSpace(ln) == "" {
@@ -686,7 +696,7 @@ func (m *Model) renderIntentRail(body string, it turnItem, msg message) string {
 		meta += " · " + formatStepDur(d)
 	}
 	if n := thinkingBeats(msg); n > 1 {
-		meta += fmt.Sprintf(" · %d beats", n)
+		meta += fmt.Sprintf(" · beat %d/%d", thinkingBeatIndex(msg, itemIdx), n)
 	}
 	lines = append(lines, th.statsDim.Render(meta))
 	return strings.Join(lines, "\n")
@@ -1013,34 +1023,32 @@ func (m *Model) renderNotices() string {
 // ── input / approval area ──────────────────────────────────────────────────
 
 func (m *Model) inputArea() string {
+	box := m.th.inputBox.Width(m.cardWidth()).Render(m.ta.View())
+	var above []string
 	if m.curApproval() != nil {
-		return m.approvalPanel()
+		above = append(above, m.approvalPanel())
 	}
-	box := m.th.inputBox.Width(m.width - 2).Render(m.ta.View())
 	if m.find.open {
-		return m.findBar() + "\n" + box
+		above = append(above, m.findBar())
+	} else if m.pal.open {
+		above = append(above, m.palPopup())
+	} else if m.ac.open {
+		above = append(above, m.acPopup())
 	}
-	if m.pal.open {
-		return m.palPopup() + "\n" + box
+	if s := m.shelfView(); s != "" {
+		above = append(above, s)
 	}
-	if m.ac.open {
-		return m.acPopup() + "\n" + box
+	if len(above) == 0 {
+		return box
 	}
-	if card := m.suggestionCard(); card != "" {
-		return card + "\n" + box
-	}
-	return box
+	return strings.Join(above, "\n") + "\n" + box
 }
 
 // acPopup renders the @-reference completion box. Its height must match
 // autocomplete.height() so the layout math stays exact.
 func (m *Model) acPopup() string {
 	th := m.th
-	// Inner content width inside the box (border + padding = 4 columns).
-	innerW := m.width - 6
-	if innerW < 12 {
-		innerW = 12
-	}
+	innerW := m.cardInner()
 
 	label, hint := "@ attach file", "  ↑↓ select · ⇥ insert · esc cancel"
 	if m.ac.mode == acCmd {
@@ -1080,11 +1088,11 @@ func (m *Model) acPopup() string {
 		}
 	}
 	body := title + "\n" + strings.Join(rows, "\n")
-	return th.acBox.Width(m.width - 2).Render(body)
+	return th.acBox.Width(m.cardWidth()).Render(body)
 }
 
 func (m *Model) approvalPanel() string {
-	return m.th.apprBox.Width(m.width - 2).Render(m.approvalBody())
+	return m.th.apprBox.Width(m.cardWidth()).Render(m.approvalBody())
 }
 
 // approvalBody builds the panel's inner content: head, the command (one
@@ -1123,7 +1131,7 @@ func (m *Model) approvalBody() string {
 		target = a.Name + ": " + target
 	}
 
-	budget := m.width - 8
+	budget := m.cardInner()
 	lines := []string{head}
 	if m.apprExpanded {
 		for _, ln := range wrapText(sanitize(target), budget) {
@@ -1185,7 +1193,7 @@ func (m *Model) footer() string {
 	}
 	if a := m.curApproval(); a != nil {
 		if a.Friction {
-			return th.footer.Render("  type the word approve + ⏎ · esc denies")
+			return m.modePrefix() + th.footer.Render("type the word approve + ⏎ · esc denies")
 		}
 		hints := th.footerKey.Render("A") + th.footer.Render("pprove · ") +
 			th.footerKey.Render("D") + th.footer.Render("eny")
@@ -1195,7 +1203,7 @@ func (m *Model) footer() string {
 		if n := len(m.approvals); n > 1 {
 			hints += th.footerSep.Render(" · ") + th.footer.Render(fmt.Sprintf("%d more queued", n-1))
 		}
-		return "  " + hints
+		return m.modePrefix() + hints
 	}
 	if m.disconn {
 		if m.status == "server shut down" {
@@ -1333,6 +1341,12 @@ func (m *Model) footer() string {
 			th.footer.Render("]/[ tabs · esc close"),
 		)
 	}
+	if m.panel == panelStats {
+		return m.panelFooter(
+			th.footer.Render("session metrics"),
+			th.footer.Render("esc close"),
+		)
+	}
 	if m.panel == panelQueue {
 		return m.panelFooter(
 			th.footerKey.Render("↑↓")+th.footer.Render(" select · "),
@@ -1412,9 +1426,9 @@ func (m *Model) footer() string {
 	// The status bar carries no static key cheatsheet (the welcome splash and
 	// /help cover that) — only the live run state: a cancel hint while busy on
 	// the left, and latency / scroll position on the right.
-	left := ""
+	left := m.modePrefix()
 	if m.busy {
-		left = "  " + th.footerKey.Render("esc") + th.footer.Render(" cancel")
+		left += th.footerKey.Render("esc") + th.footer.Render(" cancel")
 		if n := len(m.queue); n > 0 {
 			left += th.footerSep.Render(" · ") + th.scroll.Render(fmt.Sprintf("▸ %d queued", n))
 		}
@@ -1422,17 +1436,13 @@ func (m *Model) footer() string {
 		// A failed turn with an empty input: ⏎ resends the preserved
 		// prompt — the same contract the error card states. Hidden while a
 		// draft exists so typing is never hijacked by the hint.
-		left = "  " + th.footerKey.Render("⏎") + th.footer.Render(" retry last prompt")
+		left += th.footerKey.Render("⏎") + th.footer.Render(" retry last prompt")
 	}
 	// Persistent expandAll indicator — while the global toggle holds every
 	// step open, per-step toggles look dead unless the chrome says why.
 	if m.expandAll {
 		ind := th.footerKey.Render("▼") + th.footer.Render(" details")
-		if left == "" {
-			left = "  " + ind
-		} else {
-			left += th.footerSep.Render(" · ") + ind
-		}
+		left += th.footerSep.Render(" · ") + ind
 	}
 
 	var segs []string
@@ -1470,7 +1480,7 @@ func (m *Model) footer() string {
 // panelFooter joins pre-styled hint segments for an open panel (pre-styled so
 // destructive hints can carry the danger tint).
 func (m *Model) panelFooter(hints ...string) string {
-	return "  " + strings.Join(hints, m.th.footerSep.Render("  ·  "))
+	return m.modePrefix() + strings.Join(hints, m.th.footerSep.Render("  ·  "))
 }
 
 // ── small helpers ──────────────────────────────────────────────────────────

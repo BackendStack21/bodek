@@ -152,8 +152,48 @@ func TestIntentRailTwoBeats(t *testing.T) {
 	if strings.Count(out, "┊") < 2 {
 		t.Errorf("each thinking block should rail:\n%s", out)
 	}
-	if !strings.Contains(out, "2 beats") {
-		t.Errorf("multi-block turn should name the beat count:\n%s", out)
+	if !strings.Contains(out, "beat 1/2") || !strings.Contains(out, "beat 2/2") {
+		t.Errorf("multi-block turn should number each think cycle:\n%s", out)
+	}
+}
+
+func TestThinkingDurationFreezesWhenToolStarts(t *testing.T) {
+	m := newTestModel()
+	m.msgs = append(m.msgs, message{role: roleAsst, streaming: true})
+	m.curIdx = 0
+	m.busy = true
+	m.handleEvent(client.Event{Type: "thinking", Content: "I will read the file."})
+	if m.msgs[0].items[0].dur != 0 {
+		t.Fatal("open thinking must not stamp dur yet")
+	}
+	m.msgs[0].items[0].started = time.Now().Add(-2 * time.Second)
+	m.handleEvent(client.Event{Type: "tool_call", Name: "read_file", Data: `{"path":"x"}`})
+	sealed := m.msgs[0].items[0].dur
+	if sealed < 2*time.Second {
+		t.Fatalf("tool_call should seal thinking dur, got %v", sealed)
+	}
+	m.handleEvent(client.Event{Type: "tool_result", Name: "read_file", Data: "ok"})
+	if got := thinkingDur(m.msgs[0].items[0], true); got != sealed {
+		t.Fatalf("thinkingDur still live after the tool: %v, sealed %v", got, sealed)
+	}
+	if m.msgs[0].items[0].dur != sealed {
+		t.Fatalf("sealed dur moved after tool_result: %v → %v", sealed, m.msgs[0].items[0].dur)
+	}
+}
+
+func TestThinkingDurationFreezesWhenReplyStarts(t *testing.T) {
+	m := newTestModel()
+	m.msgs = append(m.msgs, message{role: roleAsst, streaming: true})
+	m.curIdx = 0
+	m.busy = true
+	m.handleEvent(client.Event{Type: "thinking", Content: "I will answer."})
+	m.msgs[0].items[0].started = time.Now().Add(-time.Second)
+	m.handleEvent(client.Event{Type: "token", Content: "Here goes."})
+	if m.msgs[0].items[0].dur < time.Second {
+		t.Fatalf("reply should seal thinking dur, got %v", m.msgs[0].items[0].dur)
+	}
+	if got := thinkingDur(m.msgs[0].items[0], true); got != m.msgs[0].items[0].dur {
+		t.Fatalf("thinkingDur still live after the reply: %v", got)
 	}
 }
 

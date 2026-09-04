@@ -16,8 +16,11 @@ func TestQueueCommandOpensPanel(t *testing.T) {
 	busyTurn(m)
 	m.queue = []string{"one", "two", "three"}
 	m.refresh()
-	if !m.queueStripVisible() {
-		t.Fatal("precondition: strip visible with queued prompts")
+	if !m.queueHeld() {
+		t.Fatal("precondition: prompts waiting on the shelf")
+	}
+	if m.queueStripVisible() {
+		t.Fatal("unfocused queue must ride the shelf, not the strip")
 	}
 
 	m.runCommandLine("/queue")

@@ -80,6 +80,7 @@ func (m *Model) handleEvent(ev client.Event) (tea.Model, tea.Cmd) {
 			if n := len(msg.items); n > 0 && msg.items[n-1].thinking {
 				msg.items[n-1].text += sanitize(ev.Content)
 			} else {
+				sealThinking(msg)
 				msg.items = append(msg.items, turnItem{thinking: true,
 					text: sanitize(ev.Content), started: time.Now()})
 			}
@@ -112,6 +113,7 @@ func (m *Model) handleEvent(ev client.Event) (tea.Model, tea.Cmd) {
 		nm := collapse(ev.Name) // tool names are wire-borne; collapse before anything renders them
 		m.ensureWireTurn()
 		if i := m.cur(); i >= 0 {
+			sealThinking(&m.msgs[i])
 			m.msgs[i].steps = append(m.msgs[i].steps,
 				step{name: nm, arg: arg, subagent: isSubagent(nm), started: time.Now()})
 			last := len(m.msgs[i].steps) - 1
@@ -645,6 +647,7 @@ func appendReply(msg *message, s string) {
 		msg.content += s
 		return
 	}
+	sealThinking(msg)
 	if msg.content != "" {
 		msg.content += "\n\n"
 	}
@@ -666,6 +669,7 @@ func setTurnMarker(msg *message, marker string) {
 		msg.items[n-1].text += "\n\n" + marker
 		return
 	}
+	sealThinking(msg)
 	msg.items = append(msg.items, turnItem{reply: true, text: marker})
 }
 

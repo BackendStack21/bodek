@@ -10,20 +10,25 @@ import (
 
 // ── queued-prompt strip ─────────────────────────────────────────────────────
 //
-// The strip is the always-visible queue panel above the input area: one row
-// per queued prompt with ▲ ▼ ✕ mouse controls, a ctrl+q keyboard focus mode
-// (j/k select, h/l move, d delete, esc leaves), and an overflow tail once the
-// queue outgrows the cap. The queue itself is bodek-local state (m.queue) —
-// prompts are held client-side until sendQueued fires them on turn end.
+// Unfocused, the queue is a shelf chip. ^Q unfolds the strip: one row per
+// queued prompt with ▲ ▼ ✕ mouse controls, keyboard focus (j/k select, h/l
+// move, d delete, esc leaves), and an overflow tail once the queue outgrows
+// the cap. The queue itself is bodek-local state (m.queue) — prompts are
+// held client-side until sendQueued fires them on turn end.
 
 // queueStripCap bounds the rendered rows; the rest folds into the tail line.
 const queueStripCap = 8
 
-// queueStripVisible reports whether the strip occupies rows: it needs queued
-// prompts and stays out of the way while an approval owns the input area or
-// the /queue panel manages the queue.
-func (m *Model) queueStripVisible() bool {
+// queueHeld reports prompts waiting that neither an approval nor the /queue
+// panel currently owns — the shelf chip and ^Q latch both key off this.
+func (m *Model) queueHeld() bool {
 	return len(m.queue) > 0 && m.curApproval() == nil && m.panel != panelQueue
+}
+
+// queueStripVisible reports whether the unfolded strip occupies rows.
+// Unfocused, the count rides the composer shelf instead.
+func (m *Model) queueStripVisible() bool {
+	return m.queueHeld() && m.qfocus
 }
 
 // queueStripHeight is the number of rows the strip claims above the input,
@@ -46,7 +51,7 @@ func (m *Model) queueStripHeight() int {
 // queueStripTop is the absolute screen row of the strip's first row: header,
 // viewport, then the busy status line when it shows.
 func (m *Model) queueStripTop() int {
-	top := headerHeight + m.vp.Height
+	top := headerHeight + m.chromeBodyHeight()
 	if m.statusLineVisible() {
 		top += 2 // blank separator row + the status row (statusLine renders both)
 	}

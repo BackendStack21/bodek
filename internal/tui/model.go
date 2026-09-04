@@ -63,7 +63,7 @@ type turnItem struct {
 	open     bool          // reasoning: user wants the full block (live turns auto-open)
 	rendered string        // cached glamour render (finalized reply segments)
 	started  time.Time     // reasoning: when the block opened; zero on replay
-	dur      time.Duration // reasoning: stamped on finalize; 0 while live
+	dur      time.Duration // reasoning: sealed when the cycle yields; 0 while live
 }
 
 // turnStats is the telemetry of one finalized assistant turn, captured from the
@@ -179,6 +179,8 @@ type Model struct {
 	qsel          int            // selected strip row while qfocus
 	qarm          int            // armed-for-delete row while qfocus (-1 = none)
 	lastPrompt    string         // most recent prompt sent — /retry re-sends it
+	homePrompt    string         // last user prompt, kept across ^L for the session home
+	homeReceipt   string         // last turn's coding receipt, shown on the cleared home
 	focusIdx      int            // transcript cursor: turn head alt+↑/↓ last jumped to (-1 none)
 
 	history   []string // submitted prompts, newest last (recalled with ↑)
@@ -780,8 +782,11 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "ctrl+c":
 		return m, m.armConfirm(confirmQuit, "bodek")
 	case "esc":
-		// The run's kill switch sits behind the same two-step gate as every
-		// other destructive action — esc is too easy to hit by accident.
+		// Overlays and inspect chrome close first. Only a bare composer
+		// ESC while busy arms the cancel gate.
+		if ok, cmd := m.dismissChrome(); ok {
+			return m, cmd
+		}
 		if m.busy {
 			return m, m.armConfirm(confirmCancel, "the running turn")
 		}
@@ -804,9 +809,10 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "ctrl+q":
 		// Queue-strip focus: a chord, so typing a q is never hijacked.
 		// Only latches when there is something queued to manage.
-		if m.queueStripVisible() {
+		if m.queueHeld() {
 			m.qfocus = true
 			m.qsel = 0
+			m.relayout()
 			m.refresh()
 		}
 		return m, nil
@@ -941,6 +947,7 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 // of reporting turns, tools, tokens, and age from before it (mirrors the
 // reset done when resuming a session).
 func (m *Model) clearConversation() {
+	captureHome(m)
 	m.msgs = nil
 	m.curIdx = -1
 	m.convCount = -1 // transcript replaced — drop the cached prefix
@@ -973,7 +980,9 @@ func (m *Model) startFreshSession() tea.Cmd {
 	m.pendModel = m.model // the new session re-asserts the active model
 	m.resetPlanState()
 	m.resetJobsState()
+	clearHome(m)
 	m.freshStart = true
+	m.refresh() // drop the session-home snapshot clearConversation just painted
 	cl := m.cl
 	return func() tea.Msg {
 		if cl != nil {
@@ -1115,23 +1124,23 @@ func (m *Model) relayout() {
 	if !m.ready {
 		return
 	}
-	vpH := m.height - headerHeight - footerHeight - m.inputAreaHeight()
+	sheet := m.drawerLayoutBudget()
+	vpH := m.height - headerHeight - footerHeight - m.inputAreaHeight() - sheet
 	// Degradation ladder, step 1: when the layout doesn't fit, give the
 	// transcript rows back by shrinking the composer first — a one-visible-
 	// row terminal beats a View that never fits (judge-5 E1).
-	if vpH < 1 && m.ta.Height() > 1 && m.curApproval() == nil {
-		// The approval panel replaces the composer entirely (its body lines
-		// are pre-wrapped by approvalBody) — shrinking the hidden textarea
-		// cannot help; the ladder only guards the composer path.
+	if vpH < 1 && m.ta.Height() > 1 {
 		over := 1 - vpH
 		m.ta.SetHeight(max(1, m.ta.Height()-over))
-		vpH = m.height - headerHeight - footerHeight - m.inputAreaHeight()
+		sheet = m.drawerLayoutBudget()
+		vpH = m.height - headerHeight - footerHeight - m.inputAreaHeight() - sheet
 	}
 	// Ladder, restore: with room again the composer returns to its
 	// content-fitted height (syncComposer's bounds — not the old fixed 3).
 	if vpH >= 4 && m.ta.Height() < m.desiredComposerHeight() {
 		m.ta.SetHeight(m.desiredComposerHeight())
-		vpH = m.height - headerHeight - footerHeight - m.inputAreaHeight()
+		sheet = m.drawerLayoutBudget()
+		vpH = m.height - headerHeight - footerHeight - m.inputAreaHeight() - sheet
 	}
 	// Floor of 1, not 3: below the old floor the View was guaranteed taller
 	// than the terminal (permanent scroll-jitter in alt-screen).
@@ -1146,23 +1155,23 @@ func (m *Model) relayout() {
 // input area plus the busy status line when it shows — so the viewport
 // shrinks by exactly the right amount and the footer never moves.
 func (m *Model) inputAreaHeight() int {
-	if m.curApproval() != nil {
-		return lineCount(m.approvalBody()) + 2 // panel border
-	}
 	h := m.ta.Height() + 2 // composer box: text rows + top/bottom border
+	if m.curApproval() != nil {
+		h += lineCount(m.approvalPanel()) // boxed card sits above the composer
+	}
 	if m.statusLineVisible() {
 		h += 2 // busy status line + blank separator row above the input box
 	}
 	if m.pal.open {
 		h += m.palHeight()
 	}
-	h += m.suggestionCardHeight()
 	if m.ac.open {
 		h += m.ac.height()
 	}
 	if m.find.open {
 		h++ // the one-row search strip above the input box
 	}
+	h += m.shelfHeight()
 	h += m.queueStripHeight()
 	return h
 }

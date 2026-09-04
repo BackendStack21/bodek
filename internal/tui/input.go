@@ -97,9 +97,7 @@ func (m *Model) desiredComposerHeight() int {
 // layout. Every composer mutation site calls it; when the terminal itself
 // runs out of rows, the degradation ladder in relayout still wins.
 func (m *Model) syncComposer() {
-	if m.curApproval() != nil {
-		return // the approval panel replaced the composer; the ladder owns rows
-	}
+	// Composer stays live during approval so a follow-up draft can grow.
 	if h := m.desiredComposerHeight(); m.ta.Height() != h {
 		m.ta.SetHeight(h)
 		m.relayout()
@@ -460,4 +458,55 @@ func (m *Model) closeAC() {
 	m.ac = autocomplete{seq: m.ac.seq}
 	m.relayout()
 	m.refresh()
+}
+
+// dismissChrome closes the topmost composer-level overlay that ESC should
+// fold before it reaches cancel-turn: a skill chip, ^E details, an opened
+// reasoning block or step, or a trailing help card. Dedicated routers
+// (palette, drawer, find, @, queue, stats, approval) run first.
+func (m *Model) dismissChrome() (bool, tea.Cmd) {
+	if m.skillSuggest != nil {
+		return true, m.answerSuggestion("skip")
+	}
+	if m.expandAll {
+		m.expandAll = false
+		m.convCount = -1
+		m.refresh()
+		return true, nil
+	}
+	for i := len(m.msgs) - 1; i >= 0; i-- {
+		for j := len(m.msgs[i].items) - 1; j >= 0; j-- {
+			if m.msgs[i].items[j].thinking && m.msgs[i].items[j].open {
+				m.msgs[i].items[j].open = false
+				m.convCount = -1
+				m.refresh()
+				return true, nil
+			}
+		}
+	}
+	for i := len(m.msgs) - 1; i >= 0; i-- {
+		for j := len(m.msgs[i].steps) - 1; j >= 0; j-- {
+			if m.msgs[i].steps[j].expanded {
+				m.msgs[i].steps[j].expanded = false
+				m.convCount = -1
+				m.refresh()
+				return true, nil
+			}
+		}
+	}
+	if n := len(m.msgs); n > 0 && isEphemeralCard(m.msgs[n-1]) {
+		m.msgs = m.msgs[:n-1]
+		m.convCount = -1
+		m.refresh()
+		return true, nil
+	}
+	return false, nil
+}
+
+// isEphemeralCard reports a local help card that ESC should pop.
+func isEphemeralCard(msg message) bool {
+	if !msg.raw {
+		return false
+	}
+	return strings.Contains(msg.content, "⬡ help")
 }

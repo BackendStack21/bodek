@@ -282,9 +282,8 @@ func TestStatsCard(t *testing.T) {
 	m.resolveMaxContext()
 
 	m.showStats()
-	last := m.msgs[len(m.msgs)-1]
-	if !last.raw {
-		t.Fatal("stats card should be a raw message")
+	if m.panel != panelStats {
+		t.Fatal("stats should open as a bottom sheet")
 	}
 	out := plain(m.View())
 	for _, want := range []string{"session", "context", "output", "turns", "tools", "latency", "thinking", "active", "model"} {

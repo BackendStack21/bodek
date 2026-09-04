@@ -169,9 +169,11 @@ func TestE2EAllCommands(t *testing.T) {
 			}
 		},
 		"/stats": func(t *testing.T, m *Model) {
-			card := lastMsg(m)
-			if card == nil || !card.raw || !strings.Contains(plain(card.content), "⬡ session") {
-				t.Fatalf("/stats card = %+v", card)
+			if m.panel != panelStats {
+				t.Fatalf("/stats panel = %v, want panelStats", m.panel)
+			}
+			if out := plain(m.View()); !strings.Contains(out, "stats") {
+				t.Fatalf("/stats sheet missing chrome:\n%s", out)
 			}
 		},
 		"/server": func(t *testing.T, m *Model) {
@@ -433,8 +435,7 @@ func TestE2EUnknownCommandAndPopupEnter(t *testing.T) {
 	// the highlighted first match: /stats.
 	m2 := wired(t)
 	drive(m2, typeLine(m2, "/s"))
-	card := lastMsg(m2)
-	if card == nil || !strings.Contains(plain(card.content), "⬡ session") {
-		t.Errorf("popup enter should run the highlighted /stats, got %+v", card)
+	if m2.panel != panelStats {
+		t.Errorf("popup enter should run the highlighted /stats, panel=%v", m2.panel)
 	}
 }

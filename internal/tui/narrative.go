@@ -84,8 +84,38 @@ func thinkingBeats(msg message) int {
 	return n
 }
 
-// thinkingDur is the block's elapsed time: stamped on finalize, live
-// otherwise. Zero when the block has no start (replayed history).
+// thinkingBeatIndex is this block's 1-based position among the turn's
+// reasoning blocks (beat 2 of 3).
+func thinkingBeatIndex(msg message, itemIdx int) int {
+	k := 0
+	for i := 0; i <= itemIdx && i < len(msg.items); i++ {
+		if msg.items[i].thinking && strings.TrimSpace(msg.items[i].text) != "" {
+			k++
+		}
+	}
+	if k == 0 {
+		return 1
+	}
+	return k
+}
+
+// sealThinking freezes the open reasoning block's elapsed time. A think
+// cycle ends when the model acts (tool call or reply) — the clock must
+// not keep running through the tool that follows.
+func sealThinking(msg *message) {
+	n := len(msg.items)
+	if n == 0 {
+		return
+	}
+	it := &msg.items[n-1]
+	if it.thinking && it.dur == 0 && !it.started.IsZero() {
+		it.dur = time.Since(it.started)
+	}
+}
+
+// thinkingDur is the block's elapsed time: stamped when the cycle yields
+// (tool / reply / finalize), live only while this block is still open.
+// Zero when the block has no start (replayed history).
 func thinkingDur(it turnItem, streaming bool) time.Duration {
 	if it.dur > 0 {
 		return it.dur
