@@ -128,6 +128,7 @@ bodek --mouse                                     # enable mouse wheel scrolling
 bodek --bel=false                                 # mute the attention bell (title still updates)
 bodek --notify                                    # desktop notifications (OSC 9) on turn/approval events
 bodek --theme ember-light                         # start with a theme (/theme switches live)
+bodek --verbosity quiet                           # calmer start: info notes hidden, compact steps
 bodek --plain                                     # linear mode: transcript to scrollback (a11y, pipes)
 bodek -- --prompt-caching                         # pass extra flags through to `odek serve`
 bodek version                                     # print the bodek version
@@ -241,6 +242,17 @@ own front-end settings are separate; see [Configuration](#configuration).
   signals appear as quiet status lines; internal housekeeping (context
   trims, tool execution times) stays silent. Info traces fade after 3s;
   errors, warnings, and disconnect notes autoclose after 10s.
+- **Just-in-time hints** — the first time a state appears (a held prompt,
+  a sub-agent swarm, a multi-step turn), a one-time 💡 tip teaches its key,
+  then stays silent for the run. Features surface the moment they matter;
+  no keybinding table required.
+- **Session home dashboard** — after `/clear`, the home card orients: the
+  last prompt and receipt, the context gauge, up to three recent sessions
+  (titles sanitized), and one action line pointing at the `^K` hub.
+- **Verbosity dial** — `/verbosity` (or `--verbosity quiet|normal|detailed`)
+  sets the whole noise policy in one stroke: quiet hides info traces and
+  keeps steps compact, detailed implies the `^E` expand-all view, normal is
+  the default. Errors, warnings, and hints show in every dial state.
 - **Cancellation** (`Esc`) — abort a running turn via odek's cancel API.
 - **Provider-failure cards** — when a turn dies mid-flight (stream stall
   under parallel load, HTTP 429 after the retry budget, dropped connection,
@@ -330,7 +342,7 @@ own front-end settings are separate; see [Configuration](#configuration).
 | `alt+r` | Re-send the last prompt (`/retry`) |
 | `alt+f` | Search the transcript (`⏎`/`n` next match · `N` previous · scrolling stays live) |
 | `^F` | Fold/unfold the most recent turn card (click any turn head with `--mouse`) |
-| `tab` | Focus the next sub-agent chip on a swarm turn; otherwise open/close the latest reasoning block |
+| `tab` | Focus the next sub-agent chip on a swarm turn; otherwise open/close the latest reasoning block; with neither, toggle the latest step's expansion |
 | `^R` | Browse & resume saved sessions |
 | `^O` | Switch the model |
 | `^Q` | Unfold the queue strip from the composer shelf (`↑↓`/`jk` select · `←→`/`hl` move · `d d` two-step delete · `esc`/`⏎` folds it back; full manager: `/queue`) |
@@ -386,6 +398,7 @@ full command and press `⏎`.
 | `/retry` | Re-send the last prompt (queues it if a turn is running) |
 | `/queue` | Manage the prompt queue — priority, delete, send now (the full manager over the `^Q` strip) |
 | `/theme [name]` | Switch the color theme at runtime and persist it (`ember-dark` · `ember-light` · `high-contrast` · `classic`) |
+| `/verbosity [quiet\|normal\|detailed]` | One-dial noise policy: quiet hides info notes & keeps steps compact, detailed expands every step (`^E` view); bare `/verbosity` cycles |
 | `/stats` | Session metrics sheet (cost, cache, context gauge) |
 | `/server` | Cockpit — server, link, budget & session in one card (or click the header) |
 | `/sessions` | Browse, search, pin, rename, export & resume sessions |

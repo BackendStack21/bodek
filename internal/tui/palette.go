@@ -137,6 +137,16 @@ func (m *Model) basePaletteEntries() []palEntry {
 			run: func(m *Model) tea.Cmd { m.expandAll = !m.expandAll; m.convCount = -1; return nil }},
 		{title: "toggle extended thinking", hint: "^T", kind: "action",
 			run: func(m *Model) tea.Cmd { m.thinkOn = !m.thinkOn; return nil }},
+		{title: "find in transcript", hint: "alt+f", kind: "action",
+			run: func(m *Model) tea.Cmd { m.openFind(); return nil }},
+		{title: "fold the latest turn", hint: "^F", kind: "action",
+			run: func(m *Model) tea.Cmd { m.toggleCollapseLast(); return nil }},
+		{title: "verbosity: quiet — hide info notes", hint: "/verbosity", kind: "action",
+			run: func(m *Model) tea.Cmd { return m.setVerbosity(verbosityQuiet) }},
+		{title: "verbosity: normal — default transcript", hint: "/verbosity", kind: "action",
+			run: func(m *Model) tea.Cmd { return m.setVerbosity(verbosityNormal) }},
+		{title: "verbosity: detailed — expand every step", hint: "^E", kind: "action",
+			run: func(m *Model) tea.Cmd { return m.setVerbosity(verbosityDetailed) }},
 	}
 	for _, c := range slashCommands() {
 		cmd := c

@@ -142,6 +142,13 @@ func (m *Model) handleEvent(ev client.Event) (tea.Model, tea.Cmd) {
 					steps[j].done = true
 					steps[j].result = resultPreview(ev.Data)
 					steps[j].isErr = looksLikeError(steps[j].result)
+					if steps[j].isErr && !steps[j].expanded {
+						// A failing step is why anyone expands anything —
+						// unfold it once so the diagnosis is on screen
+						// without a hunt (the user can re-collapse it).
+						steps[j].expanded = true
+						m.convCount = -1
+					}
 					if steps[j].subagent {
 						steps[j].resultCard = parseAgentResult(ev.Data)
 						if rc := steps[j].resultCard; rc != nil && rc.denialsTotal > 0 {
@@ -192,6 +199,9 @@ func (m *Model) handleEvent(ev client.Event) (tea.Model, tea.Cmd) {
 			m.msgs[i].stats = &ts
 			m.turnStats = append(m.turnStats, ts)
 			m.toolTotal += ts.toolCount
+			if ts.toolCount > 0 {
+				m.teach(hintSteps, "tip: click any step to expand its output · ^E expands all · /verbosity dials detail")
+			}
 		}
 		m.renderPending = false // the turn's final state renders now, not on a flush
 		m.finalize()
@@ -357,6 +367,7 @@ func (m *Model) handleEvent(ev client.Event) (tea.Model, tea.Cmd) {
 		if i := m.cur(); i >= 0 && m.attachSubState(i, ev) {
 			stream = true // coalesce redraws — state frames arrive in bursts
 			m.subagentTerminalNote(ev)
+			m.teach(hintSwarm, "tip: tab cycles sub-agent chips · /agents opens the registry")
 			break
 		}
 		m.addTransientNote("subagent · " + stateNoticeLine(ev))
@@ -799,8 +810,13 @@ func (m *Model) addNote(s string) {
 	m.pushNote(s, time.Now().Add(alertTTL))
 }
 
-// addTransientNote appends an info trace that fades after noticeTTL.
+// addTransientNote appends an info trace that fades after noticeTTL. The
+// verbosity dial gates it: quiet hides info traces entirely (alerts, hints,
+// and the dial's own ack always show).
 func (m *Model) addTransientNote(s string) {
+	if m.verbosity == verbosityQuiet {
+		return
+	}
 	m.pushNote(s, time.Now().Add(noticeTTL))
 }
 

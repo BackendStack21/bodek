@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/BackendStack21/bodek/internal/client"
@@ -243,6 +244,41 @@ func (m *Model) modePrefix() string {
 
 // ── session home ────────────────────────────────────────────────────────────
 
+// homeSessionsMsg delivers the async recent-sessions list for the cleared
+// home dashboard (same source as the palette's resume rows).
+type homeSessionsMsg struct {
+	items []client.Session
+	err   error
+}
+
+// fetchHomeSessions arms the once-per-clear recent-sessions fetch that backs
+// the home dashboard. Nil when it already ran — the home is a snapshot of
+// the moment the conversation cleared, not a live poll.
+func (m *Model) fetchHomeSessions() tea.Cmd {
+	if m.homeSessDone {
+		return nil
+	}
+	m.homeSessDone = true
+	cl := m.cl
+	return func() tea.Msg {
+		if cl == nil {
+			return homeSessionsMsg{}
+		}
+		items, err := cl.Sessions()
+		return homeSessionsMsg{items: items, err: err}
+	}
+}
+
+// handleHomeSessions stores the fetched recents. Failures stay silent —
+// the dashboard is decorative orientation, never worth a strip note.
+func (m *Model) handleHomeSessions(msg homeSessionsMsg) {
+	if msg.err != nil {
+		return
+	}
+	m.homeSess = msg.items
+	m.refresh()
+}
+
 func (m *Model) home() string {
 	if m.homePrompt != "" || (m.sessionID != "" && m.lastPrompt != "") {
 		return m.sessionHome()
@@ -271,8 +307,21 @@ func (m *Model) sessionHome() string {
 	if m.maxContext > 0 {
 		b.WriteString(m.ctxGauge(true) + "\n")
 	}
+	// Recent sessions: orientation, not navigation — ⏎ types a new task
+	// and the hub (^K) resumes. Wire-borne titles collapse before render.
+	for i, s := range m.homeSess {
+		if i >= 3 {
+			break
+		}
+		task := collapse(s.Task)
+		if task == "" {
+			task = "(untitled)"
+		}
+		b.WriteString(th.statsDim.Render(fmt.Sprintf("↩ %s · %d turns · %s",
+			truncate(task, max(w-24, 12)), s.Turns, ago(s.UpdatedAt))) + "\n")
+	}
 	b.WriteString("\n")
-	b.WriteString(th.tipKey.Render("type a task") + "  " + th.tipText.Render("⏎ sends · ^K palette") + "\n")
+	b.WriteString(th.tipKey.Render("type a task") + "  " + th.tipText.Render("⏎ sends · ^K everything · /verbosity dials detail") + "\n")
 	return lipgloss.NewStyle().Width(w).PaddingLeft(2).Render(strings.TrimRight(b.String(), "\n"))
 }
 

@@ -55,6 +55,16 @@ func slashCommands() []command {
 		}},
 		{"export", "save the session transcript — /export [md|json]", runExport},
 		{"theme", "switch the color theme — /theme [name]", runTheme},
+		{"verbosity", "noise dial — /verbosity [quiet|normal|detailed]", func(m *Model, args string) tea.Cmd {
+			switch strings.ToLower(strings.TrimSpace(args)) {
+			case "quiet", "normal", "detailed", "verbose":
+				return m.setVerbosity(verbosityFrom(args))
+			case "":
+				return m.cycleVerbosity()
+			default:
+				return m.dialNote("verbosity: pick quiet, normal, or detailed")
+			}
+		}},
 		{"retry", "re-send the last prompt (alt+r)", func(m *Model, _ string) tea.Cmd {
 			return m.retryLast()
 		}},

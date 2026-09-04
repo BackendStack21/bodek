@@ -28,6 +28,7 @@ silently ignored.
 | `bel` | bool | `true` | `--bel` | Ring the terminal bell when a turn completes or an approval is waiting (`--bel=false` mutes; the title still updates). |
 | `notify` | bool | `false` | `--notify` | Raise desktop notifications (OSC 9) on turn completion and pending approvals. |
 | `plain` | bool | `false` | `--plain` | Linear mode: no alt-screen; agent events print to the terminal's native scrollback (screen readers, pipes, logs). |
+| — (flag only) | string | `normal` | `--verbosity` | Startup noise dial: `quiet` (info notes hidden, compact steps), `normal`, `detailed` (steps expand). `/verbosity` switches at runtime; never persisted to this file. |
 
 Unset keys fall back to their defaults — the file only ever stores choices
 you actually made (`/theme` writes `theme`; the rest you write by hand).

@@ -355,6 +355,19 @@ func TestE2EAllCommands(t *testing.T) {
 				t.Fatalf("found:false copy wrong: %q", m.panelMsg)
 			}
 		},
+		"/verbosity": func(t *testing.T, m *Model) {
+			// The bare line cycles normal → quiet, acknowledged from below
+			// the quiet gate so the ack survives its own dial.
+			if m.verbosity != verbosityQuiet {
+				t.Fatalf("verbosity = %d, want quiet after the first cycle", m.verbosity)
+			}
+			if m.expandAll {
+				t.Fatal("quiet must force compact steps")
+			}
+			if !strings.Contains(strings.Join(m.notices, "\n"), "verbosity: quiet") {
+				t.Fatalf("dial ack missing: %q", m.notices)
+			}
+		},
 	}
 
 	// Command → the line a user types for it (some need pre-seeded state).

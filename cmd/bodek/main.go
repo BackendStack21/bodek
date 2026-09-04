@@ -39,6 +39,7 @@ type config struct {
 	notify    bool   // desktop notifications (OSC 9) on the same events
 	plain     bool   // linear rendering mode (no alt-screen)
 	theme     string // startup palette override (empty = BODEK_THEME / settings)
+	verbosity string // startup noise dial: quiet, normal, detailed (empty = normal)
 	extraArgs []string
 
 	persist settings.Settings // the loaded file, re-saved when /theme switches
@@ -74,6 +75,7 @@ func parseConfig(args []string, output io.Writer) (config, error) {
 	fs.BoolVar(&cfg.bel, "bel", st.Bool(st.Bell, true), "ring the terminal bell when a turn completes or an approval is waiting (--bel=false mutes)")
 	fs.BoolVar(&cfg.notify, "notify", st.Bool(st.Notify, false), "raise desktop notifications (OSC 9) on turn completion and approvals")
 	fs.BoolVar(&cfg.plain, "plain", st.Bool(st.Plain, false), "linear mode: no alt-screen, transcript printed to scrollback (screen readers, pipes, logs)")
+	fs.StringVar(&cfg.verbosity, "verbosity", "", "noise dial: quiet (info notes hidden, compact steps), normal, detailed (steps expand) — /verbosity switches at runtime")
 	fs.Usage = func() {
 		_, _ = fmt.Fprintf(fs.Output(), "Usage: bodek [options] [-- <odek serve flags>]\n\n")
 		_, _ = fmt.Fprintf(fs.Output(), "A terminal interface for the odek agent.\n\n")
@@ -206,6 +208,7 @@ func run() error {
 		Plain:       cfg.plain,
 		Theme:       cfg.theme,
 		Mouse:       cfg.mouse,
+		Verbosity:   cfg.verbosity,
 		OnThemeChange: func(name string) error {
 			cfg.persist.Theme = name
 			return settings.Save(cfg.persist)
