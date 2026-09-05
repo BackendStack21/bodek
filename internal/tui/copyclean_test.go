@@ -48,7 +48,14 @@ func TestAnswerSeparatedFromReasoning(t *testing.T) {
 		},
 		steps: []step{{name: "shell", arg: "ls", done: true, result: "file.go"}},
 	})
+	// Calm default: reasoning stays hidden; steps and the answer render.
 	rendered, _ := m.renderMessage(m.msgs[0], 0, 0)
+	if out := plain(rendered); strings.Contains(out, "hmm") {
+		t.Errorf("reasoning must stay hidden by default:\n%s", out)
+	}
+	m.expandAll = true
+	rendered, _ = m.renderMessage(m.msgs[0], 0, 0)
+	m.expandAll = false
 	lines := strings.Split(plain(rendered), "\n")
 
 	thinkIdx, stepIdx, ansIdx := -1, -1, -1
@@ -81,15 +88,25 @@ func TestAnswerSeparatedFromReasoning(t *testing.T) {
 	if line != "The answer." || strings.IndexFunc(lines[ansIdx], func(r rune) bool { return r != ' ' }) > 2 {
 		t.Errorf("answer carries more than the card padding: %q", lines[ansIdx])
 	}
-	// Live streaming turns keep the same separation.
+	// Live streaming turns keep the same separation — reasoning hidden in
+	// the calm default, both sections present and ordered under details.
 	m2 := newTestModel()
 	streamingTurn(m2)
 	m2.handleEvent(client.Event{Type: "thinking", Content: "live thought"})
 	m2.handleEvent(client.Event{Type: "token", Content: "live answer"})
 	out := plain(m2.conversation())
+	if strings.Contains(out, "live thought") {
+		t.Errorf("streamed reasoning must stay hidden by default:\n%s", out)
+	}
+	if !strings.Contains(out, "live answer") {
+		t.Errorf("streamed turn missing %q:\n%s", "live answer", out)
+	}
+	m2.expandAll = true
+	m2.invalidateAllMsgBlocks()
+	out = plain(m2.conversation())
 	for _, want := range []string{"live thought", "live answer"} {
 		if !strings.Contains(out, want) {
-			t.Errorf("streamed turn missing %q:\n%s", want, out)
+			t.Errorf("details view missing %q:\n%s", want, out)
 		}
 	}
 	if think, ans := strings.Index(out, "live thought"), strings.Index(out, "live answer"); think > ans {
@@ -157,10 +174,17 @@ func TestAnswerCard(t *testing.T) {
 	if !strings.Contains(plain(asstOut), "Fixed. The cookie was stale.") {
 		t.Errorf("answer card lost text:\n%s", plain(asstOut))
 	}
-	// The dimmed work section stays outside the card.
-	if strings.Contains(plain(asstOut), "hmm") == false {
-		t.Errorf("work section missing from the turn:\n%s", plain(asstOut))
+	// The dimmed work section stays outside the card — hidden in the calm
+	// default, visible under details.
+	if strings.Contains(plain(asstOut), "hmm") {
+		t.Errorf("reasoning must stay hidden by default:\n%s", plain(asstOut))
 	}
+	m.expandAll = true
+	asstOut, _ = m.renderMessage(m.msgs[1], 1, 0)
+	if !strings.Contains(plain(asstOut), "hmm") {
+		t.Errorf("details view should show the reasoning outside the card:\n%s", plain(asstOut))
+	}
+	m.expandAll = false
 	lipgloss.SetColorProfile(termenv.Ascii)
 }
 

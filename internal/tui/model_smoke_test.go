@@ -86,7 +86,9 @@ func TestRenderStreamingTurn(t *testing.T) {
 // has no content yet, the transcript shows neither a "thinking…" placeholder
 // nor a bare odek block — the status line above the input is the only
 // progress signal.
-// The turn block appears atomically once the first real content arrives.
+// A reasoning-only stream surfaces just the bare turn head (the rail is
+// hidden in the calm default); real content paints once the first reply
+// token arrives.
 func TestEmptyStreamingTurnHidden(t *testing.T) {
 	m := newTestModel()
 	m.msgs = append(m.msgs,
@@ -104,11 +106,22 @@ func TestEmptyStreamingTurnHidden(t *testing.T) {
 		t.Errorf("empty streaming turn renders a bare odek block:\n%s", out)
 	}
 
-	// First reasoning chunk makes the turn block visible.
+	// Calm default: a reasoning chunk surfaces only the bare turn head —
+	// the rail itself stays hidden; the status line is the progress signal.
 	m.handleEvent(client.Event{Type: "thinking", Content: "hmm"})
 	out = plain(m.conversation())
-	if !strings.Contains(out, "⬡ odek") || !strings.Contains(out, "hmm") {
-		t.Errorf("turn block did not appear after first content:\n%s", out)
+	if !strings.Contains(out, "⬡ odek") {
+		t.Errorf("turn head should appear once the turn starts:\n%s", out)
+	}
+	if strings.Contains(out, "hmm") {
+		t.Errorf("reasoning must stay hidden by default:\n%s", out)
+	}
+
+	// The first reply token paints real content under the head.
+	m.handleEvent(client.Event{Type: "token", Content: "answer"})
+	out = plain(m.conversation())
+	if !strings.Contains(out, "answer") {
+		t.Errorf("turn block did not appear after first reply content:\n%s", out)
 	}
 }
 

@@ -454,7 +454,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, cmd
 		}
 		// The status-line spinner animates outside the viewport; only refresh
-		// the transcript for live step clocks, and coalesce that lane.
+		// the transcript for live transcript clocks (the streaming head
+		// counter, running step timers), and coalesce that lane.
 		if m.busy && m.hasLiveStepClock() {
 			return m, tea.Batch(cmd, m.queueTailClock())
 		}
@@ -879,14 +880,15 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case "ctrl+e":
-		// Global details toggle: every step (including in-flight ones) shows
-		// its full output/logs; the per-step mouse toggle still layers on top.
+		// Global details toggle: reasoning previews and every step's full
+		// output/logs (including in-flight ones) paint only while this is on;
+		// the per-block and per-step toggles still layer on top.
 		m.expandAll = !m.expandAll
 		state := "off"
 		if m.expandAll {
 			state = "on"
 		}
-		cmd := m.transientNoteCmd("tool details " + state)
+		cmd := m.transientNoteCmd("details " + state)
 		m.invalidateAllMsgBlocks()
 		for i := range m.msgs {
 			for j := range m.msgs[i].steps {

@@ -10,15 +10,16 @@ import (
 //
 // One dial for the noise policy instead of five separate toggles. Quiet
 // hides info-tier traces (the strip keeps errors, warnings, hints, and the
-// dial's own ack) and forces compact steps; detailed implies the ^E
-// expand-all view; normal is exactly the historical default. The dial rides
-// /verbosity and the palette — no new chords, the hint layer teaches it.
+// dial's own ack); detailed implies the ^E expand-all view; normal is the
+// calm default — reasoning previews and tool responses stay hidden behind
+// ^E in every dial state. The dial rides /verbosity and the palette — no
+// new chords, the hint layer teaches it.
 
 // Dial states (Model.verbosity). Normal is the zero value so an
 // unconfigured Model defaults to today's behavior.
 const (
-	verbosityNormal   = 0 // today's default behavior
-	verbosityQuiet    = 1 // info notes hidden, steps compact
+	verbosityNormal   = 0 // calm default: details behind ^E
+	verbosityQuiet    = 1 // info notes hidden
 	verbosityDetailed = 2 // steps expand (the ^E view)
 )
 
@@ -67,11 +68,11 @@ func (m *Model) setVerbosity(v int) tea.Cmd {
 	var desc string
 	switch v {
 	case verbosityQuiet:
-		desc = "engine traces hidden · steps compact"
+		desc = "engine traces hidden"
 	case verbosityDetailed:
-		desc = "steps expand · engine traces shown"
+		desc = "reasoning & tool output shown · engine traces shown"
 	default:
-		desc = "engine traces shown · steps compact"
+		desc = "engine traces shown · ^E reveals details"
 	}
 	return m.dialNote("verbosity: " + verbosityName(v) + " — " + desc)
 }

@@ -688,14 +688,29 @@ func TestSessionDetailReplay(t *testing.T) {
 		}
 	}
 
-	// The rendered transcript shows tools and reasoning like a live turn, with
-	// no delimiter frame leaking through.
+	// The rendered transcript shows tools and the reply like a live turn;
+	// replayed reasoning stays hidden in the calm default and no delimiter
+	// frame leaks through.
 	out := plain(m.conversation())
-	for _, s := range []string{"read_file", "run_tests", "let me look at the code", "Fixed the bug."} {
+	for _, s := range []string{"read_file", "run_tests", "Fixed the bug."} {
 		if !strings.Contains(out, s) {
 			t.Errorf("rendered transcript missing %q:\n%s", s, out)
 		}
 	}
+	if strings.Contains(out, "let me look at the code") {
+		t.Errorf("replayed reasoning must stay hidden by default:\n%s", out)
+	}
+	m.expandAll = true
+	m.invalidateAllMsgBlocks()
+	for i := range m.msgs {
+		for j := range m.msgs[i].steps {
+			clearStepBlockCache(&m.msgs[i].steps[j])
+		}
+	}
+	if out = plain(m.conversation()); !strings.Contains(out, "let me look at the code") {
+		t.Errorf("details view should reveal replayed reasoning:\n%s", out)
+	}
+	m.expandAll = false
 	if strings.Contains(out, "TOOL RESULT") {
 		t.Errorf("delimiter frame leaked into the transcript:\n%s", out)
 	}

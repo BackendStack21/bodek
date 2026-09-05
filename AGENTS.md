@@ -97,15 +97,25 @@ feat(tui): compact tool steps with Ctrl+E details toggle
   alongside it. `msg.content` stays the "\n\n"-joined blob of all reply
   segments (appendReply maintains it) for export, stats, and hand-built
   messages; turn markers (`**Cancelled.**` etc.) attach to the last reply.
-  The live intent rail holds completed sentences (or a short frozen stem)
-  so a fast `thinking_delta` stream cannot ticker the excerpt; sealed and
-  finalized blocks still show the last two sentences. The status line
+  The calm default hides reasoning previews and tool responses: the intent
+  rail and step result bodies paint only under `^E` (details) or a
+  deliberate expand — `tab` opens one reasoning block; click or tab's
+  fallback expands one step; the result peek is gone. While a turn
+  streams, its head line carries the run's elapsed counter right-aligned
+  at the viewport edge (the `runStart` clock, whole seconds, dropped for
+  the sealed telemetry stat on finalize). A deliberately opened
+  live rail still holds completed sentences (or a short frozen stem) so a
+  fast `thinking_delta` stream cannot ticker it; failed steps still
+  auto-expand once on the live path. The status line
   stays a quiet `reasoning` / `composing` label while those surfaces own
   the words; live tool steps use a static `▸` (one spinner: the status
-  line). `beginWireTurn` must not `GotoBottom` — `refresh()` already
+  line). A finished step keeps its sealed `dur` in the right rail — after
+  the typed chip when one exists — so per-tool times outlive completion;
+  resumed history (`dur` 0) shows none. `beginWireTurn` must not
+  `GotoBottom` — `refresh()` already
   sticks when the reader is at the bottom, and a yank fights the
   "↓ new output" contract. Render-only layers
-  (intent rail, always-on step peek, turn receipt, live
+  (intent rail, turn receipt, live
   swarm band, sub-agent chip strip, swarm receipt rail) must not reorder
   `items[]` — the parallel-tool swarm is a consecutive overlay on unfinished
   parent steps and dissolves when one leftover remains. Sub-agent children
@@ -141,7 +151,9 @@ feat(tui): compact tool steps with Ctrl+E details toggle
   performance; batching new redraw paths the same way keeps the TUI
   responsive. Live reply segments glamour-render on that flush (not only
   at turn end). The spinner animates the status line only — transcript
-  rebuilds for live step clocks coalesce at 250ms (`tailClockFlushMsg`).
+  rebuilds for live transcript clocks (streaming head counter, step timers)
+  coalesce at 250ms (`tailClockFlushMsg`); the lane ticks whenever a message
+  streams, not only when steps run.
   Finished message blocks and done tool steps cache their render output;
   invalidate per message/step on expand, not the whole prefix.
 - The slash-completion popup holds key capture while open; typed keys

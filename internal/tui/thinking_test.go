@@ -8,8 +8,8 @@ import (
 )
 
 // TestThinkingAccordion verifies the intent-rail contract: the full block
-// is stored, live and finalized renders show the last sentences on a rail,
-// and expandAll / a manual open still unfolds the stored text.
+// is stored, hidden in the calm default (live and finalized alike), and
+// expandAll / a manual open unfold the stored text.
 func TestThinkingAccordion(t *testing.T) {
 	m := newTestModel()
 	m.msgs = append(m.msgs, message{role: roleAsst, streaming: true})
@@ -27,36 +27,50 @@ func TestThinkingAccordion(t *testing.T) {
 		t.Errorf("thinking block should be stored in full, got %d of %d bytes", len(block), len(chunk))
 	}
 
-	// LIVE: no sentence has landed, so the rail holds the opening stem
-	// instead of chasing the growing tail (motion-sickness contract).
+	// Calm default: LIVE reasoning stays hidden — no rail, no glyph, no
+	// text. The status line is the only signal while odek thinks.
 	rendered, _ := m.renderMessage(m.msgs[0], 0, 0)
 	out := plain(rendered)
-	if !strings.Contains(out, "head-marker") {
-		t.Errorf("live rail should hold the opening stem:\n%s", out[:200])
+	if strings.Contains(out, "head-marker") || strings.Contains(out, "tail-marker") {
+		t.Errorf("live reasoning must stay hidden by default:\n%s", out[:200])
 	}
-	if strings.Contains(out, "tail-marker") {
-		t.Errorf("live rail should not chase the tail:\n%s", out[:200])
-	}
-	if !strings.Contains(out, "┊") {
-		t.Errorf("live rail missing the intent glyph:\n%s", out[:200])
+	if strings.Contains(out, "┊") {
+		t.Errorf("live rail glyph must stay hidden by default:\n%s", out[:200])
 	}
 
-	// Finalize: same tail excerpt, plus a thinking meta line.
+	// ^E unfolds the whole block while the turn is still streaming.
+	m.expandAll = true
+	rendered, _ = m.renderMessage(m.msgs[0], 0, 0)
+	out = plain(rendered)
+	if !strings.Contains(squishSpaces(out), "head-marker") || !strings.Contains(squishSpaces(out), "tail-marker") {
+		t.Errorf("details view should unfold the live block in full:\n%s", out)
+	}
+	if !strings.Contains(out, "┊") {
+		t.Errorf("details view missing the intent glyph:\n%s", out)
+	}
+	m.expandAll = false
+
+	// Finalize: the sealed block stays hidden by default…
 	m.handleEvent(client.Event{Type: "done", Latency: 0.5, ContextTokens: 10, OutputTokens: 1})
 	rendered, _ = m.renderMessage(m.msgs[0], 0, 0)
 	out = plain(rendered)
-	if !strings.Contains(out, "tail-marker") {
-		t.Errorf("finalized rail lost the last sentences:\n%s", out)
-	}
-	if strings.Contains(out, "head-marker") {
-		t.Errorf("finalized rail should stay on the tail excerpt:\n%s", out)
-	}
-	if !strings.Contains(out, "thinking") {
-		t.Errorf("finalized rail missing the thinking meta:\n%s", out)
+	if strings.Contains(out, "tail-marker") {
+		t.Errorf("finalized reasoning must stay hidden by default:\n%s", out)
 	}
 	if m.msgs[0].items[0].open {
 		t.Error("finalize should close the renderer-opened block")
 	}
+	// …and ^E renders it whole with the thinking meta line.
+	m.expandAll = true
+	rendered, _ = m.renderMessage(m.msgs[0], 0, 0)
+	out = plain(rendered)
+	if !strings.Contains(squishSpaces(out), "tail-marker") {
+		t.Errorf("details view lost the finalized block:\n%s", out)
+	}
+	if !strings.Contains(out, "thinking") {
+		t.Errorf("details view missing the thinking meta:\n%s", out)
+	}
+	m.expandAll = false
 
 	// A subsequent event extends the same block (checked live, above).
 	m2 := newTestModel()
@@ -91,7 +105,7 @@ func TestThinkingManualOpenPersists(t *testing.T) {
 		t.Fatal("tab did not open the reasoning block")
 	}
 	rendered, _ := m.renderMessage(m.msgs[0], 0, 0)
-	if out := plain(rendered); !strings.Contains(out, "tail-marker") {
+	if out := plain(rendered); !strings.Contains(squishSpaces(out), "tail-marker") {
 		t.Errorf("manually opened block should render in full:\n%s", out[:200])
 	}
 
@@ -99,15 +113,15 @@ func TestThinkingManualOpenPersists(t *testing.T) {
 	m.msgs[0].items[0].open = false
 	m.expandAll = true
 	rendered, _ = m.renderMessage(m.msgs[0], 0, 0)
-	if out := plain(rendered); !strings.Contains(out, "tail-marker") {
+	if out := plain(rendered); !strings.Contains(squishSpaces(out), "tail-marker") {
 		t.Errorf("expandAll should render the full thinking text:\n%s", out[:200])
 	}
 
-	// Collapsed again: back to the tail excerpt.
+	// Collapsed again: the block hides entirely (calm default).
 	m.expandAll = false
 	rendered, _ = m.renderMessage(m.msgs[0], 0, 0)
-	if out := plain(rendered); !strings.Contains(out, "tail-marker") || strings.Contains(out, "head-marker") {
-		t.Errorf("collapsed render should show the tail excerpt:\n%s", out[:200])
+	if out := plain(rendered); strings.Contains(out, "tail-marker") || strings.Contains(out, "head-marker") {
+		t.Errorf("collapsed render should hide the block:\n%s", out[:200])
 	}
 }
 
@@ -169,7 +183,8 @@ func TestThinkingInterleavesWithTools(t *testing.T) {
 		}
 	}
 
-	// Streaming render.
+	// Details view: thinking interleaves around the tool step.
+	m.expandAll = true
 	rendered, _ := m.renderMessage(m.msgs[0], 0, 0)
 	assertOrder(plain(rendered))
 
@@ -177,6 +192,7 @@ func TestThinkingInterleavesWithTools(t *testing.T) {
 	m.handleEvent(client.Event{Type: "done", Latency: 0.5, ContextTokens: 10, OutputTokens: 1})
 	rendered, _ = m.renderMessage(m.msgs[0], 0, 0)
 	assertOrder(plain(rendered))
+	m.expandAll = false
 	if m.msgs[0].thinking != "first\nsecond thought" {
 		t.Errorf("finalized thinking not concatenated: %q", m.msgs[0].thinking)
 	}
@@ -189,7 +205,14 @@ func TestThinkingInterleavesWithTools(t *testing.T) {
 func TestRenderMessageTimelineFallbacks(t *testing.T) {
 	m := newTestModel()
 	msg := message{role: roleAsst, thinking: "old thought", steps: []step{{name: "read", done: true}}}
+	// Calm default: the fallback thinking item hides like every rail.
 	out, _ := m.renderMessage(msg, 0, 0)
+	if strings.Contains(plain(out), "old thought") {
+		t.Errorf("fallback thinking must stay hidden by default:\n%s", plain(out))
+	}
+	m.expandAll = true
+	out, _ = m.renderMessage(msg, 0, 0)
+	m.expandAll = false
 	if !strings.Contains(plain(out), "old thought") {
 		t.Errorf("fallback thinking not rendered:\n%s", plain(out))
 	}
@@ -203,7 +226,7 @@ func TestRenderMessageTimelineFallbacks(t *testing.T) {
 
 // TestThinkingCapturedOnFinalize verifies that reasoning is stored in the
 // assistant message and still renders above the final response after the turn
-// ends.
+// ends — hidden in the calm default, ordered under details.
 func TestThinkingCapturedOnFinalize(t *testing.T) {
 	m := newTestModel()
 	m.msgs = append(m.msgs, message{role: roleAsst, streaming: true})
@@ -219,9 +242,16 @@ func TestThinkingCapturedOnFinalize(t *testing.T) {
 	}
 	rendered, _ := m.renderMessage(m.msgs[0], 0, 0)
 	out := plain(rendered)
+	if strings.Contains(out, "planning the response") {
+		t.Errorf("finalized thinking must stay hidden by default:\n%s", out)
+	}
+	m.expandAll = true
+	rendered, _ = m.renderMessage(m.msgs[0], 0, 0)
+	m.expandAll = false
+	out = plain(rendered)
 	thinkIdx := strings.Index(out, "planning the response")
 	respIdx := strings.Index(out, "hello")
 	if thinkIdx < 0 || respIdx < 0 || thinkIdx > respIdx {
-		t.Errorf("thinking should appear above response in finalized message:\n%s", out)
+		t.Errorf("thinking should appear above response in the details view:\n%s", out)
 	}
 }

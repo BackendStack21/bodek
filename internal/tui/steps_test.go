@@ -220,13 +220,14 @@ func TestRenderStepsSubagentAndError(t *testing.T) {
 			t.Errorf("renderSteps missing %q in:\n%s", want, plainOut)
 		}
 	}
-	// The compact head carries no arrow excerpt; the peek shows the first
-	// result beat. Nested sub-agent logs stay behind expand.
+	// Calm default: the compact head carries no excerpt at all — error
+	// bodies surface through the live path's auto-expand or a deliberate
+	// expand. Nested sub-agent logs stay behind expand.
 	if strings.Contains(plainOut, "→") {
 		t.Errorf("compact head should not show a result arrow:\n%s", plainOut)
 	}
-	if !strings.Contains(plainOut, "exit status 1") {
-		t.Errorf("peek should show the error beat:\n%s", plainOut)
+	if strings.Contains(plainOut, "exit status 1") {
+		t.Errorf("compact error step should hide the result body:\n%s", plainOut)
 	}
 	if strings.Contains(plainOut, "explorer") {
 		t.Errorf("peek should not expand nested sub-agent logs:\n%s", plainOut)
@@ -241,6 +242,37 @@ func TestRenderStepsSubagentAndError(t *testing.T) {
 	}
 	if s, _ := renderStepsForTest(m, message{streaming: false, steps: []step{{name: "read"}}}, 0, 0); !strings.Contains(plain(s), "▸") {
 		t.Errorf("pending step missing ▸ glyph: %q", plain(s))
+	}
+}
+
+// TestStepDurationPersistsAfterDone pins the sealed-duration contract: the
+// live clock's right-aligned slot keeps showing how long the call took
+// after it finishes — after the typed chip when one exists, and never
+// fabricated for resumed history (zero started/dur).
+func TestStepDurationPersistsAfterDone(t *testing.T) {
+	m := newTestModel()
+	m.msgs = append(m.msgs, message{role: roleAsst, steps: []step{
+		{name: "read_file", arg: "a.go", done: true, started: time.Now().Add(-2 * time.Second),
+			dur: 2 * time.Second, result: "plain contents"},
+		{name: "apply_patch", arg: "a.go", done: true, started: time.Now().Add(-3 * time.Second),
+			dur: 3 * time.Second, result: "--- a\n+++ b\n@@ -1 +1 @@\n-old\n+new\n"},
+		{name: "shell", arg: "ls", done: true, result: "resumed output"},
+	}})
+	out, _ := renderStepsForTest(m, m.msgs[0], 0, 0)
+	got := plain(out)
+	lines := strings.Split(got, "\n")
+
+	// No chip: the sealed duration owns the right edge.
+	if !strings.HasSuffix(strings.TrimRight(lines[0], " "), "2.0s") {
+		t.Errorf("done step should keep its duration right-aligned:\n%s", got)
+	}
+	// With a chip: the chip first, the sealed duration after it.
+	if chip, dur := strings.Index(lines[1], "+1 −1"), strings.Index(lines[1], "3.0s"); chip < 0 || dur < 0 || chip > dur {
+		t.Errorf("chip should precede the sealed duration:\n%s", got)
+	}
+	// Resumed history (no started/dur) shows no fabricated time.
+	if strings.Contains(lines[2], ".0s") || strings.Contains(lines[2], "ms") {
+		t.Errorf("resumed step must not fabricate a duration:\n%s", got)
 	}
 }
 
@@ -300,15 +332,18 @@ func TestStepDuration(t *testing.T) {
 		t.Fatalf("tool_result should stamp the step duration: %+v", st)
 	}
 
-	// A done step head shows no duration — the right rail is the typed chip.
-	// The peek under the head may show the result beat.
+	// The sealed duration stays on the head after completion — the live
+	// clock's slot is not vacated, and the result body still hides.
 	msg := message{role: roleAsst, steps: []step{
 		{name: "shell", arg: "go test", done: true, result: "exit status 1", dur: 320 * time.Millisecond},
 	}}
 	out, _ := renderStepsForTest(m, msg, 0, 0)
 	plainOut := plain(out)
-	if strings.Contains(plainOut, "320ms") {
-		t.Errorf("done head must not render a duration: %q", plainOut)
+	if !strings.HasSuffix(strings.TrimRight(strings.Split(plainOut, "\n")[0], " "), "320ms") {
+		t.Errorf("done head should keep its sealed duration: %q", plainOut)
+	}
+	if strings.Contains(plainOut, "exit status 1") {
+		t.Errorf("done head must keep the result body hidden: %q", plainOut)
 	}
 	if strings.Contains(plainOut, "→") {
 		t.Errorf("compact head should not show a result arrow: %q", plainOut)
@@ -378,13 +413,12 @@ func TestKeyCtrlETogglesToolDetails(t *testing.T) {
 	m.curIdx = 1
 	m.busy = true
 
-	// Peek is on by default (first beats); the expand-only tail stays hidden.
+	// Calm default: result bodies stay hidden entirely — head lines only.
 	out := plain(m.conversation())
-	if !strings.Contains(out, "peek-read-one") || !strings.Contains(out, "peek-shell-one") {
-		t.Fatalf("peek should show the first result beats:\n%s", out)
-	}
-	if strings.Contains(out, "EXPAND-READ-ONLY") || strings.Contains(out, "EXPAND-SHELL-ONLY") {
-		t.Fatalf("full details should stay behind ^E:\n%s", out)
+	for _, beat := range []string{"peek-read-one", "peek-shell-one", "EXPAND-READ-ONLY", "EXPAND-SHELL-ONLY"} {
+		if strings.Contains(out, beat) {
+			t.Fatalf("tool response %q must stay hidden by default:\n%s", beat, out)
+		}
 	}
 
 	// Ctrl+E expands every step in both messages, even while typing.
@@ -429,7 +463,7 @@ func TestCtrlEIndicator(t *testing.T) {
 	}
 	found := false
 	for _, n := range m.notices {
-		if strings.Contains(n, "tool details on") {
+		if strings.Contains(n, "details on") {
 			found = true
 		}
 	}
