@@ -1277,11 +1277,11 @@ func (m *Model) acPopup() string {
 		for i, it := range m.ac.items {
 			// Truncate in plain text first so styled rows never wrap.
 			budget := innerW - 4 // prefix(2) + icon(1) + space(1)
-			lab := truncate(it.Label, budget)
+			lab := truncate(collapse(it.Label), budget)
 			rest := budget - lipgloss.Width(lab)
 			det := ""
 			if it.Detail != "" && rest > 6 {
-				det = th.acDetail.Render(truncate("  "+it.Detail, rest))
+				det = th.acDetail.Render(truncate("  "+collapse(it.Detail), rest))
 			}
 			icon := th.acIcon.Render(resourceGlyph(it.Type))
 			prefix, lbl := "  ", th.acItem.Render(lab)

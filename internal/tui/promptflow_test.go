@@ -647,3 +647,57 @@ func TestCancelledIdleClearsCancelling(t *testing.T) {
 		t.Errorf("status = %q, want thinking (turn still locally busy)", m.status)
 	}
 }
+
+// Approval expiry and answer() assign status directly, bypassing
+// setRunStatus. After cancelRun restores the queue into the composer,
+// that clobber lets Enter re-queue the draft.
+func TestCancelApprovalDoesNotClobberCancelling(t *testing.T) {
+	setup := func() *Model {
+		m := newTestModel()
+		busyTurn(m)
+		m.sessionID = "s1"
+		m.queue = []string{"held"}
+		m.approvals = []client.Event{{Type: "approval_request", ID: "apr", Tool: "shell"}}
+		m.apprDeadlines = []time.Time{time.Now().Add(time.Minute)}
+		m.status = "approval required"
+		m.cancelRun()
+		if m.status != "cancelling" {
+			t.Fatalf("precondition: status = %q, want cancelling", m.status)
+		}
+		if got := m.ta.Value(); got != "held" {
+			t.Fatalf("precondition: input = %q", got)
+		}
+		return m
+	}
+
+	t.Run("expiry", func(t *testing.T) {
+		m := setup()
+		m.apprDeadlines[0] = time.Now().Add(-time.Second)
+		m.Update(approvalExpireMsg{})
+		if m.status != "cancelling" {
+			t.Fatalf("expiry overwrote cancelling: status = %q", m.status)
+		}
+		m.Update(key("enter"))
+		if len(m.queue) != 0 {
+			t.Fatalf("enter after expiry re-queued: %v", m.queue)
+		}
+		if got := m.ta.Value(); got != "held" {
+			t.Errorf("draft must stay in the input, got %q", got)
+		}
+	})
+
+	t.Run("deny", func(t *testing.T) {
+		m := setup()
+		m.answer("deny")
+		if m.status != "cancelling" {
+			t.Fatalf("answer overwrote cancelling: status = %q", m.status)
+		}
+		m.Update(key("enter"))
+		if len(m.queue) != 0 {
+			t.Fatalf("enter after deny re-queued: %v", m.queue)
+		}
+		if got := m.ta.Value(); got != "held" {
+			t.Errorf("draft must stay in the input, got %q", got)
+		}
+	})
+}

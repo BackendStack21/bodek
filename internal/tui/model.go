@@ -521,7 +521,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.approvals = append([]client.Event{msg.ev}, m.approvals...)
 		m.apprDeadlines = append([]time.Time{msg.dl}, m.apprDeadlines...)
-		m.status = "approval required"
+		m.setRunStatus("approval required")
 		m.resetApprovalInput()
 		m.addNote("approval send failed — " + reason)
 		m.relayout()
@@ -550,7 +550,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil // stale response, or popup switched to command mode
 		}
 		m.ac.loading = false
-		m.ac.items = msg.items
+		m.ac.items = collapseResources(msg.items)
 		if m.ac.sel >= len(m.ac.items) {
 			m.ac.sel = 0
 		}

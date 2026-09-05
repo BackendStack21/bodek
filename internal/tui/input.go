@@ -495,15 +495,16 @@ func (m *Model) acceptCompletion() {
 		return
 	}
 	item := m.ac.items[m.ac.sel]
+	id := collapse(item.ID)
 	if m.ac.mode == acCmd {
-		m.ta.SetValue(item.ID + " ")
+		m.ta.SetValue(id + " ")
 		m.ta.CursorEnd()
 		m.closeAC()
 		return
 	}
 	val := m.ta.Value()
 	if idx, ok := refStart(val); ok {
-		m.ta.SetValue(val[:idx] + item.ID + " ")
+		m.ta.SetValue(val[:idx] + id + " ")
 		m.ta.CursorEnd()
 	}
 	m.closeAC()

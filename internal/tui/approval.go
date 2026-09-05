@@ -197,9 +197,9 @@ func (m *Model) answer(action string) tea.Cmd {
 	m.approvals = m.approvals[1:]
 	m.resetApprovalInput()
 	if len(m.approvals) > 0 {
-		m.status = "approval required"
+		m.setRunStatus("approval required")
 	} else {
-		m.status = "thinking"
+		m.setRunStatus("thinking")
 	}
 	m.relayout()
 	m.refresh()

@@ -104,11 +104,11 @@ func (m *Model) handleApprovalExpiry(now time.Time) tea.Cmd {
 	}
 	m.addTransientNote("approval expired · odek will find an alternative")
 	if len(m.approvals) > 0 {
-		m.status = "approval required"
+		m.setRunStatus("approval required")
 	} else if m.busy {
-		m.status = "thinking" // engine continues on an alternative path
+		m.setRunStatus("thinking") // engine continues on an alternative path
 	} else {
-		m.status = "ready"
+		m.setRunStatus("ready")
 	}
 	if len(m.approvals) == 0 || m.approvals[0].ID != oldHead.ID {
 		m.resetApprovalInput()

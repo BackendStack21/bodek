@@ -216,6 +216,54 @@ func TestSkillSuggestFieldsCollapsed(t *testing.T) {
 	}
 }
 
+// @-reference rows arrive from /api/resources. CSI in Label/Detail must
+// not reach the popup; CSI in ID must not land in the composer.
+func TestResourceCompletionSanitizesWireFields(t *testing.T) {
+	m := newTestModel()
+	m.ac.open = true
+	m.ac.mode = acRef
+	m.ac.items = []client.Resource{{
+		ID:     "@f\x1b[2Jevil",
+		Type:   "file",
+		Label:  "x\x1b[2Jy",
+		Detail: "z\x1b]0;p\x07",
+	}}
+	if pop := m.acPopup(); strings.Contains(pop, "\x1b[2J") || strings.Contains(pop, "\x1b]0;") {
+		t.Errorf("ac popup leaked CSI from wire fields: %q", pop)
+	}
+
+	m.ta.SetValue("@f")
+	m.acceptCompletion()
+	if strings.ContainsRune(m.ta.Value(), '\x1b') {
+		t.Errorf("acceptCompletion inserted escapes: %q", m.ta.Value())
+	}
+}
+
+// Engine notices keep sanitize() (CSI gone, newlines kept). A wire
+// SkillName/Target/Detail with a newline paints a second strip row.
+func TestEngineNoticesCollapseNewlines(t *testing.T) {
+	cases := []struct {
+		name string
+		ev   client.Event
+	}{
+		{"skill", client.Event{Type: "skill_event", SubType: "suggested", SkillName: "x\n● disconnected"}},
+		{"memory", client.Event{Type: "memory_event", SubType: "stored", Target: "x\n● disconnected"}},
+		{"signal", client.Event{Type: "agent_signal", SubType: "info", Detail: "x\n● disconnected"}},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			m := newTestModel()
+			m.handleEvent(c.ev)
+			if len(m.notices) != 1 {
+				t.Fatalf("notices = %d, want 1: %v", len(m.notices), m.notices)
+			}
+			if strings.Contains(m.notices[0], "\n") {
+				t.Errorf("notice kept a newline: %q", m.notices[0])
+			}
+		})
+	}
+}
+
 // The conversation is the click/scroll hit-test source of truth: a line that
 // physically wraps desyncs every index below it. Every emitted line must fit
 // the viewport.

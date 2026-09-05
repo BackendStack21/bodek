@@ -335,7 +335,7 @@ func (m *Model) handleEvent(ev client.Event) (tea.Model, tea.Cmd) {
 		}
 		m.approvals = append(m.approvals, ev)
 		m.stampApprovalDeadline(ev) // the engine expires the request server-side — track its clock
-		m.status = "approval required"
+		m.setRunStatus("approval required")
 		m.relayout() // the panel is taller than the textarea — shrink the viewport
 		attn = m.attentionCmd(m.attentionFor(attentionApproval))
 
@@ -962,7 +962,7 @@ func (m *Model) addTransientNote(s string) {
 	if m.verbosity == verbosityQuiet {
 		return
 	}
-	m.pushNote(s, time.Now().Add(noticeTTL))
+	m.pushNote(collapse(s), time.Now().Add(noticeTTL))
 }
 
 // transientNoteCmd adds a transient note and returns the sweep cmd. Every
@@ -1143,6 +1143,23 @@ func capThinkingText(s string, n int) string {
 
 func collapse(s string) string {
 	return strings.Join(strings.Fields(sanitize(s)), " ")
+}
+
+// collapseResources strips control bytes from /api/resources rows before
+// they land in the @-popup or the composer.
+func collapseResources(items []client.Resource) []client.Resource {
+	if items == nil {
+		return nil
+	}
+	out := make([]client.Resource, len(items))
+	for i, it := range items {
+		it.ID = collapse(it.ID)
+		it.Type = collapse(it.Type)
+		it.Label = collapse(it.Label)
+		it.Detail = collapse(it.Detail)
+		out[i] = it
+	}
+	return out
 }
 
 // stripToolResultFrame unwraps the delimiter frame odek adds around persisted
