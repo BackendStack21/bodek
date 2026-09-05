@@ -115,7 +115,7 @@ func TestMouseWheelScrollsTranscript(t *testing.T) {
 func TestBusyRefreshKeepsScrollback(t *testing.T) {
 	m := newTestModel()
 
-	md := strings.Repeat("transcript line\n", 60)
+	md := strings.Repeat("transcript line\n\n", 60)
 	m.msgs = append(m.msgs,
 		message{role: roleUser, content: "q"},
 		message{role: roleAsst, content: md, rendered: m.render(md)},

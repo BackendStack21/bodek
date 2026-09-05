@@ -72,7 +72,7 @@ These workflows have no server endpoint; bodek cannot offer them:
 | `tool_call` / `tool_result` | ← | — | step lines + typed renderers |
 | `subagent_log` | ← | — | nested sub-agent logs |
 | `usage` | ← | — | live context gauge |
-| `done` | ← | — | turn head telemetry (tokens, cache) |
+| `done` | ← | — | turn-foot telemetry (tokens, cache) |
 | `error` | ← | — | error bubble / cancel markers |
 | `cancelled` | ← | — | clean cancel close-out |
 | `approval_request` / `approval_ack` | ← | — | approval queue |

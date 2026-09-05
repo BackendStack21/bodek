@@ -57,14 +57,14 @@ func TestStatusBadgeStates(t *testing.T) {
 	m := wired(t)
 	m.runStart = time.Now()
 
-	// Busy progress rides the status line above the input; the header badge
-	// segment stays empty while a turn runs.
+	// Busy progress rides the status line above the input; the header keeps
+	// a connection lamp so a running turn is not read as a dropped socket.
 	m.busy, m.lastTool, m.lastArg = true, "shell", "go test"
 	if !strings.Contains(plain(m.statusLine()), "tests") {
 		t.Error("tool status line missing")
 	}
-	if plain(m.statusBadge()) != "" {
-		t.Error("header badge must stay empty while busy")
+	if got := plain(m.statusBadge()); got != lampLive {
+		t.Errorf("header badge while busy = %q, want %q", got, lampLive)
 	}
 	m.lastTool = ""
 	m.status = "responding"
@@ -79,8 +79,8 @@ func TestStatusBadgeStates(t *testing.T) {
 	// Approval arrives mid-turn: the panel owns the input area, so the badge
 	// announces it and the status line yields.
 	m.approvals = []client.Event{{Type: "approval_request"}}
-	if !strings.Contains(plain(m.statusBadge()), "approval") {
-		t.Error("approval badge missing")
+	if got := plain(m.statusBadge()); got != lampApproval {
+		t.Errorf("approval badge = %q, want %q", got, lampApproval)
 	}
 	if m.statusLine() != "" {
 		t.Error("status line must stay hidden behind the approval panel")
@@ -88,8 +88,17 @@ func TestStatusBadgeStates(t *testing.T) {
 	m.approvals = nil
 	m.busy = false
 	m.disconn = true
-	if !strings.Contains(plain(m.statusBadge()), "disconnected") {
-		t.Error("disconnected badge missing")
+	if got := plain(m.statusBadge()); got != lampDown {
+		t.Errorf("disconnected badge = %q, want %q", got, lampDown)
+	}
+	m.disconn = false
+	m.status = "error"
+	if got := plain(m.statusBadge()); got != lampError {
+		t.Errorf("error badge = %q, want %q", got, lampError)
+	}
+	m.status = "ready"
+	if got := plain(m.statusBadge()); got != lampReady {
+		t.Errorf("ready badge = %q, want %q", got, lampReady)
 	}
 }
 

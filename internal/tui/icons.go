@@ -2,6 +2,16 @@ package tui
 
 import "strings"
 
+// Header connection lamp — one cell, color carries the rest.
+const (
+	lampReady     = "●" // idle, socket up
+	lampLive      = "◉" // turn in flight
+	lampReconnect = "◌" // redial in flight
+	lampDown      = "○" // socket dead
+	lampApproval  = "⚠" // form waiting
+	lampError     = "✕" // last turn failed
+)
+
 // toolGlyph returns a tasteful monochrome glyph for a tool, so the activity
 // feed reads at a glance. Matching is by substring to cover odek's native
 // tools, MCP tools (server__tool), and sub-agent variants.

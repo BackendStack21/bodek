@@ -151,7 +151,7 @@ own front-end settings are separate; see [Configuration](#configuration).
   and persisted to `~/.bodek/config.json`.
 - **The palette (`^K`)** — every command, session, model, and drawer tab one
   fuzzy search away; every row teaches its chord.
-- **Turn cards** — telemetry rides the turn head, a coding receipt
+- **Turn cards** — telemetry sits under the assistant reply, a coding receipt
   (`touched 4 · +82 −19 · tests ✓`) scans what the turn changed, `^F`
   folds noisy turns to that receipt, `alt+↑`/`alt+↓` jump turn-to-turn,
   and the calm default keeps the transcript still: reasoning previews and
@@ -201,7 +201,8 @@ own front-end settings are separate; see [Configuration](#configuration).
   below your last message shows what it's actually doing (`🧪 running
   tests`, `📖 reading client.go`, `🚀 pushing`) with a live elapsed timer.
   Reasoning and composing stay quiet labels — the intent rail and the
-  answer card own those words.
+  answer card own those words. The header connection lamp is a single
+  glyph: `●` idle, `◉` a turn in flight, `◌` reconnecting, `○` down.
 - **Sub-agents** — a delegation paints an always-on chip strip under the
   parent step (`⟳ SA1 explore · ✓ SA2 lint · ✗ SA3 types`), so you can
   see who is running or who failed without expanding. Click a chip or

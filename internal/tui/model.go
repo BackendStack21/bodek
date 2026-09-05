@@ -1011,8 +1011,8 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case "ctrl+f":
 		// Fold/unfold the most recent turn card — long sessions scan top-down
-		// when the noisy turns collapse to their telemetry head. A chord: bare
-		// letters belong to the composer.
+		// when the noisy turns collapse to a receipt + telemetry foot. A chord:
+		// bare letters belong to the composer.
 		m.toggleCollapseLast()
 		return m, nil
 	case "tab":

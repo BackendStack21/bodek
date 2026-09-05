@@ -160,11 +160,8 @@ func TestReconnectingBadge(t *testing.T) {
 	m.status = "reconnecting…"
 
 	badge := plain(m.statusBadge())
-	if !strings.Contains(badge, "reconnecting") {
-		t.Errorf("badge = %q, want it to mention reconnecting", badge)
-	}
-	if strings.Contains(badge, "disconnected") {
-		t.Errorf("badge = %q, must not read disconnected mid-retry", badge)
+	if badge != lampReconnect {
+		t.Errorf("badge = %q, want %q", badge, lampReconnect)
 	}
 }
 

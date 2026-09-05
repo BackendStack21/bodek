@@ -134,8 +134,8 @@ func TestToolResponseHiddenByDefault(t *testing.T) {
 // TestTurnHeadElapsedCounter verifies the streaming turn's head line carries
 // the run's elapsed counter right-aligned at the viewport edge — the calm
 // default hides the rail and step bodies, so the head is the one live clock
-// in the transcript. Finalized turns drop it for the sealed telemetry stat,
-// and the tail-clock lane ticks even with no running steps.
+// in the transcript. Finalized turns drop it (sealed telemetry sits under
+// the reply), and the tail-clock lane ticks even with no running steps.
 func TestTurnHeadElapsedCounter(t *testing.T) {
 	m := newTestModel()
 	m.ta.Focus()
@@ -163,11 +163,19 @@ func TestTurnHeadElapsedCounter(t *testing.T) {
 		t.Error("a streaming turn must drive the transcript clock lane")
 	}
 
-	// Finalized: the sealed latency stat owns the head — no live counter.
+	// Finalized: the live counter leaves the head; sealed stats sit under the reply.
 	m.handleEvent(client.Event{Type: "done", Latency: 0.5, ContextTokens: 10, OutputTokens: 1})
 	rendered, _ = m.renderMessage(m.msgs[1], 1, 0)
-	head = strings.Split(plain(rendered), "\n")[0]
+	plainOut := plain(rendered)
+	lines := strings.Split(plainOut, "\n")
+	head = lines[0]
 	if strings.HasSuffix(strings.TrimRight(head, " "), "3s") {
 		t.Errorf("finalized head must drop the live counter:\n%s", head)
+	}
+	if strings.Contains(head, "⚡") {
+		t.Errorf("finalized head must not carry sealed telemetry:\n%s", head)
+	}
+	if !strings.Contains(lines[len(lines)-1], "⚡") {
+		t.Errorf("finalized turn missing telemetry foot:\n%s", plainOut)
 	}
 }

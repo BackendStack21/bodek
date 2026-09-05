@@ -119,7 +119,7 @@ func (m *Model) header() string {
 	// placeholder zeros up here.
 	buildRight := func(gauge string) string {
 		right := gauge
-		if status != "" { // empty while busy — progress rides the status line
+		if status != "" { // connection lamp; turn progress rides the status line
 			right += "   " + status
 		}
 		return right
@@ -257,30 +257,25 @@ func (m *Model) rule() string {
 	return m.gradRule
 }
 
-// statusBadge is the header's session-state segment. In-flight progress no
-// longer lives here — it renders on the status line above the input, next to
-// the user's last message — so a running turn leaves the segment empty.
+// statusBadge is the header's session-state lamp. Turn progress lives on
+// the status line above the input; this glyph is connection only. A busy
+// turn must still show it — an empty corner was read as a dropped socket.
 func (m *Model) statusBadge() string {
 	th := m.th
 	switch {
 	case m.disconn:
 		if strings.HasPrefix(m.status, "reconnecting") {
-			return th.statusBusy.Render("● reconnecting…")
+			return th.statusBusy.Render(lampReconnect)
 		}
-		return th.badgeDanger.Render("● disconnected")
+		return th.badgeDanger.Render(lampDown)
 	case m.curApproval() != nil:
-		// The badge carries the count only — the panel head owns the state
-		// sentence and the "N more waiting" figure. The queue always answers
-		// its head, so no position is shown.
-		if n := len(m.approvals); n > 1 {
-			// State only — the count lives in exactly one place, the panel head.
-			return th.statusBusy.Render("⚠ approval required")
-		}
-		return th.statusBusy.Render("⚠ approval required")
+		return th.statusBusy.Render(lampApproval)
 	case m.busy:
-		return ""
+		return th.statusReady.Render(lampLive)
+	case m.status == "error":
+		return th.badgeDanger.Render(lampError)
 	default:
-		return th.statusReady.Render("● " + m.status)
+		return th.statusReady.Render(lampReady)
 	}
 }
 
@@ -381,8 +376,8 @@ func (m *Model) queueRender() tea.Cmd {
 
 // rearmRenderFlush schedules the coalesced flush when renderPending is
 // already set but the Tick that armed it was discarded — ingestWireBatch
-// keeps only the last handleEvent cmd, which returns nil from queueRender
-// once the first fragment of the burst set the flag.
+// drops intermediate handleEvent cmds, so the first fragment's queueRender
+// Tick would otherwise never fire.
 func (m *Model) rearmRenderFlush() tea.Cmd {
 	if !m.renderPending {
 		return nil
@@ -480,7 +475,7 @@ func (m *Model) conversation() string {
 		refs = append(refs, r...)
 		lineOffset += lineCount(c) + 1
 	}
-	m.convPrefix = strings.Join(blocks, "\n\n")
+	m.convPrefix = strings.Join(blocks, turnSep)
 	m.convPrefixRefs = refs
 	m.convPrefixTurn = turns
 	m.convPrefixMsgs = msgsIdx
@@ -513,7 +508,30 @@ func (m *Model) conversation() string {
 	m.msgLineIndex = msgsIdx
 	m.stepLineIndex = refs
 	m.turnLineIndex = turns
-	return strings.Join(blocks, "\n\n")
+	return strings.Join(blocks, turnSep)
+}
+
+// turnSep is one blank row between transcript cards — the same gap
+// stackTurn puts after ❯ you / ⬡ odek so every section sits evenly.
+const turnSep = "\n\n"
+
+// turnHeadGap is the number of rows the assistant identity occupies
+// before the body: the ⬡ odek line plus the blank separator.
+const turnHeadGap = 2
+
+// stackTurn joins a head with its body parts using turnSep so user
+// prompts, assistant work, and sealed stats share one rhythm.
+func stackTurn(head string, parts ...string) string {
+	var b strings.Builder
+	b.WriteString(head)
+	for _, p := range parts {
+		if strings.TrimSpace(p) == "" {
+			continue
+		}
+		b.WriteString(turnSep)
+		b.WriteString(p)
+	}
+	return b.String()
 }
 
 // emptyStreamingTurn reports whether a message is an in-flight assistant
@@ -554,28 +572,20 @@ func (m *Model) renderMessage(msg message, msgIdx, lineOffset int) (string, []st
 		if w := m.vp.Width; w > 0 {
 			body = ansi.Wrap(body, w, "")
 		}
-		return label + "\n" + th.userBar.Render(body), nil
+		return stackTurn(label, th.userBar.Render(body)), nil
 
 	case roleNote:
 		return th.sysBar.Width(m.cardSpan()).Render(msg.content), nil
 
 	default: // assistant
-		// The turn head carries the telemetry (WebUI parity: what a turn cost
-		// reads before its content, so long sessions scan top-down). The
-		// segments shed in priority order under width pressure, exactly like
-		// the old foot line.
+		// The head is identity (and a coding receipt when one exists).
+		// Sealed telemetry sits under the reply so a long stat row does
+		// not crowd "⬡ odek".
 		label := th.asstLabel.Render("⬡ odek")
 		if msg.systemWake {
 			// Server-initiated wake (background-job completion): the marker
-			// is the card's identity, so it sits left of the telemetry and
-			// sheds last.
+			// is the card's identity.
 			label += th.asstLabel.Render(" · wake")
-		}
-		if msg.stats != nil {
-			limit := m.vp.Width - lipgloss.Width(label) - 4
-			if s := m.joinStatSegs(m.statSegments(*msg.stats), limit); s != "" {
-				label += "  " + s
-			}
 		}
 		if rec := formatReceipt(scanReceipt(msg)); rec != "" {
 			room := m.vp.Width - lipgloss.Width(label) - 4
@@ -584,12 +594,12 @@ func (m *Model) renderMessage(msg message, msgIdx, lineOffset int) (string, []st
 			}
 		}
 		if msg.collapsed {
-			return label + "\n" + th.statsDim.Render(m.collapseSummary(msg)), nil
+			return stackTurn(label, th.statsDim.Render(m.collapseSummary(msg)), m.turnStatFoot(msg)), nil
 		}
 		// Live turn clock: a streaming head carries the run's elapsed
 		// counter at the right edge — the calm default hides the rail and
 		// step bodies, so the head is the one live clock in the transcript.
-		// Finalized turns replace it with the sealed telemetry stat.
+		// Finalized turns drop it; the sealed telemetry row sits under the reply.
 		if msg.streaming {
 			if e := m.elapsed(); e != "" {
 				if w := m.vp.Width - lipgloss.Width(label) - lipgloss.Width(e); w > 0 {
@@ -625,12 +635,14 @@ func (m *Model) renderMessage(msg message, msgIdx, lineOffset int) (string, []st
 		// addBlock stacks one rendered block onto the body. Work stays
 		// tightly packed under the previous work item; any block touching a
 		// card is separated by a blank row so each raised card reads as its
-		// own unit. Returns the row the block starts at.
+		// own unit. The body starts after the head + one blank (turnHeadGap)
+		// so ⬡ odek sits the same distance from its first child as messages
+		// sit from each other. Returns the row the block starts at.
 		addBlock := func(block string, card bool) int {
 			if len(lines) > 0 && (card || prevCard) {
 				lines = append(lines, "")
 			}
-			start := lineOffset + 1 + len(lines)
+			start := lineOffset + turnHeadGap + len(lines)
 			lines = append(lines, strings.Split(strings.TrimRight(block, "\n"), "\n")...)
 			prevCard = card
 			return start
@@ -714,13 +726,10 @@ func (m *Model) renderMessage(msg message, msgIdx, lineOffset int) (string, []st
 				addBlock(th.asstWork.Render(th.statsDim.Render(rec)), false)
 			}
 		}
-		var out strings.Builder
-		out.WriteString(label)
-		if len(lines) > 0 {
-			out.WriteString("\n")
-			out.WriteString(strings.Join(lines, "\n"))
+		if foot := m.turnStatFoot(msg); foot != "" {
+			addBlock(foot, true) // same blank as a card — even section rhythm
 		}
-		return out.String(), refs
+		return stackTurn(label, strings.Join(lines, "\n")), refs
 	}
 }
 
@@ -829,14 +838,17 @@ func (m *Model) clampLines(s string) string {
 	return strings.Join(lines, "\n")
 }
 
-// statLine renders the compact telemetry row shown beneath a finalized
-// assistant turn. Glyphs carry the hue; values and separators recede in faint.
-// Segments self-suppress when empty and drop in priority order (tools, then
-// thinking, then wall-clock); the result is then hard-clamped to the viewport
-// width so the row never wraps, even when the essentials alone overflow a very
-// narrow terminal.
-// statSeg is one telemetry segment of a turn head; drop orders which segments
-// shed first under width pressure (higher goes sooner).
+// turnStatFoot is the sealed telemetry row under a finalized assistant
+// reply. Empty while the turn is still streaming.
+func (m *Model) turnStatFoot(msg message) string {
+	if msg.stats == nil || msg.streaming {
+		return ""
+	}
+	return m.statLine(*msg.stats)
+}
+
+// statSeg is one telemetry segment of the turn foot; drop orders which
+// segments shed first under width pressure (higher goes sooner).
 type statSeg struct {
 	text string
 	drop int
@@ -887,7 +899,7 @@ func (m *Model) statSegments(ts turnStats) []statSeg {
 
 // joinStatSegs assembles segments with separators, dropping droppable
 // segments in priority order until the line fits limit columns, then
-// clamping. Pure layout helper shared by the turn head and any statline use.
+// clamping. Pure layout helper for the turn foot and any statline use.
 func (m *Model) joinStatSegs(segs []statSeg, limit int) string {
 	th := m.th
 	sep := th.statSep.Render(" · ")
@@ -922,9 +934,7 @@ func (m *Model) joinStatSegs(segs []statSeg, limit int) string {
 	return line
 }
 
-// statLine renders the telemetry row for a turn — the pre-head foot line,
-// kept as the turn head's segment source and for callers that want the row
-// alone.
+// statLine renders the telemetry row for a finalized turn.
 func (m *Model) statLine(ts turnStats) string {
 	return m.joinStatSegs(m.statSegments(ts), m.vp.Width-2)
 }

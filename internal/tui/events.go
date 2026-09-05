@@ -53,27 +53,28 @@ func (m *Model) ingestWireEvent(ev client.Event) (tea.Model, tea.Cmd) {
 }
 
 // ingestWireBatch applies a listen-drained burst in one Update. Intermediate
-// handleEvent cmds are dropped so we do not re-arm listen N times (N
-// goroutines racing on Events). The last cmd keeps listen; a discarded
-// first-fragment queueRender Tick is re-armed when the flush is still pending.
+// handleEvent cmds are dropped so we do not start N listen goroutines.
+// Follow-up cmds are a FLAT tea.Batch — wrapping handleEvent's already-batched
+// listen inside another Batch left execBatchMsg waiting on a nested listen
+// and the header's ready badge never came back after Hi.
 func (m *Model) ingestWireBatch(events []client.Event) (tea.Model, tea.Cmd) {
-	var last tea.Cmd
 	var model tea.Model = m
-	for i, ev := range events {
+	for _, ev := range events {
 		var cmd tea.Cmd
 		model, cmd = model.(*Model).ingestWireEvent(ev)
 		if ev.Type == client.EventDisconnected {
 			return model, cmd
 		}
-		if i == len(events)-1 {
-			last = cmd
-		}
 	}
 	pm := model.(*Model)
-	if pm.renderPending {
-		last = tea.Batch(last, pm.rearmRenderFlush())
-	}
-	return pm, last
+	return pm, tea.Batch(
+		listen(pm.events),
+		pm.rearmRenderFlush(),
+		pm.noticeSweep(),
+		pm.approvalSweep(),
+		pm.sendQueued(),
+		pm.planFollowup(),
+	)
 }
 
 func (m *Model) handleEvent(ev client.Event) (tea.Model, tea.Cmd) {
