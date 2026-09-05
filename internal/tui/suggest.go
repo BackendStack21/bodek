@@ -27,7 +27,7 @@ func (m *Model) handleSuggestKeys(s string) (tea.Model, tea.Cmd, bool) {
 }
 
 func (m *Model) answerSuggestion(action string) tea.Cmd {
-	name := m.skillSuggest.SkillName
+	ev := *m.skillSuggest
 	m.skillSuggest = nil
 	m.relayout()
 	m.refresh()
@@ -36,10 +36,10 @@ func (m *Model) answerSuggestion(action string) tea.Cmd {
 	if action == "save" {
 		verb = "saved"
 	}
-	note := m.transientNoteCmd("skill " + name + ": " + verb + " (auto-save governs persistence)")
+	note := m.transientNoteCmd("skill " + ev.SkillName + ": " + verb + " (auto-save governs persistence)")
 	return tea.Batch(note, func() tea.Msg {
-		if err := cl.SendSkillPromptResponse(action, name); err != nil {
-			return errMsg{err}
+		if err := cl.SendSkillPromptResponse(action, ev.SkillName); err != nil {
+			return skillSendErrMsg{ev: ev, err: err}
 		}
 		return nil
 	})

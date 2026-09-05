@@ -525,6 +525,23 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.refresh()
 		return m, tea.Batch(m.noticeSweep(), m.approvalSweep())
 
+	case skillSendErrMsg:
+		// Restore the chip: the engine never saw the ack. Stay busy and
+		// keep pending approvals — unlike errMsg, this is not a
+		// turn-ending write failure.
+		reason := errText(msg.err)
+		if m.disconn || !m.busy {
+			m.addNote("skill send failed — " + reason)
+			m.refresh()
+			return m, m.noticeSweep()
+		}
+		ev := msg.ev
+		m.skillSuggest = &ev
+		m.addNote("skill send failed — " + reason)
+		m.relayout()
+		m.refresh()
+		return m, m.noticeSweep()
+
 	case acResultMsg:
 		if msg.seq != m.ac.seq || m.ac.mode != acRef {
 			return m, nil // stale response, or popup switched to command mode

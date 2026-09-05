@@ -33,6 +33,14 @@ type approvalSendErrMsg struct {
 	err error
 }
 
+// skillSendErrMsg is a failed skill_prompt_response write. Unlike errMsg it
+// must not end the turn: the ack is local, the engine is still running, and
+// the suggestion chip is restored so the operator can retry.
+type skillSendErrMsg struct {
+	ev  client.Event
+	err error
+}
+
 // updateCheckMsg carries the startup latest-release lookup. The error is
 // silent: a failed check must never nag.
 type updateCheckMsg struct {
