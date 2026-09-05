@@ -192,3 +192,45 @@ func TestApprovalScrollWhilePending(t *testing.T) {
 		t.Error("scrolling must not answer the approval")
 	}
 }
+
+// A turn that ends (done / error) while an approval is still queued must
+// drop the form the same way disconnect already does. Leaving it armed
+// captures the keyboard (and the footer) after the engine has moved on,
+// so ⏎ never sends the next prompt.
+func TestTurnEndClearsStaleApprovals(t *testing.T) {
+	for _, end := range []struct {
+		name string
+		ev   client.Event
+		want string
+	}{
+		{"done", client.Event{Type: "done", Latency: 1}, "ready"},
+		{"error", client.Event{Type: "error", Message: "boom"}, "error"},
+		{"cancel", client.Event{Type: "error", Message: "context canceled"}, "ready"},
+	} {
+		t.Run(end.name, func(t *testing.T) {
+			m := newTestModel()
+			busyTurn(m)
+			m.handleEvent(client.Event{Type: "approval_request", ID: "apr-1",
+				Risk: "shell_exec", Command: "rm x"})
+			if m.curApproval() == nil {
+				t.Fatal("precondition: approval_request must arm the queue")
+			}
+
+			m.handleEvent(end.ev)
+
+			if m.curApproval() != nil {
+				t.Fatal("turn end must drop stale approvals")
+			}
+			if len(m.apprDeadlines) != 0 {
+				t.Fatalf("turn end left %d approval deadlines", len(m.apprDeadlines))
+			}
+			if m.status != end.want {
+				t.Errorf("status = %q, want %q", m.status, end.want)
+			}
+			foot := plain(m.footer())
+			if strings.Contains(foot, "pprove") || strings.Contains(foot, "eny") {
+				t.Errorf("footer still shows approval hints after %s: %q", end.name, foot)
+			}
+		})
+	}
+}

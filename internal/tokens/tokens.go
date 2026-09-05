@@ -35,6 +35,12 @@ func Open() *Store {
 	s.path = filepath.Join(home, ".bodek", "sessions.json")
 	if data, err := os.ReadFile(s.path); err == nil {
 		_ = json.Unmarshal(data, &s.m)
+		// JSON null unmarshals into a nil map; keep an empty map so Set
+		// cannot panic on assignment. Corrupt JSON still leaves the
+		// in-memory-empty store Open already constructed.
+		if s.m == nil {
+			s.m = map[string]string{}
+		}
 	}
 	return s
 }

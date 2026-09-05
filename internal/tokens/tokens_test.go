@@ -171,3 +171,30 @@ func TestOpenWithCorruptFile(t *testing.T) {
 		t.Error("set after corrupt-open did not persist")
 	}
 }
+
+// TestOpenWithJSONNull pins that a store file whose contents are the JSON
+// literal null (encoding/json unmarshals that into a nil map) must still
+// behave as an empty store. Set after Open used to panic: assignment to
+// entry in nil map.
+func TestOpenWithJSONNull(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("HOME", dir)
+	t.Setenv("USERPROFILE", dir)
+	if err := os.MkdirAll(filepath.Join(dir, ".bodek"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, ".bodek", "sessions.json"), []byte("null"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	s := Open()
+	if s.Get("anything") != "" {
+		t.Error("null file should yield empty store")
+	}
+	s.Set("k", "v") // must not panic
+	if s.Get("k") != "v" {
+		t.Error("set after null-open did not stick in memory")
+	}
+	if Open().Get("k") != "v" {
+		t.Error("set after null-open did not persist")
+	}
+}

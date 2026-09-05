@@ -104,6 +104,41 @@ func TestReconnectRetriesThenGivesUp(t *testing.T) {
 	}
 }
 
+// A hook that returns (nil, nil) is a failed redial — success requires a
+// live client. The give-up path used to deref msg.err unconditionally and
+// panic when the hook reported neither a client nor an error.
+func TestReconnectNilClientNoPanic(t *testing.T) {
+	m := newTestModel()
+	m.disconn = true
+	m.opts.Reconnect = func() (*client.Client, error) { return nil, nil }
+
+	defer func() {
+		if r := recover(); r != nil {
+			t.Fatalf("reconnect (nil, nil) panicked: %v", r)
+		}
+	}()
+	_, cmd := m.Update(reconnectMsg{attempt: maxReconnectAttempts - 1})
+	if cmd != nil {
+		t.Error("no more attempts once the budget is spent")
+	}
+	if m.status != "disconnected" {
+		t.Errorf("status = %q, want disconnected", m.status)
+	}
+	if !m.disconn {
+		t.Error("input must stay blocked after giving up")
+	}
+	found := false
+	for _, n := range m.notices {
+		if strings.Contains(n, "reconnect failed") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("expected a reconnect-failed note, got %v", m.notices)
+	}
+}
+
 // A reconnect result arriving after the disconnect was already resolved is
 // dropped, not applied.
 func TestReconnectStaleResultIgnored(t *testing.T) {
