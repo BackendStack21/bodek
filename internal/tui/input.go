@@ -522,7 +522,12 @@ func (m *Model) dismissChrome() (bool, tea.Cmd) {
 	}
 	if m.expandAll {
 		m.expandAll = false
-		m.convCount = -1
+		m.invalidateAllMsgBlocks()
+		for i := range m.msgs {
+			for j := range m.msgs[i].steps {
+				clearStepBlockCache(&m.msgs[i].steps[j])
+			}
+		}
 		m.refresh()
 		return true, nil
 	}
@@ -530,7 +535,7 @@ func (m *Model) dismissChrome() (bool, tea.Cmd) {
 		for j := len(m.msgs[i].items) - 1; j >= 0; j-- {
 			if m.msgs[i].items[j].thinking && m.msgs[i].items[j].open {
 				m.msgs[i].items[j].open = false
-				m.convCount = -1
+				m.invalidateMsgBlock(i)
 				m.refresh()
 				return true, nil
 			}
@@ -539,7 +544,8 @@ func (m *Model) dismissChrome() (bool, tea.Cmd) {
 	for i := len(m.msgs) - 1; i >= 0; i-- {
 		for j := len(m.msgs[i].steps) - 1; j >= 0; j-- {
 			if m.msgs[i].steps[j].clearAgentFocus() {
-				m.convCount = -1
+				clearStepBlockCache(&m.msgs[i].steps[j])
+				m.invalidateMsgBlock(i)
 				m.refresh()
 				return true, nil
 			}
@@ -549,7 +555,8 @@ func (m *Model) dismissChrome() (bool, tea.Cmd) {
 		for j := len(m.msgs[i].steps) - 1; j >= 0; j-- {
 			if m.msgs[i].steps[j].expanded {
 				m.msgs[i].steps[j].expanded = false
-				m.convCount = -1
+				clearStepBlockCache(&m.msgs[i].steps[j])
+				m.invalidateMsgBlock(i)
 				m.refresh()
 				return true, nil
 			}
@@ -557,7 +564,7 @@ func (m *Model) dismissChrome() (bool, tea.Cmd) {
 	}
 	if n := len(m.msgs); n > 0 && isEphemeralCard(m.msgs[n-1]) {
 		m.msgs = m.msgs[:n-1]
-		m.convCount = -1
+		m.resetMsgBlocks()
 		m.refresh()
 		return true, nil
 	}

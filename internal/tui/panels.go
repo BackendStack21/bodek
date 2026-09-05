@@ -971,7 +971,7 @@ func (m *Model) handleSessionDetail(msg sessionDetailMsg) tea.Cmd {
 	m.runCtxCum = 0
 	m.lastLatency = 0
 	m.msgs = m.msgs[:0]
-	m.convCount = -1 // transcript swapped for the resumed one — drop the cache
+	m.resetMsgBlocks()
 	// The plan surface is session-scoped knowledge: drop it and refetch for
 	// the resumed session. Neither live path covers a resume — the replayed
 	// transcript bypasses the WS trigger, and the adopt's session event

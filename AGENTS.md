@@ -139,7 +139,11 @@ feat(tui): compact tool steps with Ctrl+E details toggle
   connection per run.
 - Streaming renders are coalesced into one flush per 80ms for
   performance; batching new redraw paths the same way keeps the TUI
-  responsive.
+  responsive. Live reply segments glamour-render on that flush (not only
+  at turn end). The spinner animates the status line only — transcript
+  rebuilds for live step clocks coalesce at 250ms (`tailClockFlushMsg`).
+  Finished message blocks and done tool steps cache their render output;
+  invalidate per message/step on expand, not the whole prefix.
 - The slash-completion popup holds key capture while open; typed keys
   must keep flowing to the input. Route keys through the popup first,
   then fall through to normal input handling.
