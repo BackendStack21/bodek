@@ -31,5 +31,5 @@ func (m *Model) teach(key, text string) {
 		return
 	}
 	m.hintsShown[key] = true
-	m.pushNote("💡 "+text, time.Now().Add(noticeTTL))
+	m.pushNote("💡 "+text, time.Now().Add(hintTTL))
 }

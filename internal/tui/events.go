@@ -19,6 +19,10 @@ import (
 // subagent) stay on screen before fading out.
 const noticeTTL = 3 * time.Second
 
+// hintTTL is how long just-in-time teaching tips dwell. Five seconds
+// longer than info traces so a chord has time to land.
+const hintTTL = noticeTTL + 5*time.Second
+
 // alertTTL is how long alert-tier notices (errors, warnings, disconnects,
 // shutdown / upgrade hints) dwell before fading — longer than the info
 // traces so a glance away doesn't miss them, but bounded like everything

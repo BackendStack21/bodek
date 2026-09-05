@@ -240,9 +240,10 @@ own front-end settings are separate; see [Configuration](#configuration).
   trims, tool execution times) stays silent. Info traces fade after 3s;
   errors, warnings, and disconnect notes autoclose after 10s.
 - **Just-in-time hints** — the first time a state appears (a held prompt,
-  a sub-agent swarm, a multi-step turn), a one-time 💡 tip teaches its key,
-  then stays silent for the run. Features surface the moment they matter;
-  no keybinding table required.
+  a sub-agent swarm, a multi-step turn), a one-time 💡 tip teaches its key
+  and dwells 8s (5s longer than info traces), then stays silent for the
+  run. Features surface the moment they matter; no keybinding table
+  required.
 - **Session home dashboard** — after `/clear`, the home card orients: the
   last prompt and receipt, the context gauge, up to three recent sessions
   (titles sanitized), and one action line pointing at the `^K` hub.

@@ -3,6 +3,7 @@ package tui
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/BackendStack21/bodek/internal/client"
 )
@@ -43,6 +44,21 @@ func runMiniTurn(t *testing.T, m *Model, tool, result string) {
 	t.Helper()
 	m.handleEvent(client.Event{Type: "tool_call", Name: tool, Data: "arg"})
 	m.handleEvent(client.Event{Type: "tool_result", Name: tool, Data: result})
+}
+
+func TestHintDwellsLongerThanInfoTraces(t *testing.T) {
+	m := newTestModel()
+	m.teach(hintQueue, "tip: dwell check")
+	if len(m.noticeExp) != 1 {
+		t.Fatalf("teach should post one note, got %d", len(m.noticeExp))
+	}
+	dwell := time.Until(m.noticeExp[0])
+	if dwell <= noticeTTL || dwell > hintTTL {
+		t.Errorf("hint dwell = %v, want (%v, %v]", dwell, noticeTTL, hintTTL)
+	}
+	if hintTTL != noticeTTL+5*time.Second {
+		t.Errorf("hintTTL = %v, want noticeTTL+5s (%v)", hintTTL, noticeTTL+5*time.Second)
+	}
 }
 
 func TestQueueHintFiresOnce(t *testing.T) {
