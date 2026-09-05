@@ -403,7 +403,7 @@ func New(cl *client.Client, opts Options) *Model {
 func (m *Model) Init() tea.Cmd {
 	return tea.Batch(textarea.Blink, m.sp.Tick, listen(m.events),
 		m.fetchModels(), m.fetchLimits(), m.checkUpdate(),
-		m.armHeartbeat())
+		m.armHeartbeat(), enableShiftEnterCmd)
 }
 
 // pingEvery is the application-level heartbeat cadence (20s). Matches the

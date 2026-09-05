@@ -64,15 +64,53 @@ func TestShiftEnterInsertsNewline(t *testing.T) {
 }
 
 func TestFilterShiftEnterRewritesCSI(t *testing.T) {
-	for _, seq := range []string{"\x1b[13;2u", "\x1b[13;2;1u", "\x1b[27;2;13~"} {
+	for _, seq := range []string{
+		"\x1b[13;2u", "\x1b[13;2;1u", "\x1b[13;2;2u",
+		"\x1b[27;2;13~", "\x1b[27;2;13u", "\x1b[13;2~",
+	} {
 		msg := FilterShiftEnter(nil, []byte(seq))
 		km, ok := msg.(tea.KeyMsg)
 		if !ok || km.String() != "shift+enter" {
 			t.Errorf("FilterShiftEnter(%q) = %#v, want shift+enter", seq, msg)
 		}
 	}
+	// Bubble Tea delivers unknown CSI as a named []byte type, not []byte.
+	type unknownCSI []byte
+	msg := FilterShiftEnter(nil, unknownCSI("\x1b[13;2u"))
+	if km, ok := msg.(tea.KeyMsg); !ok || km.String() != "shift+enter" {
+		t.Errorf("named CSI type = %#v, want shift+enter", msg)
+	}
 	if msg := FilterShiftEnter(nil, key("enter")); msg.(tea.KeyMsg).String() != "enter" {
 		t.Error("FilterShiftEnter must leave enter alone")
+	}
+}
+
+func TestFilterShiftEnterRewritesDisambiguatedEsc(t *testing.T) {
+	for _, seq := range []string{"\x1b[27u", "\x1b[27;1u"} {
+		msg := FilterShiftEnter(nil, []byte(seq))
+		km, ok := msg.(tea.KeyMsg)
+		if !ok || km.String() != "esc" {
+			t.Errorf("FilterShiftEnter(%q) = %#v, want esc", seq, msg)
+		}
+	}
+}
+
+func TestFilterModifyOtherKeys(t *testing.T) {
+	cases := []struct {
+		seq, want string
+	}{
+		{"\x1b[27;2;13~", "shift+enter"},
+		{"\x1b[27;3;13~", "alt+enter"},
+		{"\x1b[27;5;107~", "ctrl+k"},
+		{"\x1b[27;1;27~", "esc"},
+		{"\x1b[27;2;9~", "shift+tab"},
+	}
+	for _, tc := range cases {
+		msg := FilterShiftEnter(nil, []byte(tc.seq))
+		km, ok := msg.(tea.KeyMsg)
+		if !ok || km.String() != tc.want {
+			t.Errorf("FilterShiftEnter(%q) = %#v, want %s", tc.seq, msg, tc.want)
+		}
 	}
 }
 

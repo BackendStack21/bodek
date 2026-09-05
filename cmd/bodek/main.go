@@ -224,8 +224,8 @@ func run() error {
 	// captures the terminal mouse and blocks native click-drag text selection
 	// and copy. Keep it off by default so users can copy freely; enable it only
 	// when explicitly requested with --mouse.
-	// Clear leftover CSI-u / modifyOtherKeys before the TUI reads keys —
-	// those modes remap ^K and esc into sequences Bubble Tea v1 drops.
+	// Clear leftover keyboard modes. Shift+Enter is enabled from Model.Init
+	// after the alt screen is up — a pre-Run enable is wiped by DECSET 1049.
 	tui.RestoreEnhancedKeys()
 	p := tea.NewProgram(model, buildProgramOptions(cfg.mouse, cfg.plain)...)
 	defer tui.RestoreEnhancedKeys()

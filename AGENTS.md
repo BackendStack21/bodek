@@ -142,10 +142,13 @@ feat(tui): compact tool steps with Ctrl+E details toggle
   one next-action tip. Branding lives in the header — do not reintroduce a
   splash wordmark. After `^L`, `sessionHome` keeps last prompt / receipt /
   recents; `/new` returns to first-run.
-- Composer newline is `⇧⏎` (`shift+enter`, also `alt+enter` / `^J`). Never
-  enable kitty CSI-u or xterm modifyOtherKeys: Bubble Tea v1 remaps `^K`
-  and esc into sequences it then drops. `RestoreEnhancedKeys` only clears
-  leftover modes from another tool or an older bodek build.
+- Composer newline is `⇧⏎` (`shift+enter`, also `alt+enter` / `^J`).
+  Enable kitty disambiguate (flag 1) and xterm `modifyOtherKeys=2` from
+  `Init` — after alt-screen — so Cursor/xterm.js encodes Shift+Enter
+  (`CSI 27 ; 2 ; 13 ~`) instead of CR. Never enable kitty "report all
+  keys". `FilterShiftEnter` rewrites those CSI sequences (and the
+  remapped `^K` / esc) back into KeyMsgs. `RestoreEnhancedKeys` clears
+  leftovers on startup and shutdown.
 - The management drawer is a bottom sheet: keep ~8 transcript rows above
   it (`sheetTranscriptMin`); full-bleed only when the terminal cannot
   fit transcript + sheet. Layout-only — tab grammar (`]`/`[`/`⏎`/`esc`)
