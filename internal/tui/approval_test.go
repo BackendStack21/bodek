@@ -194,6 +194,64 @@ func TestApprovalScrollWhilePending(t *testing.T) {
 	}
 }
 
+// A failed approval_response write must restore the popped head and keep
+// the turn running. Routing that failure through errMsg used to finalize
+// the turn and wipe remaining queued requests — the engine is still
+// waiting, and a queued prompt would then fire mid-approval.
+func TestApprovalSendFailureRestoresHead(t *testing.T) {
+	m, _, _ := approvalRecorder(t)
+	busyTurn(m)
+	m.handleEvent(client.Event{Type: "approval_request", ID: "apr-1",
+		Risk: "shell_exec", Command: "rm a"})
+	m.handleEvent(client.Event{Type: "approval_request", ID: "apr-2",
+		Risk: "shell_exec", Command: "rm b"})
+	if err := m.cl.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	_, cmd := m.Update(key("enter"))
+	if cmd == nil {
+		t.Fatal("enter must yield a send cmd")
+	}
+	m.Update(exec(cmd))
+
+	if !m.busy {
+		t.Error("send failure must not end the turn")
+	}
+	a := m.curApproval()
+	if a == nil || a.ID != "apr-1" {
+		t.Fatalf("failed send must restore the head, got %+v", a)
+	}
+	if len(m.approvals) != 2 {
+		t.Fatalf("remaining queue dropped: %d", len(m.approvals))
+	}
+}
+
+// A send-fail that lands after the turn already ended (disconnect, done)
+// must not re-arm the form — that would recapture the keyboard the
+// v1.4.2 teardown just released.
+func TestApprovalSendErrAfterDisconnectDoesNotRestore(t *testing.T) {
+	m := newTestModel()
+	busyTurn(m)
+	m.handleEvent(client.Event{Type: "approval_request", ID: "apr-1",
+		Risk: "shell_exec", Command: "rm a"})
+	m.handleEvent(client.Event{Type: client.EventDisconnected})
+	if m.curApproval() != nil {
+		t.Fatal("precondition: disconnect must drop approvals")
+	}
+
+	m.Update(approvalSendErrMsg{
+		ev:  client.Event{Type: "approval_request", ID: "apr-1"},
+		err: errors.New("send failed"),
+	})
+	if m.curApproval() != nil {
+		t.Fatal("late send-fail must not re-arm a dead approval")
+	}
+	if m.busy {
+		t.Error("late send-fail must not reopen the turn")
+	}
+}
+
 // A turn that ends (done / error) while an approval is still queued must
 // drop the form the same way disconnect already does. Leaving it armed
 // captures the keyboard (and the footer) after the engine has moved on,

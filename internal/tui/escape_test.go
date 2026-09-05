@@ -228,6 +228,28 @@ func TestEscBusyCancelsOnlyWhenBare(t *testing.T) {
 	}
 }
 
+// Drawer (and the rest of the inspect chrome) sits above the approval
+// form on the ESC stack. A leftover sessions sheet must fold first;
+// denying the live request on that keypress is the wrong rung.
+func TestEscClosesDrawerBeforeApproval(t *testing.T) {
+	m := newTestModel()
+	m.panel = panelSessions
+	m.relayout()
+	m.handleEvent(client.Event{Type: "approval_request", ID: "apr", Command: "rm x"})
+	if m.curApproval() == nil {
+		t.Fatal("precondition: approval armed")
+	}
+
+	m.Update(key("esc"))
+
+	if m.panel != panelNone {
+		t.Errorf("esc must close the drawer first, got %v", m.panel)
+	}
+	if m.curApproval() == nil {
+		t.Fatal("esc must not deny the approval while the drawer was open")
+	}
+}
+
 func TestHelpCardTeachesEscCloses(t *testing.T) {
 	m := newTestModel()
 	m.showHelp()

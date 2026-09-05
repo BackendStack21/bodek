@@ -761,6 +761,23 @@ func TestErrMsgAndPanelErrors(t *testing.T) {
 	m.handleModelsMsg(modelsMsg{items: nil})
 }
 
+// A zero errMsg (nil error) must not panic — the same class as the
+// reconnect (nil, nil) give-up deref. Local write failures always carry
+// an error today, but the handler used to assume that.
+func TestErrMsgNilErrorNoPanic(t *testing.T) {
+	m := newTestModel()
+	busyTurn(m)
+	defer func() {
+		if r := recover(); r != nil {
+			t.Fatalf("errMsg{} panicked: %v", r)
+		}
+	}()
+	m.Update(errMsg{})
+	if m.status != "error" {
+		t.Errorf("status = %q, want error", m.status)
+	}
+}
+
 func TestElapsed(t *testing.T) {
 	m := wired(t)
 	if m.elapsed() != "" {

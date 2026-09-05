@@ -489,9 +489,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// classified card as a server-side error event; the note is the
 		// fallback when no turn is open to hold it.
 		if i := m.cur(); i >= 0 {
-			setTurnMarker(&m.msgs[i], m.errorCard(msg.err.Error()))
+			setTurnMarker(&m.msgs[i], m.errorCard(errText(msg.err)))
 		} else {
-			m.addNote("error: " + msg.err.Error())
+			m.addNote("error: " + errText(msg.err))
 		}
 		m.finalize()
 		// Pending approvals die with the turn — the same contract done /
@@ -503,6 +503,27 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.relayout() // the busy status line releases its row
 		m.refresh()
 		return m, tea.Batch(m.sendQueued(), m.noticeSweep())
+
+	case approvalSendErrMsg:
+		// Restore the popped head: the engine never saw the reply. Stay
+		// busy and keep the remaining queue — unlike errMsg, this is not
+		// a turn-ending write failure.
+		reason := errText(msg.err)
+		if m.disconn || !m.busy {
+			// Disconnect / done / error already dropped the form. A late
+			// send-fail must not re-arm a dead gate over the keyboard.
+			m.addNote("approval send failed — " + reason)
+			m.refresh()
+			return m, m.noticeSweep()
+		}
+		m.approvals = append([]client.Event{msg.ev}, m.approvals...)
+		m.apprDeadlines = append([]time.Time{msg.dl}, m.apprDeadlines...)
+		m.status = "approval required"
+		m.resetApprovalInput()
+		m.addNote("approval send failed — " + reason)
+		m.relayout()
+		m.refresh()
+		return m, tea.Batch(m.noticeSweep(), m.approvalSweep())
 
 	case acResultMsg:
 		if msg.seq != m.ac.seq || m.ac.mode != acRef {
@@ -774,6 +795,27 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 	if msg.String() == "ctrl+k" {
 		return m, m.togglePalette()
+	}
+
+	// ESC folds inspect chrome (drawer / cockpit / find / @ / queue)
+	// before the approval form — AGENTS.md stack. Decision keys (A/D/T/⏎)
+	// still answer even if a leftover sheet is open.
+	if msg.String() == "esc" {
+		if m.panel != panelNone {
+			return m.handlePanelKey(msg)
+		}
+		if m.popover {
+			return m.handlePopoverKey(msg)
+		}
+		if m.find.open {
+			return m.handleFindKey(msg)
+		}
+		if m.ac.open {
+			return m.handleACKey(msg)
+		}
+		if m.qfocus {
+			return m.queueStripKey(msg)
+		}
 	}
 
 	// Approval mode captures the keyboard until answered; only the transcript

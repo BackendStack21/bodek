@@ -17,6 +17,22 @@ type eventMsg client.Event
 // errMsg reports a local (non-protocol) failure, e.g. a failed socket write.
 type errMsg struct{ err error }
 
+func errText(err error) string {
+	if err != nil {
+		return err.Error()
+	}
+	return "unknown error"
+}
+
+// approvalSendErrMsg is a failed approval_response write. Unlike errMsg it
+// must not end the turn: the engine is still waiting on the request, so the
+// popped head is restored and remaining queue items stay armed.
+type approvalSendErrMsg struct {
+	ev  client.Event
+	dl  time.Time
+	err error
+}
+
 // updateCheckMsg carries the startup latest-release lookup. The error is
 // silent: a failed check must never nag.
 type updateCheckMsg struct {
