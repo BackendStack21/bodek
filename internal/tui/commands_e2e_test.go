@@ -57,7 +57,7 @@ func callCmd(cmd tea.Cmd) tea.Msg {
 
 func timeReArm(msg tea.Msg) bool {
 	switch msg.(type) {
-	case spinner.TickMsg, heartbeatMsg, runsTickMsg, noticeExpireMsg, renderFlushMsg:
+	case spinner.TickMsg, heartbeatMsg, runsTickMsg, noticeExpireMsg, renderFlushMsg, tailClockFlushMsg:
 		return true
 	}
 	return false

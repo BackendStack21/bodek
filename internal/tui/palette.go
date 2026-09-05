@@ -134,7 +134,16 @@ func (m *Model) basePaletteEntries() []palEntry {
 				return m.startHeadlessRun(draft)
 			}},
 		{title: "toggle tool details", hint: "^E", kind: "action",
-			run: func(m *Model) tea.Cmd { m.expandAll = !m.expandAll; m.convCount = -1; return nil }},
+			run: func(m *Model) tea.Cmd {
+				m.expandAll = !m.expandAll
+				m.invalidateAllMsgBlocks()
+				for i := range m.msgs {
+					for j := range m.msgs[i].steps {
+						clearStepBlockCache(&m.msgs[i].steps[j])
+					}
+				}
+				return nil
+			}},
 		{title: "toggle extended thinking", hint: "^T", kind: "action",
 			run: func(m *Model) tea.Cmd { m.thinkOn = !m.thinkOn; return nil }},
 		{title: "find in transcript", hint: "alt+f", kind: "action",

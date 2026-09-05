@@ -20,7 +20,7 @@ func TestHomeShowsRecentSessions(t *testing.T) {
 		{ID: "s2", Task: "refactor the parser", Turns: 9, UpdatedAt: time.Now().Add(-2 * time.Hour)},
 	}
 	out := plain(m.sessionHome())
-	for _, want := range []string{"fix the login bug", "refactor the parser", "4 turns", "^K"} {
+	for _, want := range []string{"fix the login bug", "refactor the parser", "4 turns", "1 ↩", "1–3 resume"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("session home missing %q:\n%s", want, out)
 		}

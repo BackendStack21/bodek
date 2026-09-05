@@ -320,12 +320,34 @@ func (m *Model) sessionHome() string {
 		if task == "" {
 			task = "(untitled)"
 		}
-		b.WriteString(th.statsDim.Render(fmt.Sprintf("↩ %s · %d turns · %s",
-			truncate(task, max(w-24, 12)), s.Turns, ago(s.UpdatedAt))) + "\n")
+		b.WriteString(th.statsDim.Render(fmt.Sprintf("%d ↩ %s · %d turns · %s",
+			i+1, truncate(task, max(w-24, 12)), s.Turns, ago(s.UpdatedAt))) + "\n")
 	}
 	b.WriteString("\n")
-	b.WriteString(th.tipKey.Render("type a task") + "  " + th.tipText.Render("⏎ sends · ^K everything · /verbosity dials detail") + "\n")
+	b.WriteString(th.tipKey.Render("type a task") + "  " + th.tipText.Render("1–3 resume · ⏎ sends · ^K everything · /verbosity dials detail") + "\n")
 	return lipgloss.NewStyle().Width(w).PaddingLeft(2).Render(strings.TrimRight(b.String(), "\n"))
+}
+
+// handleHomeResumeKey resumes a recent session from the cleared home card.
+func (m *Model) handleHomeResumeKey(key string) tea.Cmd {
+	if len(m.msgs) > 0 || m.busy || m.panel != panelNone {
+		return nil
+	}
+	var slot int
+	switch key {
+	case "1":
+		slot = 0
+	case "2":
+		slot = 1
+	case "3":
+		slot = 2
+	default:
+		return nil
+	}
+	if slot >= len(m.homeSess) || slot >= 3 {
+		return nil
+	}
+	return m.resumeSession(m.homeSess[slot].ID)
 }
 
 func captureHome(m *Model) {

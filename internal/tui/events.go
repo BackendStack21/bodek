@@ -151,7 +151,8 @@ func (m *Model) handleEvent(ev client.Event) (tea.Model, tea.Cmd) {
 						// unfold it once so the diagnosis is on screen
 						// without a hunt (the user can re-collapse it).
 						steps[j].expanded = true
-						m.convCount = -1
+						clearStepBlockCache(&steps[j])
+						m.invalidateMsgBlock(i)
 					}
 					if steps[j].subagent {
 						steps[j].resultCard = parseAgentResult(ev.Data)
@@ -824,6 +825,7 @@ func markCancel(msg *message) {
 func (m *Model) finalize() {
 	if i := m.cur(); i >= 0 {
 		m.closeTurn(&m.msgs[i])
+		m.invalidateMsgBlock(i)
 	}
 	m.curIdx = -1
 	m.wakeArmed = false // the window closed with the turn

@@ -70,7 +70,7 @@ func TestDumpPreview(t *testing.T) {
 	forceColor()
 	write("conversation.txt", m.View())
 	m.expandAll = true
-	m.convCount = -1
+	m.invalidateAllMsgBlocks()
 	m.refresh()
 	forceColor()
 	write("conversation-expanded.txt", m.View())

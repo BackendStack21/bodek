@@ -348,9 +348,20 @@ func (m *Model) statusLineVisible() bool {
 // re-runs glamour on the streaming tail — per event, they share one rebuild.
 const streamRenderInterval = 80 * time.Millisecond
 
+// tailClockInterval coalesces live step duration ticks in the transcript.
+// The status-line spinner animates outside the viewport; this lane only
+// refreshes running step clocks without rebuilding on every spinner frame.
+const tailClockInterval = 250 * time.Millisecond
+
 // renderFlushMsg fires streamRenderInterval after the first coalesced
 // streaming event; a stale seq means a newer flush superseded it.
 type renderFlushMsg struct {
+	seq int
+}
+
+// tailClockFlushMsg fires tailClockInterval after the first coalesced live
+// step-clock tick; a stale seq means a newer flush superseded it.
+type tailClockFlushMsg struct {
 	seq int
 }
 
@@ -366,6 +377,50 @@ func (m *Model) queueRender() tea.Cmd {
 	return tea.Tick(streamRenderInterval, func(time.Time) tea.Msg {
 		return renderFlushMsg{seq: seq}
 	})
+}
+
+// queueTailClock schedules a coalesced transcript refresh for live step
+// clocks while a turn runs.
+func (m *Model) queueTailClock() tea.Cmd {
+	if !m.busy || m.tailClockPending {
+		return nil
+	}
+	m.tailClockPending = true
+	m.tailClockSeq++
+	seq := m.tailClockSeq
+	return tea.Tick(tailClockInterval, func(time.Time) tea.Msg {
+		return tailClockFlushMsg{seq: seq}
+	})
+}
+
+// hasLiveStepClock reports whether the in-flight turn has a running step
+// whose elapsed time is shown in the transcript.
+func (m *Model) hasLiveStepClock() bool {
+	i := m.cur()
+	if i < 0 || !m.msgs[i].streaming {
+		return false
+	}
+	for _, s := range m.msgs[i].steps {
+		if !s.done && !s.started.IsZero() {
+			return true
+		}
+	}
+	return false
+}
+
+// refreshStreamingReplies glamour-renders open reply segments on the
+// coalesced flush so markdown layout stabilizes before the turn seals.
+func (m *Model) refreshStreamingReplies() {
+	i := m.cur()
+	if i < 0 || !m.msgs[i].streaming {
+		return
+	}
+	for j := range m.msgs[i].items {
+		it := &m.msgs[i].items[j]
+		if it.reply && strings.TrimSpace(it.text) != "" {
+			it.rendered = m.render(it.text)
+		}
+	}
 }
 
 // refresh rebuilds the viewport content and scrolls to the latest output only
@@ -407,30 +462,23 @@ func (m *Model) conversation() string {
 		msgsIdx = append(msgsIdx, stepRef{msgIdx: i, stepIdx: -1, line: line})
 	}
 	lineOffset := 0
-	if m.convCount != tail {
-		blocks := make([]string, 0, tail)
-		for i := 0; i < tail; i++ {
-			collectTurn(i, lineOffset)
-			s, r := m.renderMessage(m.msgs[i], i, lineOffset)
-			c := m.clampLines(s)
-			blocks = append(blocks, c)
-			refs = append(refs, r...)
-			lineOffset += lineCount(c) + 1 // offsets track what is displayed
-		}
-		m.convPrefix = strings.Join(blocks, "\n\n")
-		m.convPrefixRefs = refs
-		m.convPrefixTurn = turns
-		m.convPrefixMsgs = msgsIdx
-		m.convCount = tail
-	} else {
-		refs = append(refs, m.convPrefixRefs...)
-		turns = append(turns, m.convPrefixTurn...)
-		msgsIdx = append(msgsIdx, m.convPrefixMsgs...)
-		if m.convPrefix != "" {
-			lineOffset = lineCount(m.convPrefix) + 1
-		}
+	blocks := make([]string, 0, tail+2)
+	for i := 0; i < tail; i++ {
+		collectTurn(i, lineOffset)
+		c, r := m.msgBlockAt(i, lineOffset)
+		blocks = append(blocks, c)
+		refs = append(refs, r...)
+		lineOffset += lineCount(c) + 1
 	}
-	blocks := make([]string, 0, len(m.msgs)-tail+2)
+	m.convPrefix = strings.Join(blocks, "\n\n")
+	m.convPrefixRefs = refs
+	m.convPrefixTurn = turns
+	m.convPrefixMsgs = msgsIdx
+	m.convCount = tail
+	if m.convPrefix != "" {
+		lineOffset = lineCount(m.convPrefix) + 1
+	}
+	blocks = blocks[:0]
 	if m.convPrefix != "" {
 		blocks = append(blocks, m.convPrefix)
 	}
@@ -447,12 +495,12 @@ func (m *Model) conversation() string {
 		refs = append(refs, r...)
 		lineOffset += lineCount(c) + 1
 	}
-	m.msgLineIndex = msgsIdx
 	if len(m.notices) > 0 {
 		if notes := m.renderNotices(); notes != "" {
 			blocks = append(blocks, m.clampLines(notes))
 		}
 	}
+	m.msgLineIndex = msgsIdx
 	m.stepLineIndex = refs
 	m.turnLineIndex = turns
 	return strings.Join(blocks, "\n\n")
@@ -592,7 +640,7 @@ func (m *Model) renderMessage(msg message, msgIdx, lineOffset int) (string, []st
 					continue
 				}
 				body := t
-				if !msg.streaming && items[it].rendered != "" {
+				if items[it].rendered != "" {
 					body = items[it].rendered
 				}
 				card, _ := m.answerCardBody(body)
@@ -877,6 +925,13 @@ func (m *Model) renderStep(s step, streaming bool, msgIdx, stepIdx, startLine in
 	th := m.th
 	detailBudget := max(m.vp.Width-8, 4)
 	expanded := s.expanded || m.expandAll
+	if msgIdx >= 0 && stepIdx >= 0 && msgIdx < len(m.msgs) && stepIdx < len(m.msgs[msgIdx].steps) {
+		st := &m.msgs[msgIdx].steps[stepIdx]
+		if stepBlockCacheValid(s, st, m, expanded) {
+			refs := offsetStepRefs(st.blockRefs, startLine)
+			return st.blockCache, refs, lineCount(st.blockCache)
+		}
+	}
 	var icon string
 	switch {
 	case s.done && s.isErr:
@@ -1018,7 +1073,18 @@ func (m *Model) renderStep(s step, streaming bool, msgIdx, stepIdx, startLine in
 				lipgloss.NewStyle().MaxWidth(detailBudget).Render(d))
 		}
 	}
-	return strings.Join(lines, "\n"), refs, len(lines)
+	block := strings.Join(lines, "\n")
+	if msgIdx >= 0 && stepIdx >= 0 && msgIdx < len(m.msgs) && stepIdx < len(m.msgs[msgIdx].steps) && s.done && !live {
+		st := &m.msgs[msgIdx].steps[stepIdx]
+		if st.name == s.name && st.done == s.done && st.result == s.result {
+			st.blockCache = block
+			st.blockRefs = refs
+			st.blockWidth = m.vp.Width
+			st.blockExpanded = expanded
+			st.blockExpandAll = m.expandAll
+		}
+	}
+	return block, refs, len(lines)
 }
 
 func lastFinishedAgent(s *step, a *agentCard) bool {

@@ -333,12 +333,17 @@ func TestToggleStep(t *testing.T) {
 	m.msgs = append(m.msgs, message{role: roleAsst, steps: []step{
 		{name: "shell", arg: "go test", done: true, result: "exit status 1\nFAIL"},
 	}})
+	m.refresh()
 	m.toggleStep(0, 0)
 	if !m.msgs[0].steps[0].expanded {
 		t.Error("toggleStep did not expand the step")
 	}
-	if m.convCount != -1 {
-		t.Error("toggleStep did not invalidate the transcript cache")
+	m.ensureMsgBlocks()
+	if m.convCount == -1 {
+		t.Error("toggleStep should not invalidate the whole prefix")
+	}
+	if len(m.msgBlocks) == 0 || m.msgBlocks[0].valid {
+		t.Error("toggleStep did not invalidate the message block")
 	}
 	out := plain(m.conversation())
 	if !strings.Contains(out, "▼") || !strings.Contains(out, "FAIL") {

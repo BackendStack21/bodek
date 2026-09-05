@@ -43,6 +43,12 @@ type step struct {
 	agentSel   int           // focused chip: 0 = none, else 1-based SA number
 	started    time.Time     // when the tool_call arrived; zero for resumed history
 	dur        time.Duration // wall-clock the call took; 0 until the result lands
+	// Render cache for finished steps (peek/detail are expensive to re-parse).
+	blockCache     string
+	blockRefs      []stepRef
+	blockWidth     int
+	blockExpanded  bool
+	blockExpandAll bool
 }
 
 // stepRef maps a rendered transcript line to a specific step for mouse
@@ -318,15 +324,18 @@ type Model struct {
 	gradRuleW int
 	logoCache string // cached gradient logo (width-independent)
 
-	convPrefix     string    // cached rendering of the finalized transcript prefix
-	convPrefixRefs []stepRef // step header line index for the cached prefix
-	convPrefixTurn []stepRef // turn-head line index for the cached prefix (stepIdx -1)
-	convPrefixMsgs []stepRef // per-message first-line index for the cached prefix
-	convCount      int       // messages the prefix covers (-1 = invalidated)
-	stepLineIndex  []stepRef // full transcript step index for mouse hit-testing
-	turnLineIndex  []stepRef // full transcript turn-head index (stepIdx -1) for jump/collapse
-	msgLineIndex   []stepRef // full transcript per-message first-line index for find jumps
-	find           findState // transcript search bar (alt+f)
+	convPrefix       string          // joined finalized prefix (assembled from msgBlocks)
+	convPrefixRefs   []stepRef       // step header line index for the cached prefix
+	convPrefixTurn   []stepRef       // turn-head line index for the cached prefix (stepIdx -1)
+	convPrefixMsgs   []stepRef       // per-message first-line index for the cached prefix
+	convCount        int             // messages the prefix covers (-1 = wholesale invalid)
+	msgBlocks        []msgBlockCache // per-message render cache for the finalized prefix
+	tailClockPending bool            // coalesced live step-clock refresh scheduled
+	tailClockSeq     int
+	stepLineIndex    []stepRef // full transcript step index for mouse hit-testing
+	turnLineIndex    []stepRef // full transcript turn-head index (stepIdx -1) for jump/collapse
+	msgLineIndex     []stepRef // full transcript per-message first-line index for find jumps
+	find             findState // transcript search bar (alt+f)
 
 	renderPending bool // a coalesced streaming render is scheduled
 	renderSeq     int  // bumped per scheduled flush, to drop stale ticks
@@ -440,10 +449,25 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case spinner.TickMsg:
 		var cmd tea.Cmd
 		m.sp, cmd = m.sp.Update(msg)
-		if m.busy || m.ac.loading {
+		if m.ac.loading {
 			m.refresh()
+			return m, cmd
+		}
+		// The status-line spinner animates outside the viewport; only refresh
+		// the transcript for live step clocks, and coalesce that lane.
+		if m.busy && m.hasLiveStepClock() {
+			return m, tea.Batch(cmd, m.queueTailClock())
 		}
 		return m, cmd
+
+	case tailClockFlushMsg:
+		if msg.seq == m.tailClockSeq && m.tailClockPending {
+			m.tailClockPending = false
+			if m.busy {
+				m.refresh()
+			}
+		}
+		return m, nil
 
 	case heartbeatMsg:
 		return m, m.handleHeartbeat()
@@ -451,6 +475,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case renderFlushMsg:
 		if msg.seq == m.renderSeq && m.renderPending {
 			m.renderPending = false
+			m.refreshStreamingReplies()
 			m.refresh()
 		}
 		return m, nil
@@ -788,6 +813,10 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.queueStripKey(msg)
 	}
 
+	if cmd := m.handleHomeResumeKey(msg.String()); cmd != nil {
+		return m, cmd
+	}
+
 	switch msg.String() {
 	case "ctrl+c":
 		return m, m.armConfirm(confirmQuit, "bodek")
@@ -858,7 +887,12 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			state = "on"
 		}
 		cmd := m.transientNoteCmd("tool details " + state)
-		m.convCount = -1 // re-render the cached transcript prefix too
+		m.invalidateAllMsgBlocks()
+		for i := range m.msgs {
+			for j := range m.msgs[i].steps {
+				clearStepBlockCache(&m.msgs[i].steps[j])
+			}
+		}
 		m.refresh()
 		return m, cmd
 	case "ctrl+p":
@@ -960,7 +994,7 @@ func (m *Model) clearConversation() tea.Cmd {
 	captureHome(m)
 	m.msgs = nil
 	m.curIdx = -1
-	m.convCount = -1 // transcript replaced — drop the cached prefix
+	m.resetMsgBlocks()
 	m.convPrefixRefs = nil
 	m.find = findState{} // nothing left to search
 	m.stepLineIndex = nil
@@ -1086,7 +1120,12 @@ func (m *Model) resize(w, h int) tea.Cmd {
 	m.ta.SetWidth(w - 4)
 	m.syncComposer() // the new width re-wraps content — refit the box
 	m.gradRule = ""  // invalidate cached rule for the new width
-	m.convCount = -1 // and the cached transcript prefix (bars are width-dependent)
+	m.invalidateAllMsgBlocks()
+	for i := range m.msgs {
+		for j := range m.msgs[i].steps {
+			clearStepBlockCache(&m.msgs[i].steps[j])
+		}
+	}
 	m.relayout()
 
 	wrap := w - 6
@@ -1301,7 +1340,8 @@ func (m *Model) toggleStep(msgIdx, stepIdx int) {
 		return
 	}
 	steps[stepIdx].expanded = !steps[stepIdx].expanded
-	m.convCount = -1
+	clearStepBlockCache(&steps[stepIdx])
+	m.invalidateMsgBlock(msgIdx)
 }
 
 func (m *Model) selectAgentChip(msgIdx, stepIdx, agentIdx int) {
@@ -1318,7 +1358,8 @@ func (m *Model) selectAgentChip(msgIdx, stepIdx, agentIdx int) {
 	} else {
 		s.setAgentFocus(agentIdx)
 	}
-	m.convCount = -1
+	clearStepBlockCache(s)
+	m.invalidateMsgBlock(msgIdx)
 }
 
 // cycleAgentFocus walks the latest sub-agent chip strip: none → first →
@@ -1346,7 +1387,7 @@ func (m *Model) cycleAgentFocus() bool {
 				}
 			}
 			s.setAgentFocus(next)
-			m.convCount = -1
+			m.invalidateMsgBlock(i)
 			return true
 		}
 		return false
@@ -1366,7 +1407,7 @@ func (m *Model) toggleCollapseLast() {
 			continue // nothing to fold
 		}
 		m.msgs[i].collapsed = !m.msgs[i].collapsed
-		m.convCount = -1
+		m.invalidateMsgBlock(i)
 		m.refresh()
 		return
 	}
@@ -1379,7 +1420,7 @@ func (m *Model) toggleCollapseAt(msgIdx int) {
 		return
 	}
 	m.msgs[msgIdx].collapsed = !m.msgs[msgIdx].collapsed
-	m.convCount = -1
+	m.invalidateMsgBlock(msgIdx)
 }
 
 // toggleThinkingLast opens/closes the most recent reasoning accordion block
@@ -1393,7 +1434,7 @@ func (m *Model) toggleThinkingLast() bool {
 		for j := len(m.msgs[i].items) - 1; j >= 0; j-- {
 			if m.msgs[i].items[j].thinking && strings.TrimSpace(m.msgs[i].items[j].text) != "" {
 				m.msgs[i].items[j].open = !m.msgs[i].items[j].open
-				m.convCount = -1
+				m.invalidateMsgBlock(i)
 				return true
 			}
 		}
@@ -1412,8 +1453,9 @@ func (m *Model) toggleLastStep() bool {
 			continue
 		}
 		if n := len(m.msgs[i].steps); n > 0 {
+			clearStepBlockCache(&m.msgs[i].steps[n-1])
 			m.msgs[i].steps[n-1].expanded = !m.msgs[i].steps[n-1].expanded
-			m.convCount = -1
+			m.invalidateMsgBlock(i)
 			return true
 		}
 		return false

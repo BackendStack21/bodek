@@ -57,7 +57,12 @@ func (m *Model) dialNote(s string) tea.Cmd {
 func (m *Model) setVerbosity(v int) tea.Cmd {
 	m.verbosity = v
 	m.expandAll = v == verbosityDetailed
-	m.convCount = -1
+	m.invalidateAllMsgBlocks()
+	for i := range m.msgs {
+		for j := range m.msgs[i].steps {
+			clearStepBlockCache(&m.msgs[i].steps[j])
+		}
+	}
 	m.refresh()
 	var desc string
 	switch v {
