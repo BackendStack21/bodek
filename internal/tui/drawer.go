@@ -442,7 +442,7 @@ func (m *Model) runRows(w int) []string {
 		if n := len(r.PendingApprovals); n > 0 {
 			meta += " · ⚠ " + plural(n, "approval", "approvals")
 		}
-		label := runStatusGlyph(r) + "  " + orDash(r.Model)
+		label := runStatusGlyph(r) + "  " + orDash(collapse(r.Model))
 		if r.Result != "" {
 			label += "  —  " + truncate(collapse(r.Result), 30)
 		} else if r.Error != "" {
@@ -541,9 +541,9 @@ func (m *Model) eventRows(w int) []string {
 		if !ev.Timestamp.IsZero() {
 			ts = ev.Timestamp.Format("15:04:05")
 		}
-		label := ts + "  " + ev.Type
+		label := ts + "  " + collapse(ev.Type)
 		if ev.Tool != "" {
-			label += " · " + ev.Tool
+			label += " · " + collapse(ev.Tool)
 		}
 		if ev.Iteration > 0 {
 			label += fmt.Sprintf(" · iter %d", ev.Iteration)

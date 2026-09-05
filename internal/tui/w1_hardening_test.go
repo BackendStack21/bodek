@@ -331,6 +331,52 @@ func TestModelCatalogSanitizesPickerAndPalette(t *testing.T) {
 	}
 }
 
+// Palette session titles copy sess.Task raw; the sessions list already
+// collapse()s the same field.
+func TestPaletteSessionTitleSanitizesTask(t *testing.T) {
+	const payload = "\x1b[2J"
+	m := newTestModel()
+	m.pal.open = true
+	m.handlePalSessions(palSessionsMsg{items: []client.Session{{
+		ID: "s1", Task: "x" + payload + "evil",
+	}}})
+	for _, e := range m.pal.all {
+		if e.kind == "session" && strings.Contains(e.title, payload) {
+			t.Fatalf("palette session title leaked CSI: %q", e.title)
+		}
+	}
+	if pop := m.palPopup(); strings.Contains(pop, payload) {
+		t.Fatalf("palette popup leaked CSI: %q", pop)
+	}
+}
+
+// Runs tab collapses Result/Error but paints r.Model raw.
+func TestRunRowsSanitizeModel(t *testing.T) {
+	const payload = "\x1b[2J"
+	m := newTestModel()
+	m.runs = []client.Run{{
+		ID: "r1", Status: "completed",
+		Model:  "x" + payload + "evil",
+		Result: "ok",
+	}}
+	if strings.Contains(strings.Join(m.runRows(80), "\n"), payload) {
+		t.Fatal("runs row leaked model CSI")
+	}
+}
+
+// Events tab concatenates ev.Type / ev.Tool with no collapse.
+func TestEventRowsSanitizeTypeAndTool(t *testing.T) {
+	const payload = "\x1b[2J"
+	m := newTestModel()
+	m.feed = []client.RuntimeEvent{{
+		Type: "tool_call" + payload,
+		Tool: "shell" + payload,
+	}}
+	if strings.Contains(strings.Join(m.eventRows(80), "\n"), payload) {
+		t.Fatal("events row leaked tool CSI")
+	}
+}
+
 // The conversation is the click/scroll hit-test source of truth: a line that
 // physically wraps desyncs every index below it. Every emitted line must fit
 // the viewport.

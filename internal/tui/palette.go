@@ -85,7 +85,7 @@ func (m *Model) handlePalSessions(msg palSessionsMsg) tea.Cmd {
 				task = "(untitled)"
 			}
 			m.pal.all = append(m.pal.all, palEntry{
-				title: "resume · " + task,
+				title: "resume · " + collapse(task),
 				hint:  "^R",
 				kind:  "session",
 				run:   func(m *Model) tea.Cmd { return m.resumeSession(sess.ID) },
