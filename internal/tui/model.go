@@ -1141,12 +1141,21 @@ func (m *Model) resize(w, h int) tea.Cmd {
 		// cards (raw) are point-in-time snapshots and must never go through
 		// glamour, which would mangle their embedded ANSI.
 		for i := range m.msgs {
-			if m.msgs[i].role == roleAsst && !m.msgs[i].streaming && !m.msgs[i].raw {
-				m.msgs[i].rendered = m.render(m.msgs[i].content)
+			if m.msgs[i].role != roleAsst || m.msgs[i].raw {
+				continue
+			}
+			if m.msgs[i].streaming {
 				for j := range m.msgs[i].items {
-					if m.msgs[i].items[j].reply {
+					if m.msgs[i].items[j].reply && strings.TrimSpace(m.msgs[i].items[j].text) != "" {
 						m.msgs[i].items[j].rendered = m.render(m.msgs[i].items[j].text)
 					}
+				}
+				continue
+			}
+			m.msgs[i].rendered = m.render(m.msgs[i].content)
+			for j := range m.msgs[i].items {
+				if m.msgs[i].items[j].reply {
+					m.msgs[i].items[j].rendered = m.render(m.msgs[i].items[j].text)
 				}
 			}
 		}
@@ -1387,6 +1396,7 @@ func (m *Model) cycleAgentFocus() bool {
 				}
 			}
 			s.setAgentFocus(next)
+			clearStepBlockCache(s)
 			m.invalidateMsgBlock(i)
 			return true
 		}

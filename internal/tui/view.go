@@ -1076,7 +1076,7 @@ func (m *Model) renderStep(s step, streaming bool, msgIdx, stepIdx, startLine in
 	block := strings.Join(lines, "\n")
 	if msgIdx >= 0 && stepIdx >= 0 && msgIdx < len(m.msgs) && stepIdx < len(m.msgs[msgIdx].steps) && s.done && !live {
 		st := &m.msgs[msgIdx].steps[stepIdx]
-		if st.name == s.name && st.done == s.done && st.result == s.result {
+		if st.name == s.name && st.done == s.done && st.result == s.result && st.agentSel == s.agentSel {
 			st.blockCache = block
 			st.blockRefs = refs
 			st.blockWidth = m.vp.Width
