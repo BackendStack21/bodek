@@ -452,7 +452,7 @@ func (m *Model) memRowsRender(w int) []string {
 	th := m.th
 	rows := make([]string, 0, len(m.memRows))
 	for i, r := range m.memRows {
-		label := r.text
+		label := collapse(r.text)
 		detail := "  fact · " + r.kind
 		if r.kind == "episode" {
 			detail = "  ⏳ pending episode · " + shortID(r.sessionID)
@@ -482,11 +482,12 @@ func (m *Model) skillRowsRender(w int) []string {
 		if s.Untrusted {
 			badges += "  ⚠ untrusted"
 		}
-		detail := fmt.Sprintf("  ×%d · %s", s.UsageCount, s.Source) + badges
+		detail := fmt.Sprintf("  ×%d · %s", s.UsageCount, collapse(s.Source)) + badges
 		budget := w - 2 - lipgloss.Width(detail)
-		prefix, lab := "  ", th.acItem.Render(truncate(s.Name, budget))
+		name := collapse(s.Name)
+		prefix, lab := "  ", th.acItem.Render(truncate(name, budget))
 		if i == m.panelSel {
-			prefix, lab = th.acSel.Render("› "), th.acSel.Render(truncate(s.Name, budget))
+			prefix, lab = th.acSel.Render("› "), th.acSel.Render(truncate(name, budget))
 		}
 		rows = append(rows, prefix+lab+th.acDetail.Render(detail))
 		// A dim description line under each name: the list stays scannable
@@ -502,14 +503,16 @@ func (m *Model) toolRowsRender(w int) []string {
 	th := m.th
 	rows := make([]string, 0, len(m.toolRows))
 	for i, r := range m.toolRows {
-		detail := "  " + r.dim
+		dim := collapse(r.dim)
+		text := collapse(r.text)
+		detail := "  " + dim
 		if r.kind == "mcp" {
-			detail = "  mcp · " + r.dim
+			detail = "  mcp · " + dim
 		}
 		budget := w - 2 - lipgloss.Width(detail)
-		prefix, lab := "  ", th.acItem.Render(truncate(r.text, budget))
+		prefix, lab := "  ", th.acItem.Render(truncate(text, budget))
 		if i == m.panelSel {
-			prefix, lab = th.acSel.Render("› "), th.acSel.Render(truncate(r.text, budget))
+			prefix, lab = th.acSel.Render("› "), th.acSel.Render(truncate(text, budget))
 		}
 		rows = append(rows, prefix+lab+th.acDetail.Render(detail))
 	}
@@ -520,14 +523,15 @@ func (m *Model) cfgRowsRender(w int) []string {
 	th := m.th
 	rows := make([]string, 0, len(m.cfgRows))
 	for i, r := range m.cfgRows {
-		detail := "  " + r.v
+		k := collapse(r.k)
+		detail := "  " + collapse(r.v)
 		if r.kind == "conn" {
 			detail += "  · d kicks"
 		}
 		budget := w - 2 - lipgloss.Width(detail)
-		prefix, lab := "  ", th.acItem.Render(truncate(r.k, budget))
+		prefix, lab := "  ", th.acItem.Render(truncate(k, budget))
 		if i == m.panelSel {
-			prefix, lab = th.acSel.Render("› "), th.acSel.Render(truncate(r.k, budget))
+			prefix, lab = th.acSel.Render("› "), th.acSel.Render(truncate(k, budget))
 		}
 		rows = append(rows, prefix+lab+th.acDetail.Render(detail))
 	}
@@ -597,7 +601,7 @@ func (m *Model) agentRowsRender(w int) []string {
 	th := m.th
 	rows := make([]string, 0, len(m.agentsReg))
 	for i, e := range m.agentsReg {
-		goal := e.Goal
+		goal := collapse(e.Goal)
 		if goal == "" {
 			goal = "(no goal recorded)"
 		}
@@ -609,9 +613,9 @@ func (m *Model) agentRowsRender(w int) []string {
 		}
 		var detail string
 		if e.Phase == "finished" {
-			detail = fmt.Sprintf("  %s · %d it · %s tok", e.Status, e.Iterations, human(e.TokensUsed))
+			detail = fmt.Sprintf("  %s · %d it · %s tok", collapse(e.Status), e.Iterations, human(e.TokensUsed))
 		} else {
-			tool := e.LastTool
+			tool := collapse(e.LastTool)
 			if tool == "" && e.Step > 0 {
 				tool = fmt.Sprintf("step %d", e.Step)
 			}

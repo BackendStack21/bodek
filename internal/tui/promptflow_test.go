@@ -701,3 +701,33 @@ func TestCancelApprovalDoesNotClobberCancelling(t *testing.T) {
 		}
 	})
 }
+
+// /retry and alt+r still queue while cancelling — they skip submit()'s
+// enter guard and retryLast only checks busy.
+func TestRetryDuringCancelDoesNotQueue(t *testing.T) {
+	m := newTestModel()
+	busyTurn(m)
+	m.sessionID = "s1"
+	m.lastPrompt = "first"
+	m.queue = []string{"held"}
+	m.cancelRun()
+	if m.status != "cancelling" {
+		t.Fatalf("precondition: status = %q", m.status)
+	}
+
+	m.retryLast()
+	if len(m.queue) != 0 {
+		t.Fatalf("retryLast while cancelling queued: %v", m.queue)
+	}
+
+	m.Update(key("alt+r"))
+	if len(m.queue) != 0 {
+		t.Fatalf("alt+r while cancelling queued: %v", m.queue)
+	}
+
+	m.ta.SetValue("/retry")
+	m.submit()
+	if len(m.queue) != 0 {
+		t.Fatalf("/retry while cancelling queued: %v", m.queue)
+	}
+}

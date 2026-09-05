@@ -622,12 +622,13 @@ type modelEntry struct {
 func (m *Model) modelEntries() []modelEntry {
 	out := make([]modelEntry, 0, len(m.models))
 	for _, md := range m.models {
-		e := modelEntry{id: md.ID, label: md.ID, current: md.Current}
+		id := collapse(md.ID)
+		e := modelEntry{id: id, label: id, current: md.Current}
 		if md.MaxContext > 0 {
 			e.detail = fmt.Sprintf("%s ctx", humanCtx(md.MaxContext))
 		}
 		if md.Description != "" {
-			e.detail = strings.TrimSpace(md.Description + "  " + e.detail)
+			e.detail = strings.TrimSpace(collapse(md.Description) + "  " + e.detail)
 		}
 		out = append(out, e)
 	}

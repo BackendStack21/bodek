@@ -264,6 +264,73 @@ func TestEngineNoticesCollapseNewlines(t *testing.T) {
 	}
 }
 
+// Management drawer list rows paint API/wire strings. CSI in a skill name,
+// fact, MCP command, or agent goal must not reach the terminal.
+func TestMgmtListRowsSanitizeWireFields(t *testing.T) {
+	const payload = "\x1b[2J"
+	hasCSI := func(rows []string) bool {
+		return strings.Contains(strings.Join(rows, "\n"), payload)
+	}
+
+	t.Run("skills", func(t *testing.T) {
+		m := newTestModel()
+		m.skills = []client.Skill{{Name: "x" + payload + "evil", Source: "y" + payload}}
+		if hasCSI(m.skillRowsRender(80)) {
+			t.Error("skill list leaked CSI")
+		}
+	})
+	t.Run("memory", func(t *testing.T) {
+		m := newTestModel()
+		m.memRows = []memRow{{kind: "user", text: "x" + payload + "evil"}}
+		if hasCSI(m.memRowsRender(80)) {
+			t.Error("memory list leaked CSI")
+		}
+	})
+	t.Run("tools", func(t *testing.T) {
+		m := newTestModel()
+		m.toolRows = []toolRow{{kind: "mcp", text: "x" + payload, dim: "y" + payload}}
+		if hasCSI(m.toolRowsRender(80)) {
+			t.Error("tools list leaked CSI")
+		}
+	})
+	t.Run("config", func(t *testing.T) {
+		m := newTestModel()
+		m.cfgRows = []cfgRow{{kind: "cfg", k: "x" + payload, v: "y" + payload}}
+		if hasCSI(m.cfgRowsRender(80)) {
+			t.Error("config list leaked CSI")
+		}
+	})
+	t.Run("agents", func(t *testing.T) {
+		m := newTestModel()
+		m.agentsReg = []client.SubagentEntry{{Goal: "x" + payload, LastTool: "y" + payload, Phase: "running"}}
+		if hasCSI(m.agentRowsRender(80)) {
+			t.Error("agents list leaked CSI")
+		}
+	})
+}
+
+// The models picker and palette still paint catalog ID/description raw
+// (v1.4.5 only collapsed the header / applyModelChoice store).
+func TestModelCatalogSanitizesPickerAndPalette(t *testing.T) {
+	const payload = "\x1b[2J"
+	m := newTestModel()
+	m.models = []client.ModelInfo{{ID: "x" + payload + "evil", Description: "y" + payload}}
+
+	if strings.Contains(strings.Join(m.modelRows(80), "\n"), payload) {
+		t.Error("model picker leaked CSI")
+	}
+
+	m.togglePalette()
+	for _, e := range m.pal.all {
+		if e.kind != "model" {
+			continue
+		}
+		if strings.Contains(e.title, payload) {
+			t.Errorf("palette model title leaked CSI: %q", e.title)
+		}
+	}
+}
+
 // The conversation is the click/scroll hit-test source of truth: a line that
 // physically wraps desyncs every index below it. Every emitted line must fit
 // the viewport.

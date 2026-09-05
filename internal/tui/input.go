@@ -347,6 +347,9 @@ func (m *Model) retryLast() tea.Cmd {
 		return m.transientNoteCmd("nothing to retry yet — send a prompt first")
 	}
 	if m.busy {
+		if m.status == "cancelling" {
+			return m.transientNoteCmd("cancelling — retry stays off the queue")
+		}
 		m.queue = append(m.queue, m.lastPrompt)
 		return m.transientNoteCmd("retry queued — it sends when the turn ends")
 	}
