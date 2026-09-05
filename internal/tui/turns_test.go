@@ -24,21 +24,27 @@ func turnFixture(t *testing.T) *Model {
 	return m
 }
 
-// TestTurnHeadCarriesTelemetry verifies the stat line moved from the foot to
-// the head: latency/tokens/tools render on the "⬡ odek" row and no separate
-// foot line follows the turn.
-func TestTurnHeadCarriesTelemetry(t *testing.T) {
+// TestTurnFootCarriesTelemetry verifies the sealed stat line sits under the
+// assistant reply, not on the "⬡ odek" head.
+func TestTurnFootCarriesTelemetry(t *testing.T) {
 	m := turnFixture(t)
 	out, _ := m.renderMessage(m.msgs[1], 1, 0)
 	lines := strings.Split(plain(out), "\n")
-	head := lines[0]
-	for _, want := range []string{"odek", "2.0s", "900", "120", "⚒"} {
-		if !strings.Contains(head, want) {
-			t.Errorf("turn head missing %q:\n%s", want, head)
-		}
+	if len(lines) < 2 {
+		t.Fatalf("turn render too short:\n%s", plain(out))
 	}
-	if n := len(lines); n > 2 && strings.Contains(lines[n-1], "⚡") {
-		t.Errorf("telemetry still renders as a foot line:\n%s", plain(out))
+	head := lines[0]
+	if strings.Contains(head, "⚡") || strings.Contains(head, "2.0s") {
+		t.Errorf("telemetry still rides the turn head:\n%s", head)
+	}
+	if !strings.Contains(head, "odek") {
+		t.Errorf("turn head missing identity:\n%s", head)
+	}
+	foot := lines[len(lines)-1]
+	for _, want := range []string{"⚡", "2.0s", "900", "120", "⚒"} {
+		if !strings.Contains(foot, want) {
+			t.Errorf("turn foot missing %q:\n%s", want, foot)
+		}
 	}
 }
 
@@ -63,9 +69,13 @@ func TestTurnCollapseFold(t *testing.T) {
 	if got := lineCount(folded); got >= fullLines {
 		t.Errorf("folded card is not shorter: %d vs %d", got, fullLines)
 	}
-	// The head telemetry survives folding.
-	if !strings.Contains(strings.Split(out, "\n")[0], "2.0s") {
-		t.Errorf("folded head lost telemetry:\n%s", out)
+	// The sealed telemetry survives folding, still under the card.
+	foldLines := strings.Split(out, "\n")
+	if strings.Contains(foldLines[0], "2.0s") {
+		t.Errorf("folded telemetry must not ride the head:\n%s", out)
+	}
+	if !strings.Contains(foldLines[len(foldLines)-1], "2.0s") {
+		t.Errorf("folded card lost telemetry foot:\n%s", out)
 	}
 
 	m.toggleCollapseLast()
@@ -114,6 +124,34 @@ func TestUserHeadAge(t *testing.T) {
 	out, _ = m.renderMessage(message{role: roleUser, content: "hi"}, 0, 0)
 	if strings.Contains(plain(out), "ago") {
 		t.Errorf("resumed user turns should render no age:\n%s", plain(out))
+	}
+}
+
+// TestTurnHeadEvenGap pins one blank row after ❯ you / ⬡ odek — the same
+// gap that sits between messages and around the answer card.
+func TestTurnHeadEvenGap(t *testing.T) {
+	m := turnFixture(t)
+	user, _ := m.renderMessage(m.msgs[0], 0, 0)
+	asst, _ := m.renderMessage(m.msgs[1], 1, 0)
+	for _, tc := range []struct {
+		name, out, head string
+	}{
+		{"user", plain(user), "you"},
+		{"assistant", plain(asst), "odek"},
+	} {
+		lines := strings.Split(tc.out, "\n")
+		if len(lines) < 3 {
+			t.Fatalf("%s render too short:\n%s", tc.name, tc.out)
+		}
+		if !strings.Contains(lines[0], tc.head) {
+			t.Errorf("%s head = %q, want %q", tc.name, lines[0], tc.head)
+		}
+		if lines[1] != "" {
+			t.Errorf("%s missing blank after the head:\n%s", tc.name, tc.out)
+		}
+		if len(lines) < 3 || lines[2] == "" {
+			t.Errorf("%s doubled the gap after the head:\n%s", tc.name, tc.out)
+		}
 	}
 }
 

@@ -65,34 +65,111 @@ func (m *Model) insertNewline() tea.Cmd {
 	return cmd
 }
 
-// FilterShiftEnter rewrites the CSI sequences terminals emit for Shift+Enter
-// (kitty CSI-u / xterm modifyOtherKeys) into a KeyMsg the composer matches.
-// Bubble Tea v1 has no KeyShiftEnter of its own.
+// FilterShiftEnter rewrites terminal CSI that Bubble Tea v1 does not map:
+// Shift+Enter, disambiguated Esc, and modifyOtherKeys=2 chords (so ^K
+// still reaches the palette after we ask xterm.js to encode Shift+Enter).
 func FilterShiftEnter(_ tea.Model, msg tea.Msg) tea.Msg {
-	if shiftEnterCSI(msg) {
+	b := csiBytes(msg)
+	if len(b) == 0 {
+		return msg
+	}
+	s := string(b)
+	if km, ok := parseModifyOtherKeys(s); ok {
+		return km
+	}
+	if shiftEnterCSI(s) {
 		return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("shift+enter")}
+	}
+	if disambiguatedEsc(s) {
+		return tea.KeyMsg{Type: tea.KeyEscape}
 	}
 	return msg
 }
 
-func shiftEnterCSI(msg tea.Msg) bool {
+// csiBytes extracts a CSI payload from a raw []byte or a named []byte
+// type (Bubble Tea's unexported unknownCSISequenceMsg).
+func csiBytes(msg tea.Msg) []byte {
 	v := reflect.ValueOf(msg)
 	if v.Kind() != reflect.Slice || v.Type().Elem().Kind() != reflect.Uint8 {
-		return false
+		return nil
 	}
 	b := make([]byte, v.Len())
 	reflect.Copy(reflect.ValueOf(b), v)
-	switch string(b) {
-	case "\x1b[13;2u", "\x1b[13;2;1u", "\x1b[27;2;13~":
-		return true
-	}
-	return false
+	return b
 }
 
-// RestoreEnhancedKeys turns off kitty CSI-u / xterm modifyOtherKeys.
-// Bodek never enables those modes (Bubble Tea v1 drops the remapped
-// chords — ^K, esc, …), but a previous run or another tool may have
-// left them on.
+// kitty/xterm Shift+Enter: CSI 13;2 u (optional event type), CSI 27;2;13 ~
+// or CSI 13;2 ~.
+var shiftEnterCSIRe = regexp.MustCompile(`^\x1b\[(?:13;2(?:;\d+)*u|27;2;13[~u]|13;2~)$`)
+
+func shiftEnterCSI(s string) bool {
+	return shiftEnterCSIRe.MatchString(s)
+}
+
+// Kitty disambiguate encodes bare Esc as CSI 27 u so it is not a lone
+// 0x1b prefix. Map it back before Update, or esc closes nothing.
+var disambiguatedEscRe = regexp.MustCompile(`^\x1b\[27(?:;1(?:;27)?)?u$`)
+
+func disambiguatedEsc(s string) bool {
+	return disambiguatedEscRe.MatchString(s)
+}
+
+// parseModifyOtherKeys decodes xterm CSI 27 ; modifier ; key ~ (mode 2).
+// Cursor / VS Code's xterm.js only distinguishes Shift+Enter in this mode.
+func parseModifyOtherKeys(s string) (tea.KeyMsg, bool) {
+	var mod, key int
+	if n, err := fmt.Sscanf(s, "\x1b[27;%d;%d~", &mod, &key); n != 2 || err != nil {
+		return tea.KeyMsg{}, false
+	}
+	bits := mod - 1
+	if bits < 0 {
+		bits = 0
+	}
+	shift, alt, ctrl := bits&1 != 0, bits&2 != 0, bits&4 != 0
+	switch key {
+	case 13:
+		if shift {
+			return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("shift+enter")}, true
+		}
+		if alt {
+			return tea.KeyMsg{Type: tea.KeyEnter, Alt: true}, true
+		}
+		return tea.KeyMsg{Type: tea.KeyEnter}, true
+	case 27:
+		return tea.KeyMsg{Type: tea.KeyEscape}, true
+	case 9:
+		if shift {
+			return tea.KeyMsg{Type: tea.KeyShiftTab}, true
+		}
+		return tea.KeyMsg{Type: tea.KeyTab}, true
+	}
+	if key >= 'a' && key <= 'z' && ctrl {
+		return tea.KeyMsg{Type: tea.KeyType(key - 96)}, true
+	}
+	if key >= 'A' && key <= 'Z' && ctrl {
+		return tea.KeyMsg{Type: tea.KeyType(key - 64)}, true
+	}
+	if key >= 32 && key < 127 && alt && !ctrl {
+		return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{rune(key)}, Alt: true}, true
+	}
+	return tea.KeyMsg{}, false
+}
+
+// EnableShiftEnterKeys asks the terminal to encode modified Enter.
+// Kitty/Ghostty: disambiguate (flag 1). xterm.js (Cursor/VS Code):
+// modifyOtherKeys=2 — level 1 leaves Shift+Enter as CR. FilterShiftEnter
+// maps the resulting CSI back to KeyMsgs so ^K and esc keep working.
+func EnableShiftEnterKeys() {
+	writeEnhancedKeys("\x1b[>1u\x1b[>4;2m")
+}
+
+func enableShiftEnterCmd() tea.Msg {
+	EnableShiftEnterKeys()
+	return nil
+}
+
+// RestoreEnhancedKeys pops kitty keyboard flags and turns off
+// modifyOtherKeys. Called on startup (clear leftovers) and shutdown.
 func RestoreEnhancedKeys() {
 	writeEnhancedKeys("\x1b[<u\x1b[>4;0m")
 }

@@ -5,6 +5,8 @@ import (
 	"testing"
 	"time"
 
+	tea "github.com/charmbracelet/bubbletea"
+
 	"github.com/BackendStack21/bodek/internal/client"
 )
 
@@ -107,6 +109,69 @@ func TestIngestBatchThinkingFirehose(t *testing.T) {
 	}
 	if !m.renderPending {
 		t.Error("batch of stream events must leave a coalesced flush pending")
+	}
+	assertListenFlat(t, cmd)
+}
+
+// TestIngestBatchDoneRestoresReady: a firehose that ends with done must
+// clear busy and put the header lamp back on ready (the corner users watch).
+func TestIngestBatchDoneRestoresReady(t *testing.T) {
+	m := newTestModel()
+	streamingTurn(m)
+	_, cmd := m.Update(eventBatchMsg{
+		{Type: "thinking_delta", Content: "hmm"},
+		{Type: "token_delta", Content: "hello"},
+		{Type: "done", Latency: 1},
+	})
+	if cmd == nil {
+		t.Fatal("done batch must re-arm listen")
+	}
+	if m.busy {
+		t.Error("done must clear busy")
+	}
+	if m.status != "ready" {
+		t.Errorf("status = %q, want ready", m.status)
+	}
+	if got := plain(m.statusBadge()); got != lampReady {
+		t.Errorf("badge = %q, want %q", got, lampReady)
+	}
+	if m.disconn {
+		t.Error("done batch must not mark disconnected")
+	}
+	assertListenFlat(t, cmd)
+}
+
+// assertListenFlat checks that ingestWireBatch's follow-up cmd does not wrap
+// listen inside another tea.Batch (that left execBatchMsg waiting on a
+// nested listen and the ready badge never came back).
+func assertListenFlat(t *testing.T, cmd tea.Cmd) {
+	t.Helper()
+	got := make(chan tea.Msg, 1)
+	go func() { got <- cmd() }()
+	var msg tea.Msg
+	select {
+	case msg = <-got:
+	case <-time.After(200 * time.Millisecond):
+		return // tea.Batch collapsed to listen alone — already flat
+	}
+	bm, ok := msg.(tea.BatchMsg)
+	if !ok {
+		t.Fatalf("cmd produced %T, want BatchMsg or blocking listen", msg)
+	}
+	for i, c := range bm {
+		if c == nil {
+			continue
+		}
+		inner := make(chan tea.Msg, 1)
+		go func() { inner <- c() }()
+		select {
+		case m := <-inner:
+			if _, nested := m.(tea.BatchMsg); nested {
+				t.Errorf("cmd[%d] nested a BatchMsg — listen must be a sibling", i)
+			}
+		case <-time.After(150 * time.Millisecond):
+			// listen blocks until the next event — expected for one sibling
+		}
 	}
 }
 

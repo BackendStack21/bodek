@@ -102,8 +102,8 @@ feat(tui): compact tool steps with Ctrl+E details toggle
   deliberate expand — `tab` opens one reasoning block; click or tab's
   fallback expands one step; the result peek is gone. While a turn
   streams, its head line carries the run's elapsed counter right-aligned
-  at the viewport edge (the `runStart` clock, whole seconds, dropped for
-  the sealed telemetry stat on finalize). A deliberately opened
+  at the viewport edge (the `runStart` clock, whole seconds, dropped on
+  finalize — the sealed telemetry row sits under the reply). A deliberately opened
   live rail still holds completed sentences (or a short frozen stem) so a
   fast `thinking_delta` stream cannot ticker it; failed steps still
   auto-expand once on the live path. The status line
@@ -127,8 +127,12 @@ feat(tui): compact tool steps with Ctrl+E details toggle
   pending frame into one `eventBatchMsg` so a `thinking_delta` firehose
   cannot run View per fragment (that filled the 256-deep Events buffer
   and tripped odek's 30s write timeout — connection lost after any
-  prompt). The client also merges consecutive thinking/token deltas
-  (16 at a time) before enqueueing.
+  prompt). `ingestWireBatch` re-arms `listen()` as a top-level cmd, never
+  nested inside handleEvent's Batch. The client also merges consecutive
+  thinking/token deltas (16 at a time) before enqueueing. The header
+  connection lamp stays lit while a turn runs (`◉`); idle is `●`,
+  reconnect `◌`, down `○`. Progress stays on the status line — an empty
+  corner was read as a dropped socket.
 - `internal/tui` is split by responsibility: `model.go` holds the core
   model, `events.go` event handling, `input.go` key/text input,
   `approval.go` the approval flow, `chrome.go` drawer-sheet / shelf /
@@ -138,10 +142,13 @@ feat(tui): compact tool steps with Ctrl+E details toggle
   one next-action tip. Branding lives in the header — do not reintroduce a
   splash wordmark. After `^L`, `sessionHome` keeps last prompt / receipt /
   recents; `/new` returns to first-run.
-- Composer newline is `⇧⏎` (`shift+enter`, also `alt+enter` / `^J`). Never
-  enable kitty CSI-u or xterm modifyOtherKeys: Bubble Tea v1 remaps `^K`
-  and esc into sequences it then drops. `RestoreEnhancedKeys` only clears
-  leftover modes from another tool or an older bodek build.
+- Composer newline is `⇧⏎` (`shift+enter`, also `alt+enter` / `^J`).
+  Enable kitty disambiguate (flag 1) and xterm `modifyOtherKeys=2` from
+  `Init` — after alt-screen — so Cursor/xterm.js encodes Shift+Enter
+  (`CSI 27 ; 2 ; 13 ~`) instead of CR. Never enable kitty "report all
+  keys". `FilterShiftEnter` rewrites those CSI sequences (and the
+  remapped `^K` / esc) back into KeyMsgs. `RestoreEnhancedKeys` clears
+  leftovers on startup and shutdown.
 - The management drawer is a bottom sheet: keep ~8 transcript rows above
   it (`sheetTranscriptMin`); full-bleed only when the terminal cannot
   fit transcript + sheet. Layout-only — tab grammar (`]`/`[`/`⏎`/`esc`)
