@@ -83,6 +83,33 @@ func TestQueueRenderFlushCarriesSeq(t *testing.T) {
 	}
 }
 
+// TestIngestBatchThinkingFirehose: a glm-style thinking_delta burst must
+// apply every fragment in one Update, keep listen armed, and leave a
+// coalesced flush scheduled (the intermediate queueRender Ticks are dropped).
+func TestIngestBatchThinkingFirehose(t *testing.T) {
+	m := newTestModel()
+	streamingTurn(m)
+	const n = 400
+	batch := make(eventBatchMsg, n)
+	for i := range batch {
+		batch[i] = client.Event{Type: "thinking_delta", Content: "x"}
+	}
+	_, cmd := m.Update(batch)
+	if cmd == nil {
+		t.Fatal("batch ingest must return a cmd (listen + flush)")
+	}
+	i := m.cur()
+	if i < 0 || len(m.msgs[i].items) == 0 {
+		t.Fatal("expected a thinking item")
+	}
+	if got := m.msgs[i].items[0].text; got != strings.Repeat("x", n) {
+		t.Errorf("thinking text len = %d, want %d", len(got), n)
+	}
+	if !m.renderPending {
+		t.Error("batch of stream events must leave a coalesced flush pending")
+	}
+}
+
 // TestNonStreamingEventsRenderImmediately: low-frequency events (tool calls,
 // done, errors) still refresh eagerly — only the token/thinking firehose is
 // coalesced.

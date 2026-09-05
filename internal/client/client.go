@@ -163,6 +163,16 @@ type ResultDenial struct {
 // socket closes, so the TUI can react instead of hanging.
 const EventDisconnected = "_disconnected"
 
+// eventBuffer is the Events channel depth. A thinking turn on glm-5.3 can
+// emit several hundred thinking_delta frames; 256 filled the channel, blocked
+// readLoop, and odek's write timeout closed the socket after any prompt.
+const eventBuffer = 4096
+
+// deltaCoalesceMax merges this many consecutive thinking_delta / token_delta
+// frames in readLoop so a token-by-token firehose does not enqueue one event
+// per fragment. Type or turn_id changes flush immediately.
+const deltaCoalesceMax = 16
+
 // Resource is a single @-reference completion candidate from /api/resources.
 type Resource struct {
 	ID     string `json:"id"`     // full reference, e.g. "@src/main.go"
@@ -206,7 +216,10 @@ func Dial(wsURL, origin, baseURL, token string) (*Client, error) {
 		baseURL:    baseURL,
 		serveToken: token,
 		http:       &http.Client{Timeout: 3 * time.Second},
-		Events:     make(chan Event, 256),
+		// Thinking models stream hundreds of delta frames per turn. The TUI
+		// batch-drains this channel, but a deep buffer keeps readLoop from
+		// blocking (which trips odek's 30s write watchdog and drops the socket).
+		Events: make(chan Event, eventBuffer),
 	}
 	go c.readLoop()
 	return c, nil
@@ -234,9 +247,20 @@ func (c *Client) Resources(query string, limit int) ([]Resource, error) {
 // readLoop decodes frames into Events until the socket closes.
 func (c *Client) readLoop() {
 	defer close(c.Events)
+	var pending *Event
+	n := 0
+	flush := func() {
+		if pending == nil {
+			return
+		}
+		c.Events <- *pending
+		pending = nil
+		n = 0
+	}
 	for {
 		var data []byte
 		if err := ws.Message.Receive(c.conn, &data); err != nil {
+			flush()
 			c.Events <- Event{Type: EventDisconnected}
 			return
 		}
@@ -244,6 +268,23 @@ func (c *Client) readLoop() {
 		if err := json.Unmarshal(data, &ev); err != nil {
 			continue // ignore malformed frames
 		}
+		if ev.Type == "thinking_delta" || ev.Type == "token_delta" {
+			if pending != nil && pending.Type == ev.Type && pending.TurnID == ev.TurnID {
+				pending.Content += ev.Content
+				n++
+				if n < deltaCoalesceMax {
+					continue
+				}
+				flush()
+				continue
+			}
+			flush()
+			e := ev
+			pending = &e
+			n = 1
+			continue
+		}
+		flush()
 		c.Events <- ev
 	}
 }

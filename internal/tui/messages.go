@@ -14,6 +14,14 @@ import (
 // eventMsg wraps a decoded server event for the Bubble Tea update loop.
 type eventMsg client.Event
 
+// eventBatchMsg is two or more pending events drained in one listen tick so
+// a thinking_delta firehose does not run View between every fragment (that
+// filled the client buffer and tripped odek's write-timeout disconnect).
+type eventBatchMsg []client.Event
+
+// maxEventBatch caps how many pending frames one listen tick consumes.
+const maxEventBatch = 512
+
 // errMsg reports a local (non-protocol) failure, e.g. a failed socket write.
 type errMsg struct{ err error }
 
@@ -49,15 +57,42 @@ type updateCheckMsg struct {
 }
 
 // listen blocks on the client's event channel and returns the next event as a
-// tea.Msg. It is re-armed after each event so the stream is continuous.
+// tea.Msg. When more frames are already queued it drains them into one
+// eventBatchMsg so Update can ingest the burst without a View per fragment.
 func listen(ch <-chan client.Event) tea.Cmd {
 	return func() tea.Msg {
 		ev, ok := <-ch
 		if !ok {
 			return eventMsg{Type: client.EventDisconnected}
 		}
-		return eventMsg(ev)
+		batch := drainEvents(ch, ev)
+		if len(batch) == 1 {
+			return eventMsg(batch[0])
+		}
+		return eventBatchMsg(batch)
 	}
+}
+
+// drainEvents appends pending events after first, stopping at maxEventBatch
+// or when the channel would block. A closed channel or a disconnect frame
+// is included and ends the drain.
+func drainEvents(ch <-chan client.Event, first client.Event) []client.Event {
+	batch := []client.Event{first}
+	for len(batch) < maxEventBatch {
+		select {
+		case ev, ok := <-ch:
+			if !ok {
+				return append(batch, client.Event{Type: client.EventDisconnected})
+			}
+			batch = append(batch, ev)
+			if ev.Type == client.EventDisconnected {
+				return batch
+			}
+		default:
+			return batch
+		}
+	}
+	return batch
 }
 
 // shouldCheckUpdate reports whether a startup update check is worthwhile:

@@ -723,18 +723,10 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.noticeSweep()
 
 	case eventMsg:
-		ev := client.Event(msg)
-		mm, cmd := m.handleEvent(ev)
-		if pm := mm.(*Model); pm.plain {
-			cmd = tea.Batch(cmd, pm.plainPrintCmd(ev))
-		}
-		if ev.Type == "session" && m.sessionID != "" && m.authToken != "" {
-			// (Re)bind the jobs watcher to the live session — connect,
-			// reconnect, and session switches all re-fire this frame;
-			// stale generations just drop.
-			cmd = tea.Batch(cmd, m.armJobsWatch())
-		}
-		return mm, cmd
+		return m.ingestWireEvent(client.Event(msg))
+
+	case eventBatchMsg:
+		return m.ingestWireBatch(msg)
 
 	case reconnectMsg:
 		return m.handleReconnect(msg)

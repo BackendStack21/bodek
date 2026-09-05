@@ -34,6 +34,48 @@ const alertTTL = 10 * time.Second
 // handler prunes expired notices and re-arms the sweep while any remain.
 type noticeExpireMsg struct{}
 
+// ingestWireEvent applies one server event and the Update-level side
+// effects that used to live next to the eventMsg case (plain print, jobs
+// watcher bind).
+func (m *Model) ingestWireEvent(ev client.Event) (tea.Model, tea.Cmd) {
+	mm, cmd := m.handleEvent(ev)
+	pm := mm.(*Model)
+	if pm.plain {
+		cmd = tea.Batch(cmd, pm.plainPrintCmd(ev))
+	}
+	if ev.Type == "session" && pm.sessionID != "" && pm.authToken != "" {
+		// (Re)bind the jobs watcher to the live session — connect,
+		// reconnect, and session switches all re-fire this frame;
+		// stale generations just drop.
+		cmd = tea.Batch(cmd, pm.armJobsWatch())
+	}
+	return pm, cmd
+}
+
+// ingestWireBatch applies a listen-drained burst in one Update. Intermediate
+// handleEvent cmds are dropped so we do not re-arm listen N times (N
+// goroutines racing on Events). The last cmd keeps listen; a discarded
+// first-fragment queueRender Tick is re-armed when the flush is still pending.
+func (m *Model) ingestWireBatch(events []client.Event) (tea.Model, tea.Cmd) {
+	var last tea.Cmd
+	var model tea.Model = m
+	for i, ev := range events {
+		var cmd tea.Cmd
+		model, cmd = model.(*Model).ingestWireEvent(ev)
+		if ev.Type == client.EventDisconnected {
+			return model, cmd
+		}
+		if i == len(events)-1 {
+			last = cmd
+		}
+	}
+	pm := model.(*Model)
+	if pm.renderPending {
+		last = tea.Batch(last, pm.rearmRenderFlush())
+	}
+	return pm, last
+}
+
 func (m *Model) handleEvent(ev client.Event) (tea.Model, tea.Cmd) {
 	stream := false  // high-frequency event: coalesce the render (see queueRender)
 	var attn tea.Cmd // terminal attention (title/bell/notify); joined into the return batch

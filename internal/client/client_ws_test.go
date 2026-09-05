@@ -66,6 +66,50 @@ func TestDialPromptStream(t *testing.T) {
 	}
 }
 
+func TestReadLoopCoalescesDeltas(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.Handle("/ws", ws.Handler(func(c *ws.Conn) {
+		for range 40 {
+			_ = ws.Message.Send(c, `{"type":"thinking_delta","content":"x"}`)
+		}
+		_ = ws.Message.Send(c, `{"type":"token_delta","content":"Hi"}`)
+		_ = ws.Message.Send(c, `{"type":"done"}`)
+		var sink []byte
+		_ = ws.Message.Receive(c, &sink)
+	}))
+	cl, _ := newTestServer(t, mux)
+
+	var thinking []string
+	var tokens string
+	var sawDone bool
+	deadline := time.After(3 * time.Second)
+	for !sawDone {
+		select {
+		case ev := <-cl.Events:
+			switch ev.Type {
+			case "thinking_delta":
+				thinking = append(thinking, ev.Content)
+			case "token_delta":
+				tokens += ev.Content
+			case "done":
+				sawDone = true
+			}
+		case <-deadline:
+			t.Fatal("timeout waiting for done")
+		}
+	}
+	// 40 fragments / 16 = 2 full flushes + 8 remainder flushed on token_delta.
+	if len(thinking) != 3 {
+		t.Fatalf("thinking events = %d, want 3 coalesced frames, contents=%q", len(thinking), thinking)
+	}
+	if got := strings.Join(thinking, ""); got != strings.Repeat("x", 40) {
+		t.Errorf("thinking joined = %q", got)
+	}
+	if tokens != "Hi" {
+		t.Errorf("token_delta = %q", tokens)
+	}
+}
+
 func TestSendApprovalAndDisconnect(t *testing.T) {
 	mux := http.NewServeMux()
 	mux.Handle("/ws", ws.Handler(func(c *ws.Conn) {

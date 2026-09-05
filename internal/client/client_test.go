@@ -5,6 +5,15 @@ import (
 	"testing"
 )
 
+func TestEventBufferHoldsAThinkingTurn(t *testing.T) {
+	if eventBuffer < 4096 {
+		t.Errorf("eventBuffer = %d, want at least 4096 so a thinking firehose cannot fill the channel", eventBuffer)
+	}
+	if deltaCoalesceMax < 8 {
+		t.Errorf("deltaCoalesceMax = %d, want enough merging to shrink a token-by-token stream", deltaCoalesceMax)
+	}
+}
+
 // TestDecodeEvents verifies that representative odek serve frames decode into
 // the union Event with the right fields populated.
 func TestDecodeEvents(t *testing.T) {

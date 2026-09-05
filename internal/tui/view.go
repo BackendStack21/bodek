@@ -379,6 +379,20 @@ func (m *Model) queueRender() tea.Cmd {
 	})
 }
 
+// rearmRenderFlush schedules the coalesced flush when renderPending is
+// already set but the Tick that armed it was discarded — ingestWireBatch
+// keeps only the last handleEvent cmd, which returns nil from queueRender
+// once the first fragment of the burst set the flag.
+func (m *Model) rearmRenderFlush() tea.Cmd {
+	if !m.renderPending {
+		return nil
+	}
+	seq := m.renderSeq
+	return tea.Tick(streamRenderInterval, func(time.Time) tea.Msg {
+		return renderFlushMsg{seq: seq}
+	})
+}
+
 // queueTailClock schedules a coalesced transcript refresh for live step
 // clocks while a turn runs.
 func (m *Model) queueTailClock() tea.Cmd {

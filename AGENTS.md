@@ -123,7 +123,12 @@ feat(tui): compact tool steps with Ctrl+E details toggle
   none) focuses one mini-card. The swarm verdict is a receipt rail, never
   stuffed into `msg.content`.
 - Events arrive from `internal/client` already in chronological order —
-  keep ingestion order-dependent and idempotent.
+  keep ingestion order-dependent and idempotent. `listen()` drains every
+  pending frame into one `eventBatchMsg` so a `thinking_delta` firehose
+  cannot run View per fragment (that filled the 256-deep Events buffer
+  and tripped odek's 30s write timeout — connection lost after any
+  prompt). The client also merges consecutive thinking/token deltas
+  (16 at a time) before enqueueing.
 - `internal/tui` is split by responsibility: `model.go` holds the core
   model, `events.go` event handling, `input.go` key/text input,
   `approval.go` the approval flow, `chrome.go` drawer-sheet / shelf /

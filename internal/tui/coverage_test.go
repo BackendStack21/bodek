@@ -21,6 +21,25 @@ func TestListen(t *testing.T) {
 	}
 }
 
+func TestListenDrainsPendingBatch(t *testing.T) {
+	ch := make(chan client.Event, 4)
+	ch <- client.Event{Type: "thinking_delta", Content: "a"}
+	ch <- client.Event{Type: "thinking_delta", Content: "b"}
+	ch <- client.Event{Type: "thinking_delta", Content: "c"}
+	msg := listen(ch)()
+	batch, ok := msg.(eventBatchMsg)
+	if !ok {
+		t.Fatalf("listen = %T, want eventBatchMsg", msg)
+	}
+	if len(batch) != 3 {
+		t.Fatalf("batch len = %d, want 3", len(batch))
+	}
+	got := batch[0].Content + batch[1].Content + batch[2].Content
+	if got != "abc" {
+		t.Errorf("batch content = %q", got)
+	}
+}
+
 func TestGlyphsAllBranches(t *testing.T) {
 	for _, n := range []string{"shell", "bash", "write_file", "patch", "read_file", "list_dir", "search_files", "web_search", "browser", "http_batch", "delegate_tasks", "memory", "vision", "transcribe", "unknown_x"} {
 		if toolGlyph(n) == "" {
