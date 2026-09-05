@@ -298,6 +298,24 @@ func TestSessionsPanelSearchAndPin(t *testing.T) {
 	}
 }
 
+// Panel drafts type one rune at a time but backspace chopped a byte,
+// so CJK/emoji rename and session-search drafts became invalid UTF-8.
+func TestPanelDraftBackspaceDropsRune(t *testing.T) {
+	m := newTestModel()
+	m.panel = panelSessions
+	m.panelEdit = panelEditRename
+	m.panelDraft = "ok✅"
+	m.Update(key("backspace"))
+	if m.panelDraft != "ok" {
+		t.Fatalf("backspace on emoji = %q, want %q", m.panelDraft, "ok")
+	}
+	m.panelDraft = "中文"
+	m.Update(key("backspace"))
+	if m.panelDraft != "中" {
+		t.Fatalf("backspace on CJK = %q, want %q", m.panelDraft, "中")
+	}
+}
+
 func TestSessionsPanelPagination(t *testing.T) {
 	m := wired(t)
 	m.Update(exec(m.openSessions()))

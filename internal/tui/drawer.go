@@ -428,7 +428,7 @@ func (m *Model) runRows(w int) []string {
 	th := m.th
 	rows := make([]string, 0, len(m.runs))
 	for i, r := range m.runs {
-		meta := fmt.Sprintf("  %s · %s", shortID(r.ID), r.Status)
+		meta := fmt.Sprintf("  %s · %s", shortID(r.ID), collapse(r.Status))
 		if !r.StartedAt.IsZero() {
 			if r.EndedAt.IsZero() {
 				meta += " · " + formatDuration(time.Since(r.StartedAt))

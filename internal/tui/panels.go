@@ -496,7 +496,7 @@ func (m *Model) handlePanelKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.panel == panelSessions {
 			if m.panelSel < len(m.sessions) {
 				m.panelEdit = panelEditRename
-				m.panelDraft = m.sessions[m.panelSel].Task
+				m.panelDraft = collapse(m.sessions[m.panelSel].Task)
 				m.refresh()
 			}
 			return m, nil
@@ -561,8 +561,8 @@ func (m *Model) handlePanelEditKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case "backspace":
-		if n := len(m.panelDraft); n > 0 {
-			m.panelDraft = m.panelDraft[:n-1]
+		if r := []rune(m.panelDraft); len(r) > 0 {
+			m.panelDraft = string(r[:len(r)-1])
 		}
 		m.refresh()
 		return m, nil
@@ -1244,7 +1244,7 @@ func (m *Model) renderPanel(w, h int) string {
 		if m.panelEdit == panelEditRename {
 			prompt = "rename"
 		}
-		body += "\n" + th.acSel.Render(prompt+": "+m.panelDraft+"▏")
+		body += "\n" + th.acSel.Render(prompt+": "+collapse(m.panelDraft)+"▏")
 	}
 	if m.panelMsg != "" {
 		body += "\n" + th.acDim.Render(m.panelMsg)

@@ -377,6 +377,35 @@ func TestEventRowsSanitizeTypeAndTool(t *testing.T) {
 	}
 }
 
+// Sessions rename copies Task into panelDraft and paints it raw; the
+// list rows already collapse the same field.
+func TestSessionRenameDraftSanitizesTask(t *testing.T) {
+	const payload = "\x1b[2J"
+	m := newTestModel()
+	m.sessions = []client.Session{{ID: "s1", Task: "x" + payload + "evil"}}
+	m.panel = panelSessions
+	m.Update(key("r"))
+	if m.panelEdit != panelEditRename {
+		t.Fatal("r did not enter rename")
+	}
+	if strings.ContainsRune(m.panelDraft, '\x1b') {
+		t.Errorf("rename draft stored CSI: %q", m.panelDraft)
+	}
+	if out := m.renderPanel(80, 20); strings.Contains(out, payload) {
+		t.Errorf("rename line leaked CSI: %q", out)
+	}
+}
+
+// v1.4.9 collapsed run Model/Result/Error; Status on the same row stayed raw.
+func TestRunRowsSanitizeStatus(t *testing.T) {
+	const payload = "\x1b[2J"
+	m := newTestModel()
+	m.runs = []client.Run{{ID: "r1", Status: "completed" + payload, Model: "m"}}
+	if strings.Contains(strings.Join(m.runRows(80), "\n"), payload) {
+		t.Fatal("runs row leaked Status CSI")
+	}
+}
+
 // The conversation is the click/scroll hit-test source of truth: a line that
 // physically wraps desyncs every index below it. Every emitted line must fit
 // the viewport.
