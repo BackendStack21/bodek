@@ -135,6 +135,15 @@ func TestDecodeEvents(t *testing.T) {
 			},
 		},
 		{
+			name:  "keepalive",
+			frame: `{"type":"keepalive","t":1755768000000}`,
+			check: func(t *testing.T, e Event) {
+				if e.Type != "keepalive" || e.T == 0 {
+					t.Fatalf("bad keepalive decode: %+v", e)
+				}
+			},
+		},
+		{
 			name:  "memory_event",
 			frame: `{"type":"memory_event","event":"merge","target":"user","count":3}`,
 			check: func(t *testing.T, e Event) {

@@ -95,6 +95,38 @@ func TestServerInfoAndPong(t *testing.T) {
 	}
 }
 
+func TestKeepaliveIsSilent(t *testing.T) {
+	m := newTestModel()
+	m.busy = true
+	m.status = "thinking"
+	m.queue = []string{"queued follow-up"}
+	n := len(m.msgs)
+	notices := len(m.notices)
+
+	_, cmd := m.handleEvent(client.Event{Type: "keepalive", T: time.Now().UnixMilli()})
+	if cmd == nil {
+		t.Error("keepalive must keep the event listener armed")
+	}
+	if len(m.queue) != 1 {
+		t.Fatal("keepalive must not drain the prompt queue")
+	}
+	if !m.busy || m.status != "thinking" {
+		t.Errorf("keepalive mutated turn state: busy=%v status=%q", m.busy, m.status)
+	}
+	if len(m.msgs) != n {
+		t.Error("keepalive must not append transcript")
+	}
+	if len(m.notices) != notices {
+		t.Errorf("keepalive posted a notice: %v", m.notices)
+	}
+}
+
+func TestPingEveryMatchesOdekKeepalive(t *testing.T) {
+	if pingEvery != 20*time.Second {
+		t.Errorf("pingEvery = %v, want 20s (under proxy idle; matches odek serve keepalive)", pingEvery)
+	}
+}
+
 func TestCancelledTurnClosesCleanly(t *testing.T) {
 	m := newTestModel()
 	streamingTurn(m)

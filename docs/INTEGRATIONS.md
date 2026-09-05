@@ -60,11 +60,12 @@ These workflows have no server endpoint; bodek cannot offer them:
 |---------|-----------|--------|----|
 | `prompt` (content/model/thinking/attachments) | → | `SendPrompt` | composer ⏎ |
 | `approval_response` | → | `SendApproval` | approval queue (`A`/`D`/`T`, friction typing) |
-| `ping` | → | `Ping` | 25s heartbeat |
+| `ping` | → | `Ping` | 20s heartbeat |
 | `cancel` | → | `SendCancel` | `esc` (REST fallback) |
 | `session_switch` | → | `SessionSwitch` | session resume, reconnect re-adopt |
 | `skill_prompt_response` | → | `SendSkillPromptResponse` | suggestion card (`alt+s`/`alt+x`) |
 | `server_info` / `pong` | ← | — | cockpit, stream badge, RTT |
+| `keepalive` | ← | — | ignored (odek ≥ v2.1.0 idle traffic; must not drain the queue) |
 | `session` | ← | — | session/token capture, model sync |
 | `token` / `token_delta` | ← | — | transcript answer (coalesced) |
 | `thinking` / `thinking_delta` | ← | — | reasoning accordions |

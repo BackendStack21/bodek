@@ -25,6 +25,8 @@ func TestClassifyErr(t *testing.T) {
 	}{
 		{"iteration 17: llm: stream idle for over 2m0s without an event", errStall},
 		{"llm: stream idle for over 2m0s without an event", errStall},
+		{"llm: stream idle timeout", errStall},
+		{"iteration 4: llm: stream idle for over 5m0s without an event", errStall},
 		{"llm: provider rate limit (status 429) after 8 attempts", errRateLimit},
 		{"iteration 3: llm: read stream: read tcp 1.2.3.4:443->5.6.7.8:55: read: connection reset by peer", errConnDrop},
 		{"context deadline exceeded", errTimeout},
@@ -152,5 +154,28 @@ func TestFooterRetryHintOnError(t *testing.T) {
 	m.ta.SetValue("a fresh thought")
 	if foot := plain(m.footer()); strings.Contains(foot, "retry") {
 		t.Errorf("retry hint must hide while a draft exists: %q", foot)
+	}
+}
+
+// TestErrorCardStallDoesNotHardcodeTwoMinutes pins the odek v2.1.0 budgets:
+// the stall card must not claim a 2-minute silence, and the timeout card
+// must point at request_timeout_seconds (default 300s).
+func TestErrorCardStallDoesNotHardcodeTwoMinutes(t *testing.T) {
+	m := errorTurn(t, "llm: stream idle timeout")
+	card := m.msgs[len(m.msgs)-1].content
+	if strings.Contains(card, "2m") {
+		t.Errorf("stall card still hardcodes the old 120s budget: %q", card)
+	}
+	if !strings.Contains(card, "idle timeout") {
+		t.Errorf("stall card missing idle-timeout wording: %q", card)
+	}
+	if !strings.Contains(card, "stream_idle_timeout_seconds") {
+		t.Errorf("stall card missing the config knob: %q", card)
+	}
+
+	to := errorTurn(t, "context deadline exceeded")
+	got := to.msgs[len(to.msgs)-1].content
+	if !strings.Contains(got, "request_timeout_seconds") {
+		t.Errorf("timeout card missing the config knob: %q", got)
 	}
 }
