@@ -686,7 +686,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case cancelDoneMsg:
 		if msg.err != nil {
-			m.addNote("cancel failed: " + msg.err.Error())
+			m.addNote("cancel failed: " + errText(msg.err))
+			m.clearCancelling()
 			m.refresh()
 		} else {
 			// The API accepted the abort; the turn's done event settles the

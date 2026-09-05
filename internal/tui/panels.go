@@ -634,6 +634,15 @@ func (m *Model) modelEntries() []modelEntry {
 	return out
 }
 
+// applyModelChoice records a locally chosen model (slash, picker, palette).
+// The id is collapsed: catalog rows and pasted names arrive untrusted.
+func (m *Model) applyModelChoice(id string) {
+	id = collapse(id)
+	m.pendModel = id
+	m.model = id
+	m.resolveMaxContext()
+}
+
 func (m *Model) panelSelect() tea.Cmd {
 	switch m.panel {
 	case panelQueue:
@@ -653,11 +662,8 @@ func (m *Model) panelSelect() tea.Cmd {
 	case panelModels:
 		entries := m.modelEntries()
 		if m.panelSel < len(entries) {
-			e := entries[m.panelSel]
-			m.pendModel = e.id
-			m.model = e.id
-			m.resolveMaxContext()
-			note := m.transientNoteCmd("model set to " + e.id + " (applies next turn)")
+			m.applyModelChoice(entries[m.panelSel].id)
+			note := m.transientNoteCmd("model set to " + m.model + " (applies next turn)")
 			m.closePanel()
 			return note
 		}
@@ -816,6 +822,22 @@ func writeExport(dir, id, format string, data []byte) (string, error) {
 	return "", fmt.Errorf("no free export name for %s", base)
 }
 
+// clearCancelling drops the cancelling latch after a cancel that did not
+// take (API failure, or the server reporting idle). The turn stays open
+// when it was already open — only the status label is restored.
+func (m *Model) clearCancelling() {
+	if m.status != "cancelling" {
+		return
+	}
+	if m.curApproval() != nil {
+		m.status = "approval required"
+	} else if m.busy {
+		m.status = "thinking"
+	} else {
+		m.status = "ready"
+	}
+}
+
 // cancelRun aborts the in-flight prompt: the WebSocket cancel first (the
 // server answers with a cancelled event and the run's trailing error turns
 // into a clean cancel marker), with the REST endpoint as fallback when the
@@ -953,7 +975,7 @@ func (m *Model) handleSessionDetail(msg sessionDetailMsg) tea.Cmd {
 	m.authToken = msg.token
 	m.tokens.Set(msg.sess.ID, msg.token)
 	if msg.sess.Model != "" {
-		m.model = msg.sess.Model
+		m.model = collapse(msg.sess.Model)
 		m.resolveMaxContext()
 	}
 	m.sandbox = msg.sess.Sandbox

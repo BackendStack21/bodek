@@ -282,6 +282,7 @@ func (m *Model) handleEvent(ev client.Event) (tea.Model, tea.Cmd) {
 		// marker instead of a scary error bubble.
 		if ev.Idle {
 			m.addTransientNote("cancel: nothing was running")
+			m.clearCancelling() // no-op cancel: drop a raced local latch
 			break
 		}
 		m.cancelAck = true

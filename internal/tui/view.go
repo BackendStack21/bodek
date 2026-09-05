@@ -78,7 +78,7 @@ func (m *Model) header() string {
 		logo += " " + th.headerMeta.Render(v)
 	}
 
-	modelName := m.model
+	modelName := collapse(m.model)
 	if modelName == "" {
 		modelName = "default"
 	}

@@ -524,3 +524,70 @@ func TestCancelFeedback(t *testing.T) {
 		t.Errorf("successful cancel posted no note: %v", m.notices)
 	}
 }
+
+// A WS+REST cancel failure must not leave status=cancelling: v1.4.4's
+// enter-while-cancelling guard would then refuse to queue forever.
+func TestCancelFailClearsCancelling(t *testing.T) {
+	m := newTestModel()
+	busyTurn(m)
+	m.sessionID = "s1"
+	m.cancelRun() // do not exec — the cmd would nil-deref without a client
+	if m.status != "cancelling" {
+		t.Fatalf("precondition: status = %q, want cancelling", m.status)
+	}
+
+	m.Update(cancelDoneMsg{err: errors.New("ws closed")})
+	if m.status == "cancelling" {
+		t.Fatal("failed cancel left status=cancelling")
+	}
+	if m.status != "thinking" {
+		t.Errorf("status = %q, want thinking", m.status)
+	}
+	if !m.busy {
+		t.Error("failed cancel must not end the turn")
+	}
+
+	m.ta.SetValue("follow-up")
+	m.submit()
+	if len(m.queue) != 1 || m.queue[0] != "follow-up" {
+		t.Fatalf("enter after failed cancel did not queue: %v", m.queue)
+	}
+}
+
+// cancel during an approval, then a send/REST failure: restore the form.
+func TestCancelFailDuringApprovalRestoresStatus(t *testing.T) {
+	m := newTestModel()
+	busyTurn(m)
+	m.sessionID = "s1"
+	m.approvals = []client.Event{{Type: "approval", Tool: "shell"}}
+	m.status = "approval required"
+	m.cancelRun()
+	if m.status != "cancelling" {
+		t.Fatalf("precondition: status = %q", m.status)
+	}
+
+	m.Update(cancelDoneMsg{err: errors.New("ws closed")})
+	if m.status != "approval required" {
+		t.Errorf("status = %q, want approval required", m.status)
+	}
+}
+
+// cancelled{Idle:true} is a no-op cancel (the turn already finished
+// server-side). A local cancelRun that raced it must not stay cancelling.
+func TestCancelledIdleClearsCancelling(t *testing.T) {
+	m := newTestModel()
+	busyTurn(m)
+	m.sessionID = "s1"
+	m.cancelRun()
+	if m.status != "cancelling" {
+		t.Fatalf("precondition: status = %q, want cancelling", m.status)
+	}
+
+	m.handleEvent(client.Event{Type: "cancelled", Idle: true})
+	if m.status == "cancelling" {
+		t.Fatal("idle cancelled left status=cancelling")
+	}
+	if m.status != "thinking" {
+		t.Errorf("status = %q, want thinking (turn still locally busy)", m.status)
+	}
+}

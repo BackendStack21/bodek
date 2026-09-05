@@ -135,6 +135,72 @@ func TestSessionInfoModelCollapsed(t *testing.T) {
 	}
 }
 
+// The header paints m.model raw. A poisoned id (resume, picker, /model paste)
+// must not inject CSI into the bar — even if an assignment site missed collapse.
+func TestHeaderSanitizesModelName(t *testing.T) {
+	m := newTestModel()
+	m.model = "x\x1b[2Jevil"
+	if strings.Contains(m.header(), "\x1b[2J") {
+		t.Errorf("header leaked CSI from model id: %q", m.header())
+	}
+}
+
+// /model, the picker, the palette, and session resume all write m.model
+// without collapse — unlike the session/server_info frames.
+func TestModelSourcesCollapseEscapes(t *testing.T) {
+	const evil = "ok\x1b[2Jevil"
+
+	t.Run("slash-model", func(t *testing.T) {
+		m := newTestModel()
+		m.runCommand("model", evil)
+		if strings.ContainsRune(m.model, '\x1b') || strings.ContainsRune(m.pendModel, '\x1b') {
+			t.Errorf("/model stored escapes: model=%q pend=%q", m.model, m.pendModel)
+		}
+	})
+
+	t.Run("picker", func(t *testing.T) {
+		m := newTestModel()
+		m.models = []client.ModelInfo{{ID: evil}}
+		m.panel = panelModels
+		m.panelSelect()
+		if strings.ContainsRune(m.model, '\x1b') || strings.ContainsRune(m.pendModel, '\x1b') {
+			t.Errorf("picker stored escapes: model=%q pend=%q", m.model, m.pendModel)
+		}
+	})
+
+	t.Run("palette", func(t *testing.T) {
+		m := newTestModel()
+		m.models = []client.ModelInfo{{ID: evil}}
+		m.togglePalette()
+		var ran bool
+		for _, e := range m.pal.all {
+			if e.kind != "model" {
+				continue
+			}
+			e.run(m)
+			ran = true
+			break
+		}
+		if !ran {
+			t.Fatal("palette had no model entry")
+		}
+		if strings.ContainsRune(m.model, '\x1b') || strings.ContainsRune(m.pendModel, '\x1b') {
+			t.Errorf("palette stored escapes: model=%q pend=%q", m.model, m.pendModel)
+		}
+	})
+
+	t.Run("resume", func(t *testing.T) {
+		m := newTestModel()
+		m.handleSessionDetail(sessionDetailMsg{
+			sess:  client.Session{ID: "s1", Model: evil},
+			token: "tok",
+		})
+		if strings.ContainsRune(m.model, '\x1b') {
+			t.Errorf("resume stored escapes: model=%q", m.model)
+		}
+	})
+}
+
 func TestSkillSuggestFieldsCollapsed(t *testing.T) {
 	m := newTestModel()
 	m.handleEvent(client.Event{Type: "skill_event", SubType: "suggested",

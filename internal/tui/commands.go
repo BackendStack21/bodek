@@ -109,11 +109,9 @@ func slashCommands() []command {
 		}},
 		{"model", "switch model — /model [name]", func(m *Model, args string) tea.Cmd {
 			if args != "" {
-				m.pendModel = args
-				m.model = args
-				m.resolveMaxContext()
+				m.applyModelChoice(args)
 				m.refresh()
-				return m.transientNoteCmd("model set to " + args + " (applies next turn)")
+				return m.transientNoteCmd("model set to " + m.model + " (applies next turn)")
 			}
 			return m.openModels()
 		}},

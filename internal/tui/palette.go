@@ -169,10 +169,8 @@ func (m *Model) basePaletteEntries() []palEntry {
 		entries = append(entries, palEntry{
 			title: "model · " + ent.label, kind: "model",
 			run: func(m *Model) tea.Cmd {
-				m.pendModel = ent.id
-				m.model = ent.id
-				m.resolveMaxContext()
-				return m.transientNoteCmd("model set to " + ent.id + " (applies next turn)")
+				m.applyModelChoice(ent.id)
+				return m.transientNoteCmd("model set to " + m.model + " (applies next turn)")
 			},
 		})
 	}
