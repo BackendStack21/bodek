@@ -237,6 +237,13 @@ func (m *Model) submit() tea.Cmd {
 		return m.noticeSweep()
 	}
 	if m.busy {
+		if m.status == "cancelling" {
+			// cancelRun handed the queue back to the input so it would
+			// not fire into the cancelled session. Re-queueing here
+			// would sendQueued it on the trailing done anyway.
+			m.refresh()
+			return m.transientNoteCmd("cancelling — draft stays in the input")
+		}
 		// Queue mid-turn prompts instead of dropping them; the queue drains
 		// automatically when the running turn ends. Acknowledge the hold —
 		// the input clearing silently reads as a lost message (same

@@ -381,6 +381,37 @@ func TestCancelRestoresQueue(t *testing.T) {
 	}
 }
 
+// Enter while cancelling must not re-queue the restored draft — that
+// would sendQueued it into the session the cancel just pulled it out of.
+func TestCancelEnterDoesNotRequeue(t *testing.T) {
+	m := newTestModel()
+	busyTurn(m)
+	m.sessionID = "s1"
+	m.queue = []string{"one", "two"}
+
+	m.Update(key("esc"))
+	m.Update(key("y"))
+	if m.status != "cancelling" {
+		t.Fatalf("precondition: status = %q, want cancelling", m.status)
+	}
+	if got := m.ta.Value(); got != "one\ntwo" {
+		t.Fatalf("precondition: input = %q", got)
+	}
+
+	m.Update(key("enter"))
+	if len(m.queue) != 0 {
+		t.Fatalf("enter while cancelling re-queued: %v", m.queue)
+	}
+	if got := m.ta.Value(); got != "one\ntwo" {
+		t.Errorf("draft must stay in the input, got %q", got)
+	}
+
+	m.handleEvent(client.Event{Type: "done", Latency: 1})
+	if len(m.msgs) != 2 {
+		t.Error("no turn should start after enter-during-cancel")
+	}
+}
+
 // TestSendFailureFinalizesTurn verifies a failed send closes out the phantom
 // assistant turn sendPrompt opened, with the error inline in the transcript.
 func TestSendFailureFinalizesTurn(t *testing.T) {
