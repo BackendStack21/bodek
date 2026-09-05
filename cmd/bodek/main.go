@@ -104,7 +104,9 @@ func parseConfig(args []string, output io.Writer) (config, error) {
 }
 
 func buildProgramOptions(mouse, plain bool) []tea.ProgramOption {
-	var opts []tea.ProgramOption
+	// Filter first so Shift+Enter CSI sequences become a KeyMsg before
+	// any other option's machinery sees them.
+	opts := []tea.ProgramOption{tea.WithFilter(tui.FilterShiftEnter)}
 	if !plain {
 		// The alt-screen transcript is the default surface. Linear mode
 		// (--plain) stays on the main buffer so printed lines persist in
@@ -222,7 +224,11 @@ func run() error {
 	// captures the terminal mouse and blocks native click-drag text selection
 	// and copy. Keep it off by default so users can copy freely; enable it only
 	// when explicitly requested with --mouse.
+	// Clear leftover CSI-u / modifyOtherKeys before the TUI reads keys —
+	// those modes remap ^K and esc into sequences Bubble Tea v1 drops.
+	tui.RestoreEnhancedKeys()
 	p := tea.NewProgram(model, buildProgramOptions(cfg.mouse, cfg.plain)...)
+	defer tui.RestoreEnhancedKeys()
 	if _, err := p.Run(); err != nil {
 		return fmt.Errorf("TUI exited: %w", err)
 	}
@@ -236,6 +242,7 @@ func setupSignalHandler(srv *server.Conn, cl *client.Client) {
 		<-ch
 		_ = cl.Close()
 		srv.Stop()
+		tui.RestoreEnhancedKeys()
 		os.Exit(0)
 	}()
 }

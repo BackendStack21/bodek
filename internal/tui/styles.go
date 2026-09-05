@@ -319,7 +319,6 @@ type theme struct {
 	footerSep    lipgloss.Style
 	footerDanger lipgloss.Style
 
-	tagline lipgloss.Style
 	tipKey  lipgloss.Style
 	tipText lipgloss.Style
 
@@ -430,7 +429,6 @@ func themeFrom(p palette) theme {
 		footerSep:    lipgloss.NewStyle().Foreground(p.hairline),
 		footerDanger: lipgloss.NewStyle().Foreground(p.red),
 
-		tagline: lipgloss.NewStyle().Foreground(p.muted).Italic(true),
 		tipKey:  lipgloss.NewStyle().Foreground(p.steel).Bold(true),
 		tipText: lipgloss.NewStyle().Foreground(p.muted),
 

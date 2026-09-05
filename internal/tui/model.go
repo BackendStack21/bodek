@@ -342,7 +342,7 @@ func New(cl *client.Client, opts Options) *Model {
 	th := newTheme()
 
 	ta := textarea.New()
-	ta.Placeholder = "Ask odek to build, fix, explore… (⏎ send · ^J newline · ↑ scroll · ^P history)"
+	ta.Placeholder = "Ask odek to build, fix, explore… (⏎ send · ⇧⏎ newline · ↑ scroll · ^P history)"
 	// No per-line prompt glyphs: the rounded box frames the composer, and
 	// bubbles repeats the prompt on every row — a stacked ❯❯❯ reads as noise.
 	ta.Prompt = " "
@@ -810,12 +810,8 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, m.openModels()
 	case "enter":
 		return m, m.submit()
-	case "ctrl+j":
-		// Insert a newline into the textarea.
-		var cmd tea.Cmd
-		m.ta, cmd = m.ta.Update(tea.KeyMsg{Type: tea.KeyEnter})
-		m.syncComposer()
-		return m, tea.Batch(cmd, m.syncAC())
+	case "shift+enter", "alt+enter", "ctrl+j":
+		return m, tea.Batch(m.insertNewline(), m.syncAC())
 	case "ctrl+q":
 		// Queue-strip focus: a chord, so typing a q is never hijacked.
 		// Only latches when there is something queued to manage.

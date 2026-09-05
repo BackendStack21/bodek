@@ -111,8 +111,8 @@ func TestParseConfigHelp(t *testing.T) {
 
 func TestBuildProgramOptionsDefault(t *testing.T) {
 	opts := buildProgramOptions(false, false)
-	if len(opts) != 1 {
-		t.Fatalf("expected 1 default program option, got %d", len(opts))
+	if len(opts) != 2 {
+		t.Fatalf("expected 2 default program options, got %d", len(opts))
 	}
 	// Sanity check: the option is callable like a real tea.ProgramOption.
 	var p tea.Program
@@ -122,17 +122,17 @@ func TestBuildProgramOptionsDefault(t *testing.T) {
 
 func TestBuildProgramOptionsWithMouse(t *testing.T) {
 	opts := buildProgramOptions(true, false)
-	if len(opts) != 2 {
-		t.Fatalf("expected 2 program options with mouse, got %d", len(opts))
+	if len(opts) != 3 {
+		t.Fatalf("expected 3 program options with mouse, got %d", len(opts))
 	}
 }
 
 func TestBuildProgramOptionsPlain(t *testing.T) {
-	if opts := buildProgramOptions(false, true); len(opts) != 0 {
-		t.Fatalf("plain mode must skip the alt-screen, got %d options", len(opts))
+	if opts := buildProgramOptions(false, true); len(opts) != 1 {
+		t.Fatalf("plain mode must skip the alt-screen (filter only), got %d options", len(opts))
 	}
-	if opts := buildProgramOptions(true, true); len(opts) != 1 {
-		t.Fatalf("plain+mouse = %d options, want mouse only", len(opts))
+	if opts := buildProgramOptions(true, true); len(opts) != 2 {
+		t.Fatalf("plain+mouse = %d options, want filter+mouse", len(opts))
 	}
 }
 

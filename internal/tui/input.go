@@ -2,6 +2,8 @@ package tui
 
 import (
 	"fmt"
+	"os"
+	"reflect"
 	"regexp"
 	"strings"
 	"time"
@@ -43,6 +45,8 @@ func (m *Model) handleACKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case "ctrl+c":
 		return m, m.armConfirm(confirmQuit, "bodek")
+	case "shift+enter", "alt+enter", "ctrl+j":
+		return m, tea.Batch(m.insertNewline(), m.syncAC())
 	}
 	// Any other key is plain input: forward it to the textarea, then
 	// re-evaluate the popup against the new value — typing narrows the
@@ -51,6 +55,53 @@ func (m *Model) handleACKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	m.ta, cmd = m.ta.Update(msg)
 	m.syncComposer()
 	return m, tea.Batch(cmd, m.syncAC())
+}
+
+// insertNewline drops a line break at the caret and refits the composer.
+func (m *Model) insertNewline() tea.Cmd {
+	var cmd tea.Cmd
+	m.ta, cmd = m.ta.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m.syncComposer()
+	return cmd
+}
+
+// FilterShiftEnter rewrites the CSI sequences terminals emit for Shift+Enter
+// (kitty CSI-u / xterm modifyOtherKeys) into a KeyMsg the composer matches.
+// Bubble Tea v1 has no KeyShiftEnter of its own.
+func FilterShiftEnter(_ tea.Model, msg tea.Msg) tea.Msg {
+	if shiftEnterCSI(msg) {
+		return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("shift+enter")}
+	}
+	return msg
+}
+
+func shiftEnterCSI(msg tea.Msg) bool {
+	v := reflect.ValueOf(msg)
+	if v.Kind() != reflect.Slice || v.Type().Elem().Kind() != reflect.Uint8 {
+		return false
+	}
+	b := make([]byte, v.Len())
+	reflect.Copy(reflect.ValueOf(b), v)
+	switch string(b) {
+	case "\x1b[13;2u", "\x1b[13;2;1u", "\x1b[27;2;13~":
+		return true
+	}
+	return false
+}
+
+// RestoreEnhancedKeys turns off kitty CSI-u / xterm modifyOtherKeys.
+// Bodek never enables those modes (Bubble Tea v1 drops the remapped
+// chords — ^K, esc, …), but a previous run or another tool may have
+// left them on.
+func RestoreEnhancedKeys() {
+	writeEnhancedKeys("\x1b[<u\x1b[>4;0m")
+}
+
+func writeEnhancedKeys(seq string) {
+	if fi, err := os.Stdout.Stat(); err != nil || fi.Mode()&os.ModeCharDevice == 0 {
+		return
+	}
+	_, _ = os.Stdout.WriteString(seq)
 }
 
 // ── composer auto-fit ───────────────────────────────────────────────────────

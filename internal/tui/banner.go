@@ -7,50 +7,16 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
-// bannerArt is the BODEK wordmark in block characters.
-var bannerArt = []string{
-	"██████   ██████  ██████  ███████ ██   ██",
-	"██   ██ ██    ██ ██   ██ ██      ██  ██ ",
-	"██████  ██    ██ ██   ██ █████   █████  ",
-	"██   ██ ██    ██ ██   ██ ██      ██  ██ ",
-	"██████   ██████  ██████  ███████ ██   ██",
-}
-
-// welcome renders the splash shown in the conversation area before the first
-// prompt: the wordmark, a tagline, the working directory, and a few key
-// bindings — left-aligned with a gentle margin.
+// welcome is the empty-session home: where the agent will work, and one
+// next action. Branding lives in the header; F1 / /help hold the rest.
 func welcome(th theme, width int, cwd string) string {
 	var b strings.Builder
-	// The block art needs its own width plus the left padding below; narrower
-	// terminals get a one-line wordmark instead of wrapped garbage.
-	if artW := lipgloss.Width(bannerArt[0]); width >= artW+2 {
-		for _, line := range bannerArt {
-			b.WriteString(gradient(line, th.grad[0], th.grad[1]))
-			b.WriteByte('\n')
-		}
-	} else {
-		b.WriteString(th.logo.Render(gradient("⬡ bodek", th.grad[0], th.grad[1])))
-		b.WriteByte('\n')
-	}
-	b.WriteByte('\n')
-	b.WriteString(th.tagline.Render("a beautiful terminal interface for the odek agent"))
-	b.WriteByte('\n')
 	if dir := shortenHome(cwd); dir != "" {
 		b.WriteString(th.statsDim.Render(dir))
 		b.WriteByte('\n')
+		b.WriteByte('\n')
 	}
-	b.WriteByte('\n')
-
-	// First-run home teaches one next action, not a keybinding museum.
-	// F1 / /help still carry the full cheatsheet.
-	tips := [][2]string{
-		{"type a task", "and press enter to run the agent"},
-		{"^K palette", "commands, sessions, models, drawer tabs"},
-	}
-	const keyW = 11
-	for _, t := range tips {
-		b.WriteString(th.tipKey.Render(padRight(t[0], keyW)) + "  " + th.tipText.Render(t[1]) + "\n")
-	}
+	b.WriteString(th.tipKey.Render("type a task") + "  " + th.tipText.Render("⏎ sends · ^K everything") + "\n")
 
 	block := strings.TrimRight(b.String(), "\n")
 	// Left-aligned (no centering) with a small left margin for breathing room.

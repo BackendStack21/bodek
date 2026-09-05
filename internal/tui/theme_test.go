@@ -19,8 +19,8 @@ func TestThemeVariants(t *testing.T) {
 		if got := plain(th.logo.Render("⬡ bodek")); !strings.Contains(got, "bodek") {
 			t.Errorf("%s: logo render broken: %q", name, got)
 		}
-		if out := plain(welcome(th, 100, "/tmp")); !strings.Contains(out, "palette") {
-			t.Errorf("%s: welcome card missing the palette tip", name)
+		if out := plain(welcome(th, 100, "/tmp")); !strings.Contains(out, "type a task") {
+			t.Errorf("%s: welcome card missing the next-action tip", name)
 		}
 	}
 }
@@ -43,10 +43,10 @@ func TestThemeSelection(t *testing.T) {
 	}
 }
 
-// TestWelcomeTeachesPalette guards the first-run teaching surface.
-func TestWelcomeTeachesPalette(t *testing.T) {
+// TestWelcomeTeachesNextAction guards the first-run teaching surface.
+func TestWelcomeTeachesNextAction(t *testing.T) {
 	out := plain(welcome(newTheme(), 100, "/somewhere"))
-	for _, want := range []string{"^K palette", "type a task"} {
+	for _, want := range []string{"type a task", "^K"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("welcome missing %q:\n%s", want, out)
 		}

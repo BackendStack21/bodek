@@ -340,6 +340,10 @@ func key(s string) tea.KeyMsg {
 		return tea.KeyMsg{Type: tea.KeyCtrlL}
 	case "ctrl+j":
 		return tea.KeyMsg{Type: tea.KeyCtrlJ}
+	case "shift+enter":
+		return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("shift+enter")}
+	case "alt+enter":
+		return tea.KeyMsg{Type: tea.KeyEnter, Alt: true}
 	case "ctrl+q":
 		return tea.KeyMsg{Type: tea.KeyCtrlQ}
 	case "ctrl+e":

@@ -111,6 +111,14 @@ feat(tui): compact tool steps with Ctrl+E details toggle
   `approval.go` the approval flow, `chrome.go` drawer-sheet / shelf /
   header-instrument / session-home layout, `reconnect.go` socket recovery.
   Put new code in the matching file instead of growing `model.go`.
+- First-run home (`welcome` in `banner.go`) is the working directory plus
+  one next-action tip. Branding lives in the header — do not reintroduce a
+  splash wordmark. After `^L`, `sessionHome` keeps last prompt / receipt /
+  recents; `/new` returns to first-run.
+- Composer newline is `⇧⏎` (`shift+enter`, also `alt+enter` / `^J`). Never
+  enable kitty CSI-u or xterm modifyOtherKeys: Bubble Tea v1 remaps `^K`
+  and esc into sequences it then drops. `RestoreEnhancedKeys` only clears
+  leftover modes from another tool or an older bodek build.
 - The management drawer is a bottom sheet: keep ~8 transcript rows above
   it (`sheetTranscriptMin`); full-bleed only when the terminal cannot
   fit transcript + sheet. Layout-only — tab grammar (`]`/`[`/`⏎`/`esc`)

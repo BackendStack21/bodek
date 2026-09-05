@@ -7,14 +7,6 @@
 
 **A beautiful [Bubble Tea](https://github.com/charmbracelet/bubbletea) terminal interface for the [odek](https://github.com/BackendStack21/odek) agent.**
 
-```
-██████   ██████  ██████  ███████ ██   ██
-██   ██ ██    ██ ██   ██ ██      ██  ██
-██████  ██    ██ ██   ██ █████   █████
-██   ██ ██    ██ ██   ██ ██      ██  ██
-██████   ██████  ██████  ███████ ██   ██
-```
-
 bodek is a **pure front-end**. It launches (or attaches to) an `odek serve`
 instance and renders the agent's live stream — reasoning, tokens, tool calls,
 approvals, skills, and memory — as a polished TUI. Every bit of agent
@@ -223,15 +215,16 @@ own front-end settings are separate; see [Configuration](#configuration).
   (`r`), export a transcript (`e` markdown, `E` JSON), and search server-side
   (`/`); `n` loads the next page. Resuming sends a `session_switch` so the
   server-side memory buffer is restored before you type.
-- **Session home** — first-run teaches `type a task` and `^K palette`.
+- **Session home** — first-run shows the working directory and `type a task · ^K`.
   After `^L`, the cleared transcript keeps the last prompt and coding
   receipt so the session is still oriented; `/new` returns to the
   first-run splash. The footer leads with a mode pill
   (`composer` / `approval` / `jobs` / …).
 - **Auto-fitting composer** — the input box rests at three rows and grows
   with your prompt (multi-line or a single long line, wide-char aware) up to
-  twelve rows or what the terminal can spare; it shrinks back after send,
-  history recall, and `/`-commands. A one-row shelf above it carries staged
+  twelve rows or what the terminal can spare; `⇧⏎` inserts a newline
+  (`^J` on terminals that cannot tell Shift+Enter from Enter). It shrinks
+  back after send, history recall, and `/`-commands. A one-row shelf above it carries staged
   files, the folded queue count (`^Q` unfolds the strip), a `↓ new output`
   hint, and a pending skill chip. Prompts wrap in the transcript at the
   viewport width — long lines are never clipped from view.
@@ -353,7 +346,7 @@ own front-end settings are separate; see [Configuration](#configuration).
 | `^Q` | Unfold the queue strip from the composer shelf (`↑↓`/`jk` select · `←→`/`hl` move · `d d` two-step delete · `esc`/`⏎` folds it back; full manager: `/queue`) |
 | `^S` | Stop the running sub-agent (two-step confirm: `y` stops, any other key continues) |
 | `^T` | Toggle extended thinking for the next turn |
-| `^J` | Insert a newline in the input |
+| `⇧⏎` | Insert a newline in the input (`^J` still works on terminals that cannot tell Shift+Enter from Enter) |
 | `^L` | Clear the conversation (two-step confirm: `y` clears, any other key cancels) |
 | `^E` | Toggle tool details — every step expands to its full output/logs |
 | `^Y` | Copy the last reply to the clipboard (local helper — `pbcopy`/`wl-copy`/`clip` — with OSC 52 fallback) |

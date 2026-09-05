@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
 
@@ -46,6 +47,34 @@ func TestUserPromptWrapsUnbrokenToken(t *testing.T) {
 // ── composer: the input box must auto-fit its content ───────────────────────
 // Constants pinned as literals on purpose: the box rests at 3 rows and grows
 // to at most 12, and the tests must catch a silent constant change.
+
+func TestShiftEnterInsertsNewline(t *testing.T) {
+	m := newTestModel()
+	m.handleKey(key("h"))
+	m.handleKey(key("i"))
+	m.handleKey(key("shift+enter"))
+	m.handleKey(key("t"))
+	if got := m.ta.Value(); got != "hi\nt" {
+		t.Fatalf("shift+enter value = %q, want %q", got, "hi\nt")
+	}
+	m.handleKey(key("alt+enter"))
+	if got := m.ta.Value(); got != "hi\nt\n" {
+		t.Fatalf("alt+enter value = %q, want %q", got, "hi\nt\n")
+	}
+}
+
+func TestFilterShiftEnterRewritesCSI(t *testing.T) {
+	for _, seq := range []string{"\x1b[13;2u", "\x1b[13;2;1u", "\x1b[27;2;13~"} {
+		msg := FilterShiftEnter(nil, []byte(seq))
+		km, ok := msg.(tea.KeyMsg)
+		if !ok || km.String() != "shift+enter" {
+			t.Errorf("FilterShiftEnter(%q) = %#v, want shift+enter", seq, msg)
+		}
+	}
+	if msg := FilterShiftEnter(nil, key("enter")); msg.(tea.KeyMsg).String() != "enter" {
+		t.Error("FilterShiftEnter must leave enter alone")
+	}
+}
 
 func TestComposerGrowsWithNewlines(t *testing.T) {
 	m := newTestModel()

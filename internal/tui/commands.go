@@ -292,7 +292,7 @@ func (m *Model) showHelp() {
 	const keyW = 8 // clears the widest chord in the table (alt+↑↓, --mouse)
 	for _, k := range [][2]string{
 		{"⏎", "send · queue mid-turn · run a /command"},
-		{"^J", "newline in the input"},
+		{"⇧⏎", "newline in the input"},
 		{"@", "attach files"},
 		{"↑↓", "scroll the transcript"},
 		{"alt+↑↓", "jump to the previous/next turn"},

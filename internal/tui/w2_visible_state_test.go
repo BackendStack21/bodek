@@ -117,7 +117,7 @@ func TestHelpTeachesRealKeys(t *testing.T) {
 	if strings.Contains(card, "retry a lost connection") {
 		t.Errorf("help still advertises the phantom r key")
 	}
-	for _, want := range []string{"^S", "alt+f", "^K"} {
+	for _, want := range []string{"^S", "alt+f", "^K", "⇧⏎"} {
 		if !strings.Contains(card, want) {
 			t.Errorf("help card omits %s", want)
 		}
