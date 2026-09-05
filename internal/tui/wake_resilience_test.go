@@ -136,3 +136,27 @@ func TestWakeArmedRetiresAndRearms(t *testing.T) {
 		t.Error("fresh bg_wake did not re-arm the wake marker")
 	}
 }
+
+// Idle bg_wake arms the lazy marker for a reconnect race. Disconnect
+// finalize() must not clear it when no card was open yet — otherwise the
+// post-reconnect stream opens a plain remote card.
+func TestWakeArmedSurvivesDisconnect(t *testing.T) {
+	m := newTestModel()
+	m.handleEvent(client.Event{Type: "bg_wake"})
+	if !m.wakeArmed {
+		t.Fatal("precondition: bg_wake did not arm wakeArmed")
+	}
+
+	m.handleEvent(client.Event{Type: client.EventDisconnected})
+	if !m.wakeArmed {
+		t.Fatal("disconnect finalize cleared wakeArmed with no open card")
+	}
+
+	m.disconn = false // reconnect succeeded
+	m.handleEvent(client.Event{Type: "thinking", Content: "checking job output"})
+	if i := m.cur(); i < 0 {
+		t.Fatal("post-reconnect stream did not open a card")
+	} else if !m.msgs[i].systemWake {
+		t.Error("wake stream opened a plain remote card after disconnect")
+	}
+}

@@ -89,7 +89,7 @@ func (m *Model) handleEvent(ev client.Event) (tea.Model, tea.Cmd) {
 					text: sanitize(ev.Content), started: time.Now()})
 			}
 		}
-		m.status = "thinking"
+		m.setRunStatus("thinking")
 		stream = true
 
 	case "token", "token_delta":
@@ -104,7 +104,7 @@ func (m *Model) handleEvent(ev client.Event) (tea.Model, tea.Cmd) {
 			appendReply(&m.msgs[i], sanitize(ev.Content))
 			m.msgs[i].streaming = true
 		}
-		m.status = "responding"
+		m.setRunStatus("responding")
 		stream = true
 
 	case "tool_call":
@@ -135,7 +135,7 @@ func (m *Model) handleEvent(ev client.Event) (tea.Model, tea.Cmd) {
 			// the debounced structured-view refresh (see plan.go).
 			m.planTrig = true
 		}
-		m.status = "running " + nm
+		m.setRunStatus("running " + nm)
 
 	case "tool_result":
 		nm := collapse(ev.Name) // same collapse() tool_call stored the step under
@@ -829,6 +829,16 @@ func markCancel(msg *message) {
 	setTurnMarker(msg, "**Cancelled.**")
 }
 
+// setRunStatus updates the live status line unless a cancel is in flight.
+// thinking/token/tool_call must not drop the cancelling latch: submit()
+// refuses to re-queue restored drafts only while status=="cancelling".
+func (m *Model) setRunStatus(s string) {
+	if m.status == "cancelling" {
+		return
+	}
+	m.status = s
+}
+
 // finalize closes out the streaming assistant message and drops the cursor:
 // the swarm verdict (when the turn delegated sub-agents) lands as the turn
 // marker.
@@ -836,9 +846,9 @@ func (m *Model) finalize() {
 	if i := m.cur(); i >= 0 {
 		m.closeTurn(&m.msgs[i])
 		m.invalidateMsgBlock(i)
+		m.wakeArmed = false // the window closed with the turn
 	}
 	m.curIdx = -1
-	m.wakeArmed = false // the window closed with the turn
 }
 
 // swarmVerdict summarizes a turn's sub-agent outcomes as a receipt rail —

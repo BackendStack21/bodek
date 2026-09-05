@@ -502,7 +502,10 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.resetApprovalInput()
 		m.relayout() // the busy status line releases its row
 		m.refresh()
-		return m, tea.Batch(m.sendQueued(), m.noticeSweep())
+		// Do not sendQueued here: a write failure is usually a dying
+		// socket, and draining the rest would burn them into phantom
+		// error cards before EventDisconnected can preserve the queue.
+		return m, m.noticeSweep()
 
 	case approvalSendErrMsg:
 		// Restore the popped head: the engine never saw the reply. Stay

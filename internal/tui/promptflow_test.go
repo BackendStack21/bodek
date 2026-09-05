@@ -412,6 +412,42 @@ func TestCancelEnterDoesNotRequeue(t *testing.T) {
 	}
 }
 
+// A still-streaming thinking/token/tool event must not drop the cancelling
+// latch: that would let Enter re-queue the restored draft (v1.4.4's guard
+// keys off status=="cancelling").
+func TestCancelStreamDoesNotClobberCancelling(t *testing.T) {
+	events := []client.Event{
+		{Type: "thinking", Content: "still going"},
+		{Type: "token", Content: "still going"},
+		{Type: "tool_call", Name: "shell", Data: `{"command":"ls"}`},
+	}
+	for _, ev := range events {
+		t.Run(ev.Type, func(t *testing.T) {
+			m := newTestModel()
+			busyTurn(m)
+			m.sessionID = "s1"
+			m.queue = []string{"held"}
+			m.cancelRun()
+			if m.status != "cancelling" {
+				t.Fatalf("precondition: status = %q, want cancelling", m.status)
+			}
+
+			m.handleEvent(ev)
+			if m.status != "cancelling" {
+				t.Fatalf("%s overwrote cancelling: status = %q", ev.Type, m.status)
+			}
+
+			m.Update(key("enter"))
+			if len(m.queue) != 0 {
+				t.Fatalf("enter after %s re-queued: %v", ev.Type, m.queue)
+			}
+			if got := m.ta.Value(); got != "held" {
+				t.Errorf("draft must stay in the input, got %q", got)
+			}
+		})
+	}
+}
+
 // TestSendFailureFinalizesTurn verifies a failed send closes out the phantom
 // assistant turn sendPrompt opened, with the error inline in the transcript.
 func TestSendFailureFinalizesTurn(t *testing.T) {
@@ -434,6 +470,26 @@ func TestSendFailureFinalizesTurn(t *testing.T) {
 	}
 	if out := plain(m.conversation()); !strings.Contains(out, "Error:") {
 		t.Errorf("inline error not rendered in the transcript:\n%s", out)
+	}
+}
+
+// A failed prompt write must not sendQueued the rest into the same broken
+// socket — that burns the queue into a streak of phantom error cards.
+func TestErrMsgDoesNotDrainQueue(t *testing.T) {
+	m := newTestModel()
+	busyTurn(m)
+	m.queue = []string{"second", "third"}
+	n := len(m.msgs)
+
+	m.Update(errMsg{err: errors.New("write broke")})
+	if got := strings.Join(m.queue, ","); got != "second,third" {
+		t.Fatalf("errMsg drained the queue: %q", got)
+	}
+	if m.busy {
+		t.Error("errMsg should leave the model idle, not start the next prompt")
+	}
+	if len(m.msgs) != n {
+		t.Errorf("errMsg opened a follow-up turn: %d msgs, was %d", len(m.msgs), n)
 	}
 }
 
