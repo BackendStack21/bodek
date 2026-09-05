@@ -504,6 +504,8 @@ func (m *Model) ensureWireTurn() {
 // beginWireTurn appends the streaming card and arms the busy turn state
 // shared by the stamped-frame path (openWakeTurn) and the lazy path
 // (ensureWireTurn). wake decides the systemWake marker and status line.
+// The viewport is left alone: refresh() already sticks when the reader
+// is at the bottom; a forced GotoBottom would yank scrollback.
 func (m *Model) beginWireTurn(wake bool) {
 	m.msgs = append(m.msgs, message{role: roleAsst, streaming: true, systemWake: wake})
 	m.curIdx = len(m.msgs) - 1
@@ -521,8 +523,7 @@ func (m *Model) beginWireTurn(wake bool) {
 		m.sessionStart = m.runStart
 	}
 	m.relayout() // the busy status line claims a row above the input
-	m.refresh()
-	m.vp.GotoBottom() // new activity: show it even when reading scrollback
+	m.refresh()  // sticks only when already at the bottom — leave scrollback
 }
 
 // stepGlyphs returns up to 4 deduped tool glyphs for a turn's steps, in

@@ -232,9 +232,9 @@ func TestRenderStepsSubagentAndError(t *testing.T) {
 		t.Errorf("peek should not expand nested sub-agent logs:\n%s", plainOut)
 	}
 
-	// Streaming turn: a not-done step renders the live spinner; a not-done step
-	// in a finalized turn renders the pending glyph. Also drive the narrow-width
-	// budget floor.
+	// Streaming turn: a not-done step uses the static live glyph (the
+	// status line owns the spinner). A not-done step in a finalized turn
+	// also renders ▸. Also drive the narrow-width budget floor.
 	m.vp.Width = 8
 	if s, _ := renderStepsForTest(m, message{streaming: true, steps: []step{{name: "read", arg: "x"}}}, 0, 0); s == "" {
 		t.Error("streaming step rendered empty")

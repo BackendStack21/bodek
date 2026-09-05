@@ -10,7 +10,46 @@ import (
 
 // ── thinking intent rail ────────────────────────────────────────────────────
 
-const thinkingExcerptSentences = 2
+const (
+	thinkingExcerptSentences = 2
+	thinkingLiveStem         = 72 // frozen opening clause until a sentence lands
+)
+
+type sentSpan struct {
+	start, end int
+	complete   bool // ended on .!? ; false = still-growing tail
+}
+
+// sentenceSpans splits s on `.!?` followed by whitespace or EOF.
+func sentenceSpans(s string) []sentSpan {
+	rs := []rune(s)
+	var spans []sentSpan
+	start := 0
+	for i := 0; i < len(rs); i++ {
+		if rs[i] != '.' && rs[i] != '!' && rs[i] != '?' {
+			continue
+		}
+		if i+1 < len(rs) && !unicode.IsSpace(rs[i+1]) {
+			continue // abbreviation / decimal
+		}
+		spans = append(spans, sentSpan{start, i + 1, true})
+		start = i + 1
+	}
+	if start < len(rs) {
+		if tail := strings.TrimSpace(string(rs[start:])); tail != "" {
+			spans = append(spans, sentSpan{start, len(rs), false})
+		}
+	}
+	return spans
+}
+
+func joinSpans(s string, spans []sentSpan) string {
+	if len(spans) == 0 {
+		return ""
+	}
+	rs := []rune(s)
+	return strings.TrimSpace(string(rs[spans[0].start:spans[len(spans)-1].end]))
+}
 
 // lastSentences returns the last n sentences of s, preserving internal
 // newlines inside each sentence. A sentence ends at `.!?` followed by
@@ -20,37 +59,51 @@ func lastSentences(s string, n int) string {
 	if s == "" || n <= 0 {
 		return s
 	}
-	rs := []rune(s)
-	type span struct{ start, end int }
-	var spans []span
-	start := 0
-	for i := 0; i < len(rs); i++ {
-		if rs[i] != '.' && rs[i] != '!' && rs[i] != '?' {
-			continue
-		}
-		if i+1 < len(rs) && !unicode.IsSpace(rs[i+1]) {
-			continue // abbreviation / decimal
-		}
-		spans = append(spans, span{start, i + 1})
-		start = i + 1
-	}
-	if start < len(rs) {
-		if tail := strings.TrimSpace(string(rs[start:])); tail != "" {
-			spans = append(spans, span{start, len(rs)})
-		}
-	}
+	spans := sentenceSpans(s)
 	if len(spans) <= n {
 		return s
 	}
-	kept := spans[len(spans)-n:]
-	return strings.TrimSpace(string(rs[kept[0].start:kept[len(kept)-1].end]))
+	return joinSpans(s, spans[len(spans)-n:])
 }
 
-// thinkingExcerpt is the collapsed intent-rail body: the last two sentences,
-// never flattened. A runaway sentence is tail-capped so the rail stays short.
+// lastCompleteSentences is lastSentences without the unfinished tail — the
+// live rail holds these so a fast model cannot turn the excerpt into a ticker.
+func lastCompleteSentences(s string, n int) string {
+	s = strings.TrimSpace(s)
+	if s == "" || n <= 0 {
+		return ""
+	}
+	var done []sentSpan
+	for _, sp := range sentenceSpans(s) {
+		if sp.complete {
+			done = append(done, sp)
+		}
+	}
+	if len(done) == 0 {
+		return ""
+	}
+	if len(done) > n {
+		done = done[len(done)-n:]
+	}
+	return joinSpans(s, done)
+}
+
+// thinkingExcerpt is the collapsed intent-rail body for a sealed or
+// finalized block: the last two sentences, never flattened.
 func thinkingExcerpt(s string) string {
 	ex := lastSentences(s, thinkingExcerptSentences)
 	return capThinkingTail(ex, maxThinkingLen)
+}
+
+// thinkingExcerptLive is the collapsed rail while a think cycle is still
+// streaming: finished sentences only, held until the next one lands. Before
+// the first period, a short opening stem freezes once it fills so the
+// transcript does not chase tokens.
+func thinkingExcerptLive(s string) string {
+	if held := lastCompleteSentences(s, thinkingExcerptSentences); held != "" {
+		return capThinkingTail(held, maxThinkingLen)
+	}
+	return capThinkingText(strings.TrimSpace(s), thinkingLiveStem)
 }
 
 // capThinkingTail keeps the last n runes of s, snapping forward to a
