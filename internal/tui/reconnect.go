@@ -71,7 +71,11 @@ func (m *Model) handleReconnect(msg reconnectMsg) (tea.Model, tea.Cmd) {
 		return m, m.scheduleReconnect(msg.attempt + 1)
 	}
 	m.status = "disconnected"
-	m.addNote("reconnect failed — " + msg.err.Error() + " · press ⏎ to retry")
+	reason := "no client"
+	if msg.err != nil {
+		reason = msg.err.Error()
+	}
+	m.addNote("reconnect failed — " + reason + " · press ⏎ to retry")
 	if m.opts.LogPath != "" {
 		m.addNote("server log · " + m.opts.LogPath)
 	}

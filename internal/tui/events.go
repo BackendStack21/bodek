@@ -213,6 +213,12 @@ func (m *Model) handleEvent(ev client.Event) (tea.Model, tea.Cmd) {
 		m.busy = false
 		m.lastTool = ""
 		m.lastArg = ""
+		// Pending approvals die with the turn — the same contract disconnect
+		// documents. Leaving them armed captures the keyboard after the
+		// engine has moved on, so ⏎ never sends the next prompt.
+		m.approvals = nil
+		m.apprDeadlines = nil
+		m.resetApprovalInput()
 		m.status = "ready"
 		m.sessCtxTok = ev.SessionContextTokens
 		m.sessOutTok = ev.SessionOutputTokens
@@ -309,6 +315,9 @@ func (m *Model) handleEvent(ev client.Event) (tea.Model, tea.Cmd) {
 		m.busy = false
 		m.lastTool = ""
 		m.lastArg = ""
+		m.approvals = nil
+		m.apprDeadlines = nil
+		m.resetApprovalInput()
 		if cancelled {
 			m.status = "ready"
 		} else {
