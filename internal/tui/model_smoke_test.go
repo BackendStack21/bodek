@@ -34,7 +34,6 @@ func newTestModel() *Model {
 		th:     newTheme(),
 		ta:     ta,
 		sp:     spinner.New(),
-		mouse:  true, // mirror a --mouse session so control-glyph tests render
 		curIdx: -1,
 		qarm:   -1, // mirror New(): no row armed for delete
 		status: "ready",

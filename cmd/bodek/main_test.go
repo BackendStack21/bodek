@@ -34,24 +34,14 @@ func TestParseConfigDefaults(t *testing.T) {
 	if cfg.url != "" || cfg.token != "" || cfg.bin != "" {
 		t.Errorf("unexpected non-empty defaults: %+v", cfg)
 	}
-	if cfg.sandbox || cfg.mouse || cfg.notify {
-		t.Errorf("expected sandbox, mouse, notify false by default, got sandbox=%v mouse=%v notify=%v", cfg.sandbox, cfg.mouse, cfg.notify)
+	if cfg.sandbox || cfg.notify {
+		t.Errorf("expected sandbox, notify false by default, got sandbox=%v notify=%v", cfg.sandbox, cfg.notify)
 	}
 	if !cfg.bel {
 		t.Error("expected bel to default to true (attention bell on)")
 	}
 	if len(cfg.extraArgs) != 0 {
 		t.Errorf("expected no extra args, got %v", cfg.extraArgs)
-	}
-}
-
-func TestParseConfigMouseFlag(t *testing.T) {
-	cfg, err := parseConfig([]string{"--mouse"}, io.Discard)
-	if err != nil {
-		t.Fatalf("parseConfig returned error: %v", err)
-	}
-	if !cfg.mouse {
-		t.Error("expected --mouse to set mouse=true")
 	}
 }
 
@@ -71,12 +61,12 @@ func TestParseConfigAttentionFlags(t *testing.T) {
 
 func TestParseConfigExtraArgs(t *testing.T) {
 	hermetic(t)
-	cfg, err := parseConfig([]string{"--mouse", "--", "--prompt-caching", "--verbose"}, io.Discard)
+	cfg, err := parseConfig([]string{"--notify", "--", "--prompt-caching", "--verbose"}, io.Discard)
 	if err != nil {
 		t.Fatalf("parseConfig returned error: %v", err)
 	}
-	if !cfg.mouse {
-		t.Error("expected --mouse to be parsed before --")
+	if !cfg.notify {
+		t.Error("expected --notify to be parsed before --")
 	}
 	want := []string{"--prompt-caching", "--verbose"}
 	if len(cfg.extraArgs) != len(want) {
@@ -110,9 +100,9 @@ func TestParseConfigHelp(t *testing.T) {
 }
 
 func TestBuildProgramOptionsDefault(t *testing.T) {
-	opts := buildProgramOptions(false, false)
-	if len(opts) != 2 {
-		t.Fatalf("expected 2 default program options, got %d", len(opts))
+	opts := buildProgramOptions(false)
+	if len(opts) != 3 {
+		t.Fatalf("expected 3 default program options (filter, alt-screen, mouse), got %d", len(opts))
 	}
 	// Sanity check: the option is callable like a real tea.ProgramOption.
 	var p tea.Program
@@ -120,19 +110,9 @@ func TestBuildProgramOptionsDefault(t *testing.T) {
 	_ = opts[0]
 }
 
-func TestBuildProgramOptionsWithMouse(t *testing.T) {
-	opts := buildProgramOptions(true, false)
-	if len(opts) != 3 {
-		t.Fatalf("expected 3 program options with mouse, got %d", len(opts))
-	}
-}
-
 func TestBuildProgramOptionsPlain(t *testing.T) {
-	if opts := buildProgramOptions(false, true); len(opts) != 1 {
-		t.Fatalf("plain mode must skip the alt-screen (filter only), got %d options", len(opts))
-	}
-	if opts := buildProgramOptions(true, true); len(opts) != 2 {
-		t.Fatalf("plain+mouse = %d options, want filter+mouse", len(opts))
+	if opts := buildProgramOptions(true); len(opts) != 1 {
+		t.Fatalf("plain mode must skip alt-screen and mouse (filter only), got %d options", len(opts))
 	}
 }
 
@@ -190,16 +170,13 @@ func TestThemeEnvOverridesSettings(t *testing.T) {
 
 func TestSettingsBooleansSeedDefaults(t *testing.T) {
 	hermetic(t)
-	on, off := true, false
-	if err := settings.Save(settings.Settings{Mouse: &on, Plain: &off, Bell: &off}); err != nil {
+	off := false
+	if err := settings.Save(settings.Settings{Plain: &off, Bell: &off}); err != nil {
 		t.Fatalf("Save: %v", err)
 	}
 	cfg, err := parseConfig(nil, io.Discard)
 	if err != nil {
 		t.Fatalf("parseConfig: %v", err)
-	}
-	if !cfg.mouse {
-		t.Error("mouse = false, want true from the settings file")
 	}
 	if cfg.plain {
 		t.Error("plain = true, want false from the settings file")

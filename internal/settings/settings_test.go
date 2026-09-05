@@ -26,7 +26,7 @@ func TestLoadMissingFile(t *testing.T) {
 	if got.Theme != "" {
 		t.Errorf("Theme = %q, want empty", got.Theme)
 	}
-	if got.Mouse != nil || got.Bell != nil || got.Notify != nil || got.Plain != nil {
+	if got.Bell != nil || got.Notify != nil || got.Plain != nil {
 		t.Errorf("boolean settings = %+v, want all unset", got)
 	}
 	if _, statErr := os.Stat(path); !os.IsNotExist(statErr) {
@@ -38,7 +38,6 @@ func TestSaveLoadRoundTrip(t *testing.T) {
 	homeDir(t)
 	in := Settings{
 		Theme:  "ember-light",
-		Mouse:  ptr(true),
 		Bell:   ptr(false),
 		Notify: ptr(true),
 		Plain:  ptr(false),
@@ -54,7 +53,6 @@ func TestSaveLoadRoundTrip(t *testing.T) {
 		t.Errorf("Theme = %q, want %q", got.Theme, in.Theme)
 	}
 	for name, pair := range map[string][2]*bool{
-		"Mouse":  {got.Mouse, in.Mouse},
 		"Bell":   {got.Bell, in.Bell},
 		"Notify": {got.Notify, in.Notify},
 		"Plain":  {got.Plain, in.Plain},

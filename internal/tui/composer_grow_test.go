@@ -104,6 +104,16 @@ func TestFilterModifyOtherKeys(t *testing.T) {
 		{"\x1b[27;5;107~", "ctrl+k"},
 		{"\x1b[27;1;27~", "esc"},
 		{"\x1b[27;2;9~", "shift+tab"},
+		// Codium/xterm.js Ctrl+C once modifyOtherKeys / CSI-u is on.
+		{"\x1b[27;5;99~", "ctrl+c"},
+		{"\x1b[27;5;99u", "ctrl+c"},
+		{"\x1b[27;5;67~", "ctrl+c"},
+		{"\x1b[27;5;3~", "ctrl+c"},
+		{"\x1b[27;2;13u", "shift+enter"},
+		{"\x1b[99;5u", "ctrl+c"},
+		{"\x1b[99;5;1u", "ctrl+c"},
+		{"\x1b[3;5u", "ctrl+c"},
+		{"\x1b[3u", "ctrl+c"},
 	}
 	for _, tc := range cases {
 		msg := FilterShiftEnter(nil, []byte(tc.seq))

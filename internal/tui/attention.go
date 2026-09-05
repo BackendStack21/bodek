@@ -87,5 +87,5 @@ func (m *Model) attentionCmd(a attention) tea.Cmd {
 	if a.empty() {
 		return nil
 	}
-	return tea.Exec(&rawSeq{seq: a.sequence()}, nil)
+	return tea.Exec(&rawSeq{seq: a.sequence()}, afterExec)
 }

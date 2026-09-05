@@ -122,11 +122,6 @@ type Options struct {
 	Bell   bool
 	Notify bool
 
-	// Mouse reports that the terminal sends mouse events (--mouse). The
-	// queue strip gates its ▲▼✕ controls on it: glyphs without tracking
-	// are dead pixels, so mouseless runs get a ^Q hint instead.
-	Mouse bool
-
 	// Theme names the startup palette (ember-dark, ember-light,
 	// high-contrast, classic). Empty defers to BODEK_THEME, then the
 	// settings file — the same order /theme persists into.
@@ -187,7 +182,6 @@ type Model struct {
 	pal           palState         // ⌘K command palette — the navigation spine
 	skillSuggest  *client.Event    // pending skill suggestion card (skill_event "suggested")
 	queue         []string         // prompts typed mid-turn, sent when the turn ends
-	mouse         bool             // the terminal reports mouse events (--mouse)
 	qfocus        bool             // the queue strip owns the keyboard (ctrl+q)
 	qsel          int              // selected strip row while qfocus
 	qarm          int              // armed-for-delete row while qfocus (-1 = none)
@@ -387,7 +381,6 @@ func New(cl *client.Client, opts Options) *Model {
 		qarm:         -1,
 		model:        opts.Model,
 		sandbox:      opts.Sandbox,
-		mouse:        opts.Mouse,
 		thinkOn:      false,
 		verbosity:    verbosityFrom(opts.Verbosity),
 		expandAll:    verbosityFrom(opts.Verbosity) == verbosityDetailed,
@@ -582,13 +575,21 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case sessionExportedMsg:
 		return m, m.handleSessionExported(msg)
 
+	case restoreAfterExecMsg:
+		// tea.Exec's ReleaseTerminal disables mouse and drops the
+		// Shift+Enter keyboard protocol; RestoreTerminal does not put
+		// either back. Re-arm so the wheel keeps working after a turn
+		// done bell / title write or a clipboard exec.
+		return m, m.restoreAfterExec()
+
 	case copyResultMsg:
+		cmd := m.restoreAfterExec()
 		if msg.err != nil {
 			m.addNote("copy failed — " + msg.err.Error())
 			m.refresh()
-			return m, nil
+			return m, cmd
 		}
-		return m, m.transientNoteCmd(fmt.Sprintf("copied %d bytes via %s", msg.n, msg.tool))
+		return m, tea.Batch(cmd, m.transientNoteCmd(fmt.Sprintf("copied %d bytes via %s", msg.n, msg.tool)))
 
 	case sessionSwitchMsg:
 		return m, m.handleSessionSwitch(msg)

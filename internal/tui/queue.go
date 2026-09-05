@@ -42,8 +42,8 @@ func (m *Model) queueStripHeight() int {
 	if len(m.queue) > queueStripCap {
 		h++ // the overflow tail
 	}
-	if !m.mouse || m.qarm >= 0 {
-		h++ // the ^Q hint row replaces the ▲▼✕ controls; the armed hint renders in both modes
+	if m.qarm >= 0 {
+		h++ // the armed-delete confirm row
 	}
 	return h
 }
@@ -68,19 +68,13 @@ func (m *Model) queueStripView() string {
 	}
 	th := m.th
 	window := min(len(m.queue), queueStripCap)
-	controls := ""
-	if m.mouse {
-		// Glyphs only where the terminal tracks the mouse — without
-		// tracking they are dead pixels, so mouseless runs get the ^Q
-		// hint row below instead.
-		controls = th.footerSep.Render(" ▲ ▼ ✕")
-	}
+	controls := th.footerSep.Render(" ▲ ▼ ✕")
 	cw := lipgloss.Width(controls)
 	rows := make([]string, 0, window+2)
 	for i := range window {
 		marker, num := "  ", th.footer.Render(fmt.Sprintf("%d ", i+1))
 		if m.qfocus && m.qarm == i {
-			marker = th.footerDanger.Render("! ") // armed for delete — visible in mouse mode too
+			marker = th.footerDanger.Render("! ") // armed for delete
 		} else if m.qfocus && m.qsel == i {
 			marker = "▸ "
 		}
@@ -97,15 +91,8 @@ func (m *Model) queueStripView() string {
 		rows = append(rows, th.acDetail.Render(s))
 	}
 	if m.qarm >= 0 {
-		// The armed state must be explained in mouse mode too — the ! marker
-		// alone reads as an error, not a pending confirm.
+		// The ! marker alone reads as an error, not a pending confirm.
 		rows = append(rows, th.footerDanger.Render("  y deletes · esc cancels"))
-	} else if !m.mouse {
-		if m.qfocus {
-			rows = append(rows, th.acDetail.Render("  ↑↓ select · ←→ move · d delete · esc done"))
-		} else {
-			rows = append(rows, th.acDetail.Render("  ^q to manage the queue"))
-		}
 	}
 	return strings.Join(rows, "\n")
 }
@@ -192,7 +179,7 @@ func (m *Model) queueStripClick(y, x int) bool {
 		rowsCount++ // the overflow tail
 	}
 	if rel >= rowsCount {
-		return true // the overflow tail / the mouseless hint row: no controls
+		return true // the overflow tail / the armed-confirm row: no controls
 	}
 	// Control targets are located on the unstyled row. Bubbletea reports X
 	// in terminal CELLS, so glyph columns are display widths — byte offsets

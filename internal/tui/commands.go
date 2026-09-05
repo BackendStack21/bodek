@@ -287,7 +287,7 @@ func (m *Model) showHelp() {
 	}
 	b.WriteString(rule)
 	b.WriteString("\n" + th.statsLabel.Render("keys"))
-	const keyW = 8 // clears the widest chord in the table (alt+↑↓, --mouse)
+	const keyW = 8 // clears the widest chord in the table (alt+↑↓)
 	for _, k := range [][2]string{
 		{"⏎", "send · queue mid-turn · run a /command"},
 		{"⇧⏎", "newline in the input"},
@@ -315,7 +315,7 @@ func (m *Model) showHelp() {
 		{"/server", "cockpit — server, link, budget, session"},
 		{"F1", "this help card"},
 		{"^C", "quit"},
-		{"--mouse", "wheel scroll · click tool rows & turn heads"},
+		{"wheel", "scroll the transcript · click tool rows & turn heads"},
 	} {
 		b.WriteString("\n" + th.tipKey.Render(padRight(k[0], keyW)) + " " + th.tipText.Render(k[1]))
 	}

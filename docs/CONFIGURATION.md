@@ -14,7 +14,6 @@ silently ignored.
 ```json
 {
   "theme": "ember-dark",
-  "mouse": true,
   "bel": false,
   "notify": true,
   "plain": false
@@ -24,7 +23,6 @@ silently ignored.
 | Key | Type | Default | Flag | What it does |
 |-----|------|---------|------|--------------|
 | `theme` | string | `ember-dark` | `--theme` | Color palette: `ember-dark` · `ember-light` · `high-contrast` · `classic`. `/theme <name>` switches live **and persists it here**. |
-| `mouse` | bool | `false` | `--mouse` | Enable mouse wheel scrolling and click targets. Trade-off: the terminal can't do native text selection while mouse mode is on. |
 | `bel` | bool | `true` | `--bel` | Ring the terminal bell when a turn completes or an approval is waiting (`--bel=false` mutes; the title still updates). |
 | `notify` | bool | `false` | `--notify` | Raise desktop notifications (OSC 9) on turn completion and pending approvals. |
 | `plain` | bool | `false` | `--plain` | Linear mode: no alt-screen; agent events print to the terminal's native scrollback (screen readers, pipes, logs). |
@@ -32,6 +30,8 @@ silently ignored.
 
 Unset keys fall back to their defaults — the file only ever stores choices
 you actually made (`/theme` writes `theme`; the rest you write by hand).
+A leftover `"mouse"` key from older bodek builds is ignored: the
+alt-screen always reports the mouse so the wheel can scroll.
 
 ## Resolution order
 
