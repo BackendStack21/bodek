@@ -70,11 +70,40 @@ func TestApprovalAutocloseOnExpiry(t *testing.T) {
 	if !strings.Contains(strings.Join(m.notices, "\n"), "expired") {
 		t.Fatalf("no expiry notice pushed: %q", m.notices)
 	}
-	if m.status != "thinking" {
-		t.Fatalf("status must mirror answer() on drain, got %q", m.status)
+	if m.status != "ready" {
+		t.Fatalf("status after idle expiry = %q, want ready", m.status)
 	}
 	if cmd != nil {
 		t.Fatal("sweep must stop itself once the queue is empty")
+	}
+}
+
+// Expiry on an idle TUI must not flip the badge to "thinking" — the engine
+// is not running. answer() uses that label because it resumes a live turn;
+// autoclose after the turn already ended must land on ready.
+func TestApprovalExpiryIdleStatusReady(t *testing.T) {
+	m := newTestModel()
+	if m.busy {
+		t.Fatal("precondition: newTestModel is idle")
+	}
+	feedApproval(t, m, client.Event{Type: "approval_request", ID: "apr", Risk: "shell_exec", Command: "rm x"})
+	m.apprDeadlines[0] = time.Now().Add(-time.Second)
+	m.Update(approvalExpireMsg{})
+	if m.status != "ready" {
+		t.Fatalf("idle expiry status = %q, want ready", m.status)
+	}
+}
+
+// Expiry mid-turn still reports thinking: the engine timed the prompt out
+// and continues on an alternative path.
+func TestApprovalExpiryWhileBusyKeepsThinking(t *testing.T) {
+	m := newTestModel()
+	busyTurn(m)
+	feedApproval(t, m, client.Event{Type: "approval_request", ID: "apr", Risk: "shell_exec", Command: "rm x"})
+	m.apprDeadlines[0] = time.Now().Add(-time.Second)
+	m.Update(approvalExpireMsg{})
+	if m.status != "thinking" {
+		t.Fatalf("busy expiry status = %q, want thinking", m.status)
 	}
 }
 

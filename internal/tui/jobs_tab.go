@@ -143,13 +143,6 @@ func (m *Model) applyJobs(jobs []client.Job, err error) tea.Cmd {
 		for _, j := range jobs {
 			m.jobsPrev[j.ID] = j.Status
 		}
-		// Jobs vanish only at session end (reaped) — drop their diff state
-		// so the map cannot grow over a long-lived serve.
-		live := make(map[string]string, len(jobs))
-		for _, j := range jobs {
-			live[j.ID] = m.jobsPrev[j.ID]
-		}
-		m.jobsPrev = live
 	} else {
 		for _, j := range jobs {
 			old, seen := m.jobsPrev[j.ID]
@@ -165,6 +158,13 @@ func (m *Model) applyJobs(jobs []client.Job, err error) tea.Cmd {
 			m.jobsPrev[j.ID] = j.Status
 		}
 	}
+	// Jobs vanish when odek reaps finished records mid-session — drop
+	// their diff state so the map cannot grow over a long-lived serve.
+	live := make(map[string]string, len(jobs))
+	for _, j := range jobs {
+		live[j.ID] = m.jobsPrev[j.ID]
+	}
+	m.jobsPrev = live
 	if m.panel == panelJobs {
 		if m.confirm != confirmStopJob {
 			m.panelMsg = "" // keep an armed gate's prompt visible

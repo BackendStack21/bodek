@@ -2,6 +2,7 @@ package tui
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -232,5 +233,34 @@ func TestTurnEndClearsStaleApprovals(t *testing.T) {
 				t.Errorf("footer still shows approval hints after %s: %q", end.name, foot)
 			}
 		})
+	}
+}
+
+// A local write failure (errMsg) ends the turn the same way a server
+// error event does. Leaving the approval form armed captures the keyboard
+// after busy is already false, so ⏎ retries the dead request instead of
+// sending a prompt.
+func TestErrMsgClearsStaleApprovals(t *testing.T) {
+	m := newTestModel()
+	busyTurn(m)
+	m.handleEvent(client.Event{Type: "approval_request", ID: "apr-1",
+		Risk: "shell_exec", Command: "rm x"})
+	if m.curApproval() == nil {
+		t.Fatal("precondition: approval_request must arm the queue")
+	}
+
+	m.Update(errMsg{err: errors.New("write failed")})
+
+	if m.busy {
+		t.Error("errMsg should clear busy")
+	}
+	if m.curApproval() != nil {
+		t.Fatal("errMsg must drop stale approvals")
+	}
+	if len(m.apprDeadlines) != 0 {
+		t.Fatalf("errMsg left %d approval deadlines", len(m.apprDeadlines))
+	}
+	if m.status != "error" {
+		t.Errorf("status = %q, want error", m.status)
 	}
 }

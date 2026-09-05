@@ -494,6 +494,12 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.addNote("error: " + msg.err.Error())
 		}
 		m.finalize()
+		// Pending approvals die with the turn — the same contract done /
+		// error / disconnect already document. Leaving them armed captures
+		// the keyboard after busy is already false.
+		m.approvals = nil
+		m.apprDeadlines = nil
+		m.resetApprovalInput()
 		m.relayout() // the busy status line releases its row
 		m.refresh()
 		return m, tea.Batch(m.sendQueued(), m.noticeSweep())

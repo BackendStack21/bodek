@@ -281,6 +281,28 @@ func TestJobsWatcherBaselineAndDiffNotes(t *testing.T) {
 	}
 }
 
+// Jobs vanish at session end (reaped). The watcher diff map must drop those
+// IDs so it cannot grow over a long-lived serve — the prune used to run
+// only on the first baseline (a no-op copy) and the live path only inserted.
+func TestJobsPrevDropsVanishedIDs(t *testing.T) {
+	m := newJobsTestModel(t, nil)
+	m.applyJobs(jobsFixture(), nil)
+	if _, ok := m.jobsPrev["bg_9f8e7d6c"]; !ok {
+		t.Fatal("precondition: baseline must seed both fixture IDs")
+	}
+
+	m.applyJobs([]client.Job{{ID: "bg_1a2b3c4d", Command: "npm run dev", Status: "running", RuntimeS: 130}}, nil)
+	if len(m.jobsPrev) != 1 {
+		t.Fatalf("jobsPrev = %d, want 1 (vanished ids pruned): %v", len(m.jobsPrev), m.jobsPrev)
+	}
+	if _, ok := m.jobsPrev["bg_9f8e7d6c"]; ok {
+		t.Fatal("vanished job still in jobsPrev")
+	}
+	if got := m.jobsPrev["bg_1a2b3c4d"]; got != "running" {
+		t.Errorf("live job status = %q, want running", got)
+	}
+}
+
 func TestJobsWatcherExitGlyphs(t *testing.T) {
 	m := newJobsTestModel(t, nil)
 	m.applyJobs([]client.Job{{ID: "bg_1a2b3c4d", Command: "x", Status: "running", RuntimeS: 1}}, nil)
