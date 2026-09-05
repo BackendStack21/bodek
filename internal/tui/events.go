@@ -238,6 +238,13 @@ func (m *Model) handleEvent(ev client.Event) (tea.Model, tea.Cmd) {
 		}
 		stream = true
 
+	case "keepalive":
+		// odek ≥ v2.1.0 pushes idle traffic every 20s so proxies do not
+		// drop a socket waiting on a thinking model. Not a ping reply —
+		// ignore without refresh so the cadence cannot drain the queue
+		// or flicker the transcript.
+		return m, listen(m.events)
+
 	case "server_info", "pong":
 		// The connect hello and every heartbeat reply carry the same server
 		// snapshot. Only the pong closes a round trip.

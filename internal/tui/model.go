@@ -397,10 +397,12 @@ func (m *Model) Init() tea.Cmd {
 		m.armHeartbeat())
 }
 
-// pingEvery is the application-level heartbeat cadence (spec: 25s). The
-// server answers inline — even mid-run — so the ping doubles as a liveness
-// probe and the pong refreshes the server snapshot (RTT, uptime, conns).
-const pingEvery = 25 * time.Second
+// pingEvery is the application-level heartbeat cadence (20s). Matches the
+// odek ≥ v2.1.0 server keepalive and stays under typical 30–60s proxy idle
+// timeouts so a thinking turn that is silent for minutes does not drop the
+// socket. The server answers inline — even mid-run — so the ping doubles
+// as a liveness probe and the pong refreshes the server snapshot.
+const pingEvery = 20 * time.Second
 
 // heartbeatMsg re-arms the heartbeat loop.
 type heartbeatMsg struct{}

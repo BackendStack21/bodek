@@ -4,14 +4,16 @@ import "strings"
 
 // ── provider-failure classification ─────────────────────────────────────────
 //
-// Turn failures arrive as raw provider-client text ("iteration 17: llm:
-// stream idle for over 2m0s without an event"). Under parallel-agent load
-// the dominant failure is a stalled stream — the provider accepted the
-// prompt and then went silent until the watchdog aborted — not an HTTP
-// error; raw 429s are absorbed by the client's retry budget and only
-// surface when it is exhausted. The classifier sorts the wire strings into
-// the handful of classes a user can act on, so the turn card explains what
-// happened and how to recover instead of echoing an LLM-internal line.
+// Turn failures arrive as raw provider-client text ("llm: stream idle
+// timeout", or the older "iteration 17: llm: stream idle for over 5m0s
+// without an event"). Under parallel-agent load the dominant failure is
+// a stalled stream — the provider accepted the prompt and then went
+// silent until the watchdog aborted — not an HTTP error; raw 429s are
+// absorbed by the client's retry budget and only surface when it is
+// exhausted. The classifier sorts the wire strings into the handful of
+// classes a user can act on, so the turn card explains what happened
+// and how to recover instead of echoing an LLM-internal line. odek
+// ≥ v2.1.0 defaults the idle/request budgets to 300s.
 
 type errClass uint8
 
@@ -55,13 +57,13 @@ func (m *Model) errorCard(raw string) string {
 	}
 	switch classifyErr(raw) {
 	case errStall:
-		return "**⚠ Provider stream stalled.** The provider accepted the prompt, then sent nothing for over 2m — usually throttling under parallel agent load" + hint + "."
+		return "**⚠ Provider stream stalled.** The provider accepted the prompt, then went silent past the idle timeout — raise `llm.stream_idle_timeout_seconds` (odek default 300s) if the model is still thinking" + hint + "."
 	case errRateLimit:
 		return "**⚠ Provider rate-limited (HTTP 429).** Concurrent agents exhausted the provider's stream budget" + hint + "."
 	case errConnDrop:
 		return "**⚠ Provider connection dropped** mid-stream" + hint + "."
 	case errTimeout:
-		return "**⚠ Provider request timed out.**" + hint
+		return "**⚠ Provider request timed out.** Raise `llm.request_timeout_seconds` (odek default 300s) if the model is still thinking" + hint
 	default:
 		return "**Error:** " + sanitize(raw)
 	}
