@@ -147,8 +147,13 @@ feat(tui): compact tool steps with Ctrl+E details toggle
   `Init` — after alt-screen — so Cursor/xterm.js encodes Shift+Enter
   (`CSI 27 ; 2 ; 13 ~`) instead of CR. Never enable kitty "report all
   keys". `FilterShiftEnter` rewrites those CSI sequences (and the
-  remapped `^K` / esc) back into KeyMsgs. `RestoreEnhancedKeys` clears
-  leftovers on startup and shutdown.
+  remapped `^C` / `^K` / esc) back into KeyMsgs — Codium/Cursor encode
+  Ctrl+C as CSI once those modes are on. `RestoreEnhancedKeys` clears
+  leftovers on startup and shutdown. Alt-screen always enables mouse
+  cell-motion so the wheel scrolls (and clicks hit turn heads / steps /
+  the queue). `tea.Exec` (attention, clipboard) must return `afterExec`
+  so `restoreAfterExec` re-arms mouse and Shift+Enter — Bubble Tea's
+  RestoreTerminal does not. `--plain` skips mouse reporting.
 - The management drawer is a bottom sheet: keep ~8 transcript rows above
   it (`sheetTranscriptMin`); full-bleed only when the terminal cannot
   fit transcript + sheet. Layout-only — tab grammar (`]`/`[`/`⏎`/`esc`)

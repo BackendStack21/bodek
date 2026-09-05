@@ -116,7 +116,6 @@ bodek --sandbox                                   # run tool calls inside odek's
 bodek --url 'http://127.0.0.1:8080/?token=…'      # attach with the token URL odek serve printed
 bodek --url http://127.0.0.1:8080 --token d3adb33f  # attach with an explicit token
 bodek --odek-bin ./odek                           # use a specific odek binary
-bodek --mouse                                     # enable mouse wheel scrolling (blocks text selection)
 bodek --bel=false                                 # mute the attention bell (title still updates)
 bodek --notify                                    # desktop notifications (OSC 9) on turn/approval events
 bodek --theme ember-light                         # start with a theme (/theme switches live)
@@ -179,8 +178,11 @@ own front-end settings are separate; see [Configuration](#configuration).
   shrinks as members finish and dissolves on the last leftover. Full
   output stays behind expand.
 - **Fluent by default** — gradient wordmark, smooth braille spinner, smart
-  autoscroll that never yanks you while you read history, and a
-  scroll-position indicator.
+  autoscroll that never yanks you while you read history, a
+  scroll-position indicator, and a mouse wheel that always scrolls the
+  transcript (click turn heads, tool rows, the cockpit, and queue
+  controls). Native click-drag copy is unavailable — use `^Y` / `alt+y`.
+  `--plain` keeps the terminal's own scrollback.
 - **Version display & update hint** — bodek's version rides the header next
   to the logo (the spawned odek's next to the model); a quiet note appears at
   startup when a newer release is available (`bodek upgrade` installs it;
@@ -352,7 +354,7 @@ own front-end settings are separate; see [Configuration](#configuration).
 | `alt+y` | Copy the **focused** turn's reply — the one you last jumped to (falls back to the latest reply) |
 | `alt+r` | Re-send the last prompt (`/retry`) |
 | `alt+f` | Search the transcript (`⏎`/`n` next match · `N` previous · scrolling stays live) |
-| `^F` | Fold/unfold the most recent turn card (click any turn head with `--mouse`) |
+| `^F` | Fold/unfold the most recent turn card (or click any turn head) |
 | `tab` | Focus the next sub-agent chip on a swarm turn; otherwise open/close the latest reasoning block; with neither, toggle the latest step's expansion |
 | `^R` | Browse & resume saved sessions |
 | `^O` | Switch the model |
@@ -368,7 +370,7 @@ own front-end settings are separate; see [Configuration](#configuration).
 | `^P` / `^N` | Recall previous prompts (prompt history) |
 | `^G` / `End` (empty input) | Jump to the latest output |
 | `F1` | Show the help card |
-| `wheel` (with `--mouse`) | Scroll the transcript · click tool rows, turn heads, and the cockpit |
+| `wheel` | Scroll the transcript · click tool rows, turn heads, and the cockpit |
 | `⏎` (disconnected, empty input) | Retry the connection |
 | `⏎` (after a failed turn, empty input) | Re-send the failed prompt |
 | `^C` | Quit (confirm: `y` or a second `^C`) |
@@ -385,7 +387,7 @@ when the turn ends — a transient note acknowledges each hold, and the count
 rides both the busy status line and the footer (one drains per turn-end).
 Queued prompts stay visible in a **strip directly above the input area**: one
 row per prompt (long prompts collapse to a single line) with per-row `▲ ▼ ✕`
-controls (`--mouse`) to reorder or delete, and a `^Q` keyboard focus mode for
+controls to reorder or delete, and a `^Q` keyboard focus mode for
 the same actions (`↑↓` select, `←→` move, `d` delete). For full management,
 `/queue` opens a dedicated window: `↑↓` select, `←→`/`hl` change priority,
 `d`→`y` delete, and `⏎` sends the selected prompt ahead of the queue when
@@ -524,7 +526,7 @@ form can never collect an approval for a prompt the engine already abandoned.
 ## Configuration
 
 bodek keeps its **own front-end settings** in `~/.bodek/config.json`
-(override the location with `BODEK_CONFIG`): `theme`, `mouse`, `bel`,
+(override the location with `BODEK_CONFIG`): `theme`, `bel`,
 `notify`, `plain`. Switching the theme with `/theme` persists it there
 automatically; the other values can be written by hand and seed the matching
 flag defaults. Resolution order:
@@ -577,8 +579,9 @@ never become the weakest link:
   through `pbcopy`/`wl-copy`/`clip` when installed; without one (or over SSH)
   it falls back to OSC 52, which some terminals ignore — pass it through or
   install a helper. The copy note always says which path ran.
-- **Mouse scrolling eats text selection** — that's the `--mouse` trade-off
-  (terminals can't have both). Launch without it when you need to copy.
+- **Mouse wheel blocks native text selection** — the alt-screen always
+  reports the mouse so the wheel can scroll. Copy with `^Y` / `alt+y`
+  instead of click-drag. `--plain` keeps the terminal's own scrollback.
 - **Colors look wrong** — try `/theme classic`, check `TERM`; `NO_COLOR=1`
   forces a colorless render everywhere.
 - **Connection dropped mid-turn** — bodek retries with backoff (5 attempts)

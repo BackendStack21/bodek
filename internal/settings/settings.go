@@ -1,5 +1,5 @@
 // Package settings persists bodek's own front-end preferences so they
-// survive relaunches: theme, mouse, bell, notify, plain. odek's server-side
+// survive relaunches: theme, bell, notify, plain. odek's server-side
 // configuration is unaffected — this file belongs to the terminal UI alone.
 //
 // Resolution order everywhere: explicit flag > BODEK_THEME env (theme) >
@@ -19,7 +19,6 @@ import (
 // load; a value is an explicit user choice that flags may still override.
 type Settings struct {
 	Theme  string `json:"theme,omitempty"`
-	Mouse  *bool  `json:"mouse,omitempty"`
 	Bell   *bool  `json:"bel,omitempty"`
 	Notify *bool  `json:"notify,omitempty"`
 	Plain  *bool  `json:"plain,omitempty"`

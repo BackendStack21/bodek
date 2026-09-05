@@ -82,7 +82,7 @@ func TestUpDownEditMultiLine(t *testing.T) {
 }
 
 // TestMouseWheelScrollsTranscript verifies that wheel events scroll the
-// transcript once mouse reporting is enabled by the program.
+// transcript (mouse reporting is always on in the alt-screen).
 func TestMouseWheelScrollsTranscript(t *testing.T) {
 	m := newTestModel()
 

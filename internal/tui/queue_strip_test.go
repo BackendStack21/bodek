@@ -375,49 +375,30 @@ func TestQueueStripClickUsesCellColumns(t *testing.T) {
 	}
 }
 
-// TestQueueStripHidesControlsWithoutMouse verifies the glyphs disappear when
-// mouse tracking is off — dead pixels lie. The strip keeps its rows, adds a
-// one-row ^Q hint (the key legend once focus latches), and still collapses
-// to zero rows on an empty queue.
-func TestQueueStripHidesControlsWithoutMouse(t *testing.T) {
+// TestQueueStripAlwaysShowsControls pins the always-on mouse surface:
+// ▲▼✕ ride every row, the unfocused queue stays on the shelf, and the
+// strip is two rows for two items (no mouseless hint).
+func TestQueueStripAlwaysShowsControls(t *testing.T) {
 	m := newTestModel()
-	m.mouse = false
 	busyTurn(m)
 	m.queue = []string{"held one", "held two"}
 	m.refresh()
 
 	if m.queueStripVisible() {
-		t.Fatal("unfocused queue must ride the shelf, even without mouse")
+		t.Fatal("unfocused queue must ride the shelf")
 	}
 	if got := plain(m.View()); !strings.Contains(got, "queued") {
 		t.Fatalf("unfocused queue missing the shelf chip:\n%s", got)
 	}
 	unfoldQueue(m)
 	if !m.queueStripVisible() {
-		t.Fatal("strip must stay visible without mouse — the queue is real")
+		t.Fatal("focused strip must be visible")
 	}
-	if v := m.queueStripView(); strings.ContainsAny(plain(v), "▲▼✕") {
-		t.Errorf("controls must be hidden without --mouse: %q", plain(v))
+	if v := plain(m.queueStripView()); !strings.ContainsAny(v, "▲▼✕") {
+		t.Errorf("controls must render: %q", v)
 	}
-	if v := plain(m.queueStripView()); !strings.Contains(v, "delete") {
-		t.Errorf("focused strip should show the key legend, not mouse glyphs: %q", v)
-	}
-	// Legend row costs a row: two queue rows + the hint.
-	if h := m.queueStripHeight(); h != 3 {
-		t.Errorf("strip height = %d, want 3 (2 rows + hint)", h)
-	}
-
-	// Clicks on the hint row are inert: no delete, no move, no focus change.
-	m.qfocus = false
-	before := append([]string(nil), m.queue...)
-	m.Update(tea.MouseMsg{
-		Action: tea.MouseActionPress,
-		Button: tea.MouseButtonLeft,
-		X:      3,
-		Y:      m.queueStripTop() + 2, // the hint row
-	})
-	if !strings.EqualFold(strings.Join(m.queue, "|"), strings.Join(before, "|")) {
-		t.Errorf("hint-row click mutated the queue: %v → %v", before, m.queue)
+	if h := m.queueStripHeight(); h != 2 {
+		t.Errorf("strip height = %d, want 2 (one row per item)", h)
 	}
 }
 

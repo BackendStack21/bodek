@@ -5,6 +5,7 @@ import (
 	"os"
 	"reflect"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -66,15 +67,16 @@ func (m *Model) insertNewline() tea.Cmd {
 }
 
 // FilterShiftEnter rewrites terminal CSI that Bubble Tea v1 does not map:
-// Shift+Enter, disambiguated Esc, and modifyOtherKeys=2 chords (so ^K
-// still reaches the palette after we ask xterm.js to encode Shift+Enter).
+// Shift+Enter, disambiguated Esc, and modifyOtherKeys / kitty CSI-u
+// chords (so ^C, ^K, and esc still reach the model after we ask xterm.js
+// to encode Shift+Enter).
 func FilterShiftEnter(_ tea.Model, msg tea.Msg) tea.Msg {
 	b := csiBytes(msg)
 	if len(b) == 0 {
 		return msg
 	}
 	s := string(b)
-	if km, ok := parseModifyOtherKeys(s); ok {
+	if km, ok := parseEnhancedKey(s); ok {
 		return km
 	}
 	if shiftEnterCSI(s) {
@@ -114,13 +116,36 @@ func disambiguatedEsc(s string) bool {
 	return disambiguatedEscRe.MatchString(s)
 }
 
-// parseModifyOtherKeys decodes xterm CSI 27 ; modifier ; key ~ (mode 2).
-// Cursor / VS Code's xterm.js only distinguishes Shift+Enter in this mode.
-func parseModifyOtherKeys(s string) (tea.KeyMsg, bool) {
-	var mod, key int
-	if n, err := fmt.Sscanf(s, "\x1b[27;%d;%d~", &mod, &key); n != 2 || err != nil {
-		return tea.KeyMsg{}, false
+var (
+	// xterm modifyOtherKeys=2: CSI 27 ; modifier ; key ~ (some hosts use u)
+	modifyOtherKeysRe = regexp.MustCompile(`^\x1b\[27;(\d+);(\d+)[~u]$`)
+	// kitty CSI-u: CSI key ; modifier [; event] u
+	kittyCSIuRe = regexp.MustCompile(`^\x1b\[(\d+)(?:;(\d+)(?:;\d+)?)?u$`)
+)
+
+// parseEnhancedKey decodes xterm modifyOtherKeys and kitty CSI-u. Codium /
+// Cursor encode Ctrl+C as CSI once those modes are on — without this the
+// quit chord never becomes a KeyMsg.
+func parseEnhancedKey(s string) (tea.KeyMsg, bool) {
+	if m := modifyOtherKeysRe.FindStringSubmatch(s); m != nil {
+		return keyMsgFromCode(atoi(m[2]), atoi(m[1]))
 	}
+	if m := kittyCSIuRe.FindStringSubmatch(s); m != nil {
+		mod := 1
+		if m[2] != "" {
+			mod = atoi(m[2])
+		}
+		return keyMsgFromCode(atoi(m[1]), mod)
+	}
+	return tea.KeyMsg{}, false
+}
+
+func atoi(s string) int {
+	n, _ := strconv.Atoi(s)
+	return n
+}
+
+func keyMsgFromCode(key, mod int) (tea.KeyMsg, bool) {
 	bits := mod - 1
 	if bits < 0 {
 		bits = 0
@@ -142,6 +167,14 @@ func parseModifyOtherKeys(s string) (tea.KeyMsg, bool) {
 			return tea.KeyMsg{Type: tea.KeyShiftTab}, true
 		}
 		return tea.KeyMsg{Type: tea.KeyTab}, true
+	case 'c', 'C':
+		if ctrl {
+			return tea.KeyMsg{Type: tea.KeyCtrlC}, true
+		}
+	}
+	// C0 codes 1–26 (except tab/enter above) are ctrl+a … ctrl+z.
+	if key >= 1 && key <= 26 {
+		return tea.KeyMsg{Type: tea.KeyType(key)}, true
 	}
 	if key >= 'a' && key <= 'z' && ctrl {
 		return tea.KeyMsg{Type: tea.KeyType(key - 96)}, true

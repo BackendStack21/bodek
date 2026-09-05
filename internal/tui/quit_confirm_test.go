@@ -12,6 +12,23 @@ import (
 // two-step confirm gate as every other destructive action: the first ^C arms
 // the gate, y (or a second ^C) fires, any other key disarms.
 
+func TestFilterCtrlCArmsQuitConfirm(t *testing.T) {
+	// Codium/Cursor recode ^C as CSI once modifyOtherKeys / CSI-u is on.
+	for _, seq := range []string{
+		"\x1b[27;5;99~",
+		"\x1b[99;5u",
+		"\x1b[3u",
+	} {
+		m := newTestModel()
+		msg := FilterShiftEnter(nil, []byte(seq))
+		m.Update(msg)
+		if m.confirm != confirmQuit || m.quitting {
+			t.Fatalf("CSI %q did not arm the quit gate: confirm=%v quitting=%v msg=%#v",
+				seq, m.confirm, m.quitting, msg)
+		}
+	}
+}
+
 func TestCtrlCArmsQuitConfirm(t *testing.T) {
 	m := newTestModel()
 

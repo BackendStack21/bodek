@@ -14,6 +14,22 @@ import (
 // OSC 52 — written straight to the terminal with tea.Exec, because bodek
 // runs on the alt-screen where tea.Println output is dropped entirely.
 
+func TestAfterExecRestoresMouse(t *testing.T) {
+	if _, ok := afterExec(nil).(restoreAfterExecMsg); !ok {
+		t.Fatal("afterExec must return restoreAfterExecMsg")
+	}
+	m := newTestModel()
+	_, cmd := m.Update(restoreAfterExecMsg{})
+	if cmd == nil {
+		t.Fatal("alt-screen restore must re-enable mouse cell motion")
+	}
+	m.plain = true
+	_, cmd = m.Update(restoreAfterExecMsg{})
+	if cmd != nil {
+		t.Fatal("plain mode has no mouse reporting to restore")
+	}
+}
+
 func TestOsc52Sequence(t *testing.T) {
 	got := ansi.SetSystemClipboard("hi")
 	want := "\x1b]52;c;aGk=\x07"

@@ -39,6 +39,23 @@ func (c *rawSeq) Run() error {
 	return err
 }
 
+// restoreAfterExecMsg is sent when a tea.Exec finishes. ReleaseTerminal
+// disables mouse reporting and the Shift+Enter keyboard protocol;
+// RestoreTerminal does not put either back.
+type restoreAfterExecMsg struct{}
+
+func afterExec(error) tea.Msg { return restoreAfterExecMsg{} }
+
+// restoreAfterExec re-arms modes torn down by tea.Exec. --plain has no
+// mouse reporting (native scrollback owns the wheel).
+func (m *Model) restoreAfterExec() tea.Cmd {
+	EnableShiftEnterKeys()
+	if m.plain {
+		return nil
+	}
+	return tea.EnableMouseCellMotion
+}
+
 // lastReply returns the text of the most recent finalized assistant reply,
 // or "" while none has landed (streaming turns, empty messages, and raw
 // styled cards — /help, /stats — skipped; a raw card's content is ANSI,
@@ -123,7 +140,7 @@ func (m *Model) copyTextOSC52(text string) tea.Cmd {
 		return m.transientNoteCmd(fmt.Sprintf("reply too large to copy (%d bytes) — select and copy manually", len(text)))
 	}
 	note := m.transientNoteCmd("copied to the system clipboard — if nothing appears, your terminal doesn't support it")
-	return tea.Batch(tea.Exec(&rawSeq{seq: ansi.SetSystemClipboard(text)}, nil), note)
+	return tea.Batch(tea.Exec(&rawSeq{seq: ansi.SetSystemClipboard(text)}, afterExec), note)
 }
 
 // copyResultMsg reports the outcome of an exec-clipboard write.

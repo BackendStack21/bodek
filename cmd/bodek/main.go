@@ -34,7 +34,6 @@ type config struct {
 	token     string
 	sandbox   bool
 	bin       string
-	mouse     bool
 	bel       bool   // terminal bell on turn completion / approval waiting
 	notify    bool   // desktop notifications (OSC 9) on the same events
 	plain     bool   // linear rendering mode (no alt-screen)
@@ -71,7 +70,6 @@ func parseConfig(args []string, output io.Writer) (config, error) {
 		themeDefault = "" // the env override wins over the persisted file
 	}
 	fs.StringVar(&cfg.theme, "theme", themeDefault, "color theme: ember-dark, ember-light, high-contrast, classic (default: BODEK_THEME, then the settings file)")
-	fs.BoolVar(&cfg.mouse, "mouse", st.Bool(st.Mouse, false), "enable mouse wheel scrolling (disables native text selection/copy)")
 	fs.BoolVar(&cfg.bel, "bel", st.Bool(st.Bell, true), "ring the terminal bell when a turn completes or an approval is waiting (--bel=false mutes)")
 	fs.BoolVar(&cfg.notify, "notify", st.Bool(st.Notify, false), "raise desktop notifications (OSC 9) on turn completion and approvals")
 	fs.BoolVar(&cfg.plain, "plain", st.Bool(st.Plain, false), "linear mode: no alt-screen, transcript printed to scrollback (screen readers, pipes, logs)")
@@ -89,7 +87,6 @@ func parseConfig(args []string, output io.Writer) (config, error) {
 		_, _ = fmt.Fprintf(fs.Output(), "  bodek --sandbox                                   # spawn odek serve with Docker sandbox\n")
 		_, _ = fmt.Fprintf(fs.Output(), "  bodek --url 'http://127.0.0.1:8080/?token=…'      # attach with the token URL odek serve printed\n")
 		_, _ = fmt.Fprintf(fs.Output(), "  bodek --url http://127.0.0.1:8080 --token d3adb33f  # attach with an explicit token\n")
-		_, _ = fmt.Fprintf(fs.Output(), "  bodek --mouse                                     # enable mouse wheel scrolling (blocks text selection)\n")
 		_, _ = fmt.Fprintf(fs.Output(), "  bodek --notify                                    # desktop notifications on turn/approval events\n")
 		_, _ = fmt.Fprintf(fs.Output(), "  bodek --theme ember-light                         # start with a specific theme (/theme switches at runtime)\n")
 		_, _ = fmt.Fprintf(fs.Output(), "  bodek --plain                                     # linear mode: transcript to scrollback (pipes, a11y)\n")
@@ -103,18 +100,17 @@ func parseConfig(args []string, output io.Writer) (config, error) {
 	return cfg, nil
 }
 
-func buildProgramOptions(mouse, plain bool) []tea.ProgramOption {
+func buildProgramOptions(plain bool) []tea.ProgramOption {
 	// Filter first so Shift+Enter CSI sequences become a KeyMsg before
 	// any other option's machinery sees them.
 	opts := []tea.ProgramOption{tea.WithFilter(tui.FilterShiftEnter)}
 	if !plain {
 		// The alt-screen transcript is the default surface. Linear mode
 		// (--plain) stays on the main buffer so printed lines persist in
-		// the terminal's native scrollback.
-		opts = append(opts, tea.WithAltScreen())
-	}
-	if mouse {
-		opts = append(opts, tea.WithMouseCellMotion())
+		// the terminal's native scrollback. Mouse reporting is always on
+		// in the alt-screen so the wheel scrolls the transcript; --plain
+		// keeps the terminal's own scrollback instead.
+		opts = append(opts, tea.WithAltScreen(), tea.WithMouseCellMotion())
 	}
 	return opts
 }
@@ -209,7 +205,6 @@ func run() error {
 		Notify:      cfg.notify,
 		Plain:       cfg.plain,
 		Theme:       cfg.theme,
-		Mouse:       cfg.mouse,
 		Verbosity:   cfg.verbosity,
 		OnThemeChange: func(name string) error {
 			cfg.persist.Theme = name
@@ -220,14 +215,10 @@ func run() error {
 		},
 	})
 
-	// Mouse reporting enables wheel scrolling in the transcript, but it also
-	// captures the terminal mouse and blocks native click-drag text selection
-	// and copy. Keep it off by default so users can copy freely; enable it only
-	// when explicitly requested with --mouse.
 	// Clear leftover keyboard modes. Shift+Enter is enabled from Model.Init
 	// after the alt screen is up — a pre-Run enable is wiped by DECSET 1049.
 	tui.RestoreEnhancedKeys()
-	p := tea.NewProgram(model, buildProgramOptions(cfg.mouse, cfg.plain)...)
+	p := tea.NewProgram(model, buildProgramOptions(cfg.plain)...)
 	defer tui.RestoreEnhancedKeys()
 	if _, err := p.Run(); err != nil {
 		return fmt.Errorf("TUI exited: %w", err)
