@@ -63,23 +63,6 @@ func TestThinkingExcerptKeepsNewlines(t *testing.T) {
 	}
 }
 
-func TestStepPeekCapsAtTwoLines(t *testing.T) {
-	th := newTheme()
-	body := "one\ntwo\nthree\nfour"
-	got := stepPeek("shell", body, 80, th)
-	if len(got) != 2 {
-		t.Fatalf("peek lines = %d, want 2: %v", len(got), got)
-	}
-	plain0 := plain(got[0])
-	plain1 := plain(got[1])
-	if !strings.Contains(plain0, "one") || !strings.Contains(plain1, "two") {
-		t.Errorf("peek = %q / %q", plain0, plain1)
-	}
-	if stepPeek("shell", "   ", 80, th) != nil {
-		t.Error("blank result must peek nothing")
-	}
-}
-
 func TestTurnReceipt(t *testing.T) {
 	msg := message{steps: []step{
 		{name: "apply_patch", arg: "internal/tui/events.go", done: true,
@@ -162,9 +145,17 @@ func TestSwarmBandParallel(t *testing.T) {
 	if !strings.Contains(out, "2 running") {
 		t.Errorf("swarm should shrink to the unfinished pair:\n%s", out)
 	}
-	if !strings.Contains(out, "package a") {
-		t.Errorf("completed member should drop to a peek row:\n%s", out)
+	// Calm default: the finished member drops to a head-only row — its
+	// result stays behind ^E like every tool response.
+	if strings.Contains(out, "package a") {
+		t.Errorf("finished member's result must stay hidden by default:\n%s", out)
 	}
+	m.expandAll = true
+	out = plain(func() string { s, _ := m.renderMessage(m.msgs[1], 1, 0); return s }())
+	if !strings.Contains(out, "package a") {
+		t.Errorf("details view should reveal the finished member's result:\n%s", out)
+	}
+	m.expandAll = false
 
 	m.msgs[1].steps[1].done = true
 	m.msgs[1].steps[1].result = "package b"
@@ -183,12 +174,20 @@ func TestIntentRailTwoBeats(t *testing.T) {
 	m.handleEvent(client.Event{Type: "tool_call", Name: "read_file", Data: `{"path":"main.go"}`})
 	m.handleEvent(client.Event{Type: "thinking", Content: "Second plan sentence."})
 	out := plain(func() string { s, _ := m.renderMessage(m.msgs[0], 0, 0); return s }())
+	// Calm default: both beats stay hidden.
+	if strings.Contains(out, "┊") || strings.Contains(out, "plan sentence") {
+		t.Errorf("reasoning beats must stay hidden by default:\n%s", out)
+	}
+	// ^E: each beat rails and the meta numbers the cycles.
+	m.expandAll = true
+	out = plain(func() string { s, _ := m.renderMessage(m.msgs[0], 0, 0); return s }())
 	if strings.Count(out, "┊") < 2 {
 		t.Errorf("each thinking block should rail:\n%s", out)
 	}
 	if !strings.Contains(out, "beat 1/2") || !strings.Contains(out, "beat 2/2") {
 		t.Errorf("multi-block turn should number each think cycle:\n%s", out)
 	}
+	m.expandAll = false
 }
 
 func TestThinkingDurationFreezesWhenToolStarts(t *testing.T) {

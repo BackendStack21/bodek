@@ -393,19 +393,15 @@ func (m *Model) queueTailClock() tea.Cmd {
 	})
 }
 
-// hasLiveStepClock reports whether the in-flight turn has a running step
-// whose elapsed time is shown in the transcript.
+// hasLiveStepClock reports whether the transcript carries a live clock to
+// tick — the streaming turn-head elapsed counter (even while odek thinks
+// in silence, with no running steps) or a running step's timer.
 func (m *Model) hasLiveStepClock() bool {
 	i := m.cur()
 	if i < 0 || !m.msgs[i].streaming {
 		return false
 	}
-	for _, s := range m.msgs[i].steps {
-		if !s.done && !s.started.IsZero() {
-			return true
-		}
-	}
-	return false
+	return true
 }
 
 // refreshStreamingReplies glamour-renders open reply segments on the
@@ -507,7 +503,8 @@ func (m *Model) conversation() string {
 }
 
 // emptyStreamingTurn reports whether a message is an in-flight assistant
-// turn without any visible content yet — no tokens, reasoning, or steps.
+// turn without any visible content yet — no tokens, steps, or revealed
+// reasoning (the rail hides in the calm default).
 func emptyStreamingTurn(msg message) bool {
 	if msg.role != roleAsst || !msg.streaming {
 		return false
@@ -575,6 +572,17 @@ func (m *Model) renderMessage(msg message, msgIdx, lineOffset int) (string, []st
 		if msg.collapsed {
 			return label + "\n" + th.statsDim.Render(m.collapseSummary(msg)), nil
 		}
+		// Live turn clock: a streaming head carries the run's elapsed
+		// counter at the right edge — the calm default hides the rail and
+		// step bodies, so the head is the one live clock in the transcript.
+		// Finalized turns replace it with the sealed telemetry stat.
+		if msg.streaming {
+			if e := m.elapsed(); e != "" {
+				if w := m.vp.Width - lipgloss.Width(label) - lipgloss.Width(e); w > 0 {
+					label += strings.Repeat(" ", w) + th.statTime.Render(e)
+				}
+			}
+		}
 		// Resolve the markdown body for messages without timeline replies
 		// (hand-built or resumed transcripts): finalized turns show the
 		// cached glamour render.
@@ -619,12 +627,18 @@ func (m *Model) renderMessage(msg message, msgIdx, lineOffset int) (string, []st
 				if t == "" {
 					continue
 				}
-				// Intent rail: live cycles hold completed sentences so a
-				// fast stream cannot ticker the excerpt; sealed/finalized
-				// blocks show the last two sentences. Open / ^E is full text.
+				// Calm default: reasoning previews paint only on demand — ^E
+				// (details) or a deliberate open (tab / click). The transcript
+				// holds still while odek thinks.
+				if !items[it].open && !m.expandAll {
+					continue
+				}
+				// Intent rail body: an opened live block holds completed
+				// sentences so a fast stream cannot ticker the excerpt; ^E
+				// renders the full text.
 				var body string
 				switch {
-				case items[it].open || m.expandAll:
+				case m.expandAll || items[it].open && !msg.streaming:
 					body = t
 				case msg.streaming && items[it].dur == 0:
 					body = thinkingExcerptLive(t)
@@ -950,8 +964,17 @@ func (m *Model) renderStep(s step, streaming bool, msgIdx, stepIdx, startLine in
 	right := ""
 	live := !s.done && streaming
 	if s.done {
-		if chip := stepHeadSuffix(s.name, s.arg, s.result, th); chip != "" {
-			right = chip
+		right = stepHeadSuffix(s.name, s.arg, s.result, th)
+		// The sealed duration keeps the live clock's slot — “how long did
+		// this tool take” survives completion instead of vanishing with
+		// the running timer. Resumed history (dur 0) shows none.
+		if s.dur > 0 {
+			d := th.statTime.Render(formatStepDur(s.dur))
+			if right != "" {
+				right += th.statsDim.Render(" · ") + d
+			} else {
+				right = d
+			}
 		}
 	} else if live && !s.started.IsZero() {
 		if d := time.Since(s.started); d >= 50*time.Millisecond {
@@ -1063,16 +1086,9 @@ func (m *Model) renderStep(s step, streaming bool, msgIdx, stepIdx, startLine in
 			lines = append(lines, th.stepTree.Render(conn)+
 				lipgloss.NewStyle().MaxWidth(detailBudget).Render(d))
 		}
-	} else if s.done && len(chips) == 0 {
-		for i, d := range stepPeek(s.name, s.result, m.vp.Width, th) {
-			conn := "    "
-			if i == 0 {
-				conn = "  ⎿ "
-			}
-			lines = append(lines, th.stepTree.Render(conn)+
-				lipgloss.NewStyle().MaxWidth(detailBudget).Render(d))
-		}
 	}
+	// Calm default: finished steps render head-only — the result body
+	// waits behind ^E or a deliberate per-step expand.
 	block := strings.Join(lines, "\n")
 	if msgIdx >= 0 && stepIdx >= 0 && msgIdx < len(m.msgs) && stepIdx < len(m.msgs[msgIdx].steps) && s.done && !live {
 		st := &m.msgs[msgIdx].steps[stepIdx]

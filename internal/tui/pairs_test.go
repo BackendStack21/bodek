@@ -57,9 +57,19 @@ func TestThinkReplyPairsRenderIndependently(t *testing.T) {
 		}
 	}
 
-	// Rendered order: thought → its card → work → next thought → its card.
+	// Calm default: thoughts stay hidden while cards and work render.
 	rendered, _ := m.renderMessage(*msg, 1, 0)
 	out := plain(rendered)
+	if strings.Contains(out, "first thought") || strings.Contains(out, "second thought") {
+		t.Errorf("reasoning must stay hidden by default:\n%s", out)
+	}
+
+	// Details view keeps the pairs: thought → its card → work → next
+	// thought → its card.
+	m.expandAll = true
+	rendered, _ = m.renderMessage(*msg, 1, 0)
+	m.expandAll = false
+	out = plain(rendered)
 	first := strings.Index(out, "first thought")
 	card1 := strings.Index(out, "Starting the scan.")
 	work := strings.Index(out, "search_files")

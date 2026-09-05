@@ -311,7 +311,7 @@ func (m *Model) showHelp() {
 		{"^T", "toggle extended thinking"},
 		{"^S", "stop the running sub-agent"},
 		{"^L", "clear the conversation"},
-		{"^E", "toggle tool details"},
+		{"^E", "toggle details (reasoning + tool output)"},
 		{"alt+f", "find in the transcript"},
 		{"esc", "close overlay · cancel the running turn (y confirms)"},
 		{"/server", "cockpit — server, link, budget, session"},

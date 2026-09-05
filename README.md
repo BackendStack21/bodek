@@ -120,7 +120,7 @@ bodek --mouse                                     # enable mouse wheel scrolling
 bodek --bel=false                                 # mute the attention bell (title still updates)
 bodek --notify                                    # desktop notifications (OSC 9) on turn/approval events
 bodek --theme ember-light                         # start with a theme (/theme switches live)
-bodek --verbosity quiet                           # calmer start: info notes hidden, compact steps
+bodek --verbosity quiet                           # calmer start: info notes hidden
 bodek --plain                                     # linear mode: transcript to scrollback (a11y, pipes)
 bodek -- --prompt-caching                         # pass extra flags through to `odek serve`
 bodek version                                     # print the bodek version
@@ -154,8 +154,11 @@ own front-end settings are separate; see [Configuration](#configuration).
 - **Turn cards** — telemetry rides the turn head, a coding receipt
   (`touched 4 · +82 −19 · tests ✓`) scans what the turn changed, `^F`
   folds noisy turns to that receipt, `alt+↑`/`alt+↓` jump turn-to-turn,
-  reasoning renders as an intent rail (held sentences while live, `beat N/M`), and
-  `^E` expands every tool step's full details.
+  and the calm default keeps the transcript still: reasoning previews and
+  tool responses stay hidden until `^E` (details) reveals the intent rail
+  (with its `beat N/M` labels) and every step's full output. While the
+  turn streams, its head line carries the run's elapsed counter at the
+  right edge — the one live clock in the transcript.
 - **Typed tool renderers** — diffs tint with a `+N −M` chip, file reads get
   line numbers, JSON pretty-prints, and step lines earn typed chips from
   structured output only: test verdicts (`✓ 5 passed · 2 skipped`, go
@@ -165,11 +168,14 @@ own front-end settings are separate; see [Configuration](#configuration).
 - **Streaming answers** rendered as Markdown
   ([glamour](https://github.com/charmbracelet/glamour)).
 - **Tool activity** — every `tool_call`/`tool_result` shown live with a glyph
-  per tool, a static live mark (`▸`), and a result peek (`⎿`, first 1–2
-  typed-renderer beats) so a finished step is scannable without `^E`. The
+  per tool and a static live mark (`▸`); result bodies wait behind `^E` or a
+  click so a finished step reads as one calm line. The
   status line is the only spinner. Running steps speak the same progress
   copy as the status line (`🧪 running tests`) and tick their own elapsed
-  clock. Two or more in-flight calls wrap in a parallel swarm band that
+  clock — and the sealed duration stays on the head after the call
+  finishes (after the typed chip when one exists), so every line still
+  answers “how long did this take”. Two
+  or more in-flight calls wrap in a parallel swarm band that
   shrinks as members finish and dissolves on the last leftover. Full
   output stays behind expand.
 - **Fluent by default** — gradient wordmark, smooth braille spinner, smart
@@ -182,14 +188,15 @@ own front-end settings are separate; see [Configuration](#configuration).
 
 ### Working with the agent
 
-- **Live reasoning** — the model's pre-tool thinking streams as an intent
-  rail (finished sentences, held until the next one lands — never a token
-  ticker) with elapsed time. The clock freezes when that think cycle yields
-  (a tool or the reply). A turn that
+- **Live reasoning** — the model's pre-tool thinking is captured per beat
+  but stays hidden in the calm default: the transcript holds still while
+  odek thinks. `^E` unfolds every stored block; `tab` unfolds
+  the latest one — a live opened block holds finished sentences until the
+  next lands, never a token ticker. Elapsed time per beat; the clock
+  freezes when that think cycle yields (a tool or the reply). A turn that
   thinks more than once labels each block `beat 2/3` — one beat is one
-  think→act cycle. Tab / `^E` still unfolds the stored full block. Long
-  turns keep every think→reply pair intact: each reasoning block is
-  followed by its own answer card, in arrival order.
+  think→act cycle. Long turns keep every think→reply pair intact: each
+  reasoning block is followed by its own answer card, in arrival order.
 - **Context-aware progress** — while the agent works, a status line right
   below your last message shows what it's actually doing (`🧪 running
   tests`, `📖 reading client.go`, `🚀 pushing`) with a live elapsed timer.
@@ -353,7 +360,7 @@ own front-end settings are separate; see [Configuration](#configuration).
 | `^T` | Toggle extended thinking for the next turn |
 | `⇧⏎` | Insert a newline in the input (`^J` still works on terminals that cannot tell Shift+Enter from Enter) |
 | `^L` | Clear the conversation (two-step confirm: `y` clears, any other key cancels) |
-| `^E` | Toggle tool details — every step expands to its full output/logs |
+| `^E` | Toggle details — reasoning previews and every step's full output/logs (hidden in the calm default) |
 | `^Y` | Copy the last reply to the clipboard (local helper — `pbcopy`/`wl-copy`/`clip` — with OSC 52 fallback) |
 | `Esc` | Close the topmost window (palette, drawer, find, `@`, queue, stats, expanded details, help, skill chip). Bare composer: cancel the running turn (two-step: `y` confirms). Approvals: collapse the expanded command, then deny. |
 | `↑` / `↓` / `PgUp` / `PgDn` / `^U` / `^D` | Scroll the transcript (arrows at the input's edge lines) |
@@ -401,7 +408,7 @@ full command and press `⏎`.
 | `/retry` | Re-send the last prompt (queues it if a turn is running) |
 | `/queue` | Manage the prompt queue — priority, delete, send now (the full manager over the `^Q` strip) |
 | `/theme [name]` | Switch the color theme at runtime and persist it (`ember-dark` · `ember-light` · `high-contrast` · `classic`) |
-| `/verbosity [quiet\|normal\|detailed]` | One-dial noise policy: quiet hides engine traces & starts steps compact, detailed switches on the `^E` expand-all view; bare `/verbosity` cycles |
+| `/verbosity [quiet\|normal\|detailed]` | One-dial noise policy: quiet hides engine traces, detailed switches on the `^E` expand-all view (reasoning + full tool output); bare `/verbosity` cycles |
 | `/stats` | Session metrics sheet (cost, cache, context gauge) |
 | `/server` | Cockpit — server, link, budget & session in one card (or click the header) |
 | `/sessions` | Browse, search, pin, rename, export & resume sessions |

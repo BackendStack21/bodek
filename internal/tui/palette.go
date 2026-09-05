@@ -133,7 +133,7 @@ func (m *Model) basePaletteEntries() []palEntry {
 				m.ta.Reset()
 				return m.startHeadlessRun(draft)
 			}},
-		{title: "toggle tool details", hint: "^E", kind: "action",
+		{title: "toggle details (reasoning + tool output)", hint: "^E", kind: "action",
 			run: func(m *Model) tea.Cmd {
 				m.expandAll = !m.expandAll
 				m.invalidateAllMsgBlocks()

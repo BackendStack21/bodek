@@ -179,23 +179,6 @@ func thinkingDur(it turnItem, streaming bool) time.Duration {
 	return 0
 }
 
-// ── step peek ───────────────────────────────────────────────────────────────
-
-const peekLines = 2
-
-// stepPeek returns the first 1–2 typed-renderer lines of a finished step —
-// the glanceable outcome that sits under the head without a full expand.
-func stepPeek(name, result string, width int, th theme) []string {
-	if strings.TrimSpace(result) == "" {
-		return nil
-	}
-	details := stepDetail(name, result, width, th)
-	if len(details) > peekLines {
-		return details[:peekLines]
-	}
-	return details
-}
-
 // ── turn receipt ────────────────────────────────────────────────────────────
 
 // receipt is the coding-agent scan line for a finalized turn: files written,
