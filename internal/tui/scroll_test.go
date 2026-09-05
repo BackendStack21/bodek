@@ -147,6 +147,36 @@ func TestBusyRefreshKeepsScrollback(t *testing.T) {
 	}
 }
 
+// TestWireTurnKeepsScrollback: a server-opened card (wake / remote /
+// lazy ensureWireTurn) must not yank a reader who is up in history.
+// refresh() already sticks when AtBottom(); beginWireTurn must not
+// override that with GotoBottom.
+func TestWireTurnKeepsScrollback(t *testing.T) {
+	m := newTestModel()
+	tallTranscript(m)
+	m.vp.GotoTop()
+	if m.vp.AtBottom() {
+		t.Fatal("precondition: scrolled off the bottom")
+	}
+
+	m.handleEvent(client.Event{Type: "turn_started", TurnID: "t_wake", Initiated: "system"})
+	if m.vp.AtBottom() {
+		t.Error("wire turn yanked scrollback to the bottom")
+	}
+	if !m.busy || m.cur() < 0 {
+		t.Fatal("turn_started should still open the streaming card")
+	}
+	if foot := plain(m.footer()); !strings.Contains(foot, "new output") {
+		t.Errorf("scrollback should advertise new output, footer=%q", foot)
+	}
+
+	m.vp.GotoBottom()
+	m.handleEvent(client.Event{Type: "done"})
+	if !m.vp.AtBottom() {
+		t.Error("at-bottom reader should stay pinned after the wire turn")
+	}
+}
+
 // TestTranscriptPrefixCached verifies the finalized transcript prefix renders
 // once and is reused across streaming ticks, and that the cache invalidates on
 // finalize, resize, and wholesale transcript replacement (session resume).

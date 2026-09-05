@@ -53,8 +53,8 @@ func TestStatusBadgeStates(t *testing.T) {
 		t.Error("responding status line missing")
 	}
 	m.status = "thinking"
-	if plain(m.statusLine()) == "" {
-		t.Error("thinking status line empty")
+	if got := plain(m.statusLine()); !strings.Contains(got, "reasoning") {
+		t.Errorf("thinking status line = %q, want reasoning", got)
 	}
 
 	// Approval arrives mid-turn: the panel owns the input area, so the badge
@@ -91,9 +91,9 @@ func TestStatusLinePlacement(t *testing.T) {
 
 	view := plain(m.View())
 	marker := strings.Index(view, "unique-marker prompt")
-	thinking := strings.Index(view, "🧠 thinking")
+	thinking := strings.Index(view, "reasoning")
 	if thinking < 0 {
-		t.Fatal("busy view missing the thinking status line")
+		t.Fatal("busy view missing the reasoning status line")
 	}
 	if marker < 0 || thinking < marker {
 		t.Error("status line must render below the last user message")

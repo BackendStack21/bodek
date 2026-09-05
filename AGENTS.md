@@ -97,7 +97,15 @@ feat(tui): compact tool steps with Ctrl+E details toggle
   alongside it. `msg.content` stays the "\n\n"-joined blob of all reply
   segments (appendReply maintains it) for export, stats, and hand-built
   messages; turn markers (`**Cancelled.**` etc.) attach to the last reply.
-  Render-only layers (intent rail, always-on step peek, turn receipt, live
+  The live intent rail holds completed sentences (or a short frozen stem)
+  so a fast `thinking_delta` stream cannot ticker the excerpt; sealed and
+  finalized blocks still show the last two sentences. The status line
+  stays a quiet `reasoning` / `composing` label while those surfaces own
+  the words; live tool steps use a static `▸` (one spinner: the status
+  line). `beginWireTurn` must not `GotoBottom` — `refresh()` already
+  sticks when the reader is at the bottom, and a yank fights the
+  "↓ new output" contract. Render-only layers
+  (intent rail, always-on step peek, turn receipt, live
   swarm band, sub-agent chip strip, swarm receipt rail) must not reorder
   `items[]` — the parallel-tool swarm is a consecutive overlay on unfinished
   parent steps and dissolves when one leftover remains. Sub-agent children

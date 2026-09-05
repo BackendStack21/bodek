@@ -27,14 +27,15 @@ func TestThinkingAccordion(t *testing.T) {
 		t.Errorf("thinking block should be stored in full, got %d of %d bytes", len(block), len(chunk))
 	}
 
-	// LIVE: the intent rail shows the tail (last sentences), not the firehose.
+	// LIVE: no sentence has landed, so the rail holds the opening stem
+	// instead of chasing the growing tail (motion-sickness contract).
 	rendered, _ := m.renderMessage(m.msgs[0], 0, 0)
 	out := plain(rendered)
-	if !strings.Contains(out, "tail-marker") {
-		t.Errorf("live rail should show the last sentences:\n%s", out[:200])
+	if !strings.Contains(out, "head-marker") {
+		t.Errorf("live rail should hold the opening stem:\n%s", out[:200])
 	}
-	if strings.Contains(out, "head-marker") {
-		t.Errorf("live rail should not dump the full head:\n%s", out[:200])
+	if strings.Contains(out, "tail-marker") {
+		t.Errorf("live rail should not chase the tail:\n%s", out[:200])
 	}
 	if !strings.Contains(out, "┊") {
 		t.Errorf("live rail missing the intent glyph:\n%s", out[:200])

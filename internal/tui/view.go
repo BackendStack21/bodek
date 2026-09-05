@@ -301,9 +301,9 @@ func (m *Model) statusLine() string {
 		// Context-aware message derived from the running tool + its args.
 		label = toolProgress(m.lastTool, m.lastArg)
 	case m.status == "responding":
-		label = "💬 composing the reply"
-	default: // thinking / pre-tool
-		label = "🧠 thinking"
+		label = "composing"
+	default: // thinking / pre-tool — the intent rail owns the words
+		label = "reasoning"
 	}
 	el := ""
 	if e := m.elapsed(); e != "" {
@@ -571,11 +571,17 @@ func (m *Model) renderMessage(msg message, msgIdx, lineOffset int) (string, []st
 				if t == "" {
 					continue
 				}
-				// Intent rail: last two sentences (live and finalized).
-				// Manual open / ^E still unfolds the stored full block.
-				body := thinkingExcerpt(t)
-				if items[it].open || m.expandAll {
+				// Intent rail: live cycles hold completed sentences so a
+				// fast stream cannot ticker the excerpt; sealed/finalized
+				// blocks show the last two sentences. Open / ^E is full text.
+				var body string
+				switch {
+				case items[it].open || m.expandAll:
 					body = t
+				case msg.streaming && items[it].dur == 0:
+					body = thinkingExcerptLive(t)
+				default:
+					body = thinkingExcerpt(t)
 				}
 				addBlock(th.asstWork.Render(m.renderIntentRail(body, it, msg)), false)
 				continue
@@ -873,13 +879,13 @@ func (m *Model) renderStep(s step, streaming bool, msgIdx, stepIdx, startLine in
 	expanded := s.expanded || m.expandAll
 	var icon string
 	switch {
-	case !s.done && streaming:
-		icon = th.spinner.Render(m.sp.View())
 	case s.done && s.isErr:
 		icon = th.stepErr.Render("✗")
 	case s.done:
 		icon = th.stepDone.Render("✓")
 	default:
+		// Live and pending share a static glyph — the status line is the
+		// only spinner, so a fast tool swarm cannot strobe the transcript.
 		icon = th.stepRun.Render("▸")
 	}
 	chevron := th.stepTree.Render("▶")

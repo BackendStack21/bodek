@@ -154,7 +154,7 @@ own front-end settings are separate; see [Configuration](#configuration).
 - **Turn cards** — telemetry rides the turn head, a coding receipt
   (`touched 4 · +82 −19 · tests ✓`) scans what the turn changed, `^F`
   folds noisy turns to that receipt, `alt+↑`/`alt+↓` jump turn-to-turn,
-  reasoning renders as an intent rail (last sentences, `beat N/M`), and
+  reasoning renders as an intent rail (held sentences while live, `beat N/M`), and
   `^E` expands every tool step's full details.
 - **Typed tool renderers** — diffs tint with a `+N −M` chip, file reads get
   line numbers, JSON pretty-prints, and step lines earn typed chips from
@@ -165,12 +165,13 @@ own front-end settings are separate; see [Configuration](#configuration).
 - **Streaming answers** rendered as Markdown
   ([glamour](https://github.com/charmbracelet/glamour)).
 - **Tool activity** — every `tool_call`/`tool_result` shown live with a glyph
-  per tool, a spinner, and a result peek (`⎿`, first 1–2 typed-renderer
-  beats) so a finished step is scannable without `^E`. Running steps speak
-  the same progress copy as the status line (`🧪 running tests`) and tick
-  their own elapsed clock. Two or more in-flight calls wrap in a parallel
-  swarm band that shrinks as members finish and dissolves on the last
-  leftover. Full output stays behind expand.
+  per tool, a static live mark (`▸`), and a result peek (`⎿`, first 1–2
+  typed-renderer beats) so a finished step is scannable without `^E`. The
+  status line is the only spinner. Running steps speak the same progress
+  copy as the status line (`🧪 running tests`) and tick their own elapsed
+  clock. Two or more in-flight calls wrap in a parallel swarm band that
+  shrinks as members finish and dissolves on the last leftover. Full
+  output stays behind expand.
 - **Fluent by default** — gradient wordmark, smooth braille spinner, smart
   autoscroll that never yanks you while you read history, and a
   scroll-position indicator.
@@ -182,8 +183,9 @@ own front-end settings are separate; see [Configuration](#configuration).
 ### Working with the agent
 
 - **Live reasoning** — the model's pre-tool thinking streams as an intent
-  rail (last two sentences, never flattened) with elapsed time. The clock
-  freezes when that think cycle yields (a tool or the reply). A turn that
+  rail (finished sentences, held until the next one lands — never a token
+  ticker) with elapsed time. The clock freezes when that think cycle yields
+  (a tool or the reply). A turn that
   thinks more than once labels each block `beat 2/3` — one beat is one
   think→act cycle. Tab / `^E` still unfolds the stored full block. Long
   turns keep every think→reply pair intact: each reasoning block is
@@ -191,6 +193,8 @@ own front-end settings are separate; see [Configuration](#configuration).
 - **Context-aware progress** — while the agent works, a status line right
   below your last message shows what it's actually doing (`🧪 running
   tests`, `📖 reading client.go`, `🚀 pushing`) with a live elapsed timer.
+  Reasoning and composing stay quiet labels — the intent rail and the
+  answer card own those words.
 - **Sub-agents** — a delegation paints an always-on chip strip under the
   parent step (`⟳ SA1 explore · ✓ SA2 lint · ✗ SA3 types`), so you can
   see who is running or who failed without expanding. Click a chip or
@@ -236,9 +240,10 @@ own front-end settings are separate; see [Configuration](#configuration).
   trims, tool execution times) stays silent. Info traces fade after 3s;
   errors, warnings, and disconnect notes autoclose after 10s.
 - **Just-in-time hints** — the first time a state appears (a held prompt,
-  a sub-agent swarm, a multi-step turn), a one-time 💡 tip teaches its key,
-  then stays silent for the run. Features surface the moment they matter;
-  no keybinding table required.
+  a sub-agent swarm, a multi-step turn), a one-time 💡 tip teaches its key
+  and dwells 8s (5s longer than info traces), then stays silent for the
+  run. Features surface the moment they matter; no keybinding table
+  required.
 - **Session home dashboard** — after `/clear`, the home card orients: the
   last prompt and receipt, the context gauge, up to three recent sessions
   (titles sanitized), and one action line pointing at the `^K` hub.

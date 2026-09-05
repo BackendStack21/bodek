@@ -8,6 +8,37 @@ import (
 	"github.com/BackendStack21/bodek/internal/client"
 )
 
+func TestLastCompleteSentences(t *testing.T) {
+	in := "First beat. Second beat. Growing tail"
+	if got := lastCompleteSentences(in, 2); !strings.Contains(got, "First") || !strings.Contains(got, "Second") || strings.Contains(got, "Growing") {
+		t.Errorf("complete last 2 = %q", got)
+	}
+	if got := lastCompleteSentences("no period yet at all", 2); got != "" {
+		t.Errorf("unfinished only = %q, want empty", got)
+	}
+	if got := lastCompleteSentences("Done.", 2); got != "Done." {
+		t.Errorf("single complete = %q", got)
+	}
+}
+
+func TestThinkingExcerptLiveHoldsSentences(t *testing.T) {
+	held := thinkingExcerptLive("I will read the file. Then I patch it. And now I am mid")
+	if !strings.Contains(held, "I will read") || !strings.Contains(held, "patch") {
+		t.Errorf("live excerpt dropped a finished sentence: %q", held)
+	}
+	if strings.Contains(held, "mid") {
+		t.Errorf("live excerpt chased the unfinished tail: %q", held)
+	}
+
+	stem := thinkingExcerptLive("opening clause without a stop " + strings.Repeat("word ", 40))
+	if n := len([]rune(stem)); n > thinkingLiveStem {
+		t.Errorf("live stem exceeded the freeze cap (%d > %d): %q", n, thinkingLiveStem, stem)
+	}
+	if !strings.Contains(stem, "opening") {
+		t.Errorf("live stem lost the opening: %q", stem)
+	}
+}
+
 func TestLastSentences(t *testing.T) {
 	in := "First beat. Second beat.\nThird beat!"
 	if got := lastSentences(in, 2); !strings.Contains(got, "Second") || !strings.Contains(got, "Third") || strings.Contains(got, "First") {
@@ -99,6 +130,9 @@ func TestRunningStepLiveProgress(t *testing.T) {
 	got := plain(out)
 	if !strings.Contains(got, "reading") {
 		t.Errorf("running step missing progress copy: %q", got)
+	}
+	if !strings.Contains(got, "▸") {
+		t.Errorf("running step must use the static live glyph, not a spinner: %q", got)
 	}
 	if !strings.Contains(got, "2.0s") && !strings.Contains(got, "1.9s") && !strings.Contains(got, "2.1s") {
 		// 2s ± a tick — don't assert an exact tenth.
