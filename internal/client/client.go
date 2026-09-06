@@ -51,12 +51,19 @@ type Event struct {
 	TurnID    string `json:"turn_id,omitempty"`
 	Initiated string `json:"initiated,omitempty"`
 
-	// done — token economics for the turn and the session. ContextTokens is
-	// cumulative prompt tokens across all LLM calls of the run (the live
-	// window fill is the delta between consecutive reports); the Session*
-	// pair are cumulative totals across runs that only grow. The cache trio
-	// is provider cache activity for the turn (0 = not reported).
+	// done / usage — token economics (odek ≥ v2.3 wire v3).
+	// WindowTokens is the parent conversation window (last parent LLM
+	// call's provider-normalized prompt). It drives the ctx gauge.
+	// MaxContextTokens is the resolved model limit (0/omitted = unknown).
+	// InputTokens is the run-cumulative billing total across ALL calls,
+	// including charged sub-agent spend — never a gauge. ContextTokens is
+	// the pre-v2.3 cumulative (usage + done); older engines still send it.
+	// The Session* pair are cumulative totals across runs that only grow.
+	// The cache trio is provider cache activity for the turn (0 = not reported).
 	Latency              float64 `json:"latency"`
+	WindowTokens         int     `json:"windowTokens"`
+	MaxContextTokens     int     `json:"maxContextTokens"`
+	InputTokens          int     `json:"inputTokens"`
 	ContextTokens        int     `json:"contextTokens"`
 	OutputTokens         int     `json:"outputTokens"`
 	CacheCreationTokens  int     `json:"cacheCreationTokens"`
@@ -132,6 +139,15 @@ type Event struct {
 	CostUSD          float64         `json:"cost_usd,omitempty"`
 	BudgetCostUSD    float64         `json:"budget_cost_usd,omitempty"`
 	Artifacts        []StateArtifact `json:"artifacts,omitempty"`
+}
+
+// BillingTokens is the run-cumulative input for cost and the turn receipt.
+// Wire v3 (odek ≥ v2.3) sends inputTokens; older engines send contextTokens.
+func (e Event) BillingTokens() int {
+	if e.InputTokens > 0 {
+		return e.InputTokens
+	}
+	return e.ContextTokens
 }
 
 // StateArtifact is the bounded artifact metadata carried on subagent_state

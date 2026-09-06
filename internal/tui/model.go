@@ -87,7 +87,7 @@ type turnItem struct {
 type turnStats struct {
 	latency    float64       // model latency reported by the server (seconds)
 	wall       time.Duration // wall-clock from prompt submit to done
-	ctxTok     int           // context tokens consumed this turn
+	ctxTok     int           // run-cumulative input (billing; inputTokens / legacy contextTokens)
 	outTok     int           // output tokens produced this turn
 	cacheWrite int           // provider cache writes (prompt cache stores)
 	cacheRead  int           // provider cache hits
@@ -273,13 +273,13 @@ type Model struct {
 	healthSnap *client.Health
 	usageSnap  *client.Usage
 
-	sessCtxTok int
-	subCosts   map[string]float64 // finished sub-agent final costs by task id (wire v2 P6)
-	sessOutTok int
-	winCtxTok  int // live context-window fill: last request's prompt size
-	runCtxCum  int // last cumulative run contextTokens seen (odek reports per-run
-	// cumulative prompt tokens, so the window fill is the delta between reports)
-	lastLatency float64
+	sessCtxTok     int
+	subCosts       map[string]float64 // finished sub-agent final costs by task id (wire v2 P6)
+	sessOutTok     int
+	winCtxTok      int // live context-window fill: last parent prompt (windowTokens)
+	runCtxCum      int // pre-v2.3: last cumulative contextTokens (fill = delta)
+	maxContextWire int // server-reported maxContextTokens; beats /api/models
+	lastLatency    float64
 
 	// WS protocol v2 server snapshot (server_info on connect, refreshed by
 	// every pong) plus the heartbeat that measures it.
@@ -1096,6 +1096,7 @@ func (m *Model) clearConversation() tea.Cmd {
 	m.subCosts = nil
 	m.winCtxTok = 0
 	m.runCtxCum = 0
+	m.maxContextWire = 0
 	m.lastLatency = 0
 	m.refresh()
 	// Fresh dashboard snapshot per clear: drop the stale rows, re-arm the
@@ -1144,14 +1145,19 @@ func (m *Model) curApproval() *client.Event {
 // ── helpers ────────────────────────────────────────────────────────────────
 
 // resolveMaxContext sets m.maxContext from an exact /api/models id match.
-// No match leaves 0, which hides the gauge rather than guessing a window.
+// A live maxContextTokens from usage/done (maxContextWire) wins — it
+// reflects runtime overrides such as llm.context_window. No match and no
+// wire value leaves 0, which hides the gauge rather than guessing.
 func (m *Model) resolveMaxContext() {
 	m.maxContext = 0
 	for _, md := range m.models {
 		if md.ID == m.model {
 			m.maxContext = md.MaxContext
-			return
+			break
 		}
+	}
+	if m.maxContextWire > 0 {
+		m.maxContext = m.maxContextWire
 	}
 }
 

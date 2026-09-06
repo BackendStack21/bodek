@@ -220,6 +220,93 @@ func TestGaugeDerivesFillFromCumulativeDeltas(t *testing.T) {
 	}
 }
 
+// TestGaugeUsesWindowTokens is the odek ≥ v2.3 contract: usage/done carry
+// the parent conversation window directly. The gauge must take that number
+// as-is — no cumulative-delta — and must not bounce on child-sized
+// billing totals that used to ride contextTokens.
+func TestGaugeUsesWindowTokens(t *testing.T) {
+	m := newTestModel()
+	m.model = "big"
+	m.models = []client.ModelInfo{{ID: "big", MaxContext: 1_000_000}}
+	m.resolveMaxContext()
+	m.msgs = append(m.msgs, message{role: roleAsst, streaming: true})
+	m.curIdx = 0
+	m.busy = true
+
+	m.handleEvent(client.Event{Type: "usage", WindowTokens: 38_412, MaxContextTokens: 200_000, OutputTokens: 50})
+	if m.winCtxTok != 38_412 {
+		t.Fatalf("winCtxTok = %d, want 38412", m.winCtxTok)
+	}
+	if m.maxContext != 200_000 {
+		t.Fatalf("maxContext = %d, want 200000 (wire beats catalog)", m.maxContext)
+	}
+	if out := plain(m.header()); !strings.Contains(out, "19%") {
+		t.Errorf("gauge should use the parent window against the wire limit (19%%), got:\n%s", out)
+	}
+
+	// A later parent call shrinks after trim — windowTokens drops; the
+	// gauge must follow instead of holding the high-water mark.
+	m.handleEvent(client.Event{Type: "usage", WindowTokens: 20_000, MaxContextTokens: 200_000})
+	if m.winCtxTok != 20_000 {
+		t.Fatalf("winCtxTok = %d, want 20000", m.winCtxTok)
+	}
+
+	// Absent windowTokens holds the fill (not-reported, never "empty").
+	m.handleEvent(client.Event{Type: "usage", OutputTokens: 10})
+	if m.winCtxTok != 20_000 {
+		t.Fatalf("absent windowTokens must hold the gauge: %d", m.winCtxTok)
+	}
+
+	m.handleEvent(client.Event{
+		Type: "done", Latency: 1,
+		WindowTokens: 41_000, MaxContextTokens: 200_000,
+		InputTokens: 152_300, OutputTokens: 800,
+		SessionContextTokens: 300_000, SessionOutputTokens: 40_000,
+	})
+	if m.winCtxTok != 41_000 {
+		t.Fatalf("done windowTokens = %d, want 41000", m.winCtxTok)
+	}
+	if m.turnStats[0].ctxTok != 152_300 {
+		t.Fatalf("receipt ctxTok = %d, want 152300 (billing inputTokens, not the window)", m.turnStats[0].ctxTok)
+	}
+	if m.sessCtxTok != 300_000 {
+		t.Fatalf("sessCtxTok = %d, want 300000", m.sessCtxTok)
+	}
+}
+
+func TestGaugeHoldsOnDoneWithoutWindow(t *testing.T) {
+	m := newTestModel()
+	m.winCtxTok = 41_000
+	m.busy = true
+	m.msgs = append(m.msgs, message{role: roleAsst, streaming: true})
+	m.curIdx = 0
+	m.handleEvent(client.Event{Type: "done", Latency: 0.5, InputTokens: 100, OutputTokens: 10})
+	if m.winCtxTok != 41_000 {
+		t.Fatalf("done without windowTokens zeroed the gauge: %d", m.winCtxTok)
+	}
+}
+
+func TestMaxContextWireClearsOnModelChange(t *testing.T) {
+	m := newTestModel()
+	m.model = "big"
+	m.models = []client.ModelInfo{
+		{ID: "big", MaxContext: 1000},
+		{ID: "small", MaxContext: 500},
+	}
+	m.maxContextWire = 200_000
+	m.resolveMaxContext()
+	if m.maxContext != 200_000 {
+		t.Fatalf("wire limit should win: %d", m.maxContext)
+	}
+	m.applyModelChoice("small")
+	if m.maxContextWire != 0 {
+		t.Fatal("model change must drop the previous wire limit")
+	}
+	if m.maxContext != 500 {
+		t.Fatalf("catalog limit after switch = %d, want 500", m.maxContext)
+	}
+}
+
 func TestContextGauge(t *testing.T) {
 	m := newTestModel()
 	m.model = "big"
