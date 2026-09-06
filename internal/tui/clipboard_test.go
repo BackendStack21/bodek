@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"io"
+	osexec "os/exec"
 	"strings"
 	"testing"
 
@@ -65,6 +66,32 @@ func TestLastReplyPicksLatestFinalized(t *testing.T) {
 	m.msgs = append(m.msgs, message{role: roleAsst, content: "second"})
 	if got := m.lastReply(); got != "second" {
 		t.Errorf("lastReply = %q, want %q", got, "second")
+	}
+}
+
+func TestCopyViaHelperStaysOnAltScreen(t *testing.T) {
+	// cat is a stand-in for pbcopy: it consumes stdin and exits 0 without
+	// needing a TTY. The helper must be a plain tea.Cmd — calling it
+	// returns copyResultMsg directly. tea.ExecProcess would not.
+	if _, err := osexec.LookPath("cat"); err != nil {
+		t.Skip("cat not on PATH")
+	}
+	m := newTestModel()
+	cmd := m.copyViaExec("cat", "hello")
+	if cmd == nil {
+		t.Fatal("copyViaExec returned nil")
+	}
+	msg := cmd()
+	got, ok := msg.(copyResultMsg)
+	if !ok {
+		t.Fatalf("cmd() = %T, want copyResultMsg (tea.Exec would not yield this)", msg)
+	}
+	if got.err != nil {
+		t.Fatalf("cat helper: %v", got.err)
+	}
+	_, next := m.Update(got)
+	if next != nil {
+		t.Fatal("successful helper copy must not restoreAfterExec — that flickers the alt-screen")
 	}
 }
 

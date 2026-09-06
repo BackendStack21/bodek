@@ -446,6 +446,7 @@ func (m *Model) conversation() string {
 	if len(m.msgs) == 0 {
 		m.stepLineIndex = nil
 		m.turnLineIndex = nil
+		m.replyLineIndex = nil
 		return m.home()
 	}
 	// Everything before the in-flight streaming message is stable, so cache its
@@ -459,6 +460,7 @@ func (m *Model) conversation() string {
 	}
 	var refs []stepRef
 	var turns []stepRef
+	var replies []stepRef
 	var msgsIdx []stepRef
 	collectTurn := func(i, line int) {
 		if m.msgs[i].role == roleAsst && !m.msgs[i].raw {
@@ -466,13 +468,22 @@ func (m *Model) conversation() string {
 		}
 		msgsIdx = append(msgsIdx, stepRef{msgIdx: i, stepIdx: -1, line: line})
 	}
+	absorbRefs := func(r []stepRef) {
+		for _, ref := range r {
+			if ref.stepIdx == replyCardIdx {
+				replies = append(replies, ref)
+			} else {
+				refs = append(refs, ref)
+			}
+		}
+	}
 	lineOffset := 0
 	blocks := make([]string, 0, tail+2)
 	for i := 0; i < tail; i++ {
 		collectTurn(i, lineOffset)
 		c, r := m.msgBlockAt(i, lineOffset)
 		blocks = append(blocks, c)
-		refs = append(refs, r...)
+		absorbRefs(r)
 		lineOffset += lineCount(c) + 1
 	}
 	m.convPrefix = strings.Join(blocks, turnSep)
@@ -497,7 +508,7 @@ func (m *Model) conversation() string {
 		s, r := m.renderMessage(m.msgs[i], i, lineOffset)
 		c := m.clampLines(s)
 		blocks = append(blocks, c)
-		refs = append(refs, r...)
+		absorbRefs(r)
 		lineOffset += lineCount(c) + 1
 	}
 	if len(m.notices) > 0 {
@@ -508,6 +519,7 @@ func (m *Model) conversation() string {
 	m.msgLineIndex = msgsIdx
 	m.stepLineIndex = refs
 	m.turnLineIndex = turns
+	m.replyLineIndex = replies
 	return strings.Join(blocks, turnSep)
 }
 
@@ -594,7 +606,9 @@ func (m *Model) renderMessage(msg message, msgIdx, lineOffset int) (string, []st
 			}
 		}
 		if msg.collapsed {
-			return stackTurn(label, th.statsDim.Render(m.collapseSummary(msg)), m.turnStatFoot(msg)), nil
+			summary := th.statsDim.Render(m.collapseSummary(msg))
+			start := lineOffset + turnHeadGap
+			return stackTurn(label, summary, m.turnStatFoot(msg)), []stepRef{replyRefAt(msgIdx, start, lineCount(summary))}
 		}
 		// Live turn clock: a streaming head carries the run's elapsed
 		// counter at the right edge — the calm default hides the rail and
@@ -683,8 +697,9 @@ func (m *Model) renderMessage(msg message, msgIdx, lineOffset int) (string, []st
 				if items[it].rendered != "" {
 					body = items[it].rendered
 				}
-				card, _ := m.answerCardBody(body)
-				addBlock(card, true)
+				card, n := m.answerCardBody(body)
+				start := addBlock(card, true)
+				refs = append(refs, replyRefAt(msgIdx, start, n))
 				replied = append(replied, t)
 				continue
 			}
@@ -718,8 +733,9 @@ func (m *Model) renderMessage(msg message, msgIdx, lineOffset int) (string, []st
 			trail = ""
 		}
 		if strings.TrimSpace(trail) != "" {
-			card, _ := m.answerCardBody(trail)
-			addBlock(card, true)
+			card, n := m.answerCardBody(trail)
+			start := addBlock(card, true)
+			refs = append(refs, replyRefAt(msgIdx, start, n))
 		}
 		if !msg.streaming {
 			if rec := swarmVerdict(&msg); rec != "" {
@@ -950,9 +966,21 @@ func offsetStepRefs(refs []stepRef, start int) []stepRef {
 	out := make([]stepRef, len(refs))
 	for i, r := range refs {
 		r.line += start
+		if r.end != 0 {
+			r.end += start
+		}
 		out[i] = r
 	}
 	return out
+}
+
+// replyRefAt builds an answer-card hit box covering n rendered lines
+// starting at start (inclusive).
+func replyRefAt(msgIdx, start, n int) stepRef {
+	if n < 1 {
+		n = 1
+	}
+	return stepRef{msgIdx: msgIdx, stepIdx: replyCardIdx, line: start, end: start + n - 1}
 }
 
 // renderStep renders one tool step: live progress + clock while it runs,
@@ -1670,6 +1698,12 @@ func (m *Model) footer() string {
 	// step open, per-step toggles look dead unless the chrome says why.
 	if m.expandAll {
 		ind := th.footerKey.Render("▼") + th.footer.Render(" details")
+		left += th.footerSep.Render(" · ") + ind
+	}
+	// Click / ^Y / alt+y copy ack — footer only, so it stays visible
+	// when the reader is up in history.
+	if m.copyFlashing() {
+		ind := th.badgeOK.Render("✓") + th.footer.Render(" Copied")
 		left += th.footerSep.Render(" · ") + ind
 	}
 
