@@ -1,7 +1,9 @@
 package tui
 
 import (
+	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -14,13 +16,19 @@ import (
 //
 // bodek's WS carries triggers only: every engine plan mutation arrives as an
 // ordinary plan tool_call/tool_result pair. The structured truth lives behind
-// GET /api/sessions/{id}/plan. So: watch the WS, then fetch REST — debounced
-// (a create→update burst is one request), guarded monotonically by the
-// store's version, and silently degraded when an old engine lacks the route.
+// GET /api/sessions/{id}/plan. The narration strip cannot wait on that round
+// trip: tool_call applies the mutation locally (same payload as the step
+// preview) and marks planDirty so a same-version poll cannot paint the
+// pre-write store. tool_result then fetches REST — debounced (a
+// create→update burst is one request), guarded monotonically by the store's
+// version, and silently degraded when an old engine lacks the route. A 1s
+// live poll while a turn runs catches writes the WS missed; the drawer tab
+// keeps the slower 3s tick.
 
 const (
 	planDebounceEvery = 250 * time.Millisecond // WS-trigger coalescing window
 	planPollEvery     = 3 * time.Second        // drawer-plan-tab visible cadence
+	planLiveEvery     = 1 * time.Second        // busy-run strip cadence
 )
 
 // planAvailability tri-states the endpoint: unknown (not tried), available,
@@ -42,12 +50,15 @@ type planDebounceMsg struct{ seq int }
 type planTickMsg struct{ seq int }
 
 // planMsg carries one SessionPlan fetch outcome. want/seq identify the
-// request so superseded replies cannot touch fresh state.
+// request so superseded replies cannot touch fresh state. confirm is the
+// tool_result debounce fetch — the only reply allowed to overwrite a
+// dirty optimistic patch (success or rejected write).
 type planMsg struct {
-	want string
-	seq  int
-	snap client.PlanSnapshot
-	err  error
+	want    string
+	seq     int
+	confirm bool
+	snap    client.PlanSnapshot
+	err     error
 }
 
 // schedulePlanRefresh arms (or re-arms) the debounced refresh timer.
@@ -65,11 +76,22 @@ func (m *Model) handlePlanDebounce(msg planDebounceMsg) tea.Cmd {
 	if msg.seq != m.planDebSeq || m.sessionID == "" {
 		return nil // superseded window or not attached to a session yet
 	}
-	return m.fetchPlan()
+	return m.fetchPlanConfirm()
 }
 
 // fetchPlan issues one snapshot request pinned to the current session.
 func (m *Model) fetchPlan() tea.Cmd {
+	return m.issuePlanFetch(false)
+}
+
+// fetchPlanConfirm is the post-tool_result fetch: it may replace a dirty
+// optimistic patch, including with the same store version when the write
+// was rejected.
+func (m *Model) fetchPlanConfirm() tea.Cmd {
+	return m.issuePlanFetch(true)
+}
+
+func (m *Model) issuePlanFetch(confirm bool) tea.Cmd {
 	if m.cl == nil || m.sessionID == "" {
 		return nil
 	}
@@ -80,7 +102,7 @@ func (m *Model) fetchPlan() tea.Cmd {
 	seq := m.planReqSeq
 	return func() tea.Msg {
 		snap, err := cl.SessionPlan(want, token)
-		return planMsg{want: want, seq: seq, snap: snap, err: err}
+		return planMsg{want: want, seq: seq, confirm: confirm, snap: snap, err: err}
 	}
 }
 
@@ -90,7 +112,7 @@ func (m *Model) fetchPlan() tea.Cmd {
 // the surface unavailable — never surfaced as noise.
 func (m *Model) handlePlanMsg(msg planMsg) (cmd tea.Cmd) {
 	defer func() {
-		if m.panel == panelPlan && m.planAvail != planUnavailable {
+		if m.planAvail != planUnavailable && (m.panel == panelPlan || m.busy) {
 			cmd = tea.Batch(cmd, m.armPlanPoll())
 		}
 	}()
@@ -108,12 +130,21 @@ func (m *Model) handlePlanMsg(msg planMsg) (cmd tea.Cmd) {
 	if msg.snap.SessionID != "" && msg.snap.SessionID != m.sessionID {
 		return nil // defensive: wire disagrees about the target session
 	}
+	// Poll / kick replies must not touch a dirty strip: create leaves
+	// planVer at 0 (or the previous plan), so a same-or-newer in-flight
+	// snapshot would overwrite the optimistic steps. Only the
+	// tool_result confirm fetch may land — it is also how a rejected
+	// write reverts the patch (same version, store unchanged).
+	if m.planDirty && !msg.confirm {
+		return nil
+	}
 	if m.planInit && msg.snap.Version < m.planVer {
 		return nil // monotonic guard: stale snapshot, found:false included
 	}
 	m.plan = msg.snap
 	m.planVer = msg.snap.Version
 	m.planInit = true
+	m.planDirty = false
 	if m.panel == panelPlan {
 		m.syncPlanPanelMsg()
 	}
@@ -126,19 +157,131 @@ func (m *Model) handlePlanMsg(msg planMsg) (cmd tea.Cmd) {
 func (m *Model) armPlanPoll() tea.Cmd {
 	m.planPollSeq++
 	seq := m.planPollSeq
-	return tea.Tick(planPollEvery, func(time.Time) tea.Msg {
+	d := planPollEvery
+	if m.busy {
+		d = planLiveEvery
+	}
+	return tea.Tick(d, func(time.Time) tea.Msg {
 		return planTickMsg{seq: seq}
 	})
 }
 
-// handlePlanTick polls while the plan tab is visible; an unavailable endpoint
-// stops the chain (re-entry or 'r' restarts it).
+// handlePlanTick polls while the plan tab is visible or a turn is running
+// (the status-line strip). An unavailable endpoint stops the chain
+// (re-entry or 'r' restarts it).
 func (m *Model) handlePlanTick(msg planTickMsg) tea.Cmd {
-	if m.panel != panelPlan || msg.seq != m.planPollSeq ||
-		m.planAvail == planUnavailable {
+	if msg.seq != m.planPollSeq || m.planAvail == planUnavailable {
 		return nil
 	}
+	if m.panel != panelPlan && !m.busy {
+		return nil
+	}
+	if m.planDirty {
+		// Stay armed; do not bump planReqSeq over the in-flight confirm.
+		return m.armPlanPoll()
+	}
 	return m.fetchPlan()
+}
+
+// kickPlanLive fetches once and arms the 1s strip poll. Nil when there is
+// no session, the route is dead, or no turn is running.
+func (m *Model) kickPlanLive() tea.Cmd {
+	if !m.busy || m.planAvail == planUnavailable {
+		return nil
+	}
+	return tea.Batch(m.fetchPlan(), m.armPlanPoll())
+}
+
+// applyPlanMutation patches the accepted snapshot from a plan tool_call
+// payload so the narration strip moves on the same frame as the step, not
+// after REST. Returns whether the strip should repaint. A dead endpoint
+// is left untouched — we never invent a plan the engine cannot serve.
+func (m *Model) applyPlanMutation(data string) bool {
+	if m.planAvail == planUnavailable {
+		return false
+	}
+	var args planArgs
+	if err := json.Unmarshal([]byte(strings.TrimSpace(data)), &args); err != nil {
+		return false
+	}
+	switch args.Verb {
+	case "create":
+		steps := make([]client.PlanStep, 0, len(args.Steps))
+		for _, raw := range args.Steps {
+			var st client.PlanStep
+			if json.Unmarshal(raw, &st) != nil || strings.TrimSpace(st.ID) == "" {
+				continue
+			}
+			st.ID = collapse(sanitize(st.ID))
+			st.Title = collapse(sanitize(st.Title))
+			st.Note = collapse(sanitize(st.Note))
+			st.Status = coercePlanStatus(string(st.Status))
+			steps = append(steps, st)
+		}
+		if len(steps) == 0 {
+			return false
+		}
+		m.plan.Found = true
+		m.plan.Steps = steps
+		m.planInit = true
+		m.planAvail = planAvailable
+		m.planDirty = true
+		return true
+	case "update":
+		if !m.planInit {
+			return false
+		}
+		changed := false
+		for _, u := range args.Updates {
+			id := collapse(sanitize(u.ID))
+			if id == "" {
+				continue
+			}
+			for i := range m.plan.Steps {
+				if m.plan.Steps[i].ID != id {
+					continue
+				}
+				if u.Status != "" {
+					m.plan.Steps[i].Status = coercePlanStatus(u.Status)
+					changed = true
+				}
+			}
+		}
+		if changed {
+			m.planDirty = true
+		}
+		return changed
+	case "complete":
+		if !m.planInit {
+			return false
+		}
+		id := collapse(sanitize(args.StepID))
+		if id == "" {
+			return false
+		}
+		for i := range m.plan.Steps {
+			if m.plan.Steps[i].ID != id || m.plan.Steps[i].Status == client.PlanDone {
+				continue
+			}
+			m.plan.Steps[i].Status = client.PlanDone
+			m.planDirty = true
+			return true
+		}
+		return false
+	default:
+		return false
+	}
+}
+
+// coercePlanStatus maps a model-authored status onto the known set; anything
+// else degrades to pending so a future verb cannot paint an unknown glyph.
+func coercePlanStatus(s string) client.PlanStepStatus {
+	switch client.PlanStepStatus(s) {
+	case client.PlanPending, client.PlanInProgress, client.PlanDone, client.PlanBlocked:
+		return client.PlanStepStatus(s)
+	default:
+		return client.PlanPending
+	}
 }
 
 // resetPlanState drops accepted knowledge (session switch / attach): pending
@@ -147,6 +290,8 @@ func (m *Model) resetPlanState() {
 	m.plan = client.PlanSnapshot{}
 	m.planVer, m.planInit = 0, false
 	m.planAvail = planUnknown
+	m.planDirty = false
+	m.planLiveKick = false
 	m.planDebSeq++
 	m.planReqSeq++
 }
@@ -298,9 +443,9 @@ func (m *Model) planRows(w int) []string {
 	return rows
 }
 
-// planTrig / planResetPending consume-at-tail helpers: ordinary event cases
-// share one render-coalescing exit, so these two flags ride the existing
-// batch instead of restructuring hot paths.
+// planTrig / planResetPending / planLiveKick consume-at-tail helpers:
+// ordinary event cases share one render-coalescing exit, so these flags
+// ride the existing batch instead of restructuring hot paths.
 func (m *Model) planFollowup() tea.Cmd {
 	var cmds []tea.Cmd
 	if m.planResetPending {
@@ -312,6 +457,12 @@ func (m *Model) planFollowup() tea.Cmd {
 	}
 	if m.planTrig {
 		cmds = append(cmds, m.schedulePlanRefresh())
+	}
+	if m.planLiveKick {
+		m.planLiveKick = false
+		if c := m.kickPlanLive(); c != nil {
+			cmds = append(cmds, c)
+		}
 	}
 	switch len(cmds) {
 	case 0:

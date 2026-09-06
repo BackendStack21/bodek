@@ -204,6 +204,19 @@ feat(tui): compact tool steps with Ctrl+E details toggle
   `bg_wake` frames become transient notes. Generation counters
   (`jobsSeq`/`jobsWatchSeq`) drop stale ticks — keep both chains
   generation-guarded when touching the cadence.
+- The narration-line plan strip (`planStripLabel` in `plan.go`) patches
+  on `plan` tool_call (`applyPlanMutation`) so the count moves on that
+  frame. REST (`GET /api/sessions/{id}/plan`) confirms after
+  `tool_result` (250ms debounce) — a fetch on the call races the store
+  and paints the previous snapshot. `planDirty` drops every non-confirm
+  reply (create leaves `planVer` stale, so a version-newer poll can still
+  be the pre-write store). Only the tool_result confirm fetch may land —
+  that is also how a rejected write reverts the patch. Live poll is 1s
+  while `busy`, 3s on the `/plan` tab; `planLiveKick` arms it from
+  `sendPrompt` / `beginWireTurn` via `planFollowup`, never as a Tick
+  batched into submit. Generation counters
+  (`planDebSeq`/`planReqSeq`/`planPollSeq`) drop stale ticks — keep
+  them when touching the cadence.
 - Server-initiated wake turns (odek ≥ v1.40, `system_initiated` on the
   session frame) open a streaming card from the wire (`openWakeTurn` in
   `events.go`): without it every streamed event drops, because cards only

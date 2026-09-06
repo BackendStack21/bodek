@@ -305,7 +305,9 @@ type Model struct {
 	planVer          int                 // accepted snapshot version (monotonic guard)
 	planInit         bool                // any snapshot accepted for this session
 	planAvail        planAvailability    // endpoint health tri-state
-	planTrig         bool                // a plan tool_call awaits tail-batch pickup
+	planTrig         bool                // a plan tool_result awaits tail-batch pickup
+	planLiveKick     bool                // turn start wants the 1s strip poll
+	planDirty        bool                // optimistic mutation; only a confirm fetch may land
 	planResetPending bool                // session changed; reset+refetch at tail
 	freshStart       bool                // /new drop: reconnect lands on a fresh session
 	planDebSeq       int                 // debounce window sequence

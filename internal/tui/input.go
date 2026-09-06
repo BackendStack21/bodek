@@ -418,6 +418,11 @@ func (m *Model) sendPrompt(text string) tea.Cmd {
 	m.attachments = nil
 	m.pendModel = "" // applied
 	cl := m.cl
+	// The 1s strip poll arms on the first wire event (planFollowup),
+	// matching wake/remote turns. Returning it here would Batch a Tick
+	// into submit — tests (and tea.Exec-style helpers) would then block
+	// on the timer instead of sending the prompt.
+	m.planLiveKick = true
 	send := func() tea.Msg {
 		if err := cl.SendPrompt(text, opts); err != nil {
 			return errMsg{err}
