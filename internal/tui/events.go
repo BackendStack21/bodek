@@ -88,6 +88,9 @@ func (m *Model) handleEvent(ev client.Event) (tea.Model, tea.Cmd) {
 			m.authToken = ev.AuthToken
 			m.tokens.Set(ev.SessionID, ev.AuthToken)
 		}
+		if !m.freshStart {
+			m.rememberSession(m.homePrompt)
+		}
 		if prevSession != "" && ev.SessionID != prevSession {
 			m.planResetPending = true // switch/attach: drop + refetch at the tail
 			m.resetJobsState()        // jobs are session-scoped; re-baseline on the next snapshot
@@ -366,6 +369,7 @@ func (m *Model) handleEvent(ev client.Event) (tea.Model, tea.Cmd) {
 		} else {
 			m.status = "error"
 		}
+		m.restoreComposerPrompt()
 		m.relayout() // the busy status line releases its row
 
 	case "approval_request":

@@ -55,7 +55,7 @@ func (m *Model) handleACKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 	m.ta, cmd = m.ta.Update(msg)
 	m.syncComposer()
-	return m, tea.Batch(cmd, m.syncAC())
+	return m, tea.Batch(cmd, m.syncAC(), m.schedulePersist())
 }
 
 // insertNewline drops a line break at the caret and refits the composer.
@@ -362,6 +362,7 @@ func (m *Model) submit() tea.Cmd {
 		m.ta.Reset()
 		m.syncComposer()
 		m.closeAC()
+		m.persistLocal()
 		m.refresh()
 		m.vp.GotoBottom() // Enter means "show me the latest", even mid-turn
 		m.teach(hintQueue, "tip: ^Q manages the queue · /queue opens the full panel")
@@ -416,6 +417,8 @@ func (m *Model) sendPrompt(text string) tea.Cmd {
 	}
 	// Attachments are per-prompt by contract; the next send starts clean.
 	m.attachments = nil
+	m.attachPaths = nil
+	m.persistLocal()
 	m.pendModel = "" // applied
 	cl := m.cl
 	// The 1s strip poll arms on the first wire event (planFollowup),
@@ -466,6 +469,7 @@ func (m *Model) retryLast() tea.Cmd {
 			return m.transientNoteCmd("cancelling — retry stays off the queue")
 		}
 		m.queue = append(m.queue, m.lastPrompt)
+		m.persistLocal()
 		return m.transientNoteCmd("retry queued — it sends when the turn ends")
 	}
 	return m.sendPrompt(m.lastPrompt)
@@ -486,6 +490,7 @@ func (m *Model) recordHistory(text string) {
 	if len(m.history) > maxHistory {
 		m.history = m.history[len(m.history)-maxHistory:]
 	}
+	m.persistLocal()
 }
 
 // historyPrev steps back through the prompt history, stashing the current

@@ -77,10 +77,18 @@ func (m *Model) attachFile(path string) tea.Cmd {
 	for i := range m.attachments {
 		if m.attachments[i].Name == name {
 			m.attachments[i].Content = string(data)
+			if i < len(m.attachPaths) {
+				m.attachPaths[i] = path
+			} else {
+				m.attachPaths = append(m.attachPaths, path)
+			}
+			m.persistLocal()
 			return m.transientNoteCmd("restaged " + name + " (" + human(len(data)) + ")")
 		}
 	}
 	m.attachments = append(m.attachments, client.Attachment{Name: name, Content: string(data)})
+	m.attachPaths = append(m.attachPaths, path)
+	m.persistLocal()
 	return m.transientNoteCmd(fmt.Sprintf("attached %s (%s) — sends with the next prompt · /unattach to drop",
 		name, human(len(data))))
 }
@@ -94,11 +102,17 @@ func (m *Model) unattachFile(name string) tea.Cmd {
 		}
 		n := len(m.attachments)
 		m.attachments = nil
+		m.attachPaths = nil
+		m.persistLocal()
 		return m.transientNoteCmd("dropped " + plural(n, "staged file", "staged files"))
 	}
 	for i := range m.attachments {
 		if m.attachments[i].Name == name {
 			m.attachments = append(m.attachments[:i], m.attachments[i+1:]...)
+			if i < len(m.attachPaths) {
+				m.attachPaths = append(m.attachPaths[:i], m.attachPaths[i+1:]...)
+			}
+			m.persistLocal()
 			return m.transientNoteCmd("dropped " + name)
 		}
 	}

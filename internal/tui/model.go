@@ -16,6 +16,7 @@ import (
 	"github.com/BackendStack21/bodek/internal/client"
 	"github.com/BackendStack21/bodek/internal/tokens"
 	"github.com/BackendStack21/bodek/internal/update"
+	"github.com/BackendStack21/bodek/internal/workspace"
 )
 
 // role identifies who authored a conversation entry.
@@ -142,6 +143,17 @@ type Options struct {
 	// switch still applies for this run.
 	OnThemeChange func(name string) error
 
+	// OnVerbosityChange persists a runtime /verbosity switch. Nil skips
+	// persistence; an error surfaces as a note while the dial still applies.
+	OnVerbosityChange func(name string) error
+
+	// Workspace, when set, persists per-cwd draft/queue/history and the
+	// last session id. Tests leave it nil so they never touch disk.
+	Workspace *workspace.Store
+
+	// Fresh skips last-session resume (--new / after /new).
+	Fresh bool
+
 	// Plain selects the linear rendering mode: no alt-screen, append-only
 	// scrollback transcript, severity prefixes instead of color (--plain).
 	Plain bool
@@ -192,6 +204,12 @@ type Model struct {
 	qsel          int              // selected strip row while qfocus
 	qarm          int              // armed-for-delete row while qfocus (-1 = none)
 	lastPrompt    string           // most recent prompt sent — /retry re-sends it
+	ws            *workspace.Store // nil in tests unless injected
+	pendingResume string           // cwd last-session id; consumed by resumeLast
+	resumeTitle   string           // sanitized last-session title for the home card
+	attachPaths   []string         // original paths for staged files (persist only)
+	persistSeq    int              // generation guard for persistDraftMsg
+	copyMark      copySpan         // alt+m span start; zero = none
 	homePrompt    string           // last user prompt, kept across ^L for the session home
 	homeReceipt   string           // last turn's coding receipt, shown on the cleared home
 	homeSess      []client.Session // recent sessions for the home dashboard
@@ -379,12 +397,13 @@ func New(cl *client.Client, opts Options) *Model {
 	}
 	sp.Style = th.spinner
 
-	return &Model{
+	m := &Model{
 		cl:           cl,
 		events:       cl.Events,
 		opts:         opts,
 		th:           th,
 		tokens:       tokens.Open(),
+		ws:           opts.Workspace,
 		ta:           ta,
 		sp:           sp,
 		curIdx:       -1,
@@ -402,12 +421,14 @@ func New(cl *client.Client, opts Options) *Model {
 		notify:       opts.Notify,
 		plain:        opts.Plain,
 	}
+	m.restoreWorkspace()
+	return m
 }
 
 func (m *Model) Init() tea.Cmd {
 	return tea.Batch(textarea.Blink, m.sp.Tick, listen(m.events),
 		m.fetchModels(), m.fetchLimits(), m.checkUpdate(),
-		m.armHeartbeat(), enableShiftEnterCmd)
+		m.armHeartbeat(), enableShiftEnterCmd, m.resumeLast(), m.protocolNote())
 }
 
 // pingEvery is the application-level heartbeat cadence (20s). Matches the
@@ -477,6 +498,10 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case heartbeatMsg:
 		return m, m.handleHeartbeat()
 
+	case persistDraftMsg:
+		m.handlePersistDraft(msg)
+		return m, nil
+
 	case renderFlushMsg:
 		if msg.seq == m.renderSeq && m.renderPending {
 			m.renderPending = false
@@ -498,6 +523,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.addNote("error: " + errText(msg.err))
 		}
 		m.finalize()
+		m.restoreComposerPrompt()
 		// Pending approvals die with the turn — the same contract done /
 		// error / disconnect already document. Leaving them armed captures
 		// the keyboard after busy is already false.
@@ -1014,9 +1040,11 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// Copy the latest reply — a chord, so typing a y is never hijacked.
 		return m, m.copyLastReply()
 	case "alt+y":
-		// Copy the focused turn — the one alt+↑/↓ last jumped to (falls back
-		// to the latest reply). A chord, so typing a y is never hijacked.
+		// Copy the focused surface — the one alt+↑/↓ last jumped to (falls
+		// back to the latest reply). After alt+m this yanks the span.
 		return m, m.copyFocusedTurn()
+	case "alt+m":
+		return m, m.markCopySpan()
 	case "alt+r":
 		// Re-send the last prompt — a chord, so typing an r is never hijacked.
 		return m, m.retryLast()
@@ -1070,7 +1098,7 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 	m.ta, cmd = m.ta.Update(msg)
 	m.syncComposer()
-	return m, tea.Batch(cmd, m.syncAC())
+	return m, tea.Batch(cmd, m.syncAC(), m.schedulePersist())
 }
 
 // ── actions ──────────────────────────────────────────────────────────────
@@ -1124,6 +1152,15 @@ func (m *Model) startFreshSession() tea.Cmd {
 	m.resetJobsState()
 	clearHome(m)
 	m.freshStart = true
+	m.pendingResume = ""
+	if m.ws != nil && m.opts.CWD != "" {
+		m.ws.ClearSession(m.opts.CWD)
+	}
+	m.ta.Reset()
+	m.queue = nil
+	m.attachments = nil
+	m.attachPaths = nil
+	m.syncComposer()
 	m.refresh() // drop the session-home snapshot clearConversation just painted
 	cl := m.cl
 	return tea.Batch(homeFetch, func() tea.Msg {

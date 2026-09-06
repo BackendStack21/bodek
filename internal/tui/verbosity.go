@@ -74,7 +74,13 @@ func (m *Model) setVerbosity(v int) tea.Cmd {
 	default:
 		desc = "engine traces shown · ^E reveals details"
 	}
-	return m.dialNote("verbosity: " + verbosityName(v) + " — " + desc)
+	note := m.dialNote("verbosity: " + verbosityName(v) + " — " + desc)
+	if m.opts.OnVerbosityChange != nil {
+		if err := m.opts.OnVerbosityChange(verbosityName(v)); err != nil {
+			return tea.Batch(note, m.transientNoteCmd("verbosity saved: "+err.Error()))
+		}
+	}
+	return note
 }
 
 // cycleVerbosity advances normal → quiet → detailed → normal: from the

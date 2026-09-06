@@ -148,6 +148,7 @@ func slashCommands() []command {
 		}},
 		{"quit", "exit bodek", func(m *Model, _ string) tea.Cmd {
 			m.quitting = true
+			m.persistLocal()
 			return tea.Quit
 		}},
 	}
@@ -294,7 +295,8 @@ func (m *Model) showHelp() {
 		{"@", "attach files"},
 		{"↑↓", "scroll the transcript"},
 		{"alt+↑↓", "jump to the previous/next turn"},
-		{"alt+y", "copy the focused turn's reply (falls back to the latest)"},
+		{"alt+y", "copy the focused surface (reply, step, or reasoning)"},
+		{"alt+m", "mark a copy span · alt+y yanks from the mark"},
 		{"^Y", "copy the latest reply"},
 		{"alt+r", "re-send the last prompt (/retry)"},
 		{"^F", "fold/unfold the latest turn card"},

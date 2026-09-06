@@ -37,10 +37,11 @@ func TestLoadMissingFile(t *testing.T) {
 func TestSaveLoadRoundTrip(t *testing.T) {
 	homeDir(t)
 	in := Settings{
-		Theme:  "ember-light",
-		Bell:   ptr(false),
-		Notify: ptr(true),
-		Plain:  ptr(false),
+		Theme:     "ember-light",
+		Bell:      ptr(false),
+		Notify:    ptr(true),
+		Plain:     ptr(false),
+		Verbosity: "quiet",
 	}
 	if err := Save(in); err != nil {
 		t.Fatalf("Save() error = %v", err)
@@ -51,6 +52,9 @@ func TestSaveLoadRoundTrip(t *testing.T) {
 	}
 	if got.Theme != in.Theme {
 		t.Errorf("Theme = %q, want %q", got.Theme, in.Theme)
+	}
+	if got.Verbosity != "quiet" {
+		t.Errorf("Verbosity = %q, want quiet", got.Verbosity)
 	}
 	for name, pair := range map[string][2]*bool{
 		"Bell":   {got.Bell, in.Bell},

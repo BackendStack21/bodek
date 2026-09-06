@@ -13,6 +13,7 @@ Keep it that way.
 | `internal/server` | Launch / attach to `odek serve`, resolve the auth token |
 | `internal/client` | odek serve WebSocket protocol (transport + REST + decoding) |
 | `internal/tokens` | Local persistence of per-session auth tokens |
+| `internal/workspace` | Per-cwd draft, queue, history, and last-session id |
 | `internal/tui` | The Bubble Tea model, update loop, panels, and view |
 | `internal/update` | Self-upgrade: fetch and swap in the latest GitHub release binary |
 

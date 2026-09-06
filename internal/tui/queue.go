@@ -120,6 +120,7 @@ func (m *Model) queueDeleteAt(i int) {
 	if len(m.queue) == 0 {
 		m.qfocus = false
 	}
+	m.persistLocal()
 	m.refresh()
 }
 

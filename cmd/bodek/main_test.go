@@ -168,6 +168,34 @@ func TestThemeEnvOverridesSettings(t *testing.T) {
 	}
 }
 
+func TestVerbositySeededFromSettings(t *testing.T) {
+	hermetic(t)
+	if err := settings.Save(settings.Settings{Verbosity: "quiet"}); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	cfg, err := parseConfig(nil, io.Discard)
+	if err != nil {
+		t.Fatalf("parseConfig: %v", err)
+	}
+	if cfg.verbosity != "quiet" {
+		t.Errorf("verbosity = %q, want quiet seeded from the settings file", cfg.verbosity)
+	}
+}
+
+func TestVerbosityFlagOverridesSettings(t *testing.T) {
+	hermetic(t)
+	if err := settings.Save(settings.Settings{Verbosity: "quiet"}); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	cfg, err := parseConfig([]string{"--verbosity", "detailed"}, io.Discard)
+	if err != nil {
+		t.Fatalf("parseConfig: %v", err)
+	}
+	if cfg.verbosity != "detailed" {
+		t.Errorf("verbosity = %q, want the explicit flag to win", cfg.verbosity)
+	}
+}
+
 func TestSettingsBooleansSeedDefaults(t *testing.T) {
 	hermetic(t)
 	off := false

@@ -43,7 +43,7 @@ func TestShortenHome(t *testing.T) {
 
 // TestWelcomeWithCWD exercises the working-directory line of the splash.
 func TestWelcomeWithCWD(t *testing.T) {
-	out := plain(welcome(newTheme(), 80, "/nonexistent/workdir"))
+	out := plain(welcome(newTheme(), 80, "/nonexistent/workdir", ""))
 	if !strings.Contains(out, "/nonexistent/workdir") {
 		t.Error("welcome splash missing the cwd line")
 	}
