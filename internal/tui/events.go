@@ -174,9 +174,11 @@ func (m *Model) handleEvent(ev client.Event) (tea.Model, tea.Cmd) {
 		m.lastTool = nm
 		m.lastArg = arg
 		if ev.Name == "plan" {
-			// Every engine plan mutation rides an ordinary tool_call: schedule
-			// the debounced structured-view refresh (see plan.go).
-			m.planTrig = true
+			// Apply the mutation now so the narration strip tracks the
+			// step on this frame. REST confirms after tool_result — a
+			// fetch here would race the store and paint the previous
+			// snapshot (see plan.go).
+			_ = m.applyPlanMutation(ev.Data)
 		}
 		m.setRunStatus("running " + nm)
 
@@ -216,6 +218,11 @@ func (m *Model) handleEvent(ev client.Event) (tea.Model, tea.Cmd) {
 		}
 		m.lastTool = ""
 		m.lastArg = ""
+		if ev.Name == "plan" || nm == "plan" {
+			// The store is written when the tool finishes; this is the
+			// safe moment to refetch the structured snapshot.
+			m.planTrig = true
+		}
 
 	case "done":
 		// Capture per-turn telemetry from the live message BEFORE finalize()
@@ -580,8 +587,9 @@ func (m *Model) beginWireTurn(wake bool) {
 	if m.sessionStart.IsZero() {
 		m.sessionStart = m.runStart
 	}
-	m.relayout() // the busy status line claims a row above the input
-	m.refresh()  // sticks only when already at the bottom — leave scrollback
+	m.relayout()          // the busy status line claims a row above the input
+	m.refresh()           // sticks only when already at the bottom — leave scrollback
+	m.planLiveKick = true // wake/remote turns skip sendPrompt; planFollowup arms the strip poll
 }
 
 // stepGlyphs returns up to 4 deduped tool glyphs for a turn's steps, in
