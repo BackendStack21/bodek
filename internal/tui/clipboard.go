@@ -6,6 +6,8 @@ import (
 	"os"
 	osexec "os/exec"
 	"runtime"
+	"strings"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
@@ -72,18 +74,60 @@ func (m *Model) lastReply() string {
 // copyText puts text on the system clipboard. Local sessions exec a
 // clipboard helper (pbcopy / wl-copy / clip) — definitive, no terminal
 // support needed. Remote (SSH) sessions and helper-less machines fall back
-// to OSC 52, which the terminal emulator itself must honor — the note says
-// so honestly, because a silent OSC 52 no-op leaves the user pasting their
-// previous clipboard. Shared by copy-last-reply (^Y) and copy-focused-turn
-// (alt+y).
+// to OSC 52, which the terminal emulator itself must honor. Shared by
+// copy-last-reply (^Y), copy-focused-turn (alt+y), and click-to-copy.
+// Success is the footer ✓ Copied flash only — a transcript notice would
+// duplicate it (and sit off-screen when the reader is up in history).
 func (m *Model) copyText(text string) tea.Cmd {
 	if text == "" {
 		return m.transientNoteCmd("nothing to copy — no assistant reply yet")
 	}
 	if tool := clipboardTool(); tool != "" {
-		return m.copyViaExec(tool, text)
+		return tea.Batch(m.copyViaExec(tool, text), m.copiedAck())
 	}
-	return m.copyTextOSC52(text)
+	if len(text) > osc52Cap {
+		return m.transientNoteCmd(fmt.Sprintf("reply too large to copy (%d bytes) — select and copy manually", len(text)))
+	}
+	return tea.Batch(m.copyTextOSC52(text), m.copiedAck())
+}
+
+// copiedAck arms the footer ✓ Copied flash for noticeTTL. A generation
+// stamp drops a stale expire if the user copies again before it fades.
+func (m *Model) copiedAck() tea.Cmd {
+	m.copyFlashSeq++
+	seq := m.copyFlashSeq
+	m.copyFlashUntil = time.Now().Add(noticeTTL)
+	return tea.Tick(noticeTTL, func(time.Time) tea.Msg {
+		return copyFlashExpireMsg{seq: seq}
+	})
+}
+
+// copyFlashing reports whether the footer should paint ✓ Copied.
+func (m *Model) copyFlashing() bool {
+	return !m.copyFlashUntil.IsZero() && time.Now().Before(m.copyFlashUntil)
+}
+
+// copyFlashExpireMsg clears the footer flash when its dwell elapses.
+type copyFlashExpireMsg struct{ seq int }
+
+// replyText is the copy payload for one assistant turn: the raw markdown
+// blob (final or the partial stream so far). Raw styled cards are skipped.
+func (m *Model) replyText(msgIdx int) string {
+	if msgIdx < 0 || msgIdx >= len(m.msgs) {
+		return ""
+	}
+	msg := m.msgs[msgIdx]
+	if msg.role != roleAsst || msg.raw {
+		return ""
+	}
+	return msg.content
+}
+
+// copyReplyAt copies the given turn's reply and parks focus on it so a
+// follow-up alt+y copies the same card.
+func (m *Model) copyReplyAt(msgIdx int) tea.Cmd {
+	m.focusIdx = msgIdx
+	return m.copyText(m.replyText(msgIdx))
 }
 
 // clipboardTool returns the local clipboard helper to exec, or "" when the
@@ -106,32 +150,18 @@ func clipboardTool() string {
 	return ""
 }
 
-// copyViaExec pipes the payload into a local clipboard helper and reports
-// the real outcome — the note is emitted from the command's completion, so
-// a failed write can never claim success.
+// copyViaExec pipes the payload into a local clipboard helper without
+// tea.Exec: pbcopy / wl-copy / clip do not need the TTY, and ReleaseTerminal
+// flickers the alt-screen (a click-to-copy would blank the transcript).
+// Success was already acknowledged by copyText (✓ Copied); a failed write
+// clears the flash and posts an alert from copyResultMsg.
 func (m *Model) copyViaExec(tool, text string) tea.Cmd {
-	c := osexec.Command(tool)
-	stdin, err := c.StdinPipe()
-	if err != nil {
-		return m.copyTextOSC52(text)
-	}
-	if len(text) <= 32_000 {
-		// Small payloads fit the pipe buffer: write synchronously — nothing
-		// can leak if the helper fails to start.
-		_, _ = stdin.Write([]byte(text))
-		_ = stdin.Close()
-	} else {
-		// Large payloads need a concurrent writer; a failed start unblocks
-		// it when Wait closes the pipe. The helper was on PATH moments ago
-		// and consumes stdin on success, so this is bounded in practice.
-		go func() {
-			_, _ = io.WriteString(stdin, text)
-			_ = stdin.Close()
-		}()
-	}
-	return tea.ExecProcess(c, func(err error) tea.Msg {
+	return func() tea.Msg {
+		c := osexec.Command(tool)
+		c.Stdin = strings.NewReader(text)
+		err := c.Run()
 		return copyResultMsg{n: len(text), tool: tool, err: err}
-	})
+	}
 }
 
 // copyTextOSC52 is the OSC 52 fallback write (remote or helper-less sessions).
@@ -139,8 +169,7 @@ func (m *Model) copyTextOSC52(text string) tea.Cmd {
 	if len(text) > osc52Cap {
 		return m.transientNoteCmd(fmt.Sprintf("reply too large to copy (%d bytes) — select and copy manually", len(text)))
 	}
-	note := m.transientNoteCmd("copied to the system clipboard — if nothing appears, your terminal doesn't support it")
-	return tea.Batch(tea.Exec(&rawSeq{seq: ansi.SetSystemClipboard(text)}, afterExec), note)
+	return tea.Exec(&rawSeq{seq: ansi.SetSystemClipboard(text)}, afterExec)
 }
 
 // copyResultMsg reports the outcome of an exec-clipboard write.

@@ -150,8 +150,17 @@ feat(tui): compact tool steps with Ctrl+E details toggle
   remapped `^C` / `^K` / esc) back into KeyMsgs — Codium/Cursor encode
   Ctrl+C as CSI once those modes are on. `RestoreEnhancedKeys` clears
   leftovers on startup and shutdown. Alt-screen always enables mouse
-  cell-motion so the wheel scrolls (and clicks hit turn heads / steps /
-  the queue). `tea.Exec` (attention, clipboard) must return `afterExec`
+  cell-motion so the wheel scrolls (and clicks hit turn heads / answer
+  cards / steps / the queue). A left-click on an answer card (or a
+  collapsed summary) copies that turn's `msg.content` — final or the
+  partial stream — and parks `focusIdx` so a follow-up `alt+y` copies
+  the same card. Success is a footer `✓ Copied` flash only (`noticeTTL`,
+  generation-guarded expire — no transcript notice). Turn heads still fold;
+  step headers and chips still win on their own lines; raw `/help`
+  cards are not copy targets. Local clipboard helpers (`pbcopy` /
+  `wl-copy` / `clip`) must run as a plain `tea.Cmd` — `tea.ExecProcess`
+  releases the alt-screen and flickers on every copy. OSC 52 (SSH /
+  helper-less) still uses `tea.Exec`. `tea.Exec` (attention, OSC 52) must return `afterExec`
   so `restoreAfterExec` re-arms mouse and Shift+Enter — Bubble Tea's
   RestoreTerminal does not. `--plain` skips mouse reporting.
 - The management drawer is a bottom sheet: keep ~8 transcript rows above

@@ -315,7 +315,7 @@ func (m *Model) showHelp() {
 		{"/server", "cockpit — server, link, budget, session"},
 		{"F1", "this help card"},
 		{"^C", "quit"},
-		{"wheel", "scroll the transcript · click tool rows & turn heads"},
+		{"wheel", "scroll · click a reply to copy · tool rows & turn heads"},
 	} {
 		b.WriteString("\n" + th.tipKey.Render(padRight(k[0], keyW)) + " " + th.tipText.Render(k[1]))
 	}

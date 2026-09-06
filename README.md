@@ -180,8 +180,9 @@ own front-end settings are separate; see [Configuration](#configuration).
 - **Fluent by default** — gradient wordmark, smooth braille spinner, smart
   autoscroll that never yanks you while you read history, a
   scroll-position indicator, and a mouse wheel that always scrolls the
-  transcript (click turn heads, tool rows, the cockpit, and queue
-  controls). Native click-drag copy is unavailable — use `^Y` / `alt+y`.
+  transcript (click a reply card to copy it, or turn heads, tool rows,
+  the cockpit, and queue controls). Native click-drag selection is
+  unavailable — use a click on the card, `^Y`, or `alt+y`.
   `--plain` keeps the terminal's own scrollback.
 - **Version display & update hint** — bodek's version rides the header next
   to the logo (the spawned odek's next to the model); a quiet note appears at
@@ -351,7 +352,7 @@ own front-end settings are separate; see [Configuration](#configuration).
 | `/` | Open the command palette (see below) |
 | `@` | Attach a file (see below) |
 | `alt+↑` / `alt+↓` | Jump to the previous / next turn |
-| `alt+y` | Copy the **focused** turn's reply — the one you last jumped to (falls back to the latest reply) |
+| `alt+y` | Copy the **focused** turn's reply — the one you last jumped to or clicked (falls back to the latest reply) |
 | `alt+r` | Re-send the last prompt (`/retry`) |
 | `alt+f` | Search the transcript (`⏎`/`n` next match · `N` previous · scrolling stays live) |
 | `^F` | Fold/unfold the most recent turn card (or click any turn head) |
@@ -370,7 +371,7 @@ own front-end settings are separate; see [Configuration](#configuration).
 | `^P` / `^N` | Recall previous prompts (prompt history) |
 | `^G` / `End` (empty input) | Jump to the latest output |
 | `F1` | Show the help card |
-| `wheel` | Scroll the transcript · click tool rows, turn heads, and the cockpit |
+| `wheel` | Scroll the transcript · click a reply card to copy · click tool rows, turn heads, and the cockpit |
 | `⏎` (disconnected, empty input) | Retry the connection |
 | `⏎` (after a failed turn, empty input) | Re-send the failed prompt |
 | `^C` | Quit (confirm: `y` or a second `^C`) |
@@ -575,13 +576,13 @@ never become the weakest link:
 - **Auth errors when attaching** — copy the *full* token URL `odek serve`
   printed (`--url 'http://…/?token=…'`) or pass the token via `--token`.
   Spawned instances adopt the token automatically.
-- **Clipboard (`^Y` / `alt+y`) pastes something stale** — locally bodek pipes
+- **Clipboard (`^Y` / `alt+y` / click) pastes something stale** — locally bodek pipes
   through `pbcopy`/`wl-copy`/`clip` when installed; without one (or over SSH)
   it falls back to OSC 52, which some terminals ignore — pass it through or
-  install a helper. The copy note always says which path ran.
+  install a helper. A `✓ Copied` flash on the status bar confirms the write.
 - **Mouse wheel blocks native text selection** — the alt-screen always
-  reports the mouse so the wheel can scroll. Copy with `^Y` / `alt+y`
-  instead of click-drag. `--plain` keeps the terminal's own scrollback.
+  reports the mouse so the wheel can scroll. Click a reply card to copy
+  it, or use `^Y` / `alt+y`. `--plain` keeps the terminal's own scrollback.
 - **Colors look wrong** — try `/theme classic`, check `TERM`; `NO_COLOR=1`
   forces a colorless render everywhere.
 - **Connection dropped mid-turn** — bodek retries with backoff (5 attempts)

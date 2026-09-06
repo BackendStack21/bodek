@@ -51,12 +51,18 @@ type step struct {
 	blockExpandAll bool
 }
 
+// replyCardIdx is the stepIdx sentinel for answer-card hit boxes
+// (turn heads use -1). Clicking a card copies that turn's reply.
+const replyCardIdx = -2
+
 // stepRef maps a rendered transcript line to a specific step for mouse
-// hit-testing.
+// hit-testing. Answer-card ranges reuse this type with stepIdx
+// replyCardIdx; end is the inclusive last line of the card.
 type stepRef struct {
 	msgIdx   int
 	stepIdx  int
 	line     int
+	end      int // inclusive last line; 0 = single-line (heads, chips)
 	agentIdx int // chip target (task idx); ignored unless x1 > x0
 	x0, x1   int // chip hit box in viewport columns; 0,0 = head row
 }
@@ -328,7 +334,10 @@ type Model struct {
 	tailClockSeq     int
 	stepLineIndex    []stepRef // full transcript step index for mouse hit-testing
 	turnLineIndex    []stepRef // full transcript turn-head index (stepIdx -1) for jump/collapse
+	replyLineIndex   []stepRef // answer-card ranges (stepIdx replyCardIdx) for click-to-copy
 	msgLineIndex     []stepRef // full transcript per-message first-line index for find jumps
+	copyFlashUntil   time.Time // footer ✓ Copied dwell; zero when idle
+	copyFlashSeq     int       // drops stale expire ticks after a re-copy
 	find             findState // transcript search bar (alt+f)
 
 	renderPending bool // a coalesced streaming render is scheduled
@@ -583,13 +592,14 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.restoreAfterExec()
 
 	case copyResultMsg:
-		cmd := m.restoreAfterExec()
+		// Local helpers run off-thread (no tea.Exec) — do not re-arm
+		// mouse/Shift+Enter; that mode rewrite flickers the alt-screen.
 		if msg.err != nil {
+			m.copyFlashUntil = time.Time{}
 			m.addNote("copy failed — " + msg.err.Error())
 			m.refresh()
-			return m, cmd
 		}
-		return m, tea.Batch(cmd, m.transientNoteCmd(fmt.Sprintf("copied %d bytes via %s", msg.n, msg.tool)))
+		return m, nil
 
 	case sessionSwitchMsg:
 		return m, m.handleSessionSwitch(msg)
@@ -737,6 +747,13 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.refresh()
 		return m, m.noticeSweep() // re-arm while pending notices remain
 
+	case copyFlashExpireMsg:
+		if msg.seq != m.copyFlashSeq {
+			return m, nil
+		}
+		m.copyFlashUntil = time.Time{}
+		return m, nil
+
 	case approvalExpireMsg:
 		drop := m.handleApprovalExpiry(time.Now())
 		m.refresh()
@@ -766,7 +783,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			top := 2
 			if msg.Y >= top && msg.Y < top+m.vp.Height {
 				line := msg.Y - top + m.vp.YOffset
-				// Turn heads toggle their card; step heads toggle details.
+				// Turn heads fold; chips and step heads toggle; answer
+				// cards copy the reply (final or partial).
 				if msgIdx, ok := m.turnAtLine(line); ok {
 					m.toggleCollapseAt(msgIdx)
 					m.refresh()
@@ -781,6 +799,11 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.toggleStep(msgIdx, stepIdx)
 					m.refresh()
 					return m, nil
+				}
+				// Answer cards (and collapsed summaries) copy the turn's
+				// reply — final or the partial stream so far.
+				if msgIdx, ok := m.replyAtLine(line); ok {
+					return m, m.copyReplyAt(msgIdx)
 				}
 			}
 		}
@@ -1062,6 +1085,7 @@ func (m *Model) clearConversation() tea.Cmd {
 	m.convPrefixRefs = nil
 	m.find = findState{} // nothing left to search
 	m.stepLineIndex = nil
+	m.replyLineIndex = nil
 	m.turnStats = nil
 	m.toolTotal = 0
 	m.sessionStart = time.Time{}
@@ -1622,6 +1646,22 @@ func (m *Model) turnAtLine(line int) (msgIdx int, ok bool) {
 	return 0, false
 }
 
+// replyAtLine maps a viewport content line to an answer card (or a
+// collapsed turn's summary). The card's full height is the hit box so a
+// click anywhere on the raised reply copies it.
+func (m *Model) replyAtLine(line int) (msgIdx int, ok bool) {
+	for _, r := range m.replyLineIndex {
+		end := r.end
+		if end < r.line {
+			end = r.line
+		}
+		if line >= r.line && line <= end {
+			return r.msgIdx, true
+		}
+	}
+	return 0, false
+}
+
 // stepAtLine maps a viewport content line to a step for mouse hit-testing,
 // matching only the step's own header line (the chevron row) — a click on
 // detail lines or prose below a step must not toggle it.
@@ -1631,7 +1671,7 @@ func (m *Model) stepAtLine(line int) (msgIdx, stepIdx int, ok bool) {
 		if r.line > line {
 			break
 		}
-		if r.line == line && r.x1 <= r.x0 {
+		if r.line == line && r.x1 <= r.x0 && r.stepIdx >= 0 {
 			return r.msgIdx, r.stepIdx, true
 		}
 	}
