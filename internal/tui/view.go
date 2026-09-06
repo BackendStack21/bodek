@@ -161,10 +161,10 @@ func (m *Model) header() string {
 
 // ctxGauge renders the context-window usage indicator for the header right
 // cluster: a pressure-tinted fill glyph, a percentage, and (when not compact)
-// the used/max fraction. Usage is the last request's prompt size — the live
-// window fill, derived from deltas of odek's cumulative-per-run contextTokens
-// reports, so it drops again after odek trims history — never the cumulative
-// session total, which only grows. Returns "" when the model's budget is
+// the used/max fraction. Usage is the parent conversation window
+// (windowTokens on odek ≥ v2.3; a delta of pre-v2.3 cumulative
+// contextTokens otherwise) — never session spend, which only grows, and
+// never charged sub-agent tokens. Returns "" when the model's budget is
 // unknown so the header silently keeps its prior shape rather than guessing.
 func (m *Model) ctxGauge(compact bool) string {
 	if m.maxContext <= 0 {

@@ -93,7 +93,11 @@ func (m *Model) handleEvent(ev client.Event) (tea.Model, tea.Cmd) {
 			m.resetJobsState()        // jobs are session-scoped; re-baseline on the next snapshot
 		}
 		if ev.Model != "" {
-			m.model = collapse(ev.Model)
+			id := collapse(ev.Model)
+			if id != m.model {
+				m.maxContextWire = 0 // previous model's wire limit must not leak
+			}
+			m.model = id
 			m.resolveMaxContext()
 		}
 		m.sandbox = ev.Sandbox
@@ -242,7 +246,7 @@ func (m *Model) handleEvent(ev client.Event) (tea.Model, tea.Cmd) {
 			ts := turnStats{
 				latency:    ev.Latency,
 				wall:       wall,
-				ctxTok:     ev.ContextTokens,
+				ctxTok:     ev.BillingTokens(),
 				outTok:     ev.OutputTokens,
 				cacheWrite: ev.CacheCreationTokens,
 				cacheRead:  ev.CacheReadTokens,
@@ -272,31 +276,18 @@ func (m *Model) handleEvent(ev client.Event) (tea.Model, tea.Cmd) {
 		m.status = "ready"
 		m.sessCtxTok = ev.SessionContextTokens
 		m.sessOutTok = ev.SessionOutputTokens
-		// ev.ContextTokens is cumulative for the run (sum of prompt tokens
-		// across all LLM calls), so the live window fill is the delta against
-		// the last report — the final request's prompt size.
-		if fill := ev.ContextTokens - m.runCtxCum; ev.ContextTokens > 0 && fill > 0 {
-			m.winCtxTok = fill
-		}
-		m.runCtxCum = 0 // run over — the next run's cumulative restarts at zero
+		m.applyCtxWindow(ev)
+		m.runCtxCum = 0 // run over — the next run's pre-v2.3 cumulative restarts
 		m.lastLatency = ev.Latency
 		m.relayout() // the busy status line releases its row
 		attn = m.attentionCmd(m.attentionFor(attentionDone))
 
 	case "usage":
 		// Per-iteration report from odek serve: keeps the header gauge live
-		// during multi-turn runs instead of waiting for "done". contextTokens
-		// is cumulative for the run, so the window fill is the delta against
-		// the previous report — the last request's prompt size, which drops
-		// again after odek trims history. A zero value means the provider
-		// reported no usage — keep the last known fill rather than zeroing
-		// the gauge.
-		if ev.ContextTokens > 0 {
-			if fill := ev.ContextTokens - m.runCtxCum; fill > 0 {
-				m.winCtxTok = fill
-			}
-			m.runCtxCum = ev.ContextTokens
-		}
+		// during a run instead of waiting for "done". Wire v3 sends the
+		// parent window directly; older engines still send a cumulative
+		// (applyCtxWindow). Absent/zero holds the last fill.
+		m.applyCtxWindow(ev)
 		stream = true
 
 	case "keepalive":
@@ -318,6 +309,7 @@ func (m *Model) handleEvent(ev client.Event) (tea.Model, tea.Cmd) {
 		}
 		if ev.Model != "" && m.model == "" {
 			m.model = collapse(ev.Model) // only until the first session/prompt reports the live one
+			m.maxContextWire = 0
 			m.resolveMaxContext()
 		}
 		m.sandbox = ev.Sandbox
@@ -888,6 +880,29 @@ func (m *Model) setRunStatus(s string) {
 		return
 	}
 	m.status = s
+}
+
+// applyCtxWindow seeds the header gauge from a usage/done frame.
+// Wire v3 (odek ≥ v2.3): windowTokens is the parent conversation window
+// (last parent call's prompt — children never move it). 0/omitted holds
+// the last fill. maxContextTokens overrides the /api/models table.
+// Pre-v2.3: contextTokens is run-cumulative and the fill is the delta
+// between reports.
+func (m *Model) applyCtxWindow(ev client.Event) {
+	if ev.MaxContextTokens > 0 {
+		m.maxContextWire = ev.MaxContextTokens
+		m.maxContext = ev.MaxContextTokens
+	}
+	if ev.WindowTokens > 0 {
+		m.winCtxTok = ev.WindowTokens
+		return
+	}
+	if ev.ContextTokens > 0 {
+		if fill := ev.ContextTokens - m.runCtxCum; fill > 0 {
+			m.winCtxTok = fill
+		}
+		m.runCtxCum = ev.ContextTokens
+	}
 }
 
 // finalize closes out the streaming assistant message and drops the cursor:

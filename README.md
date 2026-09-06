@@ -286,9 +286,11 @@ own front-end settings are separate; see [Configuration](#configuration).
 ### Telemetry & cost
 
 - **Context gauge** — a pressure-tinted context-window gauge in the header
-  (`ctx █▉░░░ 38% 380/1k`, eighth-block fill, green→amber→red). Live
-  `plan N/M` and `● N jobs` / `✗ job` instruments ride the same bar when
-  a plan or background job is active.
+  (`ctx █▉░░░ 38% 380/1k`, eighth-block fill, green→amber→red). The fill
+  is the parent conversation window (`windowTokens` on odek ≥ v2.3), not
+  session spend or sub-agent tokens. Live `plan N/M` and `● N jobs` /
+  `✗ job` instruments ride the same bar when a plan or background job is
+  active.
 - **Per-turn footers & `/stats`** — token counts and latency ride every turn
   head (`⚡` latency, `⌂` context, `↳` output tokens, `⚒` tools); `/stats`
   opens a sheet that rolls up the session (cost, cache, context). The `⎇`

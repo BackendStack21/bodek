@@ -132,7 +132,12 @@ feat(tui): compact tool steps with Ctrl+E details toggle
   thinking/token deltas (16 at a time) before enqueueing. The header
   connection lamp stays lit while a turn runs (`◉`); idle is `●`,
   reconnect `◌`, down `○`. Progress stays on the status line — an empty
-  corner was read as a dropped socket.
+  corner was read as a dropped socket. The header `ctx` gauge is the
+  parent conversation window: odek ≥ v2.3 sends `windowTokens` (last
+  parent prompt) plus `maxContextTokens` (runtime model limit — beats
+  `/api/models`). `done.inputTokens` is billing spend including charged
+  sub-agents — never a gauge. Pre-v2.3 still deltas `contextTokens`.
+  Absent/zero `windowTokens` holds the last fill.
 - `internal/tui` is split by responsibility: `model.go` holds the core
   model, `events.go` event handling, `input.go` key/text input,
   `approval.go` the approval flow, `chrome.go` drawer-sheet / shelf /

@@ -113,6 +113,33 @@ func TestDecodeEvents(t *testing.T) {
 				if e.ContextTokens != 900 || e.OutputTokens != 120 {
 					t.Fatalf("bad done token decode: %+v", e)
 				}
+				if e.BillingTokens() != 900 {
+					t.Fatalf("legacy billing = %d, want 900", e.BillingTokens())
+				}
+			},
+		},
+		{
+			name:  "done wire v3 window + billing",
+			frame: `{"type":"done","latency":1.2,"windowTokens":41000,"maxContextTokens":200000,"inputTokens":152300,"outputTokens":800,"sessionContextTokens":300000,"sessionOutputTokens":40000}`,
+			check: func(t *testing.T, e Event) {
+				if e.WindowTokens != 41000 || e.MaxContextTokens != 200000 || e.InputTokens != 152300 {
+					t.Fatalf("bad v3 done decode: %+v", e)
+				}
+				if e.ContextTokens != 0 {
+					t.Fatalf("v3 done must not populate legacy contextTokens: %d", e.ContextTokens)
+				}
+				if e.BillingTokens() != 152300 {
+					t.Fatalf("billing = %d, want 152300", e.BillingTokens())
+				}
+			},
+		},
+		{
+			name:  "usage wire v3",
+			frame: `{"type":"usage","windowTokens":38412,"maxContextTokens":200000,"outputTokens":512}`,
+			check: func(t *testing.T, e Event) {
+				if e.Type != "usage" || e.WindowTokens != 38412 || e.MaxContextTokens != 200000 || e.OutputTokens != 512 {
+					t.Fatalf("bad v3 usage decode: %+v", e)
+				}
 			},
 		},
 		{

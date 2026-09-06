@@ -640,6 +640,9 @@ func (m *Model) modelEntries() []modelEntry {
 func (m *Model) applyModelChoice(id string) {
 	id = collapse(id)
 	m.pendModel = id
+	if id != m.model {
+		m.maxContextWire = 0
+	}
 	m.model = id
 	m.resolveMaxContext()
 }
@@ -977,6 +980,7 @@ func (m *Model) handleSessionDetail(msg sessionDetailMsg) tea.Cmd {
 	m.tokens.Set(msg.sess.ID, msg.token)
 	if msg.sess.Model != "" {
 		m.model = collapse(msg.sess.Model)
+		m.maxContextWire = 0
 		m.resolveMaxContext()
 	}
 	m.sandbox = msg.sess.Sandbox
@@ -992,6 +996,7 @@ func (m *Model) handleSessionDetail(msg sessionDetailMsg) tea.Cmd {
 	m.subCosts = nil
 	m.winCtxTok = 0
 	m.runCtxCum = 0
+	m.maxContextWire = 0
 	m.lastLatency = 0
 	m.msgs = m.msgs[:0]
 	m.resetMsgBlocks()
