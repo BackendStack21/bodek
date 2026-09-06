@@ -1,6 +1,7 @@
 // Package settings persists bodek's own front-end preferences so they
-// survive relaunches: theme, bell, notify, plain. odek's server-side
-// configuration is unaffected — this file belongs to the terminal UI alone.
+// survive relaunches: theme, bell, notify, plain, verbosity. odek's
+// server-side configuration is unaffected — this file belongs to the
+// terminal UI alone.
 //
 // Resolution order everywhere: explicit flag > BODEK_THEME env (theme) >
 // this file > built-in default. Save rewrites the whole file; fields are
@@ -18,10 +19,11 @@ import (
 // nil means "never chosen" and is skipped on save / treated as default on
 // load; a value is an explicit user choice that flags may still override.
 type Settings struct {
-	Theme  string `json:"theme,omitempty"`
-	Bell   *bool  `json:"bel,omitempty"`
-	Notify *bool  `json:"notify,omitempty"`
-	Plain  *bool  `json:"plain,omitempty"`
+	Theme     string `json:"theme,omitempty"`
+	Bell      *bool  `json:"bel,omitempty"`
+	Notify    *bool  `json:"notify,omitempty"`
+	Plain     *bool  `json:"plain,omitempty"`
+	Verbosity string `json:"verbosity,omitempty"`
 }
 
 // Path returns the settings file location: $BODEK_CONFIG if set, else

@@ -97,6 +97,7 @@ func (m *Model) handleConfirmKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		case confirmQuit:
 			m.quitting = true
+			m.persistLocal()
 			return m, tea.Quit
 		}
 	case "ctrl+c":
@@ -104,6 +105,7 @@ func (m *Model) handleConfirmKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// for every other armed action it disarms like any key.
 		if kind == confirmQuit {
 			m.quitting = true
+			m.persistLocal()
 			return m, tea.Quit
 		}
 	}
@@ -969,8 +971,10 @@ func (m *Model) handleLimitsMsg(msg limitsMsg) {
 
 func (m *Model) handleSessionDetail(msg sessionDetailMsg) tea.Cmd {
 	if msg.err != nil {
-		m.panelMsg = "error: " + msg.err.Error()
-		return nil
+		if m.panel != panelNone {
+			m.panelMsg = "error: " + msg.err.Error()
+		}
+		return m.transientNoteCmd("resume failed — /new or ^R")
 	}
 	// Replay the saved transcript into the local view, then adopt the session
 	// on the connection (session_switch restores the server-side memory
@@ -1007,6 +1011,11 @@ func (m *Model) handleSessionDetail(msg sessionDetailMsg) tea.Cmd {
 	m.resetPlanState()
 	m.resetJobsState() // jobs are session-scoped; the next snapshot re-baselines
 	m.replayTranscript(msg.sess.Messages)
+	if t := msg.sess.Task; t != "" {
+		m.rememberSession(t)
+	} else {
+		m.rememberSession("")
+	}
 	note := m.transientNoteCmd("resumed session " + shortID(msg.sess.ID))
 	m.closePanel()
 	return tea.Batch(note, m.adoptSession(), m.fetchPlan())

@@ -111,7 +111,8 @@ bodek looks for `odek` on your `PATH`. To point at a specific binary use
 ## Usage
 
 ```bash
-bodek                                             # launch odek serve and start chatting
+bodek                                             # launch odek serve and resume this directory's last session
+bodek --new                                       # start a fresh session (the old one stays in /sessions)
 bodek --sandbox                                   # run tool calls inside odek's Docker sandbox
 bodek --url 'http://127.0.0.1:8080/?token=…'      # attach with the token URL odek serve printed
 bodek --url http://127.0.0.1:8080 --token d3adb33f  # attach with an explicit token
@@ -230,11 +231,15 @@ own front-end settings are separate; see [Configuration](#configuration).
   (`r`), export a transcript (`e` markdown, `E` JSON), and search server-side
   (`/`); `n` loads the next page. Resuming sends a `session_switch` so the
   server-side memory buffer is restored before you type.
-- **Session home** — first-run shows the working directory and `type a task · ^K`.
-  After `^L`, the cleared transcript keeps the last prompt and coding
-  receipt so the session is still oriented; `/new` returns to the
-  first-run splash. The footer leads with a mode pill
-  (`composer` / `approval` / `jobs` / …).
+- **Last-session resume** — launching in a directory continues yesterday's
+  session (`session_switch` + transcript replay). `/new` or `--new` is
+  the escape; the old session stays resumable via `/sessions`. A failed
+  resume is a note, never a leftover approval form.
+- **Session home** — first-run shows the working directory, the last
+  session title when one exists, and `type a task · ^K`. After `^L`, the
+  cleared transcript keeps the last prompt and coding receipt so the
+  session is still oriented; `/new` returns to the first-run splash. The
+  footer leads with a mode pill (`composer` / `approval` / `jobs` / …).
 - **Auto-fitting composer** — the input box rests at three rows and grows
   with your prompt (multi-line or a single long line, wide-char aware) up to
   twelve rows or what the terminal can spare; `⇧⏎` inserts a newline
@@ -242,7 +247,10 @@ own front-end settings are separate; see [Configuration](#configuration).
   back after send, history recall, and `/`-commands. A one-row shelf above it carries staged
   files, the folded queue count (`^Q` unfolds the strip), a `↓ new output`
   hint, and a pending skill chip. Prompts wrap in the transcript at the
-  viewport width — long lines are never clipped from view.
+  viewport width — long lines are never clipped from view. An unsent draft,
+  the queue, and staged `@` files survive quit and crash for this
+  directory — they restore, they never auto-send. `^P` / `^N` history is
+  disk-backed per directory.
 - **Skill suggestions** — when odek's learn loop proposes a skill, a
   passive shelf chip answers on `alt+s` (save) / `alt+x` (skip); it never
   blocks sending, and auto-save governs real persistence.
@@ -261,15 +269,17 @@ own front-end settings are separate; see [Configuration](#configuration).
 - **Verbosity dial** — `/verbosity` (or `--verbosity quiet|normal|detailed`)
   sets the whole noise policy in one stroke: quiet hides engine traces,
   detailed switches on the `^E` expand-all view, normal is the default
-  (`^E` stays a manual override in any dial state). Your own commands
-  always answer, and errors, warnings, and hints show in every state.
+  (`^E` stays a manual override in any dial state). The choice persists
+  in `~/.bodek/config.json`; an explicit `--verbosity` still wins for
+  that launch. Your own commands always answer, and errors, warnings, and
+  hints show in every state.
 - **Cancellation** (`Esc`) — abort a running turn via odek's cancel API.
 - **Provider-failure cards** — when a turn dies mid-flight (stream stall
   under parallel load, HTTP 429 after the retry budget, dropped connection,
   timeout), the failure is classified and attached to the turn in plain
-  language — never a raw LLM-internal error line. The card and the footer
-  show the recovery path: `⏎` on the empty input re-sends the preserved
-  prompt (`/retry` or `alt+r` work too).
+  language — never a raw LLM-internal error line. Cancel and failure put
+  the prompt back in the composer so it can be edited; `/retry` or `alt+r`
+  re-sends the same bytes. `⏎` on an empty input still retries.
 
 ### Safety
 
@@ -321,7 +331,12 @@ own front-end settings are separate; see [Configuration](#configuration).
 ### Connectivity & lifecycle
 
 - **Spawn or attach** — bodek launches a private `odek serve` by default, or
-  attaches to a running one with `--url` (+`--token`).
+  attaches to a running one with `--url` (+`--token`). A failed spawn prints
+  one diagnosis card (missing binary, not ready, no provider env) and, on a
+  TTY, offers `⏎` to retry.
+- **Protocol contract** — when the spawned odek version is known and older
+  than a painted surface (jobs, wake, keepalive, `windowTokens`), one quiet
+  note names the missing contract. Attach mode with no version stays silent.
 - **Auto-reconnect** — if the socket drops, bodek redials with backoff
   (500ms → 8s, 5 attempts) and re-adopts the session over the fresh socket;
   only a server that stays down leaves the `disconnected` badge (empty input
@@ -355,9 +370,10 @@ own front-end settings are separate; see [Configuration](#configuration).
 | `/` | Open the command palette (see below) |
 | `@` | Attach a file (see below) |
 | `alt+↑` / `alt+↓` | Jump to the previous / next turn |
-| `alt+y` | Copy the **focused** turn's reply — the one you last jumped to or clicked (falls back to the latest reply) |
+| `alt+y` | Copy the **focused** surface — reply, expanded step, or open reasoning (falls back to the latest reply) |
+| `alt+m` | Mark a copy span; the next `alt+y` yanks sanitized replies from the mark through the focus |
 | `alt+r` | Re-send the last prompt (`/retry`) |
-| `alt+f` | Search the transcript (`⏎`/`n` next match · `N` previous · scrolling stays live) |
+| `alt+f` | Search the transcript (`⏎`/`n` next match · `N` previous · a hit expands the hidden step or reasoning block) |
 | `^F` | Fold/unfold the most recent turn card (or click any turn head) |
 | `tab` | Focus the next sub-agent chip on a swarm turn; otherwise open/close the latest reasoning block; with neither, toggle the latest step's expansion |
 | `^R` | Browse & resume saved sessions |
@@ -415,7 +431,7 @@ full command and press `⏎`.
 | `/retry` | Re-send the last prompt (queues it if a turn is running) |
 | `/queue` | Manage the prompt queue — priority, delete, send now (the full manager over the `^Q` strip) |
 | `/theme [name]` | Switch the color theme at runtime and persist it (`ember-dark` · `ember-light` · `high-contrast` · `classic`) |
-| `/verbosity [quiet\|normal\|detailed]` | One-dial noise policy: quiet hides engine traces, detailed switches on the `^E` expand-all view (reasoning + full tool output); bare `/verbosity` cycles |
+| `/verbosity [quiet\|normal\|detailed]` | One-dial noise policy (persisted): quiet hides engine traces, detailed switches on the `^E` expand-all view; bare `/verbosity` cycles |
 | `/stats` | Session metrics sheet (cost, cache, context gauge) |
 | `/server` | Cockpit — server, link, budget & session in one card (or click the header) |
 | `/sessions` | Browse, search, pin, rename, export & resume sessions |
@@ -533,9 +549,11 @@ the engine already abandoned.
 
 bodek keeps its **own front-end settings** in `~/.bodek/config.json`
 (override the location with `BODEK_CONFIG`): `theme`, `bel`,
-`notify`, `plain`. Switching the theme with `/theme` persists it there
+`notify`, `plain`, `verbosity`. `/theme` and `/verbosity` persist there
 automatically; the other values can be written by hand and seed the matching
-flag defaults. Resolution order:
+flag defaults. Per-directory draft, queue, prompt history, and last-session
+id live in `~/.bodek/workspaces.json` (override with `BODEK_WORKSPACE`) —
+never tokens. Resolution order:
 **flag → `BODEK_THEME` env (theme) → settings file → built-in default**.
 
 The full settings reference — every key, every `BODEK_*`/display env var,
@@ -626,6 +644,7 @@ Project layout:
 | `internal/server` | Launch / attach to `odek serve`, resolve the auth token |
 | `internal/client` | odek serve WebSocket protocol (transport + REST + decoding) |
 | `internal/tokens` | Local persistence of per-session auth tokens |
+| `internal/workspace` | Per-cwd draft, queue, history, and last-session id |
 | `internal/settings` | Front-end settings (`~/.bodek/config.json`) |
 | `internal/update` | Self-upgrade: fetch and swap in the latest GitHub release binary |
 | `internal/tui` | The Bubble Tea model, update loop, panels, and view |

@@ -16,7 +16,8 @@ silently ignored.
   "theme": "ember-dark",
   "bel": false,
   "notify": true,
-  "plain": false
+  "plain": false,
+  "verbosity": "quiet"
 }
 ```
 
@@ -26,10 +27,11 @@ silently ignored.
 | `bel` | bool | `true` | `--bel` | Ring the terminal bell when a turn completes or an approval is waiting (`--bel=false` mutes; the title still updates). |
 | `notify` | bool | `false` | `--notify` | Raise desktop notifications (OSC 9) on turn completion and pending approvals. |
 | `plain` | bool | `false` | `--plain` | Linear mode: no alt-screen; agent events print to the terminal's native scrollback (screen readers, pipes, logs). |
-| — (flag only) | string | `normal` | `--verbosity` | Startup noise dial: `quiet` (engine traces hidden), `normal`, `detailed` (`^E` expand-all view). `/verbosity` switches at runtime; never persisted to this file. |
+| `verbosity` | string | `normal` | `--verbosity` | Noise dial: `quiet` (info notes hidden), `normal`, `detailed` (`^E` expand-all view). `/verbosity` switches live **and persists it here**. An explicit `--verbosity` still wins for that launch. |
 
 Unset keys fall back to their defaults — the file only ever stores choices
-you actually made (`/theme` writes `theme`; the rest you write by hand).
+you actually made (`/theme` writes `theme`, `/verbosity` writes `verbosity`;
+the rest you write by hand).
 A leftover `"mouse"` key from older bodek builds is ignored: the
 alt-screen always reports the mouse so the wheel can scroll.
 
@@ -41,8 +43,8 @@ Every setting resolves the same way:
 explicit flag  →  BODEK_THEME env (theme only)  →  settings file  →  built-in default
 ```
 
-`/theme` persists to the settings file, so the next launch starts where you
-left off unless a flag or `BODEK_THEME` overrides it.
+`/theme` and `/verbosity` persist to the settings file, so the next launch
+starts where you left off unless a flag or `BODEK_THEME` overrides them.
 
 ## Environment variables
 

@@ -286,7 +286,7 @@ func (m *Model) home() string {
 	if m.homePrompt != "" || (m.sessionID != "" && m.lastPrompt != "") {
 		return m.sessionHome()
 	}
-	return welcome(m.th, m.cardSpan(), m.opts.CWD)
+	return welcome(m.th, m.cardSpan(), m.opts.CWD, m.resumeTitle)
 }
 
 func (m *Model) sessionHome() string {

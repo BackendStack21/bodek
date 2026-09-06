@@ -20,6 +20,7 @@ import (
 	"github.com/BackendStack21/bodek/internal/server"
 	"github.com/BackendStack21/bodek/internal/settings"
 	"github.com/BackendStack21/bodek/internal/tui"
+	"github.com/BackendStack21/bodek/internal/workspace"
 )
 
 func main() {
@@ -39,6 +40,7 @@ type config struct {
 	plain     bool   // linear rendering mode (no alt-screen)
 	theme     string // startup palette override (empty = BODEK_THEME / settings)
 	verbosity string // startup noise dial: quiet, normal, detailed (empty = normal)
+	fresh     bool   // --new: skip last-session resume
 	extraArgs []string
 
 	persist settings.Settings // the loaded file, re-saved when /theme switches
@@ -73,7 +75,9 @@ func parseConfig(args []string, output io.Writer) (config, error) {
 	fs.BoolVar(&cfg.bel, "bel", st.Bool(st.Bell, true), "ring the terminal bell when a turn completes or an approval is waiting (--bel=false mutes)")
 	fs.BoolVar(&cfg.notify, "notify", st.Bool(st.Notify, false), "raise desktop notifications (OSC 9) on turn completion and approvals")
 	fs.BoolVar(&cfg.plain, "plain", st.Bool(st.Plain, false), "linear mode: no alt-screen, transcript printed to scrollback (screen readers, pipes, logs)")
-	fs.StringVar(&cfg.verbosity, "verbosity", "", "noise dial: quiet (info notes hidden, compact steps), normal, detailed (steps expand) — /verbosity switches at runtime")
+	verbDefault := st.Verbosity
+	fs.StringVar(&cfg.verbosity, "verbosity", verbDefault, "noise dial: quiet (info notes hidden, compact steps), normal, detailed (steps expand) — /verbosity switches at runtime and persists")
+	fs.BoolVar(&cfg.fresh, "new", false, "start a fresh session (skip last-session resume for this directory)")
 	fs.Usage = func() {
 		_, _ = fmt.Fprintf(fs.Output(), "Usage: bodek [options] [-- <odek serve flags>]\n\n")
 		_, _ = fmt.Fprintf(fs.Output(), "A terminal interface for the odek agent.\n\n")
@@ -83,7 +87,8 @@ func parseConfig(args []string, output io.Writer) (config, error) {
 		_, _ = fmt.Fprintf(fs.Output(), "Options:\n")
 		fs.PrintDefaults()
 		_, _ = fmt.Fprintf(fs.Output(), "\nExamples:\n")
-		_, _ = fmt.Fprintf(fs.Output(), "  bodek                                             # spawn odek serve and start chatting\n")
+		_, _ = fmt.Fprintf(fs.Output(), "  bodek                                             # spawn odek serve and resume this directory's last session\n")
+		_, _ = fmt.Fprintf(fs.Output(), "  bodek --new                                       # start a fresh session\n")
 		_, _ = fmt.Fprintf(fs.Output(), "  bodek --sandbox                                   # spawn odek serve with Docker sandbox\n")
 		_, _ = fmt.Fprintf(fs.Output(), "  bodek --url 'http://127.0.0.1:8080/?token=…'      # attach with the token URL odek serve printed\n")
 		_, _ = fmt.Fprintf(fs.Output(), "  bodek --url http://127.0.0.1:8080 --token d3adb33f  # attach with an explicit token\n")
@@ -162,14 +167,14 @@ func run() error {
 	}
 
 	// Spawn or attach to the odek serve backend.
-	srv, err := server.Connect(server.Options{
+	srv, err := connectWithDiagnosis(server.Options{
 		URL:       cfg.url,
 		Token:     cfg.token,
 		Bin:       cfg.bin,
 		Sandbox:   cfg.sandbox,
 		ExtraArgs: cfg.extraArgs,
 		Stderr:    serverErr,
-	})
+	}, os.Stderr, os.Stdin)
 	if err != nil {
 		if logTail != nil {
 			if tail := strings.TrimSpace(logTail.String()); tail != "" {
@@ -206,8 +211,14 @@ func run() error {
 		Plain:       cfg.plain,
 		Theme:       cfg.theme,
 		Verbosity:   cfg.verbosity,
+		Workspace:   workspace.Open(),
+		Fresh:       cfg.fresh,
 		OnThemeChange: func(name string) error {
 			cfg.persist.Theme = name
+			return settings.Save(cfg.persist)
+		},
+		OnVerbosityChange: func(name string) error {
+			cfg.persist.Verbosity = name
 			return settings.Save(cfg.persist)
 		},
 		Reconnect: func() (*client.Client, error) {

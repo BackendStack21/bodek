@@ -12,7 +12,7 @@ import (
 func TestWelcomeFitsWidth(t *testing.T) {
 	th := newTheme()
 	const w = 24
-	out := plain(welcome(th, w, "/tmp/project"))
+	out := plain(welcome(th, w, "/tmp/project", ""))
 	if !strings.Contains(out, "/tmp/project") {
 		t.Errorf("welcome missing cwd:\n%s", out)
 	}

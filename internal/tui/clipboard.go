@@ -191,13 +191,116 @@ func (m *Model) focusedReply() string {
 	return m.lastReply()
 }
 
+// copyKind names the focused copy surface.
+type copyKind int
+
+const (
+	copyReply copyKind = iota
+	copyStep
+	copyThink
+)
+
+// copySpan is the alt+m mark for a two-point yank.
+type copySpan struct {
+	msgIdx int
+	kind   copyKind
+	idx    int
+	set    bool
+}
+
 // copyLastReply puts the latest assistant reply on the system clipboard.
 func (m *Model) copyLastReply() tea.Cmd {
 	return m.copyText(m.lastReply())
 }
 
-// copyFocusedTurn puts the focused turn's reply on the clipboard — any
-// earlier answer, not just the newest one.
+// copyFocusedTurn puts the focused surface on the clipboard: an open
+// reasoning block, an expanded step, or the turn reply. After alt+m it
+// yanks the sanitized range between the mark and the current focus.
 func (m *Model) copyFocusedTurn() tea.Cmd {
-	return m.copyText(m.focusedReply())
+	if m.copyMark.set {
+		text := m.spanCopyText()
+		m.copyMark = copySpan{}
+		return m.copyText(text)
+	}
+	return m.copyText(m.focusedCopyText())
+}
+
+// focusedCopyText is the sanitized payload for the current inspect surface.
+func (m *Model) focusedCopyText() string {
+	idx := m.focusIdx
+	if idx < 0 || idx >= len(m.msgs) || m.msgs[idx].role != roleAsst || m.msgs[idx].raw {
+		return m.focusedReply()
+	}
+	msg := m.msgs[idx]
+	for i := len(msg.items) - 1; i >= 0; i-- {
+		if msg.items[i].thinking && msg.items[i].open && msg.items[i].text != "" {
+			return sanitize(msg.items[i].text)
+		}
+	}
+	for i := len(msg.steps) - 1; i >= 0; i-- {
+		if msg.steps[i].expanded && msg.steps[i].result != "" {
+			return sanitize(msg.steps[i].result)
+		}
+	}
+	if msg.content != "" {
+		return msg.content
+	}
+	return m.focusedReply()
+}
+
+func (m *Model) currentCopySpan() copySpan {
+	idx := m.focusIdx
+	if idx < 0 || idx >= len(m.msgs) {
+		return copySpan{}
+	}
+	msg := m.msgs[idx]
+	if msg.role != roleAsst || msg.raw {
+		return copySpan{}
+	}
+	for i := len(msg.items) - 1; i >= 0; i-- {
+		if msg.items[i].thinking && msg.items[i].open {
+			return copySpan{msgIdx: idx, kind: copyThink, idx: i, set: true}
+		}
+	}
+	for i := len(msg.steps) - 1; i >= 0; i-- {
+		if msg.steps[i].expanded {
+			return copySpan{msgIdx: idx, kind: copyStep, idx: i, set: true}
+		}
+	}
+	return copySpan{msgIdx: idx, kind: copyReply, set: true}
+}
+
+func (m *Model) markCopySpan() tea.Cmd {
+	sp := m.currentCopySpan()
+	if !sp.set {
+		return m.transientNoteCmd("nothing to mark — jump to a turn first")
+	}
+	m.copyMark = sp
+	return m.transientNoteCmd("mark set — alt+y copies from here")
+}
+
+func (m *Model) spanCopyText() string {
+	cur := m.currentCopySpan()
+	if !m.copyMark.set || !cur.set {
+		return m.focusedCopyText()
+	}
+	a, b := m.copyMark.msgIdx, cur.msgIdx
+	if a > b {
+		a, b = b, a
+	}
+	var parts []string
+	for i := a; i <= b; i++ {
+		if i < 0 || i >= len(m.msgs) {
+			continue
+		}
+		msg := m.msgs[i]
+		if msg.role != roleAsst || msg.raw || msg.content == "" {
+			continue
+		}
+		parts = append(parts, msg.content)
+	}
+	if len(parts) == 0 {
+		return m.focusedCopyText()
+	}
+	return strings.Join(parts, "\n\n")
 }

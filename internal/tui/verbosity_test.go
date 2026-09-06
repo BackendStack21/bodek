@@ -113,6 +113,38 @@ func TestVerbosityRejectsUnknownArg(t *testing.T) {
 	}
 }
 
+func TestSetVerbosityPersists(t *testing.T) {
+	m := newTestModel()
+	var saved string
+	m.opts.OnVerbosityChange = func(name string) error { saved = name; return nil }
+	m.runCommandLine("/verbosity quiet")
+	if saved != "quiet" {
+		t.Fatalf("OnVerbosityChange saved %q, want quiet", saved)
+	}
+	m.runCommandLine("/verbosity")
+	if saved != "detailed" {
+		t.Fatalf("cycle persist saved %q, want detailed", saved)
+	}
+}
+
+func TestSetVerbosityPersistErrorStillApplies(t *testing.T) {
+	m := newTestModel()
+	m.opts.OnVerbosityChange = func(string) error { return errVerbosityPersist }
+	m.runCommandLine("/verbosity quiet")
+	if m.verbosity != verbosityQuiet {
+		t.Fatal("a persist failure must not block the dial")
+	}
+	if !strings.Contains(strings.Join(m.notices, "\n"), "verbosity") {
+		t.Fatalf("persist failure should still acknowledge the dial: %q", m.notices)
+	}
+}
+
+var errVerbosityPersist = errPersistStub("save failed")
+
+type errPersistStub string
+
+func (e errPersistStub) Error() string { return string(e) }
+
 func TestPaletteCarriesVerbosityEntries(t *testing.T) {
 	m := newTestModel()
 	m.pal = palState{open: true}

@@ -133,6 +133,33 @@ func findMsgMatch(msg message, q string) bool {
 	return false
 }
 
+// revealFindHit expands the step or reasoning block that actually holds the
+// query so a calm-default jump does not land on a collapsed card roof.
+func (m *Model) revealFindHit(msgIdx int) {
+	if msgIdx < 0 || msgIdx >= len(m.msgs) {
+		return
+	}
+	q := strings.ToLower(string(m.find.query))
+	if q == "" {
+		return
+	}
+	msg := &m.msgs[msgIdx]
+	for i := range msg.items {
+		if msg.items[i].thinking && strings.Contains(strings.ToLower(msg.items[i].text), q) {
+			msg.items[i].open = true
+		}
+	}
+	for i := range msg.steps {
+		s := &msg.steps[i]
+		blob := strings.ToLower(s.name + " " + s.arg + " " + s.result + " " + strings.Join(s.logs, " "))
+		if strings.Contains(blob, q) {
+			s.expanded = true
+			clearStepBlockCache(s)
+		}
+	}
+	m.invalidateMsgBlock(msgIdx)
+}
+
 // findGoto jumps the viewport to the match at the cursor and then advances
 // the cursor by dir (+1 next, -1 previous, wrapping), parking one line of
 // context above the target block.
@@ -142,8 +169,11 @@ func (m *Model) findGoto(dir int) {
 		return
 	}
 	line := m.msgLine(m.find.matches[m.find.sel])
-	if idx := m.find.matches[m.find.sel]; idx >= 0 && idx < len(m.msgs) && m.msgs[idx].role == roleAsst {
-		m.focusIdx = idx // the jumped-to reply becomes the alt+y copy target
+	if idx := m.find.matches[m.find.sel]; idx >= 0 && idx < len(m.msgs) {
+		m.revealFindHit(idx)
+		if m.msgs[idx].role == roleAsst {
+			m.focusIdx = idx // the jumped-to reply becomes the alt+y copy target
+		}
 	}
 	m.find.sel = ((m.find.sel+dir)%n + n) % n
 	if line > 0 {

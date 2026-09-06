@@ -142,15 +142,23 @@ func TestEnterIdleAfterErrorWithoutPrompt(t *testing.T) {
 	}
 }
 
-// TestFooterRetryHintOnError pins the footer's error-state hint, mirroring
-// the disconnected ⏎-redial hint: shown only when it can actually fire.
+// TestFooterRetryHintOnError: a failed turn puts lastPrompt back in the
+// composer so it can be edited. The empty-input retry hint therefore stays
+// hidden (a draft exists). Clearing the input brings the hint back.
 func TestFooterRetryHintOnError(t *testing.T) {
 	m := errorTurn(t, "iteration 17: llm: stream idle for over 2m0s without an event")
-	if foot := plain(m.footer()); !strings.Contains(foot, "retry") {
-		t.Errorf("error footer missing retry hint: %q", foot)
+	if m.ta.Value() == "" {
+		t.Fatal("failed turn must restore the prompt into the composer")
+	}
+	if foot := plain(m.footer()); strings.Contains(foot, "retry") {
+		t.Errorf("retry hint must hide while the restored prompt is the draft: %q", foot)
 	}
 
-	// A draft keeps typing sacred — the hint only promises what ⏎ does.
+	m.ta.Reset()
+	if foot := plain(m.footer()); !strings.Contains(foot, "retry") {
+		t.Errorf("error footer missing retry hint on an empty input: %q", foot)
+	}
+
 	m.ta.SetValue("a fresh thought")
 	if foot := plain(m.footer()); strings.Contains(foot, "retry") {
 		t.Errorf("retry hint must hide while a draft exists: %q", foot)
