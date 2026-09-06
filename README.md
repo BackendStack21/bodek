@@ -596,6 +596,9 @@ never become the weakest link:
 
 - **`bodek` can't find `odek`** — the engine must be on your `PATH`, or pass
   `--odek-bin /path/to/odek`.
+- **`bodek upgrade` returns 403** — GitHub's anonymous API quota (or an IP
+  block) rejected the request. Retry, or set `GITHUB_TOKEN` / `GH_TOKEN`
+  (`gh auth token`). bodek also falls back to the HTML latest-release page.
 - **Auth errors when attaching** — copy the *full* token URL `odek serve`
   printed (`--url 'http://…/?token=…'`) or pass the token via `--token`.
   Spawned instances adopt the token automatically.
