@@ -73,8 +73,110 @@ func TestApprovalAutocloseOnExpiry(t *testing.T) {
 	if m.status != "ready" {
 		t.Fatalf("status after idle expiry = %q, want ready", m.status)
 	}
-	if cmd != nil {
-		t.Fatal("sweep must stop itself once the queue is empty")
+	if m.approvalSweep() != nil {
+		t.Fatal("approval sweep must stop itself once the queue is empty")
+	}
+	if cmd == nil {
+		t.Fatal("idle expiry must arm the notice sweep so the note fades")
+	}
+	if strings.Contains(plain(m.View()), "approval required") {
+		t.Fatal("expired card still rendered")
+	}
+	if strings.Contains(plain(m.footer()), "pprove") {
+		t.Fatal("expired footer still shows A/D decision hints")
+	}
+	if m.modeName() == "approval" {
+		t.Fatal("mode must leave approval after autoclose")
+	}
+	m.Update(key("a"))
+	if got := m.ta.Value(); got != "a" {
+		t.Fatalf("a must type into the composer after autoclose, got %q", got)
+	}
+}
+
+// Autoclose must yank the reader to the newest transcript message: they
+// may have scrolled up while the card was open, and refresh() alone only
+// sticks when already at the bottom. focusIdx parks so alt+y copies that
+// turn (or falls back if it is not a copyable reply).
+func TestApprovalExpiryFocusesLatestTranscript(t *testing.T) {
+	m := newTestModel()
+	m.msgs = append(m.msgs, message{role: roleUser, content: "do it"})
+	tallTranscript(m)
+	m.focusIdx = 0
+	m.vp.GotoTop()
+	if m.vp.AtBottom() {
+		t.Fatal("precondition: must be away from the latest message")
+	}
+	feedApproval(t, m, client.Event{Type: "approval_request", ID: "apr", Risk: "shell_exec", Command: "rm x"})
+	m.apprDeadlines[0] = time.Now().Add(-time.Second)
+	m.Update(approvalExpireMsg{})
+
+	if m.curApproval() != nil {
+		t.Fatal("expired form must autoclose")
+	}
+	if !m.vp.AtBottom() {
+		t.Fatalf("viewport must jump to the latest message, yoffset=%d", m.vp.YOffset)
+	}
+	if want := len(m.msgs) - 1; m.focusIdx != want {
+		t.Fatalf("focusIdx = %d, want %d (latest message)", m.focusIdx, want)
+	}
+}
+
+// Quiet must not swallow the autoclose notice: the card the operator was
+// staring at vanished. transientNoteCmd is the operator path.
+func TestApprovalExpiryNoticeBypassesQuiet(t *testing.T) {
+	m := newTestModel()
+	m.verbosity = verbosityQuiet
+	feedApproval(t, m, client.Event{Type: "approval_request", ID: "apr", Risk: "shell_exec", Command: "rm x"})
+	m.apprDeadlines[0] = time.Now().Add(-time.Second)
+	m.Update(approvalExpireMsg{})
+	if !strings.Contains(strings.Join(m.notices, "\n"), "expired") {
+		t.Fatalf("quiet swallowed the expiry notice: %q", m.notices)
+	}
+}
+
+// A mid-turn expiry still parks on the in-flight assistant card so later
+// tokens stick at the bottom (refresh only sticks when already there).
+func TestApprovalExpiryBusyFocusesLatest(t *testing.T) {
+	m := newTestModel()
+	tallTranscript(m)
+	busyTurn(m)
+	m.vp.GotoTop()
+	if m.vp.AtBottom() {
+		t.Fatal("precondition: must be away from the latest message")
+	}
+	feedApproval(t, m, client.Event{Type: "approval_request", ID: "apr", Risk: "shell_exec", Command: "rm x"})
+	m.apprDeadlines[0] = time.Now().Add(-time.Second)
+	m.Update(approvalExpireMsg{})
+	if m.status != "thinking" {
+		t.Fatalf("busy expiry status = %q, want thinking", m.status)
+	}
+	if !m.vp.AtBottom() {
+		t.Fatalf("viewport must jump to the latest message, yoffset=%d", m.vp.YOffset)
+	}
+	if want := len(m.msgs) - 1; m.focusIdx != want {
+		t.Fatalf("focusIdx = %d, want %d (latest message)", m.focusIdx, want)
+	}
+}
+
+// A successor still waiting must not steal scrollback — the form is still
+// the focus, and yanking would fight the same contract beginWireTurn keeps.
+func TestApprovalExpirySuccessorKeepsScroll(t *testing.T) {
+	m := newTestModel()
+	tallTranscript(m)
+	feedApproval(t, m, client.Event{Type: "approval_request", ID: "apr-1", Risk: "shell_exec", Command: "rm x"})
+	feedApproval(t, m, client.Event{Type: "approval_request", ID: "apr-2", Risk: "network_egress", Command: "curl x"})
+	m.vp.GotoTop()
+	off := m.vp.YOffset
+	m.apprDeadlines[0] = time.Now().Add(-time.Second)
+	m.apprDeadlines[1] = time.Now().Add(30 * time.Second)
+	m.Update(approvalExpireMsg{})
+
+	if a := m.curApproval(); a == nil || a.ID != "apr-2" {
+		t.Fatalf("successor must remain the form, got %+v", a)
+	}
+	if m.vp.YOffset != off {
+		t.Fatalf("successor form must not yank scrollback: yoffset=%d, was=%d", m.vp.YOffset, off)
 	}
 }
 

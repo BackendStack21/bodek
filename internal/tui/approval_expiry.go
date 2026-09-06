@@ -73,7 +73,8 @@ func (m *Model) approvalSweep() tea.Cmd {
 // lingering form only invites approving a dead request. Teardown mirrors
 // answer() only when the head actually changed — a surviving head keeps its
 // selection state — plus a strip notice and a plain scrollback line so the
-// autoclose is never silent.
+// autoclose is never silent. A fully emptied queue also parks focus on the
+// latest transcript message (viewport + focusIdx).
 func (m *Model) handleApprovalExpiry(now time.Time) tea.Cmd {
 	var oldHead client.Event
 	hadHead := len(m.approvals) > 0
@@ -102,7 +103,11 @@ func (m *Model) handleApprovalExpiry(now time.Time) tea.Cmd {
 	if dropped == 0 {
 		return nil
 	}
-	m.addTransientNote("approval expired · odek will find an alternative")
+	// Operator-facing: the card they were staring at just vanished. Use
+	// transientNoteCmd so quiet does not swallow it and so the sweep
+	// arms from Update (addTransientNote would leave a sticky idle note).
+	const note = "approval expired · odek will find an alternative"
+	cmds := []tea.Cmd{m.transientNoteCmd(note)}
 	if len(m.approvals) > 0 {
 		m.setRunStatus("approval required")
 	} else if m.busy {
@@ -114,8 +119,25 @@ func (m *Model) handleApprovalExpiry(now time.Time) tea.Cmd {
 		m.resetApprovalInput()
 		m.relayout()
 	}
-	if m.plain {
-		return tea.Println("· approval expired · odek will find an alternative")
+	if len(m.approvals) == 0 {
+		// The card is gone — jump to the latest transcript message so the
+		// operator lands on the turn the engine continues, not the scroll
+		// position they held while the form was up (refresh only sticks
+		// when already at the bottom).
+		m.focusLatestTranscript()
 	}
-	return nil
+	if m.plain {
+		cmds = append(cmds, tea.Println("· "+note))
+	}
+	return tea.Batch(cmds...)
+}
+
+// focusLatestTranscript parks the copy cursor and viewport on the newest
+// transcript message. Used when the approval form autocloses: the card
+// released the keyboard, and the eyes should follow the live turn.
+func (m *Model) focusLatestTranscript() {
+	if n := len(m.msgs); n > 0 {
+		m.focusIdx = n - 1
+	}
+	m.vp.GotoBottom()
 }

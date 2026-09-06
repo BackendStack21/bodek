@@ -277,8 +277,9 @@ own front-end settings are separate; see [Configuration](#configuration).
   above the still-usable composer: `A`/`D`/`T` decide, every other letter
   types a follow-up draft. See [Approvals](#approvals).
 - **Friction & expiry** — repeated same-class approvals require typing
-  `approve`; every request is time-boxed, autocloses on expiry, and can
-  never collect an approval for a prompt the engine already abandoned.
+  `approve`; every request is time-boxed, autocloses on expiry (focus
+  returns to the latest transcript message), and can never collect an
+  approval for a prompt the engine already abandoned.
 - **Death-gates everywhere** — deletes are two-step, `/stop` and `^L` are
   two-step, and the server shutdown requires typing the literal word
   `shutdown`. See the [Security model](#security-model).
@@ -521,8 +522,10 @@ Denying stays one `Esc`.
 Approvals are time-boxed by the engine (60s by default), and an expired
 request is dead — odek fails the tool call and picks an alternative path.
 The panel shows a live `expires in Ns` countdown (red in the last 10
-seconds) and autocloses expired requests with an expiry notice, so a stale
-form can never collect an approval for a prompt the engine already abandoned.
+seconds) and autocloses expired requests with an expiry notice, jumping
+focus to the latest transcript message (a still-queued successor keeps
+scrollback), so a stale form can never collect an approval for a prompt
+the engine already abandoned.
 
 ---
 
