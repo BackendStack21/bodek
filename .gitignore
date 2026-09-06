@@ -8,3 +8,5 @@
 *.swp
 .idea/
 .vscode/
+
+*_PLAN.md
