@@ -62,10 +62,6 @@ func thinkingWire(level string) string {
 	return level
 }
 
-func thinkingEnabled(level string) bool {
-	return level != "" && level != "disabled"
-}
-
 func seedStartupThinking(raw string) string {
 	canon, ok := normalizeThinking(raw)
 	if !ok {
@@ -117,7 +113,7 @@ func (m *Model) setThinking(level string) tea.Cmd {
 	if label == "" {
 		label = "inherit"
 	}
-	if m.opts.OnThinkingChange != nil && canon != "" {
+	if m.opts.OnThinkingChange != nil {
 		if err := m.opts.OnThinkingChange(canon); err != nil {
 			m.refresh()
 			return m.transientNoteCmd("thinking " + label + " (save failed)")

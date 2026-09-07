@@ -1,5 +1,5 @@
 // Package settings persists bodek's own front-end preferences so they
-// survive relaunches: theme, bell, notify, plain, verbosity. odek's
+// survive relaunches: theme, bell, notify, plain, verbosity, thinking. odek's
 // server-side configuration is unaffected — this file belongs to the
 // terminal UI alone.
 //

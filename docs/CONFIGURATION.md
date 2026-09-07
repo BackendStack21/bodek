@@ -29,7 +29,7 @@ silently ignored.
 | `notify` | bool | `false` | `--notify` | Raise desktop notifications (OSC 9) on turn completion and pending approvals. |
 | `plain` | bool | `false` | `--plain` | Linear mode: no alt-screen; agent events print to the terminal's native scrollback (screen readers, pipes, logs). |
 | `verbosity` | string | `normal` | `--verbosity` | Noise dial: `quiet` (info notes hidden), `normal`, `detailed` (`^E` expand-all view). `/verbosity` switches live **and persists it here**. An explicit `--verbosity` still wins for that launch. |
-| `thinking` | string | (inherit) | `--thinking` | Reasoning depth: `disabled` · `low` · `medium` · `high`. `^T` and `/thinking` switch live **and persist it here**. Empty inherits the odek serve default until you set a level. |
+| `thinking` | string | (inherit) | `--thinking` | Reasoning depth: `disabled` · `low` · `medium` · `high`. `^T` and `/thinking` switch live **and persist it here**. `/thinking inherit` (or `default`) clears the key so the next launch seeds from odek again. Empty inherits the odek serve default until you set a level. Requires odek ≥ v2.5.0 for string `/api/config.thinking` and inherit-on-omit. |
 
 Unset keys fall back to their defaults — the file only ever stores choices
 you actually made (`/theme` writes `theme`, `/verbosity` writes `verbosity`,
@@ -46,8 +46,9 @@ Every setting resolves the same way:
 explicit flag  →  BODEK_THEME env (theme only)  →  settings file  →  built-in default
 ```
 
-`/theme` and `/verbosity` persist to the settings file, so the next launch
-starts where you left off unless a flag or `BODEK_THEME` overrides them.
+`/theme`, `/verbosity`, and `/thinking` persist to the settings file, so the
+next launch starts where you left off unless a flag or `BODEK_THEME`
+overrides them. `/thinking inherit` writes an empty value (the key is omitted).
 
 ## Environment variables
 

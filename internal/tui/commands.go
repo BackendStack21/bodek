@@ -115,7 +115,7 @@ func slashCommands() []command {
 			}
 			return m.openModels()
 		}},
-		{"thinking", "reasoning depth — /thinking [disabled|low|medium|high]", func(m *Model, args string) tea.Cmd {
+		{"thinking", "reasoning depth — /thinking [disabled|low|medium|high|inherit]", func(m *Model, args string) tea.Cmd {
 			if strings.TrimSpace(args) == "" {
 				return m.cycleThinkingLevel()
 			}

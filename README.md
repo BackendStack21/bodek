@@ -445,7 +445,7 @@ full command and press `⏎`.
 | `/tools` | Tool registry with enabled state & MCP servers |
 | `/config` | Sanitized config, lifetime usage, connections (kick) |
 | `/model [name]` | Switch model (opens a picker with no argument) |
-| `/thinking [disabled\|low\|medium\|high]` | Set reasoning depth (`on` → `medium`, `off` → `disabled`; bare `/thinking` cycles) |
+| `/thinking [disabled\|low\|medium\|high]` | Set reasoning depth (`on` → `medium`, `off` → `disabled`, `inherit` restores the odek serve default; bare `/thinking` cycles) |
 | `/cancel` | Cancel the running turn |
 | `/stop <SA#>` | Stop one running sub-agent (bare `/stop` lists them) |
 | `/agents` | Sub-agent registry — live 3s poll, `c` stop (two-step), `o` jump to transcript |

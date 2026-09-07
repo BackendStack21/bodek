@@ -78,6 +78,11 @@ func TestSlashCommandsViaSubmit(t *testing.T) {
 	if m.thinking != "high" {
 		t.Errorf("/thinking high = %q", m.thinking)
 	}
+	m.ta.SetValue("/thinking inherit")
+	exec(m.submit())
+	if m.thinking != "" {
+		t.Errorf("/thinking inherit = %q, want empty", m.thinking)
+	}
 
 	// /model with an argument sets the pending model.
 	m.ta.SetValue("/model gpt-4o")

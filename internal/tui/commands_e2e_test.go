@@ -274,6 +274,11 @@ func TestE2EAllCommands(t *testing.T) {
 				t.Fatalf("/thinking off = %q, want disabled", m.thinking)
 			}
 		},
+		"/thinking inherit": func(t *testing.T, m *Model) {
+			if m.thinking != "" {
+				t.Fatalf("/thinking inherit = %q, want empty", m.thinking)
+			}
+		},
 		"/cancel": func(t *testing.T, m *Model) {
 			if m.busy {
 				t.Fatal("/cancel did not clear the busy state")

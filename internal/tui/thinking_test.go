@@ -137,6 +137,10 @@ func TestSetThinkingPersists(t *testing.T) {
 	if m.thinking != "high" {
 		t.Fatalf("invalid thinking overwrote level: %q", m.thinking)
 	}
+	exec(m.setThinking("inherit"))
+	if m.thinking != "" || saved != "" {
+		t.Fatalf("inherit thinking=%q saved=%q, want empty (cleared persist)", m.thinking, saved)
+	}
 }
 
 func TestNormalizeAndCycleThinking(t *testing.T) {

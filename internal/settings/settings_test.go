@@ -60,6 +60,16 @@ func TestSaveLoadRoundTrip(t *testing.T) {
 	if got.Thinking != "medium" {
 		t.Errorf("Thinking = %q, want medium", got.Thinking)
 	}
+	if err := Save(Settings{Theme: got.Theme, Bell: got.Bell, Notify: got.Notify, Plain: got.Plain, Verbosity: got.Verbosity, Thinking: ""}); err != nil {
+		t.Fatalf("Save inherit: %v", err)
+	}
+	cleared, err := Load()
+	if err != nil {
+		t.Fatalf("Load after inherit: %v", err)
+	}
+	if cleared.Thinking != "" {
+		t.Errorf("Thinking after inherit = %q, want empty (key omitted)", cleared.Thinking)
+	}
 	for name, pair := range map[string][2]*bool{
 		"Bell":   {got.Bell, in.Bell},
 		"Notify": {got.Notify, in.Notify},
