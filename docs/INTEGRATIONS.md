@@ -26,7 +26,7 @@ update it when either side changes.
 | `GET /api/runs/{id}/approvals` | `RunApprovals` | runs tab (`p` — light refresh, no event tail) |
 | `POST /api/runs/{id}/approvals/{aid}` | `AnswerRunApproval` | runs tab (`A`/`D`/`T`) |
 | `GET /api/events` | `RuntimeEvents` | events tab (`f` session filter, `e` run drill-in from runs, `x` clear) |
-| `GET /api/usage` | `Usage` | cockpit lifetime (refreshes with `r`), config tab |
+| `GET /api/usage` | `Usage` | cockpit lifetime (refreshes with `r`), config tab; includes plan created/updated/blocked counts |
 | `GET /api/connections` | `Connections` | config tab |
 | `DELETE /api/connections/{id}` | `KickConnection` | config tab (`d`) |
 | `GET /api/config` | `ConfigView` | config tab |
@@ -76,4 +76,5 @@ These workflows have no server endpoint; bodek cannot offer them:
 | `error` | ← | — | error bubble / cancel markers |
 | `cancelled` | ← | — | clean cancel close-out |
 | `approval_request` / `approval_ack` | ← | — | approval queue |
+| `clarify_request` / `clarify_ack` / `clarify_expired` | ← | `clarify_response` | principal-channel question card |
 | `skill_event` / `memory_event` / `agent_signal` | ← | — | transient notes (+ suggestion card; `agent_signal:trim` stays silent) |

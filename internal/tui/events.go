@@ -276,6 +276,7 @@ func (m *Model) handleEvent(ev client.Event) (tea.Model, tea.Cmd) {
 		m.approvals = nil
 		m.apprDeadlines = nil
 		m.resetApprovalInput()
+		m.clearClarify()
 		m.status = "ready"
 		m.sessCtxTok = ev.SessionContextTokens
 		m.sessOutTok = ev.SessionOutputTokens
@@ -364,6 +365,7 @@ func (m *Model) handleEvent(ev client.Event) (tea.Model, tea.Cmd) {
 		m.approvals = nil
 		m.apprDeadlines = nil
 		m.resetApprovalInput()
+		m.clearClarify()
 		if cancelled {
 			m.status = "ready"
 		} else {
@@ -371,6 +373,22 @@ func (m *Model) handleEvent(ev client.Event) (tea.Model, tea.Cmd) {
 		}
 		m.restoreComposerPrompt()
 		m.relayout() // the busy status line releases its row
+
+	case "clarify_request":
+		ev := ev
+		m.clarify = &ev
+		m.clarifyBuf = ""
+		m.setRunStatus("question")
+		m.relayout()
+
+	case "clarify_ack", "clarify_expired":
+		if m.clarify != nil && (ev.ID == "" || ev.ID == m.clarify.ID) {
+			m.clearClarify()
+			if m.busy {
+				m.setRunStatus("thinking")
+			}
+			m.relayout()
+		}
 
 	case "approval_request":
 		// odek runs parallel tools, so several requests can be in flight at
@@ -481,6 +499,7 @@ func (m *Model) handleEvent(ev client.Event) (tea.Model, tea.Cmd) {
 		m.approvals = nil
 		m.apprDeadlines = nil
 		m.resetApprovalInput()
+		m.clearClarify()
 		if m.shutdownReq {
 			// The user asked for this drop: no reconnect spiral, just the
 			// fresh-start affordance (⏎ respawns in spawn mode).

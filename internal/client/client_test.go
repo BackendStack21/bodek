@@ -77,6 +77,15 @@ func TestDecodeEvents(t *testing.T) {
 			},
 		},
 		{
+			name:  "clarify_request",
+			frame: `{"type":"clarify_request","id":"clr-1","question":"Which approach?","timeout_seconds":300}`,
+			check: func(t *testing.T, e Event) {
+				if e.Type != "clarify_request" || e.ID != "clr-1" || e.Question != "Which approach?" || e.TimeoutSeconds != 300 {
+					t.Fatalf("bad clarify decode: %+v", e)
+				}
+			},
+		},
+		{
 			name:  "approval_ack",
 			frame: `{"type":"approval_ack","id":"apr-1","action":"approve"}`,
 			check: func(t *testing.T, e Event) {

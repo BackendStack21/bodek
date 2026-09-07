@@ -207,6 +207,8 @@ type Model struct {
 	ac            autocomplete     // @-reference completion state
 	pal           palState         // ⌘K command palette — the navigation spine
 	skillSuggest  *client.Event    // pending skill suggestion card (skill_event "suggested")
+	clarify       *client.Event    // pending principal-channel question
+	clarifyBuf    string           // typed answer (not the composer)
 	queue         []string         // prompts typed mid-turn, sent when the turn ends
 	qfocus        bool             // the queue strip owns the keyboard (ctrl+q)
 	qsel          int              // selected strip row while qfocus
@@ -538,6 +540,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.approvals = nil
 		m.apprDeadlines = nil
 		m.resetApprovalInput()
+		m.clearClarify()
 		m.relayout() // the busy status line releases its row
 		m.refresh()
 		// Do not sendQueued here: a write failure is usually a dying
@@ -900,6 +903,9 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// scroll keys pass through to the viewport.
 	if m.curApproval() != nil {
 		return m.handleApprovalKey(msg)
+	}
+	if m.clarify != nil {
+		return m.handleClarifyKey(msg)
 	}
 
 	// A full-area panel (sessions / models) captures the keyboard while open.
@@ -1343,6 +1349,9 @@ func (m *Model) inputAreaHeight() int {
 	h := m.ta.Height() + 2 // composer box: text rows + top/bottom border
 	if m.curApproval() != nil {
 		h += lineCount(m.approvalPanel()) // boxed card sits above the composer
+	}
+	if m.clarify != nil {
+		h += lineCount(m.clarifyPanel())
 	}
 	if m.statusLineVisible() {
 		h += 2 // busy status line + blank separator row above the input box

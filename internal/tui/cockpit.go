@@ -169,6 +169,10 @@ func (m *Model) cockpitLifetimeSection() string {
 	} else {
 		rows = append(rows, [2]string{"lifetime cost", "unavailable (no prices)"})
 	}
+	if u.PlansCreated > 0 || u.PlansUpdated > 0 || u.PlansBlocked > 0 {
+		rows = append(rows, [2]string{"plans", fmt.Sprintf("%d created · %d updated · %d blocked",
+			u.PlansCreated, u.PlansUpdated, u.PlansBlocked)})
+	}
 	if u.RunsActive > 0 {
 		rows = append(rows, [2]string{"active runs", fmt.Sprintf("%d", u.RunsActive)})
 	}

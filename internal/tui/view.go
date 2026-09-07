@@ -1284,6 +1284,9 @@ func (m *Model) inputArea() string {
 	if m.curApproval() != nil {
 		above = append(above, m.approvalPanel())
 	}
+	if m.clarify != nil {
+		above = append(above, m.clarifyPanel())
+	}
 	if m.find.open {
 		above = append(above, m.findBar())
 	} else if m.pal.open {

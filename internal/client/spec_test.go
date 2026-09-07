@@ -13,7 +13,7 @@ import (
 
 // TestClientV2Messages verifies the wire shape of every client→server message
 // added by protocol v2: ping, cancel, session_switch, skill_prompt_response,
-// and prompt attachments.
+// clarify_response, and prompt attachments.
 func TestClientV2Messages(t *testing.T) {
 	var mu sync.Mutex
 	var frames []map[string]any
@@ -47,6 +47,9 @@ func TestClientV2Messages(t *testing.T) {
 	if err := cl.SendSkillPromptResponse("save", "deploy-helper"); err != nil {
 		t.Fatalf("SendSkillPromptResponse: %v", err)
 	}
+	if err := cl.SendClarify("clr-1", "the first"); err != nil {
+		t.Fatalf("SendClarify: %v", err)
+	}
 	if err := cl.SendPrompt("see attached", PromptOpts{
 		SessionID: "s1", AuthToken: "a1",
 		Attachments: []Attachment{{Name: "f.txt", Content: "data"}},
@@ -59,7 +62,7 @@ func TestClientV2Messages(t *testing.T) {
 		mu.Lock()
 		n := len(frames)
 		mu.Unlock()
-		if n >= 5 {
+		if n >= 6 {
 			break
 		}
 		select {
@@ -86,6 +89,9 @@ func TestClientV2Messages(t *testing.T) {
 	}
 	if k := byType["skill_prompt_response"]; k == nil || k["action"] != "save" || k["skill_name"] != "deploy-helper" {
 		t.Errorf("skill_prompt_response frame = %v", k)
+	}
+	if c := byType["clarify_response"]; c == nil || c["id"] != "clr-1" || c["answer"] != "the first" {
+		t.Errorf("clarify_response frame = %v", c)
 	}
 	p := byType["prompt"]
 	if p == nil {

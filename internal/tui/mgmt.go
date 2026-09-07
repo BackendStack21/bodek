@@ -256,6 +256,10 @@ func buildCfgRows(cfg map[string]any, usage client.Usage, conns []client.Connect
 	if usage.PricesConfigured {
 		rows = append(rows, cfgRow{kind: "usage", k: "lifetime cost", v: formatUSD(usage.EstimatedCostUSD)})
 	}
+	if usage.PlansCreated > 0 || usage.PlansUpdated > 0 || usage.PlansBlocked > 0 {
+		rows = append(rows, cfgRow{kind: "usage", k: "plans", v: fmt.Sprintf("%d created · %d updated · %d blocked",
+			usage.PlansCreated, usage.PlansUpdated, usage.PlansBlocked)})
+	}
 	if cfg != nil {
 		keys := make([]string, 0, len(cfg))
 		for k := range cfg {

@@ -139,6 +139,24 @@ func TestLimitsDecode(t *testing.T) {
 	}
 }
 
+func TestUsageDecodesPlanCounts(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/usage" {
+			t.Errorf("path = %q, want /api/usage", r.URL.Path)
+		}
+		w.Write([]byte(`{"prompts_started":3,"plans_created":2,"plans_updated":5,"plans_blocked":1}`))
+	}))
+	defer srv.Close()
+	c := &Client{baseURL: srv.URL, http: &http.Client{Timeout: time.Second}}
+	u, err := c.Usage()
+	if err != nil {
+		t.Fatalf("Usage: %v", err)
+	}
+	if u.PromptsStarted != 3 || u.PlansCreated != 2 || u.PlansUpdated != 5 || u.PlansBlocked != 1 {
+		t.Fatalf("usage = %+v", u)
+	}
+}
+
 func TestResolvePricesOverrideBranches(t *testing.T) {
 	l := Limits{
 		InputCostPerMillionUSD:  1,

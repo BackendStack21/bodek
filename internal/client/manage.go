@@ -158,6 +158,9 @@ type Usage struct {
 	Model            string  `json:"model"`
 	WSConnections    int64   `json:"ws_connections"`
 	RunsActive       int     `json:"runs_active"`
+	PlansCreated     int64   `json:"plans_created"`
+	PlansUpdated     int64   `json:"plans_updated"`
+	PlansBlocked     int64   `json:"plans_blocked"`
 }
 
 // Usage fetches the lifetime aggregate.

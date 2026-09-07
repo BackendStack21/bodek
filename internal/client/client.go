@@ -89,6 +89,9 @@ type Event struct {
 	// default instead of guessing).
 	TimeoutSeconds int `json:"timeout_seconds,omitempty"`
 
+	// clarify_request: the agent's principal-channel question.
+	Question string `json:"question,omitempty"`
+
 	// approval_ack (Action echoes the client's reply) / cancelled (Idle is
 	// true when nothing was running for the target session) /
 	// subagent_cancelled (Accepted:false is a benign race — task already done).
@@ -357,6 +360,15 @@ type approval struct {
 // SendApproval answers a pending approval_request.
 func (c *Client) SendApproval(id, action string) error {
 	return c.send(approval{Type: "approval_response", ID: id, Action: action})
+}
+
+// SendClarify answers a pending clarify_request with principal text.
+func (c *Client) SendClarify(id, answer string) error {
+	return c.send(struct {
+		Type   string `json:"type"`
+		ID     string `json:"id"`
+		Answer string `json:"answer"`
+	}{Type: "clarify_response", ID: id, Answer: answer})
 }
 
 // Ping sends the application-level heartbeat. The server answers inline with
