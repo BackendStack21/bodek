@@ -264,6 +264,14 @@ func TestE2EAllCommands(t *testing.T) {
 				t.Fatalf("panel = %d, want the model picker", m.panel)
 			}
 		},
+		"/thinking": func(t *testing.T, m *Model) {
+			if m.panel != panelThinking {
+				t.Fatalf("panel = %d, want the thinking picker", m.panel)
+			}
+			if n := m.panelLen(); n != 5 {
+				t.Fatalf("thinking picker rows = %d, want 5", n)
+			}
+		},
 		"/thinking on": func(t *testing.T, m *Model) {
 			if m.thinking != "medium" {
 				t.Fatalf("/thinking on = %q, want medium", m.thinking)

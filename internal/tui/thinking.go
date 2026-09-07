@@ -42,6 +42,30 @@ func cycleThinking(cur string) string {
 	return "low"
 }
 
+type thinkingEntry struct {
+	id, label, detail string
+	current           bool
+}
+
+func thinkingPickerCatalog() []thinkingEntry {
+	return []thinkingEntry{
+		{id: "inherit", label: "inherit", detail: "odek serve default"},
+		{id: "disabled", label: "disabled", detail: "no extra reasoning"},
+		{id: "low", label: "low", detail: "light"},
+		{id: "medium", label: "medium", detail: "standard"},
+		{id: "high", label: "high", detail: "deep"},
+	}
+}
+
+func (m *Model) thinkingEntries() []thinkingEntry {
+	out := thinkingPickerCatalog()
+	for i := range out {
+		canon, _ := normalizeThinking(out[i].id)
+		out[i].current = canon == m.thinking
+	}
+	return out
+}
+
 func thinkingHeaderLabel(level string) string {
 	switch level {
 	case "low":
