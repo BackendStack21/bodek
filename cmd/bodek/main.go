@@ -42,6 +42,7 @@ type config struct {
 	verbosity string // startup noise dial: quiet, normal, detailed (empty = normal)
 	thinking  string // startup reasoning depth (empty = inherit / seed from serve)
 	fresh     bool   // --new: skip last-session resume
+	resume    bool   // --resume: opt back in to last-session resume (default false)
 	extraArgs []string
 
 	persist settings.Settings // the loaded file, re-saved when /theme switches
@@ -79,7 +80,8 @@ func parseConfig(args []string, output io.Writer) (config, error) {
 	verbDefault := st.Verbosity
 	fs.StringVar(&cfg.verbosity, "verbosity", verbDefault, "noise dial: quiet (info notes hidden, compact steps), normal, detailed (steps expand) — /verbosity switches at runtime and persists")
 	fs.StringVar(&cfg.thinking, "thinking", st.Thinking, "reasoning depth: disabled, low, medium, high — /thinking and ^T switch at runtime and persist")
-	fs.BoolVar(&cfg.fresh, "new", false, "start a fresh session (skip last-session resume for this directory)")
+	fs.BoolVar(&cfg.resume, "resume", st.Bool(st.Resume, false), "resume this directory's last session on start (--resume=false disables; off by default)")
+	fs.BoolVar(&cfg.fresh, "new", false, "start a fresh session (always skips last-session resume)")
 	fs.Usage = func() {
 		_, _ = fmt.Fprintf(fs.Output(), "Usage: bodek [options] [-- <odek serve flags>]\n\n")
 		_, _ = fmt.Fprintf(fs.Output(), "A terminal interface for the odek agent.\n\n")
@@ -89,7 +91,8 @@ func parseConfig(args []string, output io.Writer) (config, error) {
 		_, _ = fmt.Fprintf(fs.Output(), "Options:\n")
 		fs.PrintDefaults()
 		_, _ = fmt.Fprintf(fs.Output(), "\nExamples:\n")
-		_, _ = fmt.Fprintf(fs.Output(), "  bodek                                             # spawn odek serve and resume this directory's last session\n")
+		_, _ = fmt.Fprintf(fs.Output(), "  bodek                                             # spawn odek serve and start fresh in this directory\n")
+		_, _ = fmt.Fprintf(fs.Output(), "  bodek --resume                                    # continue this directory's last session (off by default)\n")
 		_, _ = fmt.Fprintf(fs.Output(), "  bodek --new                                       # start a fresh session\n")
 		_, _ = fmt.Fprintf(fs.Output(), "  bodek --sandbox                                   # spawn odek serve with Docker sandbox\n")
 		_, _ = fmt.Fprintf(fs.Output(), "  bodek --url 'http://127.0.0.1:8080/?token=…'      # attach with the token URL odek serve printed\n")
@@ -215,7 +218,7 @@ func run() error {
 		Verbosity:   cfg.verbosity,
 		Thinking:    cfg.thinking,
 		Workspace:   workspace.Open(),
-		Fresh:       cfg.fresh,
+		Fresh:       cfg.fresh || !cfg.resume,
 		OnThemeChange: func(name string) error {
 			cfg.persist.Theme = name
 			return settings.Save(cfg.persist)

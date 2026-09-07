@@ -43,6 +43,7 @@ func TestSaveLoadRoundTrip(t *testing.T) {
 		Plain:     ptr(false),
 		Verbosity: "quiet",
 		Thinking:  "medium",
+		Resume:    ptr(true),
 	}
 	if err := Save(in); err != nil {
 		t.Fatalf("Save() error = %v", err)
@@ -56,6 +57,9 @@ func TestSaveLoadRoundTrip(t *testing.T) {
 	}
 	if got.Verbosity != "quiet" {
 		t.Errorf("Verbosity = %q, want quiet", got.Verbosity)
+	}
+	if got.Resume == nil || !*got.Resume {
+		t.Errorf("Resume = %v, want true", got.Resume)
 	}
 	if got.Thinking != "medium" {
 		t.Errorf("Thinking = %q, want medium", got.Thinking)
