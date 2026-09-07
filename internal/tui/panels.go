@@ -20,6 +20,7 @@ const (
 	panelNone panelMode = iota
 	panelSessions
 	panelModels
+	panelThinking
 	panelRuns
 	panelEvents
 	panelPlan
@@ -237,6 +238,23 @@ func (m *Model) openModels() tea.Cmd {
 	m.relayout()
 	m.refresh()
 	return m.fetchModels()
+}
+
+func (m *Model) openThinking() tea.Cmd {
+	m.panel = panelThinking
+	m.panelSel = 0
+	m.panelMsg = ""
+	m.panelEdit = panelEditNone
+	m.panelDetail = false
+	for i, e := range m.thinkingEntries() {
+		if e.current {
+			m.panelSel = i
+			break
+		}
+	}
+	m.relayout()
+	m.refresh()
+	return nil
 }
 
 func (m *Model) openStats() tea.Cmd {
@@ -589,6 +607,8 @@ func (m *Model) panelLen() int {
 		return len(m.sessions)
 	case panelModels:
 		return len(m.modelEntries())
+	case panelThinking:
+		return len(m.thinkingEntries())
 	case panelRuns:
 		return len(m.runs)
 	case panelEvents:
@@ -672,6 +692,13 @@ func (m *Model) panelSelect() tea.Cmd {
 			note := m.transientNoteCmd("model set to " + m.model + " (applies next turn)")
 			m.closePanel()
 			return note
+		}
+	case panelThinking:
+		entries := m.thinkingEntries()
+		if m.panelSel < len(entries) {
+			cmd := m.setThinking(entries[m.panelSel].id)
+			m.closePanel()
+			return cmd
 		}
 	case panelRuns:
 		// Enter refreshes the highlighted run's detail (result tail and the
@@ -1202,6 +1229,9 @@ func (m *Model) renderPanel(w, h int) string {
 	case panelModels:
 		title = "✦ choose a model"
 		rows = m.modelRows(w - 6)
+	case panelThinking:
+		title = "✳ choose reasoning depth"
+		rows = m.thinkingRows(w - 6)
 	case panelRuns:
 		title = "▶ headless runs"
 		rows = m.runRows(w - 6)
@@ -1347,6 +1377,28 @@ func (m *Model) modelRows(w int) []string {
 			detail += "  (current)"
 		}
 		label = truncate(label, w-2-lipgloss.Width(detail))
+		prefix, lab := "  ", th.acItem.Render(label)
+		if i == m.panelSel {
+			prefix, lab = th.acSel.Render("› "), th.acSel.Render(label)
+		}
+		rows = append(rows, prefix+lab+th.acDetail.Render(detail))
+	}
+	return rows
+}
+
+func (m *Model) thinkingRows(w int) []string {
+	th := m.th
+	entries := m.thinkingEntries()
+	rows := make([]string, 0, len(entries))
+	for i, e := range entries {
+		detail := ""
+		if e.detail != "" {
+			detail = "  " + e.detail
+		}
+		if e.current {
+			detail += "  (current)"
+		}
+		label := truncate(e.label, w-2-lipgloss.Width(detail))
 		prefix, lab := "  ", th.acItem.Render(label)
 		if i == m.panelSel {
 			prefix, lab = th.acSel.Render("› "), th.acSel.Render(label)

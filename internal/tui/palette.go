@@ -106,6 +106,8 @@ func (m *Model) basePaletteEntries() []palEntry {
 			run: func(m *Model) tea.Cmd { return m.openSessions() }},
 		{title: "models", hint: "^O", kind: "view",
 			run: func(m *Model) tea.Cmd { return m.openModels() }},
+		{title: "thinking", hint: "/thinking", kind: "view",
+			run: func(m *Model) tea.Cmd { return m.openThinking() }},
 		{title: "cockpit — server & budget", hint: "/server", kind: "view",
 			run: func(m *Model) tea.Cmd { return m.openCockpit() }},
 		{title: "runs — headless & approvals", hint: "/runs", kind: "view",
@@ -172,6 +174,13 @@ func (m *Model) basePaletteEntries() []palEntry {
 				m.applyModelChoice(ent.id)
 				return m.transientNoteCmd("model set to " + m.model + " (applies next turn)")
 			},
+		})
+	}
+	for _, e := range m.thinkingEntries() {
+		ent := e
+		entries = append(entries, palEntry{
+			title: "thinking · " + ent.label, kind: "action",
+			run: func(m *Model) tea.Cmd { return m.setThinking(ent.id) },
 		})
 	}
 	return entries

@@ -150,6 +150,11 @@ func TestPanelSelectGuards(t *testing.T) {
 	if m.panelSelect() != nil {
 		t.Error("panelSelect models out-of-range should be nil")
 	}
+	m.panel = panelThinking
+	m.panelSel = 99
+	if m.panelSelect() != nil {
+		t.Error("panelSelect thinking out-of-range should be nil")
+	}
 	m.panel = panelNone
 	if m.panelSelect() != nil {
 		t.Error("panelSelect with no panel should be nil")

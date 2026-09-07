@@ -115,11 +115,11 @@ func slashCommands() []command {
 			}
 			return m.openModels()
 		}},
-		{"thinking", "reasoning depth — /thinking [disabled|low|medium|high|inherit]", func(m *Model, args string) tea.Cmd {
-			if strings.TrimSpace(args) == "" {
-				return m.cycleThinkingLevel()
+		{"thinking", "reasoning depth — /thinking [level]", func(m *Model, args string) tea.Cmd {
+			if args != "" {
+				return m.setThinking(args)
 			}
-			return m.setThinking(args)
+			return m.openThinking()
 		}},
 		{"cancel", "cancel the running turn", func(m *Model, _ string) tea.Cmd {
 			return m.cancelRun()

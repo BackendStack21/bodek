@@ -1522,6 +1522,13 @@ func (m *Model) footer() string {
 			th.footer.Render("esc close"),
 		)
 	}
+	if m.panel == panelThinking {
+		return m.panelFooter(
+			th.footer.Render("↑↓ select"),
+			th.footer.Render("⏎ use"),
+			th.footer.Render("esc close"),
+		)
+	}
 	if m.panel == panelRuns {
 		return m.panelFooter(
 			th.footer.Render("↑↓ select · ]/[ tabs"),

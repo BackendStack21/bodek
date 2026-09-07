@@ -170,6 +170,51 @@ func TestNormalizeAndCycleThinking(t *testing.T) {
 	}
 }
 
+func TestThinkingPicker(t *testing.T) {
+	m := newTestModel()
+	m.ready = true
+	m.thinking = "high"
+	exec(m.openThinking())
+	if m.panel != panelThinking {
+		t.Fatalf("panel = %d, want thinking picker", m.panel)
+	}
+	if m.panelSel != 4 {
+		t.Fatalf("panelSel = %d, want high (index 4)", m.panelSel)
+	}
+	out := plain(m.View())
+	if !strings.Contains(out, "choose reasoning depth") {
+		t.Errorf("picker title missing:\n%s", out)
+	}
+	if !strings.Contains(out, "high") || !strings.Contains(out, "current") {
+		t.Errorf("current high row missing:\n%s", out)
+	}
+	if got := m.modeName(); got != "thinking" {
+		t.Errorf("modeName = %q, want thinking", got)
+	}
+
+	m.panelSel = 1 // disabled
+	m.Update(key("enter"))
+	if m.thinking != "disabled" {
+		t.Fatalf("enter thinking = %q, want disabled", m.thinking)
+	}
+	if m.panel != panelNone {
+		t.Fatalf("picker should close after select, panel=%d", m.panel)
+	}
+}
+
+func TestThinkingPickerInherit(t *testing.T) {
+	m := newTestModel()
+	m.thinking = "low"
+	var saved string
+	m.opts.OnThinkingChange = func(level string) error { saved = level; return nil }
+	exec(m.openThinking())
+	m.panelSel = 0
+	m.Update(key("enter"))
+	if m.thinking != "" || saved != "" {
+		t.Fatalf("inherit thinking=%q saved=%q, want empty", m.thinking, saved)
+	}
+}
+
 // TestCtrlTThinkingFeedback verifies ^T cycles levels with a note and header chip.
 func TestCtrlTThinkingFeedback(t *testing.T) {
 	m := newTestModel()

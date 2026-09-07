@@ -229,6 +229,9 @@ func panelModeName(p panelMode) string {
 	if p == panelModels {
 		return "models"
 	}
+	if p == panelThinking {
+		return "thinking"
+	}
 	if p == panelQueue {
 		return "queue"
 	}

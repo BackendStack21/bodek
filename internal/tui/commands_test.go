@@ -57,7 +57,7 @@ func TestSlashCommandsViaSubmit(t *testing.T) {
 		t.Errorf("input not reset after command: %q", m.ta.Value())
 	}
 
-	// /thinking on / off / cycle
+	// /thinking on / off / inherit; bare /thinking opens the picker
 	m.ta.SetValue("/thinking on")
 	exec(m.submit())
 	if m.thinking != "medium" {
@@ -67,11 +67,6 @@ func TestSlashCommandsViaSubmit(t *testing.T) {
 	exec(m.submit())
 	if m.thinking != "disabled" {
 		t.Errorf("/thinking off = %q, want disabled", m.thinking)
-	}
-	m.ta.SetValue("/thinking")
-	exec(m.submit())
-	if m.thinking != "low" {
-		t.Errorf("/thinking cycle = %q, want low", m.thinking)
 	}
 	m.ta.SetValue("/thinking high")
 	exec(m.submit())
@@ -121,6 +116,13 @@ func TestSlashCommandOpensPanels(t *testing.T) {
 	exec(m.submit())
 	if m.panel != panelModels {
 		t.Errorf("/model (no arg) did not open the model picker: %d", m.panel)
+	}
+	m.closePanel()
+
+	m.ta.SetValue("/thinking")
+	exec(m.submit())
+	if m.panel != panelThinking {
+		t.Errorf("/thinking (no arg) did not open the thinking picker: %d", m.panel)
 	}
 }
 

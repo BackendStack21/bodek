@@ -227,6 +227,9 @@ own front-end settings are separate; see [Configuration](#configuration).
 - **Model switcher** (`^O`) — change the model for the next turn. The picker
   lists the server's `/api/models` catalog (configured model marked current,
   plus the provider listing), each annotated with its context window.
+- **Thinking picker** (`/thinking`) — choose reasoning depth (`inherit` /
+  `disabled` / `low` / `medium` / `high`). A level argument still sets
+  directly; `^T` cycles. The current level is marked in the list.
 - **Session browser** (`^R`) — resume, replay, delete, pin (`p`), rename
   (`r`), export a transcript (`e` markdown, `E` JSON), and search server-side
   (`/`); `n` loads the next page. Resuming sends a `session_switch` so the
@@ -445,7 +448,7 @@ full command and press `⏎`.
 | `/tools` | Tool registry with enabled state & MCP servers |
 | `/config` | Sanitized config, lifetime usage, connections (kick) |
 | `/model [name]` | Switch model (opens a picker with no argument) |
-| `/thinking [disabled\|low\|medium\|high]` | Set reasoning depth (`on` → `medium`, `off` → `disabled`, `inherit` restores the odek serve default; bare `/thinking` cycles) |
+| `/thinking [disabled\|low\|medium\|high]` | Set reasoning depth (`on` → `medium`, `off` → `disabled`, `inherit` restores the odek serve default; bare `/thinking` opens a picker) |
 | `/cancel` | Cancel the running turn |
 | `/stop <SA#>` | Stop one running sub-agent (bare `/stop` lists them) |
 | `/agents` | Sub-agent registry — live 3s poll, `c` stop (two-step), `o` jump to transcript |
