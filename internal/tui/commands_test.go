@@ -57,21 +57,26 @@ func TestSlashCommandsViaSubmit(t *testing.T) {
 		t.Errorf("input not reset after command: %q", m.ta.Value())
 	}
 
-	// /thinking on / off / toggle
+	// /thinking on / off / cycle
 	m.ta.SetValue("/thinking on")
 	exec(m.submit())
-	if !m.thinkOn {
-		t.Error("/thinking on failed")
+	if m.thinking != "medium" {
+		t.Errorf("/thinking on = %q, want medium", m.thinking)
 	}
 	m.ta.SetValue("/thinking off")
 	exec(m.submit())
-	if m.thinkOn {
-		t.Error("/thinking off failed")
+	if m.thinking != "disabled" {
+		t.Errorf("/thinking off = %q, want disabled", m.thinking)
 	}
 	m.ta.SetValue("/thinking")
 	exec(m.submit())
-	if !m.thinkOn {
-		t.Error("/thinking toggle failed")
+	if m.thinking != "low" {
+		t.Errorf("/thinking cycle = %q, want low", m.thinking)
+	}
+	m.ta.SetValue("/thinking high")
+	exec(m.submit())
+	if m.thinking != "high" {
+		t.Errorf("/thinking high = %q", m.thinking)
 	}
 
 	// /model with an argument sets the pending model.

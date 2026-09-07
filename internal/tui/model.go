@@ -147,6 +147,14 @@ type Options struct {
 	// persistence; an error surfaces as a note while the dial still applies.
 	OnVerbosityChange func(name string) error
 
+	// Thinking is the startup reasoning depth (disabled, low, medium, high).
+	// Empty inherits the odek serve default until the user sets a level.
+	Thinking string
+
+	// OnThinkingChange persists a runtime /thinking switch. Nil skips
+	// persistence; an error surfaces as a note while the level still applies.
+	OnThinkingChange func(level string) error
+
 	// Workspace, when set, persists per-cwd draft/queue/history and the
 	// last session id. Tests leave it nil so they never touch disk.
 	Workspace *workspace.Store
@@ -227,8 +235,8 @@ type Model struct {
 	sessionID string
 	authToken string // session-scoped token (for cancel / resume)
 	pendModel string // model to apply on the next prompt
-	thinkOn   bool
-	expandAll bool // Ctrl+E: render every step's full output/logs
+	thinking  string // canonical: "" inherit, or disabled|low|medium|high
+	expandAll bool   // Ctrl+E: render every step's full output/logs
 
 	odekVersion  string // engine version shown in the header ("" hides it)
 	bodekVersion string // bodek's own version, for the startup update check
@@ -411,7 +419,7 @@ func New(cl *client.Client, opts Options) *Model {
 		qarm:         -1,
 		model:        opts.Model,
 		sandbox:      opts.Sandbox,
-		thinkOn:      false,
+		thinking:     seedStartupThinking(opts.Thinking),
 		verbosity:    verbosityFrom(opts.Verbosity),
 		expandAll:    verbosityFrom(opts.Verbosity) == verbosityDetailed,
 		status:       "ready",
@@ -427,7 +435,7 @@ func New(cl *client.Client, opts Options) *Model {
 
 func (m *Model) Init() tea.Cmd {
 	return tea.Batch(textarea.Blink, m.sp.Tick, listen(m.events),
-		m.fetchModels(), m.fetchLimits(), m.checkUpdate(),
+		m.fetchModels(), m.fetchLimits(), m.fetchThinkingSeed(), m.checkUpdate(),
 		m.armHeartbeat(), enableShiftEnterCmd, m.resumeLast(), m.protocolNote())
 }
 
@@ -720,6 +728,11 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.handleLimitsMsg(msg)
 		return m, nil
 
+	case thinkingSeedMsg:
+		m.applyThinkingSeed(msg)
+		m.refresh()
+		return m, nil
+
 	case sessionDetailMsg:
 		return m, m.handleSessionDetail(msg)
 
@@ -977,14 +990,7 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case "ctrl+t":
-		m.thinkOn = !m.thinkOn
-		state := "off"
-		if m.thinkOn {
-			state = "on"
-		}
-		cmd := m.transientNoteCmd("thinking " + state)
-		m.refresh()
-		return m, cmd
+		return m, m.cycleThinkingLevel()
 	case "ctrl+l":
 		// The whole transcript is conversation-scope destructive: arm the
 		// same two-step gate the panel row deletes use, idle-only like ^L.

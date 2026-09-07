@@ -17,7 +17,8 @@ silently ignored.
   "bel": false,
   "notify": true,
   "plain": false,
-  "verbosity": "quiet"
+  "verbosity": "quiet",
+  "thinking": "medium"
 }
 ```
 
@@ -28,9 +29,11 @@ silently ignored.
 | `notify` | bool | `false` | `--notify` | Raise desktop notifications (OSC 9) on turn completion and pending approvals. |
 | `plain` | bool | `false` | `--plain` | Linear mode: no alt-screen; agent events print to the terminal's native scrollback (screen readers, pipes, logs). |
 | `verbosity` | string | `normal` | `--verbosity` | Noise dial: `quiet` (info notes hidden), `normal`, `detailed` (`^E` expand-all view). `/verbosity` switches live **and persists it here**. An explicit `--verbosity` still wins for that launch. |
+| `thinking` | string | (inherit) | `--thinking` | Reasoning depth: `disabled` · `low` · `medium` · `high`. `^T` and `/thinking` switch live **and persist it here**. Empty inherits the odek serve default until you set a level. |
 
 Unset keys fall back to their defaults — the file only ever stores choices
-you actually made (`/theme` writes `theme`, `/verbosity` writes `verbosity`;
+you actually made (`/theme` writes `theme`, `/verbosity` writes `verbosity`,
+`/thinking` writes `thinking`;
 the rest you write by hand).
 A leftover `"mouse"` key from older bodek builds is ignored: the
 alt-screen always reports the mouse so the wheel can scroll.

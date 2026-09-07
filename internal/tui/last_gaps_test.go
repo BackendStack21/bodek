@@ -81,7 +81,7 @@ func TestRunStatsCommand(t *testing.T) {
 func TestShowStatsBranches(t *testing.T) {
 	m := newTestModel()
 	m.resize(30, 30) // innerW = 24 → model budget falls below the 8-col floor
-	m.thinkOn = true
+	m.thinking = "medium"
 	m.sessionID = "sess-123"
 	m.maxContext = 100
 	m.winCtxTok = 250 // 250% → clamped to 100%
@@ -95,7 +95,7 @@ func TestShowStatsBranches(t *testing.T) {
 		t.Fatal("showStats did not open the sheet")
 	}
 	out := plain(m.View())
-	for _, want := range []string{"sess-123", "slowest", "6.0s", "think on", "100%"} {
+	for _, want := range []string{"sess-123", "slowest", "6.0s", "medium", "100%"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("stats card missing %q", want)
 		}
@@ -160,7 +160,7 @@ func TestDisconnectWithLogPath(t *testing.T) {
 // TestSubmitThinkingEnabled covers the thinking=enabled prompt option.
 func TestSubmitThinkingEnabled(t *testing.T) {
 	m := wired(t)
-	m.thinkOn = true
+	m.thinking = "medium"
 	m.ta.SetValue("hi")
 	exec(m.submit())
 	if !m.busy {

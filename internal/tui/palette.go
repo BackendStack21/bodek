@@ -144,8 +144,8 @@ func (m *Model) basePaletteEntries() []palEntry {
 				}
 				return nil
 			}},
-		{title: "toggle extended thinking", hint: "^T", kind: "action",
-			run: func(m *Model) tea.Cmd { m.thinkOn = !m.thinkOn; return nil }},
+		{title: "cycle reasoning depth", hint: "^T", kind: "action",
+			run: func(m *Model) tea.Cmd { return m.cycleThinkingLevel() }},
 		{title: "find in transcript", hint: "alt+f", kind: "action",
 			run: func(m *Model) tea.Cmd { m.openFind(); return nil }},
 		{title: "fold the latest turn", hint: "^F", kind: "action",

@@ -380,7 +380,7 @@ own front-end settings are separate; see [Configuration](#configuration).
 | `^O` | Switch the model |
 | `^Q` | Unfold the queue strip from the composer shelf (`↑↓`/`jk` select · `←→`/`hl` move · `d d` two-step delete · `esc`/`⏎` folds it back; full manager: `/queue`) |
 | `^S` | Stop the running sub-agent (two-step confirm: `y` stops, any other key continues) |
-| `^T` | Toggle extended thinking for the next turn |
+| `^T` | Cycle reasoning depth (`disabled` → `low` → `medium` → `high`) |
 | `⇧⏎` | Insert a newline in the input (`^J` still works on terminals that cannot tell Shift+Enter from Enter) |
 | `^L` | Clear the conversation (two-step confirm: `y` clears, any other key cancels) |
 | `^E` | Toggle details — reasoning previews and every step's full output/logs (hidden in the calm default) |
@@ -445,7 +445,7 @@ full command and press `⏎`.
 | `/tools` | Tool registry with enabled state & MCP servers |
 | `/config` | Sanitized config, lifetime usage, connections (kick) |
 | `/model [name]` | Switch model (opens a picker with no argument) |
-| `/thinking [on\|off]` | Toggle extended thinking for the next turn |
+| `/thinking [disabled\|low\|medium\|high]` | Set reasoning depth (`on` → `medium`, `off` → `disabled`; bare `/thinking` cycles) |
 | `/cancel` | Cancel the running turn |
 | `/stop <SA#>` | Stop one running sub-agent (bare `/stop` lists them) |
 | `/agents` | Sub-agent registry — live 3s poll, `c` stop (two-step), `o` jump to transcript |

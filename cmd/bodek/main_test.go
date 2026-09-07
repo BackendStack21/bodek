@@ -182,6 +182,34 @@ func TestVerbositySeededFromSettings(t *testing.T) {
 	}
 }
 
+func TestThinkingSeededFromSettings(t *testing.T) {
+	hermetic(t)
+	if err := settings.Save(settings.Settings{Thinking: "high"}); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	cfg, err := parseConfig(nil, io.Discard)
+	if err != nil {
+		t.Fatalf("parseConfig: %v", err)
+	}
+	if cfg.thinking != "high" {
+		t.Errorf("thinking = %q, want high seeded from the settings file", cfg.thinking)
+	}
+}
+
+func TestThinkingFlagOverridesSettings(t *testing.T) {
+	hermetic(t)
+	if err := settings.Save(settings.Settings{Thinking: "high"}); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	cfg, err := parseConfig([]string{"--thinking", "low"}, io.Discard)
+	if err != nil {
+		t.Fatalf("parseConfig: %v", err)
+	}
+	if cfg.thinking != "low" {
+		t.Errorf("thinking = %q, want the explicit flag to win", cfg.thinking)
+	}
+}
+
 func TestVerbosityFlagOverridesSettings(t *testing.T) {
 	hermetic(t)
 	if err := settings.Save(settings.Settings{Verbosity: "quiet"}); err != nil {

@@ -125,33 +125,73 @@ func TestThinkingManualOpenPersists(t *testing.T) {
 	}
 }
 
-// TestCtrlTThinkingFeedback verifies ^T acknowledges the toggle with a
-// transient note and a persistent header indicator.
+func TestSetThinkingPersists(t *testing.T) {
+	m := newTestModel()
+	var saved string
+	m.opts.OnThinkingChange = func(level string) error { saved = level; return nil }
+	exec(m.setThinking("high"))
+	if m.thinking != "high" || saved != "high" {
+		t.Fatalf("thinking=%q saved=%q, want high", m.thinking, saved)
+	}
+	exec(m.setThinking("banana"))
+	if m.thinking != "high" {
+		t.Fatalf("invalid thinking overwrote level: %q", m.thinking)
+	}
+}
+
+func TestNormalizeAndCycleThinking(t *testing.T) {
+	if got, ok := normalizeThinking("enabled"); !ok || got != "medium" {
+		t.Fatalf("enabled → %q %v, want medium", got, ok)
+	}
+	if got, ok := normalizeThinking("mid"); !ok || got != "medium" {
+		t.Fatalf("mid → %q %v, want medium", got, ok)
+	}
+	if got, ok := normalizeThinking("off"); !ok || got != "disabled" {
+		t.Fatalf("off → %q %v, want disabled", got, ok)
+	}
+	if _, ok := normalizeThinking("banana"); ok {
+		t.Fatal("banana should be rejected")
+	}
+	if cycleThinking("") != "low" || cycleThinking("disabled") != "low" {
+		t.Fatal("cycle from inherit/disabled should go to low")
+	}
+	if cycleThinking("low") != "medium" || cycleThinking("medium") != "high" || cycleThinking("high") != "disabled" {
+		t.Fatal("cycle order should be disabled→low→medium→high→disabled")
+	}
+	if thinkingHeaderLabel("medium") != "mid" || thinkingHeaderLabel("disabled") != "" {
+		t.Fatal("header label contract")
+	}
+	if thinkingWire("") != "" || thinkingWire("low") != "low" {
+		t.Fatal("wire omit/level contract")
+	}
+}
+
+// TestCtrlTThinkingFeedback verifies ^T cycles levels with a note and header chip.
 func TestCtrlTThinkingFeedback(t *testing.T) {
 	m := newTestModel()
 	m.Update(key("ctrl+t"))
-	if !m.thinkOn {
-		t.Fatal("^T did not enable thinking")
+	if m.thinking != "low" {
+		t.Fatalf("^T thinking = %q, want low", m.thinking)
 	}
 	found := false
 	for _, n := range m.notices {
-		if strings.Contains(n, "thinking on") {
+		if strings.Contains(n, "thinking low") {
 			found = true
 		}
 	}
 	if !found {
 		t.Errorf("^T posted no acknowledgement note: %v", m.notices)
 	}
-	if !strings.Contains(plain(m.header()), "✳ think") {
+	if !strings.Contains(plain(m.header()), "✳ low") {
 		t.Error("header shows no thinking indicator while enabled")
 	}
 
 	m.Update(key("ctrl+t"))
-	if m.thinkOn {
-		t.Fatal("second ^T did not disable thinking")
+	if m.thinking != "medium" {
+		t.Fatalf("second ^T thinking = %q, want medium", m.thinking)
 	}
-	if strings.Contains(plain(m.header()), "✳ think") {
-		t.Error("header thinking indicator should clear when disabled")
+	if !strings.Contains(plain(m.header()), "✳ mid") {
+		t.Error("header should show ✳ mid at medium")
 	}
 }
 

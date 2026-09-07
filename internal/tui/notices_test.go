@@ -219,7 +219,7 @@ func TestStatusConfirmationsFade(t *testing.T) {
 	// /thinking toggle.
 	m4 := newTestModel()
 	cmd = m4.runCommand("thinking", "on")
-	assertFadingNotice(t, m4, cmd != nil, "thinking on")
+	assertFadingNotice(t, m4, cmd != nil, "thinking medium")
 
 	// Unknown command feedback.
 	m5 := newTestModel()

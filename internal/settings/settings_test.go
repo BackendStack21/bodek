@@ -42,6 +42,7 @@ func TestSaveLoadRoundTrip(t *testing.T) {
 		Notify:    ptr(true),
 		Plain:     ptr(false),
 		Verbosity: "quiet",
+		Thinking:  "medium",
 	}
 	if err := Save(in); err != nil {
 		t.Fatalf("Save() error = %v", err)
@@ -55,6 +56,9 @@ func TestSaveLoadRoundTrip(t *testing.T) {
 	}
 	if got.Verbosity != "quiet" {
 		t.Errorf("Verbosity = %q, want quiet", got.Verbosity)
+	}
+	if got.Thinking != "medium" {
+		t.Errorf("Thinking = %q, want medium", got.Thinking)
 	}
 	for name, pair := range map[string][2]*bool{
 		"Bell":   {got.Bell, in.Bell},

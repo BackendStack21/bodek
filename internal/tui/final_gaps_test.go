@@ -27,7 +27,7 @@ func TestUpdateEventMsgAndDefault(t *testing.T) {
 
 func TestHeaderThinkAndSandbox(t *testing.T) {
 	m := wired(t)
-	m.thinkOn = true
+	m.thinking = "medium"
 	m.sandbox = true
 	if !strings.Contains(plain(m.header()), "sandboxed") {
 		t.Error("sandbox shield missing from header")

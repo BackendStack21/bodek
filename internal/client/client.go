@@ -326,7 +326,7 @@ type Attachment struct {
 
 // PromptOpts are optional parameters for a prompt turn.
 type PromptOpts struct {
-	Thinking    string       // "enabled" to force reasoning this turn, "" for default
+	Thinking    string       // disabled|low|medium|high; "" inherits the server default
 	Model       string       // switch the active model when set
 	SessionID   string       // resume/continue a specific session
 	AuthToken   string       // session-scoped token, required when SessionID is set
