@@ -1,5 +1,5 @@
 // Package settings persists bodek's own front-end preferences so they
-// survive relaunches: theme, bell, notify, plain, verbosity. odek's
+// survive relaunches: theme, bell, notify, plain, verbosity, thinking. odek's
 // server-side configuration is unaffected — this file belongs to the
 // terminal UI alone.
 //
@@ -24,6 +24,7 @@ type Settings struct {
 	Notify    *bool  `json:"notify,omitempty"`
 	Plain     *bool  `json:"plain,omitempty"`
 	Verbosity string `json:"verbosity,omitempty"`
+	Thinking  string `json:"thinking,omitempty"`
 }
 
 // Path returns the settings file location: $BODEK_CONFIG if set, else

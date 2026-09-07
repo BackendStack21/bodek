@@ -40,6 +40,7 @@ type config struct {
 	plain     bool   // linear rendering mode (no alt-screen)
 	theme     string // startup palette override (empty = BODEK_THEME / settings)
 	verbosity string // startup noise dial: quiet, normal, detailed (empty = normal)
+	thinking  string // startup reasoning depth (empty = inherit / seed from serve)
 	fresh     bool   // --new: skip last-session resume
 	extraArgs []string
 
@@ -77,6 +78,7 @@ func parseConfig(args []string, output io.Writer) (config, error) {
 	fs.BoolVar(&cfg.plain, "plain", st.Bool(st.Plain, false), "linear mode: no alt-screen, transcript printed to scrollback (screen readers, pipes, logs)")
 	verbDefault := st.Verbosity
 	fs.StringVar(&cfg.verbosity, "verbosity", verbDefault, "noise dial: quiet (info notes hidden, compact steps), normal, detailed (steps expand) — /verbosity switches at runtime and persists")
+	fs.StringVar(&cfg.thinking, "thinking", st.Thinking, "reasoning depth: disabled, low, medium, high — /thinking and ^T switch at runtime and persist")
 	fs.BoolVar(&cfg.fresh, "new", false, "start a fresh session (skip last-session resume for this directory)")
 	fs.Usage = func() {
 		_, _ = fmt.Fprintf(fs.Output(), "Usage: bodek [options] [-- <odek serve flags>]\n\n")
@@ -211,6 +213,7 @@ func run() error {
 		Plain:       cfg.plain,
 		Theme:       cfg.theme,
 		Verbosity:   cfg.verbosity,
+		Thinking:    cfg.thinking,
 		Workspace:   workspace.Open(),
 		Fresh:       cfg.fresh,
 		OnThemeChange: func(name string) error {
@@ -219,6 +222,10 @@ func run() error {
 		},
 		OnVerbosityChange: func(name string) error {
 			cfg.persist.Verbosity = name
+			return settings.Save(cfg.persist)
+		},
+		OnThinkingChange: func(level string) error {
+			cfg.persist.Thinking = level
 			return settings.Save(cfg.persist)
 		},
 		Reconnect: func() (*client.Client, error) {

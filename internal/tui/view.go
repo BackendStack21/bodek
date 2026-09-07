@@ -94,8 +94,8 @@ func (m *Model) header() string {
 	tail := ""
 	// A subtle, persistent marker while extended thinking is enabled — the
 	// same ✳ glyph the per-turn stat line uses to flag a thought turn.
-	if m.thinkOn {
-		tail += th.headerMeta.Render("  ·  ✳ think")
+	if label := thinkingHeaderLabel(m.thinking); label != "" {
+		tail += th.headerMeta.Render("  ·  ✳ " + label)
 	}
 	if inst := m.headerInstruments(); inst != "" {
 		tail += th.headerMeta.Render("  ·  ") + th.headerKey.Render(truncate(inst, 28))

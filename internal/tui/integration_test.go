@@ -372,8 +372,8 @@ func TestInitAndBasicKeys(t *testing.T) {
 	m.Update(key("h"))
 	// Toggle thinking.
 	m.Update(key("ctrl+t"))
-	if !m.thinkOn {
-		t.Error("ctrl+t did not enable thinking")
+	if m.thinking != "low" {
+		t.Errorf("ctrl+t thinking = %q, want low", m.thinking)
 	}
 	m.Update(key("ctrl+t"))
 	// Clear (not busy): ^L arms the confirm, y fires the wipe.

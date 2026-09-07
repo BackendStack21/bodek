@@ -404,10 +404,7 @@ func (m *Model) sendPrompt(text string) tea.Cmd {
 	// only sticks when already at the bottom).
 	m.vp.GotoBottom()
 
-	thinking := ""
-	if m.thinkOn {
-		thinking = "enabled"
-	}
+	thinking := thinkingWire(m.thinking)
 	opts := client.PromptOpts{
 		Thinking:    thinking,
 		Model:       m.pendModel,

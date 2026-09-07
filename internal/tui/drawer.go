@@ -83,10 +83,7 @@ func (m *Model) startHeadlessRun(prompt string) tea.Cmd {
 		return m.transientNoteCmd("/run needs a prompt — type one or use the palette with a draft")
 	}
 	cl := m.cl
-	thinking := ""
-	if m.thinkOn {
-		thinking = "enabled"
-	}
+	thinking := thinkingWire(m.thinking)
 	model := m.pendModel
 	m.pendModel = "" // applied to the run, not held for the next turn
 	return func() tea.Msg {

@@ -115,21 +115,11 @@ func slashCommands() []command {
 			}
 			return m.openModels()
 		}},
-		{"thinking", "extended thinking — /thinking [on|off]", func(m *Model, args string) tea.Cmd {
-			switch strings.ToLower(args) {
-			case "on", "enabled", "true":
-				m.thinkOn = true
-			case "off", "disabled", "false":
-				m.thinkOn = false
-			default:
-				m.thinkOn = !m.thinkOn
+		{"thinking", "reasoning depth — /thinking [disabled|low|medium|high|inherit]", func(m *Model, args string) tea.Cmd {
+			if strings.TrimSpace(args) == "" {
+				return m.cycleThinkingLevel()
 			}
-			state := "off"
-			if m.thinkOn {
-				state = "on"
-			}
-			m.refresh()
-			return m.transientNoteCmd("thinking " + state)
+			return m.setThinking(args)
 		}},
 		{"cancel", "cancel the running turn", func(m *Model, _ string) tea.Cmd {
 			return m.cancelRun()
@@ -308,7 +298,7 @@ func (m *Model) showHelp() {
 		{"^Q", "unfold the queue strip (full manager: /queue)"},
 		{"^O", "switch model"},
 		{"^K", "command palette"},
-		{"^T", "toggle extended thinking"},
+		{"^T", "cycle reasoning depth"},
 		{"^S", "stop the running sub-agent"},
 		{"^L", "clear the conversation"},
 		{"^E", "toggle details (reasoning + tool output)"},
@@ -413,9 +403,9 @@ func (m *Model) statsBody() string {
 			latVal += th.statsDim.Render(fmt.Sprintf("  · slowest %.1fs", peakLat))
 		}
 
-		think := "off"
-		if m.thinkOn {
-			think = "on"
+		think := m.thinking
+		if think == "" {
+			think = "inherit"
 		}
 		// Budget the (sanitized) model id so the " · think …" suffix and the
 		// label gutter still fit the content column without wrapping.

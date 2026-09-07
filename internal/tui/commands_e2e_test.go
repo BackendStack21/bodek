@@ -265,13 +265,18 @@ func TestE2EAllCommands(t *testing.T) {
 			}
 		},
 		"/thinking on": func(t *testing.T, m *Model) {
-			if !m.thinkOn {
-				t.Fatal("/thinking on did not enable thinking")
+			if m.thinking != "medium" {
+				t.Fatalf("/thinking on = %q, want medium", m.thinking)
 			}
 		},
 		"/thinking off": func(t *testing.T, m *Model) {
-			if m.thinkOn {
-				t.Fatal("/thinking off did not disable thinking")
+			if m.thinking != "disabled" {
+				t.Fatalf("/thinking off = %q, want disabled", m.thinking)
+			}
+		},
+		"/thinking inherit": func(t *testing.T, m *Model) {
+			if m.thinking != "" {
+				t.Fatalf("/thinking inherit = %q, want empty", m.thinking)
 			}
 		},
 		"/cancel": func(t *testing.T, m *Model) {
