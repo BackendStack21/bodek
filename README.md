@@ -111,8 +111,8 @@ bodek looks for `odek` on your `PATH`. To point at a specific binary use
 ## Usage
 
 ```bash
-bodek                                             # launch odek serve and resume this directory's last session
-bodek --new                                       # start a fresh session (the old one stays in /sessions)
+bodek                                             # launch odek serve and start fresh in this directory
+bodek --resume                                    # continue this directory's last session (opt-in)
 bodek --sandbox                                   # run tool calls inside odek's Docker sandbox
 bodek --url 'http://127.0.0.1:8080/?token=…'      # attach with the token URL odek serve printed
 bodek --url http://127.0.0.1:8080 --token d3adb33f  # attach with an explicit token
@@ -234,10 +234,12 @@ own front-end settings are separate; see [Configuration](#configuration).
   (`r`), export a transcript (`e` markdown, `E` JSON), and search server-side
   (`/`); `n` loads the next page. Resuming sends a `session_switch` so the
   server-side memory buffer is restored before you type.
-- **Last-session resume** — launching in a directory continues yesterday's
-  session (`session_switch` + transcript replay). `/new` or `--new` is
-  the escape; the old session stays resumable via `/sessions`. A failed
-  resume is a note, never a leftover approval form.
+- **Last-session resume (opt-in)** — by default a launch starts fresh.
+  Enable continuation per launch with `--resume`, or persistently with
+  `{"resume": true}` in `~/.bodek/config.json`. Resuming replays the
+  transcript (`session_switch`); a failed resume is a note, never a
+  leftover approval form. `/new` or `--new` always starts a fresh
+  session; the old one stays resumable via `/sessions`.
 - **Session home** — first-run shows the working directory, the last
   session title when one exists, and `type a task · ^K`. After `^L`, the
   cleared transcript keeps the last prompt and coding receipt so the

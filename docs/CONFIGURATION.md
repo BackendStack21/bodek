@@ -18,7 +18,8 @@ silently ignored.
   "notify": true,
   "plain": false,
   "verbosity": "quiet",
-  "thinking": "medium"
+  "thinking": "medium",
+  "resume": false
 }
 ```
 
@@ -30,6 +31,7 @@ silently ignored.
 | `plain` | bool | `false` | `--plain` | Linear mode: no alt-screen; agent events print to the terminal's native scrollback (screen readers, pipes, logs). |
 | `verbosity` | string | `normal` | `--verbosity` | Noise dial: `quiet` (info notes hidden), `normal`, `detailed` (`^E` expand-all view). `/verbosity` switches live **and persists it here**. An explicit `--verbosity` still wins for that launch. |
 | `thinking` | string | (inherit) | `--thinking` | Reasoning depth: `disabled` · `low` · `medium` · `high`. `^T` cycles; `/thinking` opens a picker (or `/thinking <level>` sets directly) **and persist it here**. `/thinking inherit` (or `default`) clears the key so the next launch seeds from odek again. Empty inherits the odek serve default until you set a level. Requires odek ≥ v2.5.0 for string `/api/config.thinking` and inherit-on-omit. |
+| `resume` | bool | `false` | `--resume` | Resume this directory's last session on start (transcript replay). Off by default: a launch starts fresh. `--new` always wins. |
 
 Unset keys fall back to their defaults — the file only ever stores choices
 you actually made (`/theme` writes `theme`, `/verbosity` writes `verbosity`,

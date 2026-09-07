@@ -25,6 +25,7 @@ type Settings struct {
 	Plain     *bool  `json:"plain,omitempty"`
 	Verbosity string `json:"verbosity,omitempty"`
 	Thinking  string `json:"thinking,omitempty"`
+	Resume    *bool  `json:"resume,omitempty"`
 }
 
 // Path returns the settings file location: $BODEK_CONFIG if set, else
