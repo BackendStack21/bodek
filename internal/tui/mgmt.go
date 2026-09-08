@@ -660,7 +660,7 @@ func (m *Model) cardByTask(taskID string) *agentCard {
 func agentStatusGlyph(phase, status string) string {
 	if phase != "finished" {
 		if phase == "queued" {
-			return "◌"
+			return "◔" // ◔ not ◌: the lamp glyphs belong to the connection state
 		}
 		return "⟳"
 	}

@@ -213,7 +213,7 @@ own front-end settings are separate; see [Configuration](#configuration).
   `tab` (on a swarm turn) focuses one agent: identity + live beat
   (current tool, step, budget, cost). `^E` / expand still dumps that
   agent's logs, artifacts, and the framed result. Tasks the wire hasn't
-  confirmed yet show as `◌` pending chips from the `delegate_tasks`
+  confirmed yet show as `◔` pending chips from the `delegate_tasks`
   argument. Glyphs: `✓` success, `◐` partial, `✗` error, `⊘` cancelled,
   `⏱` timeout, `×` lost on disconnect. The parent rollup still counts
   failures (`2/3 · 1 ✗ · 8.1k tok`). A finished swarm turn closes with a
@@ -304,7 +304,7 @@ own front-end settings are separate; see [Configuration](#configuration).
 - **Context gauge** — a pressure-tinted context-window gauge in the header
   (`ctx █▉░░░ 38% 380/1k`, eighth-block fill, green→amber→red). The fill
   is the parent conversation window (`windowTokens` on odek ≥ v2.3), not
-  session spend or sub-agent tokens. Live `plan N/M` and `● N jobs` /
+  session spend or sub-agent tokens. Live `plan N/M` and `▶ N jobs` /
   `✗ job` instruments ride the same bar when a plan or background job is
   active.
 - **Per-turn footers & `/stats`** — token counts and latency ride every turn

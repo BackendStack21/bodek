@@ -9,7 +9,7 @@ const (
 	lampReconnect = "◌" // redial in flight
 	lampDown      = "○" // socket dead
 	lampApproval  = "⚠" // form waiting
-	lampError     = "✕" // last turn failed
+	lampError     = "✗" // last turn failed
 )
 
 // toolGlyph returns a tasteful monochrome glyph for a tool, so the activity
@@ -29,7 +29,7 @@ func toolGlyph(name string) string {
 	case strings.Contains(n, "search"), strings.Contains(n, "grep"), strings.Contains(n, "find"):
 		return "⌕"
 	case strings.Contains(n, "browser"), strings.Contains(n, "http"), strings.Contains(n, "fetch"), strings.Contains(n, "web"):
-		return "◉"
+		return "⌖" // ⌖ not ◉: the lamp glyphs belong to the connection state
 	case strings.Contains(n, "delegate"), strings.Contains(n, "subagent"), strings.Contains(n, "task"):
 		return "⑂"
 	case strings.Contains(n, "memory"), strings.Contains(n, "recall"):

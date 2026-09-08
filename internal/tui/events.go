@@ -454,7 +454,7 @@ func (m *Model) handleEvent(ev client.Event) (tea.Model, tea.Cmd) {
 			stream = true // coalesce redraws — state frames arrive in bursts
 			m.subagentTerminalNote(ev)
 			if ev.Phase == "active" { // teach on live swarms, not terminal frames
-				m.teach(hintSwarm, "tip: tab cycles sub-agent chips · /agents opens the registry")
+				m.teach(hintSwarm, hintSwarmText)
 			}
 			break
 		}

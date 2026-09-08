@@ -107,8 +107,8 @@ func TestHeaderInstruments(t *testing.T) {
 	if got := m.headerPlanLabel(); got != "plan 1/2" {
 		t.Errorf("plan label = %q, want plan 1/2", got)
 	}
-	if got := m.headerJobsLabel(); got != "● 2 jobs" {
-		t.Errorf("jobs label = %q, want ● 2 jobs", got)
+	if got := m.headerJobsLabel(); got != "▶ 2 jobs" {
+		t.Errorf("jobs label = %q, want ▶ 2 jobs", got)
 	}
 	head := plain(m.header())
 	if !strings.Contains(head, "plan 1/2") || !strings.Contains(head, "2 jobs") {
