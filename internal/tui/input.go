@@ -401,7 +401,7 @@ func (m *Model) sendPrompt(text string) tea.Cmd {
 	m.refresh()
 	// First real prompt: decode the header instruments once — the ctx
 	// gauge and the connection lamp are otherwise unexplained jargon.
-	m.teach(hintCtx, "tip: ctx is how much of the model's context window is in use · ● connected ◉ running")
+	m.teach(hintCtx, "tip: ctx = context window in use · ● idle ◉ running")
 	// Submitting is an explicit "show me the latest" signal — jump to the
 	// bottom even when the reader was up in the scrollback (refresh alone
 	// only sticks when already at the bottom).

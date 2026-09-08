@@ -327,7 +327,7 @@ func (m *Model) sessionHome() string {
 			i+1, truncate(task, max(w-24, 12)), s.Turns, ago(s.UpdatedAt))) + "\n")
 	}
 	b.WriteString("\n")
-	b.WriteString(th.tipKey.Render("type a task") + "  " + th.tipText.Render("1–3 resume · ⏎ sends · ^K everything · /verbosity dials detail") + "\n")
+	b.WriteString(th.tipKey.Render("type a task") + "  " + th.tipText.Render("1–3 resume · ⏎ sends · ^K clears · /verbosity dials detail") + "\n")
 	return lipgloss.NewStyle().Width(w).PaddingLeft(2).Render(strings.TrimRight(b.String(), "\n"))
 }
 

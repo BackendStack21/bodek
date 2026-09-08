@@ -1739,7 +1739,7 @@ func (m *Model) footer() string {
 	}
 	// The persistent teaching pair: help and the palette, always one chord away.
 	segs = append(segs, th.footerKey.Render("F1")+th.footer.Render(" help · ")+
-		th.footerKey.Render("^K")+th.footer.Render(" everything"))
+		th.footerKey.Render("^K")+th.footer.Render(" clears"))
 	right := strings.Join(segs, th.footerSep.Render("  ·  ")) + "  "
 	gap := m.width - lipgloss.Width(left) - lipgloss.Width(right)
 	if gap < 1 {

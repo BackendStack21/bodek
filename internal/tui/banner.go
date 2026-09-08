@@ -21,7 +21,7 @@ func welcome(th theme, width int, cwd, lastSession string) string {
 		b.WriteString(th.tipText.Render("/new starts fresh") + "\n")
 		b.WriteByte('\n')
 	}
-	b.WriteString(th.tipKey.Render("type a task") + "  " + th.tipText.Render("⏎ sends · ^K clears · click a reply to copy · ^E details · tab expands") + "\n")
+	b.WriteString(th.tipKey.Render("type a task") + "  " + th.tipText.Render("⏎ sends · ^K clears · click to copy · ^E details · tab expands") + "\n")
 
 	block := strings.TrimRight(b.String(), "\n")
 	// Left-aligned (no centering) with a small left margin for breathing room.

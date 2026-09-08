@@ -17,7 +17,7 @@ import (
 // the ^E details toggle, and tab-to-expand.
 func TestWelcomeTipSignpostsCoreInteractions(t *testing.T) {
 	out := plain(welcome(newTheme(), 120, "/somewhere", ""))
-	for _, want := range []string{"click a reply to copy", "^E details", "tab expands"} {
+	for _, want := range []string{"click to copy", "^E details", "tab expands"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("welcome tip missing %q:\n%s", want, out)
 		}
