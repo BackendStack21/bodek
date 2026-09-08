@@ -354,7 +354,7 @@ func (m *Model) jobRowsRender(w int) []string {
 func jobStatusGlyph(status string) string {
 	switch status {
 	case "running":
-		return "●"
+		return "▶" // ▶ not ●: the lamp glyphs belong to the connection state
 	case "exited":
 		return "✓"
 	case "failed":

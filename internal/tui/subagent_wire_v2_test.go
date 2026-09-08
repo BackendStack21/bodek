@@ -59,7 +59,7 @@ func TestQueuedPhase(t *testing.T) {
 		m.handleEvent(client.Event{Type: "subagent_state", TaskID: string(rune('a' + idx)), TaskIdx: idx, Phase: "queued", Status: "queued"})
 	}
 	s := stateStep(t, m)
-	if len(s.agents) != 3 || s.agents[0].glyph() != "◌" {
+	if len(s.agents) != 3 || s.agents[0].glyph() != "◔" {
 		t.Fatalf("queued cards wrong: %s %s %s", s.agents[0].glyph(), s.agents[1].glyph(), s.agents[2].glyph())
 	}
 	if line := agentCardLine(s.agents[0]); !strings.Contains(line, "queued") || strings.Contains(line, "· step") {

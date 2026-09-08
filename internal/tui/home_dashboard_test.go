@@ -93,11 +93,11 @@ func TestHomeSessionsGenerationGuard(t *testing.T) {
 func TestSwarmHintSkipsTerminalFrames(t *testing.T) {
 	m := manifestFixture(t)
 	m.handleEvent(client.Event{Type: "subagent_state", TaskID: "t1", TaskIdx: 0, Phase: "finished", Status: "ok"})
-	if countNotices(m, "tip: tab cycles sub-agent") != 0 {
+	if countNotices(m, "tab steps through running sub-agents") != 0 {
 		t.Fatalf("terminal frames must not teach the swarm hint: %q", m.notices)
 	}
 	m.handleEvent(client.Event{Type: "subagent_state", TaskID: "t2", TaskIdx: 1, Phase: "active", Status: "running", Tool: "go test"})
-	if countNotices(m, "tip: tab cycles sub-agent") != 1 {
+	if countNotices(m, "tab steps through running sub-agents") != 1 {
 		t.Fatalf("the first live swarm frame must teach the hint once: %q", m.notices)
 	}
 }

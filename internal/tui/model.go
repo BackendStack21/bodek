@@ -1379,9 +1379,9 @@ func (m *Model) elapsed() string {
 	}
 	d := time.Since(m.runStart)
 	if d < time.Minute {
-		return fmt.Sprintf("%ds", int(d.Seconds()))
+		return fmt.Sprintf("running %ds", int(d.Seconds()))
 	}
-	return fmt.Sprintf("%dm%02ds", int(d.Minutes()), int(d.Seconds())%60)
+	return fmt.Sprintf("running %dm%02ds", int(d.Minutes()), int(d.Seconds())%60)
 }
 
 // sanitize strips terminal-hostile content from untrusted text before it is

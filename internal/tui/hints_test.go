@@ -82,11 +82,11 @@ func TestQueueHintFiresOnce(t *testing.T) {
 func TestSwarmHintFiresOnce(t *testing.T) {
 	m := manifestFixture(t)
 	m.handleEvent(client.Event{Type: "subagent_state", TaskID: "t1", TaskIdx: 0, Phase: "active", Status: "running", Tool: "read main.go"})
-	if countNotices(m, "tip: tab cycles sub-agent") != 1 {
+	if countNotices(m, "tab steps through running sub-agents") != 1 {
 		t.Fatalf("first swarm frame must teach tab once, notices: %q", m.notices)
 	}
 	m.handleEvent(client.Event{Type: "subagent_state", TaskID: "t2", TaskIdx: 1, Phase: "active", Status: "running", Tool: "go test"})
-	if countNotices(m, "tip: tab cycles sub-agent") != 1 {
+	if countNotices(m, "tab steps through running sub-agents") != 1 {
 		t.Fatalf("hint repeated on the second frame: %q", m.notices)
 	}
 }

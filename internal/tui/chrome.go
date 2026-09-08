@@ -176,7 +176,7 @@ func (m *Model) headerJobsLabel() string {
 		}
 	}
 	if n > 0 {
-		return "● " + plural(n, "job", "jobs")
+		return "▶ " + plural(n, "job", "jobs")
 	}
 	if failed {
 		return "✗ job"

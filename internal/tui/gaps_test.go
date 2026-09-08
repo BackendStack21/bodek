@@ -63,8 +63,8 @@ func TestApprovalQueueFIFO(t *testing.T) {
 		t.Fatalf("queue = %d", len(m.approvals))
 	}
 	out := plain(m.View())
-	if !strings.Contains(out, "1 of 2") {
-		t.Errorf("queue position missing from panel:\n%s", out)
+	if !strings.Contains(out, "1 more queued") {
+		t.Errorf("queue depth missing from panel:\n%s", out)
 	}
 	// Deny answers apr-1; apr-2 becomes the head with its own input state.
 	_, cmd := m.Update(key("esc"))

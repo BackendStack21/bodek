@@ -18,7 +18,11 @@ const (
 	hintQueue = "queue" // first prompt held while a turn runs
 	hintSwarm = "swarm" // first sub-agent swarm frame on screen
 	hintSteps = "steps" // first finished turn that carried tool steps
+	hintCtx   = "ctx"   // first real prompt: decode the header instruments
 )
+
+// hintSwarmText is the swarm tip's copy (pinned by cosmetics_test.go).
+const hintSwarmText = "tip: tab steps through running sub-agents · /agents lists them all"
 
 // teach pushes hint text as a one-time transient note. Fire-and-forget by
 // design: every caller's return path already batches noticeSweep(), which

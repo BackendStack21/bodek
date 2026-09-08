@@ -1366,9 +1366,8 @@ func (m *Model) approvalBody() string {
 		return ""
 	}
 	head := th.apprHead.Render(fmt.Sprintf("⚠ approval required · risk: %s", orDash(collapse(a.Risk))))
-	if n := len(m.approvals); n > 1 {
-		head += th.apprBody.Render(fmt.Sprintf(" · %d of %d queued", 1, n))
-	}
+	// The queue count lives in the footer alone ("N more queued") — the
+	// card head does not repeat it.
 	if a.IsOperation {
 		head += th.apprBody.Render(" · ") + th.opChip.Render("⚙ operation")
 	}

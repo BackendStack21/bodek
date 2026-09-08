@@ -55,7 +55,7 @@ func (a *agentCard) glyph() string {
 		case a.lost:
 			return "×" // orphaned by a disconnect: dead, not spinning
 		case a.phase == "queued":
-			return "◌" // accepted by the engine, not spawned yet
+			return "◔" // ◔ not ◌: the lamp glyphs belong to the connection state
 		}
 		return "⟳"
 	}

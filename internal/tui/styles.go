@@ -372,7 +372,7 @@ func themeFrom(p palette) theme {
 		sysBar:     lipgloss.NewStyle().Foreground(p.red).PaddingLeft(1),
 
 		stepName: lipgloss.NewStyle().Foreground(p.steel),
-		stepArg:  lipgloss.NewStyle().Foreground(p.faint),
+		stepArg:  lipgloss.NewStyle().Foreground(p.muted),
 		stepRun:  lipgloss.NewStyle().Foreground(p.yellow),
 		stepDone: lipgloss.NewStyle().Foreground(p.green),
 		stepErr:  lipgloss.NewStyle().Foreground(p.red).Bold(true),

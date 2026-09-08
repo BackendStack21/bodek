@@ -282,8 +282,8 @@ func TestSyncACTrimsToSixFiles(t *testing.T) {
 func TestElapsedMinutes(t *testing.T) {
 	m := newTestModel()
 	m.runStart = time.Now().Add(-65 * time.Second)
-	if got := m.elapsed(); got != "1m05s" {
-		t.Errorf("elapsed = %q, want 1m05s", got)
+	if got := m.elapsed(); got != "running 1m05s" {
+		t.Errorf("elapsed = %q, want running 1m05s", got)
 	}
 }
 
