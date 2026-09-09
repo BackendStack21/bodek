@@ -86,16 +86,21 @@ type turnItem struct {
 // done event plus locally-tracked timing/tool activity. It powers the per-turn
 // stat line and the /stats session dashboard.
 type turnStats struct {
-	latency    float64       // model latency reported by the server (seconds)
-	wall       time.Duration // wall-clock from prompt submit to done
-	ctxTok     int           // run-cumulative input (billing; inputTokens / legacy contextTokens)
-	outTok     int           // output tokens produced this turn
-	cacheWrite int           // provider cache writes (prompt cache stores)
-	cacheRead  int           // provider cache hits
-	cachedTok  int           // automatic prefix-match cache tokens
-	toolCount  int           // tool invocations this turn
-	toolGlyphs []string      // up to 4 deduped tool glyphs, in first-seen order
-	thought    bool          // the model streamed reasoning this turn
+	latency       float64       // model latency reported by the server (seconds)
+	wall          time.Duration // wall-clock from prompt submit to done
+	ctxTok        int           // run-cumulative input (billing; inputTokens / legacy contextTokens)
+	outTok        int           // output tokens produced this turn
+	cacheWrite    int           // provider cache writes (prompt cache stores)
+	cacheRead     int           // provider cache hits
+	cachedTok     int           // automatic prefix-match cache tokens
+	toolCount     int           // tool invocations this turn
+	toolGlyphs    []string      // up to 4 deduped tool glyphs, in first-seen order
+	thought       bool          // the model streamed reasoning this turn
+	tokPerSec     float64       // last think-step rate; 0 = unknown (never invented)
+	tokPerSecKind string        // client.TokPerSecGeneration | TokPerSecE2E | ""
+	ttftMs        int64         // last-call time-to-first-token; 0 = unknown
+	callDurMs     int64         // last-call wall; 0 = unknown
+	llmDurMs      int64         // run-total think-step LLM duration (done only)
 }
 
 // message is one entry in the transcript.
@@ -308,6 +313,10 @@ type Model struct {
 	runCtxCum      int // pre-v2.3: last cumulative contextTokens (fill = delta)
 	maxContextWire int // server-reported maxContextTokens; beats /api/models
 	lastLatency    float64
+	tokPerSec      float64 // live last-call rate from usage/done; 0 = unknown
+	tokPerSecKind  string  // client.TokPerSecGeneration | TokPerSecE2E | ""
+	ttftMs         int64   // live last-call TTFT; 0 = unknown
+	callDurMs      int64   // live last-call wall; 0 = unknown
 
 	// WS protocol v2 server snapshot (server_info on connect, refreshed by
 	// every pong) plus the heartbeat that measures it.
@@ -1138,6 +1147,7 @@ func (m *Model) clearConversation() tea.Cmd {
 	m.runCtxCum = 0
 	m.maxContextWire = 0
 	m.lastLatency = 0
+	m.resetCallMetrics()
 	m.refresh()
 	// Fresh dashboard snapshot per clear: drop the stale rows, re-arm the
 	// once-guard, and bump the generation so an in-flight older fetch can

@@ -1029,6 +1029,7 @@ func (m *Model) handleSessionDetail(msg sessionDetailMsg) tea.Cmd {
 	m.runCtxCum = 0
 	m.maxContextWire = 0
 	m.lastLatency = 0
+	m.resetCallMetrics()
 	m.msgs = m.msgs[:0]
 	m.resetMsgBlocks()
 	// The plan surface is session-scoped knowledge: drop it and refetch for

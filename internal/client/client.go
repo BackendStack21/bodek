@@ -72,6 +72,20 @@ type Event struct {
 	SessionContextTokens int     `json:"sessionContextTokens"`
 	SessionOutputTokens  int     `json:"sessionOutputTokens"`
 
+	// This-call LLM performance on usage/done (odek generation-speed
+	// fields). All omitted when unknown: buffered calls have no TTFT;
+	// rates stay off when the provider sent no output tokens or the
+	// call was shorter than 50ms. OutputTokens on these frames stays
+	// run-cumulative — never divide it by latency to invent a rate.
+	CallDurationMs            int64   `json:"callDurationMs"`
+	TTFTMs                    int64   `json:"ttftMs"`
+	GenerationMs              int64   `json:"generationMs"`
+	CallInputTokens           int     `json:"callInputTokens"`
+	CallOutputTokens          int     `json:"callOutputTokens"`
+	TokensPerSecond           float64 `json:"tokensPerSecond"`
+	GenerationTokensPerSecond float64 `json:"generationTokensPerSecond"`
+	LLMDurationMs             int64   `json:"llmDurationMs"` // done only: sum of think-step LLM durations
+
 	// approval_request. Friction is the approval-fatigue gate: the server
 	// demands the literal word "approve" (no shortcut) and the UI must show
 	// FrictionApprovals (same-class approvals inside the window).
@@ -151,6 +165,26 @@ func (e Event) BillingTokens() int {
 		return e.InputTokens
 	}
 	return e.ContextTokens
+}
+
+// TokPerSecKind names which this-call rate PickTokPerSec chose.
+const (
+	TokPerSecGeneration = "generation"
+	TokPerSecE2E        = "e2e"
+)
+
+// PickTokPerSec prefers decode-ish generation rate when the stream measured
+// TTFT separately; otherwise end-to-end throughput. 0 / absent means
+// unknown — callers must not invent a rate from cumulative outputTokens
+// or wall latency.
+func (e Event) PickTokPerSec() (rate float64, kind string) {
+	if e.GenerationTokensPerSecond > 0 {
+		return e.GenerationTokensPerSecond, TokPerSecGeneration
+	}
+	if e.TokensPerSecond > 0 {
+		return e.TokensPerSecond, TokPerSecE2E
+	}
+	return 0, ""
 }
 
 // StateArtifact is the bounded artifact metadata carried on subagent_state

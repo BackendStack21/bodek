@@ -152,6 +152,34 @@ func TestDecodeEvents(t *testing.T) {
 			},
 		},
 		{
+			name:  "usage this-call speed",
+			frame: `{"type":"usage","windowTokens":38412,"callDurationMs":8100,"ttftMs":420,"generationMs":3100,"callInputTokens":18432,"callOutputTokens":78,"tokensPerSecond":9.6,"generationTokensPerSecond":25.2}`,
+			check: func(t *testing.T, e Event) {
+				if e.CallDurationMs != 8100 || e.TTFTMs != 420 || e.GenerationMs != 3100 {
+					t.Fatalf("bad call timing decode: %+v", e)
+				}
+				if e.CallInputTokens != 18432 || e.CallOutputTokens != 78 {
+					t.Fatalf("bad call token decode: %+v", e)
+				}
+				if e.TokensPerSecond != 9.6 || e.GenerationTokensPerSecond != 25.2 {
+					t.Fatalf("bad rate decode: %+v", e)
+				}
+				rate, kind := e.PickTokPerSec()
+				if rate != 25.2 || kind != TokPerSecGeneration {
+					t.Fatalf("PickTokPerSec = %v %q, want 25.2 generation", rate, kind)
+				}
+			},
+		},
+		{
+			name:  "done this-call speed + llm duration",
+			frame: `{"type":"done","latency":4.2,"tokensPerSecond":9.6,"generationTokensPerSecond":25.2,"llmDurationMs":8100,"callDurationMs":8100,"ttftMs":420}`,
+			check: func(t *testing.T, e Event) {
+				if e.LLMDurationMs != 8100 || e.TokensPerSecond != 9.6 || e.GenerationTokensPerSecond != 25.2 {
+					t.Fatalf("bad done speed decode: %+v", e)
+				}
+			},
+		},
+		{
 			name:  "cancelled",
 			frame: `{"type":"cancelled","session_id":"s1","idle":true}`,
 			check: func(t *testing.T, e Event) {
@@ -206,6 +234,29 @@ func TestDecodeEvents(t *testing.T) {
 				t.Fatalf("unmarshal: %v", err)
 			}
 			tc.check(t, e)
+		})
+	}
+}
+
+func TestPickTokPerSec(t *testing.T) {
+	cases := []struct {
+		name     string
+		ev       Event
+		wantRate float64
+		wantKind string
+	}{
+		{"empty", Event{}, 0, ""},
+		{"e2e only", Event{TokensPerSecond: 9.6}, 9.6, TokPerSecE2E},
+		{"generation preferred", Event{TokensPerSecond: 9.6, GenerationTokensPerSecond: 25.2}, 25.2, TokPerSecGeneration},
+		{"generation only", Event{GenerationTokensPerSecond: 25.2}, 25.2, TokPerSecGeneration},
+		{"zeros omitted", Event{TokensPerSecond: 0, GenerationTokensPerSecond: 0, OutputTokens: 800, Latency: 2}, 0, ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			rate, kind := tc.ev.PickTokPerSec()
+			if rate != tc.wantRate || kind != tc.wantKind {
+				t.Fatalf("PickTokPerSec = %v %q, want %v %q", rate, kind, tc.wantRate, tc.wantKind)
+			}
 		})
 	}
 }

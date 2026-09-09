@@ -246,17 +246,35 @@ func (m *Model) handleEvent(ev client.Event) (tea.Model, tea.Cmd) {
 					break
 				}
 			}
+			rate, kind := ev.PickTokPerSec()
+			if rate <= 0 {
+				// Done omitted the rate: keep this turn's last usage chip
+				// (resetCallMetrics cleared the previous turn at start).
+				rate, kind = m.tokPerSec, m.tokPerSecKind
+			}
+			ttft, callDur := ev.TTFTMs, ev.CallDurationMs
+			if ttft <= 0 {
+				ttft = m.ttftMs
+			}
+			if callDur <= 0 {
+				callDur = m.callDurMs
+			}
 			ts := turnStats{
-				latency:    ev.Latency,
-				wall:       wall,
-				ctxTok:     ev.BillingTokens(),
-				outTok:     ev.OutputTokens,
-				cacheWrite: ev.CacheCreationTokens,
-				cacheRead:  ev.CacheReadTokens,
-				cachedTok:  ev.CachedTokens,
-				toolCount:  len(m.msgs[i].steps),
-				toolGlyphs: stepGlyphs(m.msgs[i].steps),
-				thought:    thought,
+				latency:       ev.Latency,
+				wall:          wall,
+				ctxTok:        ev.BillingTokens(),
+				outTok:        ev.OutputTokens,
+				cacheWrite:    ev.CacheCreationTokens,
+				cacheRead:     ev.CacheReadTokens,
+				cachedTok:     ev.CachedTokens,
+				toolCount:     len(m.msgs[i].steps),
+				toolGlyphs:    stepGlyphs(m.msgs[i].steps),
+				thought:       thought,
+				tokPerSec:     rate,
+				tokPerSecKind: kind,
+				ttftMs:        ttft,
+				callDurMs:     callDur,
+				llmDurMs:      ev.LLMDurationMs,
 			}
 			m.msgs[i].stats = &ts
 			m.turnStats = append(m.turnStats, ts)
@@ -281,6 +299,7 @@ func (m *Model) handleEvent(ev client.Event) (tea.Model, tea.Cmd) {
 		m.sessCtxTok = ev.SessionContextTokens
 		m.sessOutTok = ev.SessionOutputTokens
 		m.applyCtxWindow(ev)
+		m.applyCallMetrics(ev)
 		m.runCtxCum = 0 // run over — the next run's pre-v2.3 cumulative restarts
 		m.lastLatency = ev.Latency
 		m.relayout() // the busy status line releases its row
@@ -290,8 +309,14 @@ func (m *Model) handleEvent(ev client.Event) (tea.Model, tea.Cmd) {
 		// Per-iteration report from odek serve: keeps the header gauge live
 		// during a run instead of waiting for "done". Wire v3 sends the
 		// parent window directly; older engines still send a cumulative
-		// (applyCtxWindow). Absent/zero holds the last fill.
+		// (applyCtxWindow). Absent/zero holds the last fill. This-call
+		// tok/s is the same contract: a missing rate is held, never
+		// invented from cumulative outputTokens / wall latency.
+		// Open a card first so a usage-first remote/wake turn (missed
+		// turn_started) resets the previous chip before this frame lands.
+		m.ensureWireTurn()
 		m.applyCtxWindow(ev)
+		m.applyCallMetrics(ev)
 		stream = true
 
 	case "keepalive":
@@ -602,6 +627,7 @@ func (m *Model) beginWireTurn(wake bool) {
 	if m.sessionStart.IsZero() {
 		m.sessionStart = m.runStart
 	}
+	m.resetCallMetrics()  // previous turn's rate must not show as this think-step
 	m.relayout()          // the busy status line claims a row above the input
 	m.refresh()           // sticks only when already at the bottom — leave scrollback
 	m.planLiveKick = true // wake/remote turns skip sendPrompt; planFollowup arms the strip poll
@@ -903,6 +929,32 @@ func (m *Model) setRunStatus(s string) {
 		return
 	}
 	m.status = s
+}
+
+// applyCallMetrics records a this-call rate from a usage/done frame.
+// Missing / zero rates are held, not zeroed, so a silent provider frame
+// does not blank the chip mid-run. Never derived from cumulative tokens.
+func (m *Model) applyCallMetrics(ev client.Event) {
+	if rate, kind := ev.PickTokPerSec(); rate > 0 {
+		m.tokPerSec = rate
+		m.tokPerSecKind = kind
+	}
+	if ev.TTFTMs > 0 {
+		m.ttftMs = ev.TTFTMs
+	}
+	if ev.CallDurationMs > 0 {
+		m.callDurMs = ev.CallDurationMs
+	}
+}
+
+// resetCallMetrics clears the live speed chip at the start of a new turn
+// so the previous turn's rate is not shown as current while the first
+// think step is still in flight.
+func (m *Model) resetCallMetrics() {
+	m.tokPerSec = 0
+	m.tokPerSecKind = ""
+	m.ttftMs = 0
+	m.callDurMs = 0
 }
 
 // applyCtxWindow seeds the header gauge from a usage/done frame.

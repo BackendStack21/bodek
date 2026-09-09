@@ -55,7 +55,7 @@ func TestDumpPreview(t *testing.T) {
 				{name: "patch", arg: "auth/login.go", done: true, dur: 312 * time.Millisecond, result: "--- a/auth/login.go\n+++ b/auth/login.go\n@@ -88,3 +88,4 @@\n func login() {\n-\tcookie := stale()\n+\tcookie := fresh()\n+\tvalidate(cookie)\n }"},
 			},
 			content: "The bug was a **stale session cookie** on line 88. I've replaced the lookup and added validation.",
-			stats:   &turnStats{latency: 8.2, wall: 9 * time.Second, ctxTok: 9100, outTok: 1180, cacheWrite: 800, cacheRead: 40, toolCount: 2, toolGlyphs: []string{"⌕", "✎"}, thought: true}},
+			stats:   &turnStats{latency: 8.2, wall: 9 * time.Second, ctxTok: 9100, outTok: 1180, cacheWrite: 800, cacheRead: 40, toolCount: 2, toolGlyphs: []string{"⌕", "✎"}, thought: true, tokPerSec: 25.2, tokPerSecKind: "generation", ttftMs: 340}},
 		message{role: roleUser, content: "run the tests", sentAt: time.Now().Add(-1 * time.Minute)},
 		message{role: roleAsst,
 			steps:   []step{{name: "shell", arg: "go test ./auth/...", done: true, isErr: true, dur: 2400 * time.Millisecond, result: "--- FAIL: TestLogin (0.00s)\nFAIL\nexit status 1"}},
