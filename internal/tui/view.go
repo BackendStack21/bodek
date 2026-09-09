@@ -112,6 +112,9 @@ func (m *Model) header() string {
 	if inPrice, outPrice := m.prices(); inPrice > 0 && outPrice > 0 {
 		tail += th.headerMeta.Render("  ·  ") + th.headerKey.Render(formatUSD(costUSD(m.sessCtxTok, m.sessOutTok, inPrice, outPrice)+m.subCostTotal()))
 	}
+	if s := formatTokPerSec(m.tokPerSec); s != "" {
+		tail += th.headerMeta.Render("  ·  ") + th.headerKey.Render("↗ "+s)
+	}
 
 	status := m.statusBadge()
 	// The gauge is the header's sole token metric — session totals live in
@@ -870,7 +873,7 @@ type statSeg struct {
 	drop int
 }
 
-// statSegments builds the per-turn telemetry: latency, wall-clock, tokens,
+// statSegments builds the per-turn telemetry: latency, tokens, tok/s,
 // tools, cache activity, cost, thinking marker. Segments self-suppress when
 // empty.
 func (m *Model) statSegments(ts turnStats) []statSeg {
@@ -888,6 +891,10 @@ func (m *Model) statSegments(ts turnStats) []statSeg {
 	// context + output tokens — always present
 	add(th.statCtx.Render("⌂")+th.statLine.Render(" "+human(ts.ctxTok)), 0)
 	add(th.statCtx.Render("↳")+th.statLine.Render(" "+human(ts.outTok)), 0)
+	// last think-step tok/s — this-call fields only; omitted when unknown
+	if s := formatTokPerSec(ts.tokPerSec); s != "" {
+		add(th.statTime.Render("↗")+th.statLine.Render(" "+s), 2)
+	}
 	// tools — count plus the deduped glyph cluster
 	if ts.toolCount > 0 {
 		tools := th.statTool.Render("⚒") + th.statLine.Render(" "+fmt.Sprintf("%d", ts.toolCount))
@@ -1793,6 +1800,15 @@ func orDash(s string) string {
 		return "—"
 	}
 	return s
+}
+
+// formatTokPerSec renders a this-call generation rate. Empty when unknown
+// so callers can omit the chip rather than invent a number.
+func formatTokPerSec(rate float64) string {
+	if rate < 0.05 {
+		return ""
+	}
+	return fmt.Sprintf("%.1f tok/s", rate)
 }
 
 // human formats a token count compactly (e.g. 1234 → "1.2k").

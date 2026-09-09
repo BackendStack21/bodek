@@ -72,6 +72,9 @@ func TestTurnStatLine(t *testing.T) {
 			t.Errorf("stat line missing %q in:\n%s", want, out)
 		}
 	}
+	if strings.Contains(out, "↗") || strings.Contains(out, "tok/s") {
+		t.Errorf("stat line invented tok/s from cumulative output/latency:\n%s", out)
+	}
 }
 
 // A streaming (not-yet-done) turn must render no stat line.
@@ -473,6 +476,8 @@ func TestSessionResumeResetsTelemetry(t *testing.T) {
 	if len(m.turnStats) == 0 || m.toolTotal == 0 || m.sessCtxTok == 0 {
 		t.Fatal("precondition: session telemetry not populated by the turn")
 	}
+	m.tokPerSec = 25.2
+	m.tokPerSecKind = client.TokPerSecGeneration
 
 	// Resuming a different session must clear the accumulated telemetry so the
 	// dashboard/header/footer don't show the previous session's data.
@@ -493,9 +498,9 @@ func TestSessionResumeResetsTelemetry(t *testing.T) {
 	if !m.sessionStart.IsZero() {
 		t.Error("sessionStart not reset")
 	}
-	if m.sessCtxTok != 0 || m.sessOutTok != 0 || m.lastLatency != 0 {
-		t.Errorf("session token/latency not reset: ctx=%d out=%d lat=%v",
-			m.sessCtxTok, m.sessOutTok, m.lastLatency)
+	if m.sessCtxTok != 0 || m.sessOutTok != 0 || m.lastLatency != 0 || m.tokPerSec != 0 {
+		t.Errorf("session token/latency/speed not reset: ctx=%d out=%d lat=%v tok/s=%v",
+			m.sessCtxTok, m.sessOutTok, m.lastLatency, m.tokPerSec)
 	}
 }
 
@@ -527,6 +532,8 @@ func TestClearResetsTelemetry(t *testing.T) {
 			if len(m.turnStats) == 0 || m.toolTotal == 0 || m.sessCtxTok == 0 {
 				t.Fatal("precondition: session telemetry not populated by the turn")
 			}
+			m.tokPerSec = 25.2
+			m.tokPerSecKind = client.TokPerSecGeneration
 
 			clear(m)
 
@@ -542,10 +549,321 @@ func TestClearResetsTelemetry(t *testing.T) {
 			if !m.sessionStart.IsZero() {
 				t.Error("sessionStart not reset")
 			}
-			if m.sessCtxTok != 0 || m.sessOutTok != 0 || m.lastLatency != 0 {
-				t.Errorf("session token/latency not reset: ctx=%d out=%d lat=%v",
-					m.sessCtxTok, m.sessOutTok, m.lastLatency)
+			if m.sessCtxTok != 0 || m.sessOutTok != 0 || m.lastLatency != 0 || m.tokPerSec != 0 {
+				t.Errorf("session token/latency/speed not reset: ctx=%d out=%d lat=%v tok/s=%v",
+					m.sessCtxTok, m.sessOutTok, m.lastLatency, m.tokPerSec)
 			}
 		})
+	}
+}
+
+func TestFormatTokPerSec(t *testing.T) {
+	cases := map[float64]string{
+		0:    "",
+		-1:   "",
+		0.04: "",
+		9.6:  "9.6 tok/s",
+		25.2: "25.2 tok/s",
+		200:  "200.0 tok/s",
+	}
+	for in, want := range cases {
+		if got := formatTokPerSec(in); got != want {
+			t.Errorf("formatTokPerSec(%v) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+func TestTurnStatLineShowsTokPerSec(t *testing.T) {
+	m := driveTurn(t, client.Event{
+		Type: "done", Latency: 2.5,
+		ContextTokens: 1200, OutputTokens: 340,
+		SessionContextTokens: 1200, SessionOutputTokens: 340,
+		TokensPerSecond: 9.6, GenerationTokensPerSecond: 25.2,
+		TTFTMs: 420, CallDurationMs: 8100, LLMDurationMs: 8100,
+	})
+	ts := m.turnStats[0]
+	if ts.tokPerSec != 25.2 || ts.tokPerSecKind != client.TokPerSecGeneration {
+		t.Fatalf("tok/s = %v %q, want 25.2 generation", ts.tokPerSec, ts.tokPerSecKind)
+	}
+	if ts.ttftMs != 420 || ts.callDurMs != 8100 || ts.llmDurMs != 8100 {
+		t.Fatalf("timing = ttft %d call %d llm %d", ts.ttftMs, ts.callDurMs, ts.llmDurMs)
+	}
+	foot := plain(m.turnStatFoot(m.msgs[1]))
+	if !strings.Contains(foot, "↗") || !strings.Contains(foot, "25.2 tok/s") {
+		t.Errorf("turn foot missing generation tok/s: %q", foot)
+	}
+	if !strings.Contains(plain(m.header()), "25.2 tok/s") {
+		t.Errorf("header missing live tok/s chip:\n%s", plain(m.header()))
+	}
+}
+
+func TestChromeFooterOmitsTokPerSec(t *testing.T) {
+	m := driveTurn(t, client.Event{
+		Type: "done", Latency: 2.5, OutputTokens: 340,
+		GenerationTokensPerSecond: 25.2,
+		SessionContextTokens:      100, SessionOutputTokens: 340,
+	})
+	m.sendPrompt("next")
+	m.handleEvent(client.Event{Type: "usage", TokensPerSecond: 9.6})
+	if !strings.Contains(plain(m.header()), "9.6 tok/s") {
+		t.Errorf("header should show live in-flight rate:\n%s", plain(m.header()))
+	}
+	foot := plain(m.footer())
+	if strings.Contains(foot, "tok/s") {
+		t.Errorf("chrome footer must not carry tok/s (header + turn foot own it): %q", foot)
+	}
+	if got := plain(m.turnStatFoot(m.msgs[1])); !strings.Contains(got, "25.2 tok/s") {
+		t.Errorf("sealed turn foot missing previous rate: %q", got)
+	}
+}
+
+func TestUsageAppliesLiveSpeed(t *testing.T) {
+	m := newTestModel()
+	m.msgs = append(m.msgs, message{role: roleAsst, streaming: true})
+	m.curIdx = 0
+	m.busy = true
+	m.status = "responding"
+
+	m.handleEvent(client.Event{Type: "usage", GenerationTokensPerSecond: 25.2, TokensPerSecond: 9.6, TTFTMs: 420, CallDurationMs: 8100})
+	if m.tokPerSec != 25.2 || m.tokPerSecKind != client.TokPerSecGeneration {
+		t.Fatalf("live tok/s = %v %q, want 25.2 generation", m.tokPerSec, m.tokPerSecKind)
+	}
+	if m.ttftMs != 420 || m.callDurMs != 8100 {
+		t.Fatalf("live timing = ttft %d call %d", m.ttftMs, m.callDurMs)
+	}
+	if out := plain(m.header()); !strings.Contains(out, "25.2 tok/s") {
+		t.Errorf("header chip missing mid-run tok/s:\n%s", out)
+	}
+	if m.msgs[0].stats != nil {
+		t.Fatal("usage must not seal turn stats")
+	}
+	if foot := plain(m.turnStatFoot(m.msgs[0])); foot != "" {
+		t.Errorf("streaming turn foot must stay empty, got %q", foot)
+	}
+
+	m.handleEvent(client.Event{Type: "usage", OutputTokens: 10})
+	if m.tokPerSec != 25.2 || m.ttftMs != 420 {
+		t.Fatalf("zero usage zeroed held metrics: tok/s=%v ttft=%d", m.tokPerSec, m.ttftMs)
+	}
+
+	m.winCtxTok = 400
+	m.handleEvent(client.Event{Type: "usage", TokensPerSecond: 9.6, CallDurationMs: 80, CallOutputTokens: 16})
+	if m.tokPerSec != 9.6 || m.tokPerSecKind != client.TokPerSecE2E {
+		t.Fatalf("last usage should update tok/s: %v %q", m.tokPerSec, m.tokPerSecKind)
+	}
+	if m.winCtxTok != 400 {
+		t.Fatalf("usage without windowTokens zeroed the gauge: %d", m.winCtxTok)
+	}
+}
+
+func TestUsageFirstRemoteTurnResetsThenApplies(t *testing.T) {
+	m := newTestModel()
+	m.tokPerSec = 40
+	m.tokPerSecKind = client.TokPerSecGeneration
+	m.handleEvent(client.Event{Type: "usage", TokensPerSecond: 9.6})
+	if m.cur() < 0 {
+		t.Fatal("usage-first remote turn must open a card")
+	}
+	if m.tokPerSec != 9.6 || m.tokPerSecKind != client.TokPerSecE2E {
+		t.Fatalf("usage-first applied after reset: %v %q", m.tokPerSec, m.tokPerSecKind)
+	}
+}
+
+func TestDoneFallsBackToLiveUsageRate(t *testing.T) {
+	m := newTestModel()
+	m.msgs = append(m.msgs,
+		message{role: roleUser, content: "do it"},
+		message{role: roleAsst, streaming: true},
+	)
+	m.curIdx = 1
+	m.busy = true
+	m.handleEvent(client.Event{Type: "usage", GenerationTokensPerSecond: 25.2, TTFTMs: 340, CallDurationMs: 2000})
+	m.handleEvent(client.Event{Type: "done", Latency: 1, OutputTokens: 80,
+		SessionContextTokens: 100, SessionOutputTokens: 80})
+	ts := m.turnStats[0]
+	if ts.tokPerSec != 25.2 || ts.ttftMs != 340 || ts.callDurMs != 2000 {
+		t.Fatalf("done without metrics dropped live usage: %+v", ts)
+	}
+}
+
+func TestDonePrefersOwnRateOverLive(t *testing.T) {
+	m := newTestModel()
+	m.msgs = append(m.msgs, message{role: roleAsst, streaming: true})
+	m.curIdx = 0
+	m.busy = true
+	m.handleEvent(client.Event{Type: "usage", TokensPerSecond: 9.6})
+	m.handleEvent(client.Event{Type: "done", Latency: 1, GenerationTokensPerSecond: 25.2,
+		SessionContextTokens: 10, SessionOutputTokens: 4})
+	if m.turnStats[0].tokPerSec != 25.2 {
+		t.Fatalf("done rate should win over live usage: %v", m.turnStats[0].tokPerSec)
+	}
+}
+
+func TestSecondTurnWithoutRateDoesNotInherit(t *testing.T) {
+	m := driveTurn(t, client.Event{
+		Type: "done", Latency: 1, GenerationTokensPerSecond: 40,
+		SessionContextTokens: 100, SessionOutputTokens: 10,
+	})
+	m.sendPrompt("next")
+	m.handleEvent(client.Event{Type: "done", Latency: 1, OutputTokens: 4,
+		SessionContextTokens: 104, SessionOutputTokens: 14})
+	if n := len(m.turnStats); n != 2 {
+		t.Fatalf("turnStats = %d, want 2", n)
+	}
+	if m.turnStats[1].tokPerSec != 0 || m.turnStats[1].tokPerSecKind != "" {
+		t.Fatalf("second turn inherited previous tok/s: %+v", m.turnStats[1])
+	}
+	if m.turnStats[0].tokPerSec != 40 {
+		t.Fatalf("first turn rate clobbered: %v", m.turnStats[0].tokPerSec)
+	}
+}
+
+func TestSecondTurnFallsBackToThisTurnUsage(t *testing.T) {
+	m := driveTurn(t, client.Event{
+		Type: "done", Latency: 1, GenerationTokensPerSecond: 40,
+		SessionContextTokens: 100, SessionOutputTokens: 10,
+	})
+	m.sendPrompt("next")
+	m.handleEvent(client.Event{Type: "usage", GenerationTokensPerSecond: 25.2})
+	m.handleEvent(client.Event{Type: "done", Latency: 1, OutputTokens: 4,
+		SessionContextTokens: 104, SessionOutputTokens: 14})
+	if m.turnStats[1].tokPerSec != 25.2 {
+		t.Fatalf("second turn should seal this-turn usage: %v", m.turnStats[1].tokPerSec)
+	}
+}
+
+func TestNewTurnResetsSpeedChip(t *testing.T) {
+	m := driveTurn(t, client.Event{
+		Type: "done", Latency: 1,
+		GenerationTokensPerSecond: 25.2,
+		SessionContextTokens:      100, SessionOutputTokens: 10,
+	})
+	if m.tokPerSec != 25.2 {
+		t.Fatal("precondition: done should keep the last-call chip")
+	}
+	m.sendPrompt("next")
+	if m.tokPerSec != 0 || m.tokPerSecKind != "" || m.ttftMs != 0 || m.callDurMs != 0 {
+		t.Fatalf("new turn kept previous metrics: tok/s=%v ttft=%d call=%d", m.tokPerSec, m.ttftMs, m.callDurMs)
+	}
+	if strings.Contains(plain(m.header()), "tok/s") {
+		t.Errorf("header still shows previous turn's rate:\n%s", plain(m.header()))
+	}
+}
+
+func TestBeginWireTurnResetsSpeedChip(t *testing.T) {
+	m := driveTurn(t, client.Event{
+		Type: "done", Latency: 1,
+		GenerationTokensPerSecond: 25.2, TTFTMs: 300,
+		SessionContextTokens: 100, SessionOutputTokens: 10,
+	})
+	m.beginWireTurn(true)
+	if m.tokPerSec != 0 || m.tokPerSecKind != "" || m.ttftMs != 0 {
+		t.Fatalf("wake turn kept previous metrics: tok/s=%v ttft=%d", m.tokPerSec, m.ttftMs)
+	}
+	if strings.Contains(plain(m.header()), "tok/s") {
+		t.Errorf("header still shows previous turn's rate:\n%s", plain(m.header()))
+	}
+}
+
+func TestStatsCardSpeedAndTTFT(t *testing.T) {
+	m := newTestModel()
+	m.sessionStart = time.Now()
+	m.turnStats = []turnStats{
+		{latency: 1.0, tokPerSec: 20.0, tokPerSecKind: client.TokPerSecGeneration, ttftMs: 300, callDurMs: 2000, llmDurMs: 2000},
+		{latency: 2.0, tokPerSec: 30.0, tokPerSecKind: client.TokPerSecGeneration, ttftMs: 500, callDurMs: 4000, llmDurMs: 4000},
+	}
+	out := plain(m.statsBody())
+	for _, want := range []string{"speed", "30.0 tok/s", "generation", "mean 25.0 tok/s", "4.0s call", "ttft", "400ms", "slowest 500ms", "llm", "6.0s"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("stats body missing %q in:\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, "peak 30") {
+		t.Errorf("peak should omit when it equals the last rate:\n%s", out)
+	}
+}
+
+func TestStatsCardIndependentPerfRows(t *testing.T) {
+	m := newTestModel()
+	m.sessionStart = time.Now()
+	m.turnStats = []turnStats{{latency: 1, tokPerSec: 9.6, tokPerSecKind: client.TokPerSecE2E}}
+	out := plain(m.statsBody())
+	if !strings.Contains(out, "speed") || !strings.Contains(out, "9.6 tok/s") || !strings.Contains(out, "e2e") {
+		t.Errorf("speed-only card missing e2e rate:\n%s", out)
+	}
+	if strings.Contains(out, "ttft") || strings.Contains(out, "llm") {
+		t.Errorf("speed-only card leaked ttft/llm:\n%s", out)
+	}
+
+	m.turnStats = []turnStats{{latency: 1, ttftMs: 340}}
+	out = plain(m.statsBody())
+	if !strings.Contains(out, "ttft") {
+		t.Errorf("ttft-only card missing ttft:\n%s", out)
+	}
+	if strings.Contains(out, "speed") || strings.Contains(out, "tok/s") || strings.Contains(out, "llm") {
+		t.Errorf("ttft-only card leaked speed/llm:\n%s", out)
+	}
+
+	m.turnStats = []turnStats{{latency: 1, llmDurMs: 2500}}
+	out = plain(m.statsBody())
+	if !strings.Contains(out, "llm") || !strings.Contains(out, "2.5s") {
+		t.Errorf("llm-only card missing duration:\n%s", out)
+	}
+	if strings.Contains(out, "speed") || strings.Contains(out, "ttft") {
+		t.Errorf("llm-only card leaked speed/ttft:\n%s", out)
+	}
+
+	m.turnStats = []turnStats{
+		{latency: 1, tokPerSec: 20},
+		{latency: 1},
+		{latency: 1, tokPerSec: 30},
+	}
+	out = plain(m.statsBody())
+	if !strings.Contains(out, "30.0 tok/s") || !strings.Contains(out, "mean 25.0 tok/s") {
+		t.Errorf("zero-rate turns must not dilute the mean:\n%s", out)
+	}
+}
+
+func TestStatsCardOmitsSpeedWithoutRates(t *testing.T) {
+	m := driveTurn(t, client.Event{
+		Type: "done", Latency: 2.5,
+		ContextTokens: 1200, OutputTokens: 340,
+		SessionContextTokens: 1200, SessionOutputTokens: 340,
+	})
+	out := plain(m.statsBody())
+	for _, banned := range []string{"speed", "tok/s", "ttft", "llm"} {
+		if strings.Contains(out, banned) {
+			t.Errorf("stats body invented %q without this-call metrics:\n%s", banned, out)
+		}
+	}
+}
+
+func TestStatLineWidthKeepsLatencyWithTokPerSec(t *testing.T) {
+	ts := turnStats{
+		latency: 2.5, wall: 9 * time.Second,
+		ctxTok: 1200, outTok: 340, tokPerSec: 25.2,
+		toolCount: 3, toolGlyphs: []string{"❯", "◰"}, thought: true,
+	}
+	for _, w := range []int{40, 30, 24, 16, 12} {
+		m := newTestModel()
+		m.resize(w, 20)
+		line := m.statLine(ts)
+		if got, limit := lipgloss.Width(line), m.vp.Width-2; got > limit {
+			t.Errorf("width %d: line width %d exceeds limit %d: %q", w, got, limit, plain(line))
+		}
+		if !strings.Contains(plain(line), "⚡") {
+			t.Errorf("width %d: dropped latency essential: %q", w, plain(line))
+		}
+	}
+	m := newTestModel()
+	m.resize(80, 20)
+	if line := plain(m.statLine(ts)); !strings.Contains(line, "↗") || !strings.Contains(line, "25.2 tok/s") {
+		t.Errorf("tok/s missing at width 80: %q", line)
+	}
+	// Tools (drop 1) shed before tok/s (drop 2).
+	m.resize(50, 20)
+	line := plain(m.statLine(ts))
+	if !strings.Contains(line, "↗") {
+		t.Errorf("tok/s should survive after tools drop: %q", line)
 	}
 }

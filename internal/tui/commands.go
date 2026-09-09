@@ -71,7 +71,7 @@ func slashCommands() []command {
 		{"queue", "manage queued prompts — priority, delete, send now", func(m *Model, _ string) tea.Cmd {
 			return m.openQueue()
 		}},
-		{"stats", "session metrics & context gauge", func(m *Model, _ string) tea.Cmd {
+		{"stats", "session metrics, speed & context gauge", func(m *Model, _ string) tea.Cmd {
 			return m.openStats()
 		}},
 		{"sessions", "browse & resume saved sessions", func(m *Model, _ string) tea.Cmd {
@@ -375,6 +375,14 @@ func (m *Model) statsBody() string {
 
 	if len(m.turnStats) > 0 {
 		var sumLat, peakLat float64
+		var lastRate float64
+		var lastKind string
+		var lastCallDur int64
+		var sumRate, peakRate float64
+		var rateN int
+		var sumTTFT, peakTTFT int64
+		var ttftN int
+		var sumLLM int64
 		thinkN := 0
 		for _, t := range m.turnStats {
 			sumLat += t.latency
@@ -384,6 +392,24 @@ func (m *Model) statsBody() string {
 			if t.thought {
 				thinkN++
 			}
+			if t.tokPerSec > 0 {
+				sumRate += t.tokPerSec
+				rateN++
+				if t.tokPerSec > peakRate {
+					peakRate = t.tokPerSec
+				}
+				lastRate = t.tokPerSec
+				lastKind = t.tokPerSecKind
+				lastCallDur = t.callDurMs
+			}
+			if t.ttftMs > 0 {
+				sumTTFT += t.ttftMs
+				ttftN++
+				if t.ttftMs > peakTTFT {
+					peakTTFT = t.ttftMs
+				}
+			}
+			sumLLM += t.llmDurMs
 		}
 		mean := sumLat / float64(len(m.turnStats))
 
@@ -425,6 +451,46 @@ func (m *Model) statsBody() string {
 			{"✳", th.statThink, "thinking", th.statsValue.Render(fmt.Sprintf("%d of %d turns", thinkN, len(m.turnStats)))},
 			{"◷", th.statsLabel, "active", th.statsValue.Render(formatDuration(time.Since(m.sessionStart)))},
 			{"⬡", th.statThink, "model", th.statsValue.Render(modelID) + th.statsDim.Render(" · think "+think)},
+		}
+
+		var perf []row
+		if rateN > 0 {
+			// Last think-step rate is the headline (WebUI chip); mean/peak
+			// are session rollups so mixed generation/e2e turns stay honest.
+			speedVal := th.statsValue.Render(formatTokPerSec(lastRate))
+			switch lastKind {
+			case client.TokPerSecGeneration:
+				speedVal += th.statsDim.Render("  · generation")
+			case client.TokPerSecE2E:
+				speedVal += th.statsDim.Render("  · e2e")
+			}
+			if rateN > 1 {
+				meanRate := sumRate / float64(rateN)
+				if meanRate+0.05 < lastRate || meanRate > lastRate+0.05 {
+					speedVal += th.statsDim.Render("  · mean " + formatTokPerSec(meanRate))
+				}
+			}
+			if peakRate > lastRate+0.05 {
+				speedVal += th.statsDim.Render("  · peak " + formatTokPerSec(peakRate))
+			}
+			if lastCallDur > 0 {
+				speedVal += th.statsDim.Render("  · " + formatStepDur(time.Duration(lastCallDur)*time.Millisecond) + " call")
+			}
+			perf = append(perf, row{"↗", th.statTime, "speed", speedVal})
+		}
+		if ttftN > 0 {
+			meanMs := sumTTFT / int64(ttftN)
+			ttftVal := th.statsValue.Render(formatStepDur(time.Duration(meanMs) * time.Millisecond))
+			if peakTTFT > meanMs {
+				ttftVal += th.statsDim.Render("  · slowest " + formatStepDur(time.Duration(peakTTFT)*time.Millisecond))
+			}
+			perf = append(perf, row{"⤷", th.statTime, "ttft", ttftVal})
+		}
+		if sumLLM > 0 {
+			perf = append(perf, row{"Σ", th.statTime, "llm", th.statsValue.Render(formatStepDur(time.Duration(sumLLM) * time.Millisecond))})
+		}
+		if len(perf) > 0 {
+			rows = slices.Insert(rows, 5, perf...)
 		}
 
 		// Session cost from cumulative session tokens — correct across

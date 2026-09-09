@@ -397,7 +397,8 @@ func (m *Model) sendPrompt(text string) tea.Cmd {
 	if m.sessionStart.IsZero() {
 		m.sessionStart = m.runStart
 	}
-	m.relayout() // the busy status line claims a row above the input
+	m.resetCallMetrics() // previous turn's rate must not show as this think-step
+	m.relayout()         // the busy status line claims a row above the input
 	m.refresh()
 	// First real prompt: decode the header instruments once — the ctx
 	// gauge and the connection lamp are otherwise unexplained jargon.

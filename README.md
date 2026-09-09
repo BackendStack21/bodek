@@ -308,9 +308,15 @@ own front-end settings are separate; see [Configuration](#configuration).
   `✗ job` instruments ride the same bar when a plan or background job is
   active.
 - **Per-turn footers & `/stats`** — token counts and latency ride every turn
-  head (`⚡` latency, `⌂` context, `↳` output tokens, `⚒` tools); `/stats`
-  opens a sheet that rolls up the session (cost, cache, context). The `⎇`
-  glyph is reserved for git commits in the transcript.
+  head (`⚡` latency, `⌂` context, `↳` output tokens, `↗` tok/s, `⚒` tools);
+  `/stats` opens a sheet that rolls up the session (speed, TTFT, LLM time,
+  cost, cache, context). The `⎇` glyph is reserved for git commits in the
+  transcript.
+- **Generation speed** — live `↗ tok/s` in the header from `usage` frames
+  (prefers `generationTokensPerSecond` when the stream measured TTFT;
+  otherwise end-to-end `tokensPerSecond`). The same rate seals onto the
+  turn footer after `done`. Missing/zero rates are held, never invented
+  from cumulative output ÷ wall latency; a new turn clears the chip.
 - **Cost tracking** — when odek has token prices configured, the header shows
   the running session spend, each turn footer its estimated cost, and
   `/stats` adds the `max_cost_usd` cap when set; hidden entirely otherwise.
@@ -437,7 +443,7 @@ full command and press `⏎`.
 | `/queue` | Manage the prompt queue — priority, delete, send now (the full manager over the `^Q` strip) |
 | `/theme [name]` | Switch the color theme at runtime and persist it (`ember-dark` · `ember-light` · `high-contrast` · `classic`) |
 | `/verbosity [quiet\|normal\|detailed]` | One-dial noise policy (persisted): quiet hides engine traces, detailed switches on the `^E` expand-all view; bare `/verbosity` cycles |
-| `/stats` | Session metrics sheet (cost, cache, context gauge) |
+| `/stats` | Session metrics sheet (speed, TTFT, cost, cache, context gauge) |
 | `/server` | Cockpit — server, link, budget & session in one card (or click the header) |
 | `/sessions` | Browse, search, pin, rename, export & resume sessions |
 | `/runs` | Headless REST runs — live status, remote approvals, cancel |
