@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 
 	"github.com/BackendStack21/bodek/internal/client"
 )
@@ -123,12 +124,14 @@ func TestClarify_LongAnswerWrapsInsteadOfTruncating(t *testing.T) {
 	if m.clarifyBuf != answer {
 		t.Fatalf("buffer dropped characters: %q", m.clarifyBuf)
 	}
-	out := plain(m.clarifyPanel())
-	if strings.Contains(out, "…") {
-		t.Fatalf("answer was truncated with an ellipsis:\n%s", out)
-	}
-	if !strings.Contains(out, "end.") {
+	out := m.clarifyPanel()
+	if !strings.Contains(plain(out), "end.") {
 		t.Fatalf("wrapped answer missing its tail:\n%s", out)
+	}
+	for _, ln := range strings.Split(plain(out), "\n") {
+		if w := lipgloss.Width(ln); w > m.width {
+			t.Fatalf("answer line overflowed the terminal: width %d > %d (%q)", w, m.width, ln)
+		}
 	}
 }
 
@@ -150,16 +153,16 @@ func TestClarify_NewlineChordAndBackspace(t *testing.T) {
 func TestClarify_InternalSpacesSurviveTrimOnSend(t *testing.T) {
 	m := newTestModel()
 	m.clarify = &client.Event{Type: "clarify_request", ID: "clr-1", Question: "q"}
-	m.clarifyBuf = "  the first  "
-	// Empty after trim must not send; internal spaces must remain once
-	// there is a non-space character. We only assert the trim here —
-	// SendClarify needs a live client.
-	if strings.TrimSpace(m.clarifyBuf) != "the first" {
-		t.Fatal("precondition: trim keeps internal spaces")
-	}
 	m.clarifyBuf = "   "
 	if cmd := m.sendClarifyAnswer(); cmd != nil {
 		t.Fatal("whitespace-only answer must not send")
+	}
+	if m.clarify == nil {
+		t.Fatal("whitespace-only send must keep the card")
+	}
+	m.clarifyBuf = "  the first  "
+	if strings.TrimSpace(m.clarifyBuf) != "the first" {
+		t.Fatal("sendClarifyAnswer trims edges but must keep internal spaces")
 	}
 }
 
@@ -182,5 +185,50 @@ func TestClarifyTypedDropsAltChords(t *testing.T) {
 	}
 	if got := clarifyTyped(tea.KeyMsg{Type: tea.KeySpace}); got != " " {
 		t.Fatalf("KeySpace typed %q, want a space", got)
+	}
+}
+
+func TestClarify_EscWhileBusyArmsCancel(t *testing.T) {
+	m := newTestModel()
+	busyTurn(m)
+	m.sessionID = "s1"
+	m.handleEvent(client.Event{Type: "clarify_request", ID: "clr-1", Question: "q"})
+	m.Update(key("esc"))
+	if m.confirm != confirmCancel {
+		t.Fatalf("esc on a live question must arm cancel, got %v", m.confirm)
+	}
+	if m.clarify == nil {
+		t.Fatal("esc must not dismiss the card; cancel is two-step")
+	}
+}
+
+func TestClarify_LongPasteKeepsViewHeight(t *testing.T) {
+	m := newTestModel()
+	m.handleEvent(client.Event{Type: "clarify_request", ID: "clr-1", Question: "q"})
+	m.clarifyBuf = strings.Repeat("word ", 800)
+	m.relayout()
+	if viewRows(m) != m.height {
+		t.Errorf("long clarify answer: view = %d rows, terminal = %d", viewRows(m), m.height)
+	}
+	if !strings.Contains(m.clarifyBuf, "word") {
+		t.Fatal("cap is display-only; the buffer must keep the paste")
+	}
+	out := plain(m.clarifyPanel())
+	if !strings.Contains(out, "word") {
+		t.Fatalf("capped answer missing its tail:\n%s", out)
+	}
+}
+
+func TestWrapCellsWideGlyphs(t *testing.T) {
+	// wrapText would keep 40 CJK runes on one line at width 40 (rune count);
+	// wrapCells must split them because each glyph is two cells.
+	lines := wrapCells(strings.Repeat("你", 40), 40)
+	if len(lines) < 2 {
+		t.Fatalf("wide glyphs stayed on one line: %q", lines)
+	}
+	for _, ln := range lines {
+		if w := lipgloss.Width(ln); w > 40 {
+			t.Fatalf("wrapCells line width %d > 40 (%q)", w, ln)
+		}
 	}
 }

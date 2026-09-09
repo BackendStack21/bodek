@@ -181,7 +181,9 @@ feat(tui): compact tool steps with Ctrl+E details toggle
   captures typing into `apprTyped`). Clarify questions capture the
   keyboard into `clarifyBuf`: the spacebar is Bubble Tea `KeySpace` (not
   `KeyRunes`), so every printable — spaces, punctuation, paste — must
-  append; wrap the answer, do not truncate it. Expiry autocloses the card and
+  append. Wrap the answer by cell width and paint only a capped tail so
+  a long paste cannot push `View` past the terminal; the buffer keeps
+  the full text. Expiry autocloses the card and
   parks `focusIdx` plus the viewport on the latest transcript message
   (a surviving queued successor must not yank scrollback). The unfocused
   queue is a shelf chip; `^Q` unfolds the strip (`qfocus`).
@@ -203,7 +205,8 @@ feat(tui): compact tool steps with Ctrl+E details toggle
 - ESC closes the topmost window, then inspect chrome, then (if busy)
   arms cancel. Order: confirm disarm → palette → drawer edit/detail/tab
   → cockpit → find → `@`/`/` popup → queue strip → approval (collapse
-  expand, then deny) → skill chip / `^E` / open thinking / agent
+  expand, then deny) → clarify (arm cancel while busy; the card stays)
+  → skill chip / `^E` / open thinking / agent
   focus / expanded step / help card → cancel gate. Do not let a leftover
   overlay swallow ESC without dismissing.
 - Management drawer tabs (memory/skills/tools/config — and jobs) have a detail

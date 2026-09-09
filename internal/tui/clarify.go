@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/x/ansi"
 )
 
 func (m *Model) clearClarify() {
@@ -19,6 +20,11 @@ func (m *Model) handleClarifyKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "enter":
 		return m, m.sendClarifyAnswer()
 	case "esc":
+		// The card is not dismissable (odek is waiting). ESC while a turn
+		// is running arms cancel — the same two-step gate as a bare composer.
+		if m.busy {
+			return m, m.armConfirm(confirmCancel, "the running turn")
+		}
 		return m, nil
 	case "backspace", "delete", "ctrl+h":
 		m.backspaceClarify()
@@ -109,16 +115,55 @@ func (m *Model) clarifyBody() string {
 	if m.clarify == nil {
 		return ""
 	}
-	head := th.apprHead.Render("❓ question from the agent")
 	budget := m.cardInner()
-	lines := []string{head}
-	for _, ln := range wrapText(sanitize(m.clarify.Question), budget) {
+	question := wrapCells(sanitize(m.clarify.Question), budget)
+	answer := wrapCells("answer: "+sanitize(m.clarifyBuf), budget)
+	if capn := m.clarifyAnswerCap(len(question)); len(answer) > capn {
+		answer = answer[len(answer)-capn:]
+	}
+	lines := []string{th.apprHead.Render("❓ question from the agent")}
+	for _, ln := range question {
 		lines = append(lines, th.apprBody.Render(ln))
 	}
-	prompt := "answer: " + sanitize(m.clarifyBuf)
-	for _, ln := range wrapText(prompt, budget) {
+	for _, ln := range answer {
 		lines = append(lines, th.apprKey.Render(ln))
 	}
 	lines = append(lines, th.apprBody.Render("enter send · ⇧⏎ newline · type to answer"))
 	return strings.Join(lines, "\n")
+}
+
+// wrapCells hard-wraps s to n display columns (CJK/emoji count as two).
+// Unlike wrapText, this is cell-width aware so a wide glyph cannot overflow
+// the card. Always returns at least one line.
+func wrapCells(s string, n int) []string {
+	if n < 1 {
+		n = 1
+	}
+	if s == "" {
+		return []string{""}
+	}
+	return strings.Split(ansi.Wrap(s, n, ""), "\n")
+}
+
+// clarifyAnswerCap is the max wrapped answer rows the card may paint. The
+// buffer keeps the full text (so a long paste is not refused); only the
+// tail is shown so typing stays visible and View cannot outgrow the terminal.
+func (m *Model) clarifyAnswerCap(questionLines int) int {
+	if questionLines < 1 {
+		questionLines = 1
+	}
+	used := headerHeight + footerHeight + 1 // one transcript row stays
+	used += m.ta.Height() + 2               // composer box
+	if m.statusLineVisible() {
+		used += 2
+	}
+	used += 2 + 1 + questionLines + 1 // card borders, head, question, hint
+	room := m.height - used
+	if room < 1 {
+		room = 1
+	}
+	if room > composerMaxRows {
+		room = composerMaxRows
+	}
+	return room
 }

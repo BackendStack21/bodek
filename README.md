@@ -293,8 +293,9 @@ own front-end settings are separate; see [Configuration](#configuration).
   types a follow-up draft. See [Approvals](#approvals).
 - **Clarify questions** — when the agent asks a principal-channel
   question, a card captures typing (spaces, punctuation, paste, `⇧⏎`
-  newlines) and `⏎` sends the answer. The form wraps instead of
-  truncating, so a sentence never looks like it was refused.
+  newlines) and `⏎` sends the answer. The form wraps by cell width and
+  keeps a capped tail so a long paste cannot blow the layout; `Esc`
+  while a turn is running still arms cancel.
 - **Friction & expiry** — repeated same-class approvals require typing
   `approve`; every request is time-boxed, autocloses on expiry (focus
   returns to the latest transcript message), and can never collect an
