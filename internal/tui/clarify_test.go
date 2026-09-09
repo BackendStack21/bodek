@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 
 	"github.com/BackendStack21/bodek/internal/client"
 )
@@ -52,5 +53,182 @@ func TestClarify_ExpiredClearsCard(t *testing.T) {
 	m.handleEvent(client.Event{Type: "clarify_expired", ID: "clr-1"})
 	if m.clarify != nil {
 		t.Fatal("expired must dismiss the card")
+	}
+}
+
+func TestClarify_SpaceAndPunctuationType(t *testing.T) {
+	// The spacebar is KeySpace, not KeyRunes — a KeyRunes-only handler
+	// mashed words together and dropped punctuation that some terminals
+	// also send as single-character special keys.
+	m := newTestModel()
+	m.handleEvent(client.Event{Type: "clarify_request", ID: "clr-1", Question: "Which approach?"})
+
+	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("use")})
+	m.Update(tea.KeyMsg{Type: tea.KeySpace})
+	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("the first, please!")})
+
+	if got, want := m.clarifyBuf, "use the first, please!"; got != want {
+		t.Fatalf("clarifyBuf = %q, want %q", got, want)
+	}
+	out := plain(m.View())
+	if !strings.Contains(out, "use the first, please!") {
+		t.Fatalf("typed answer missing from the card:\n%s", out)
+	}
+}
+
+func TestClarify_PasteWordSpaceIsNotASpacebar(t *testing.T) {
+	// The word "space" arriving as KeyRunes (paste / merged runes) must
+	// insert those five letters, not collapse to a single KeySpace.
+	m := newTestModel()
+	m.handleEvent(client.Event{Type: "clarify_request", ID: "clr-1", Question: "q"})
+	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("space")})
+	if m.clarifyBuf != "space" {
+		t.Fatalf("pasted %q, want %q", m.clarifyBuf, "space")
+	}
+}
+
+func TestClarify_PrintableASCIITypes(t *testing.T) {
+	m := newTestModel()
+	m.handleEvent(client.Event{Type: "clarify_request", ID: "clr-1", Question: "q"})
+	var want strings.Builder
+	for r := rune(' '); r <= '~'; r++ {
+		if r == ' ' {
+			m.Update(tea.KeyMsg{Type: tea.KeySpace})
+		} else {
+			m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+		}
+		want.WriteRune(r)
+	}
+	if m.clarifyBuf != want.String() {
+		var eaten []rune
+		for _, r := range want.String() {
+			if !strings.ContainsRune(m.clarifyBuf, r) {
+				eaten = append(eaten, r)
+			}
+		}
+		t.Fatalf("clarify form lost characters %q — typed %q", string(eaten), m.clarifyBuf)
+	}
+}
+
+func TestClarify_LongAnswerWrapsInsteadOfTruncating(t *testing.T) {
+	m := newTestModel()
+	m.handleEvent(client.Event{Type: "clarify_request", ID: "clr-1", Question: "q"})
+	answer := strings.Repeat("word ", 40) + "end."
+	for _, r := range answer {
+		if r == ' ' {
+			m.Update(tea.KeyMsg{Type: tea.KeySpace})
+			continue
+		}
+		m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+	}
+	if m.clarifyBuf != answer {
+		t.Fatalf("buffer dropped characters: %q", m.clarifyBuf)
+	}
+	out := m.clarifyPanel()
+	if !strings.Contains(plain(out), "end.") {
+		t.Fatalf("wrapped answer missing its tail:\n%s", out)
+	}
+	for _, ln := range strings.Split(plain(out), "\n") {
+		if w := lipgloss.Width(ln); w > m.width {
+			t.Fatalf("answer line overflowed the terminal: width %d > %d (%q)", w, m.width, ln)
+		}
+	}
+}
+
+func TestClarify_NewlineChordAndBackspace(t *testing.T) {
+	m := newTestModel()
+	m.handleEvent(client.Event{Type: "clarify_request", ID: "clr-1", Question: "q"})
+	m.Update(key("a"))
+	m.Update(key("shift+enter"))
+	m.Update(key("b"))
+	if m.clarifyBuf != "a\nb" {
+		t.Fatalf("newline chord: clarifyBuf = %q", m.clarifyBuf)
+	}
+	m.Update(tea.KeyMsg{Type: tea.KeyDelete})
+	if m.clarifyBuf != "a\n" {
+		t.Fatalf("delete: clarifyBuf = %q", m.clarifyBuf)
+	}
+}
+
+func TestClarify_InternalSpacesSurviveTrimOnSend(t *testing.T) {
+	m := newTestModel()
+	m.clarify = &client.Event{Type: "clarify_request", ID: "clr-1", Question: "q"}
+	m.clarifyBuf = "   "
+	if cmd := m.sendClarifyAnswer(); cmd != nil {
+		t.Fatal("whitespace-only answer must not send")
+	}
+	if m.clarify == nil {
+		t.Fatal("whitespace-only send must keep the card")
+	}
+	m.clarifyBuf = "  the first  "
+	if strings.TrimSpace(m.clarifyBuf) != "the first" {
+		t.Fatal("sendClarifyAnswer trims edges but must keep internal spaces")
+	}
+}
+
+func TestClarify_ModePillAndCtrlC(t *testing.T) {
+	m := newTestModel()
+	m.handleEvent(client.Event{Type: "clarify_request", ID: "clr-1", Question: "q"})
+	if got := m.modeName(); got != "question" {
+		t.Fatalf("modeName = %q, want question", got)
+	}
+	m.Update(key("ctrl+c"))
+	if m.confirm != confirmQuit || m.quitting {
+		t.Fatalf("ctrl+c from clarify did not arm the gate: confirm=%v quitting=%v", m.confirm, m.quitting)
+	}
+}
+
+func TestClarifyTypedDropsAltChords(t *testing.T) {
+	msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("s"), Alt: true}
+	if got := clarifyTyped(msg); got != "" {
+		t.Fatalf("alt chord must not type into the buffer: %q", got)
+	}
+	if got := clarifyTyped(tea.KeyMsg{Type: tea.KeySpace}); got != " " {
+		t.Fatalf("KeySpace typed %q, want a space", got)
+	}
+}
+
+func TestClarify_EscWhileBusyArmsCancel(t *testing.T) {
+	m := newTestModel()
+	busyTurn(m)
+	m.sessionID = "s1"
+	m.handleEvent(client.Event{Type: "clarify_request", ID: "clr-1", Question: "q"})
+	m.Update(key("esc"))
+	if m.confirm != confirmCancel {
+		t.Fatalf("esc on a live question must arm cancel, got %v", m.confirm)
+	}
+	if m.clarify == nil {
+		t.Fatal("esc must not dismiss the card; cancel is two-step")
+	}
+}
+
+func TestClarify_LongPasteKeepsViewHeight(t *testing.T) {
+	m := newTestModel()
+	m.handleEvent(client.Event{Type: "clarify_request", ID: "clr-1", Question: "q"})
+	m.clarifyBuf = strings.Repeat("word ", 800)
+	m.relayout()
+	if viewRows(m) != m.height {
+		t.Errorf("long clarify answer: view = %d rows, terminal = %d", viewRows(m), m.height)
+	}
+	if !strings.Contains(m.clarifyBuf, "word") {
+		t.Fatal("cap is display-only; the buffer must keep the paste")
+	}
+	out := plain(m.clarifyPanel())
+	if !strings.Contains(out, "word") {
+		t.Fatalf("capped answer missing its tail:\n%s", out)
+	}
+}
+
+func TestWrapCellsWideGlyphs(t *testing.T) {
+	// wrapText would keep 40 CJK runes on one line at width 40 (rune count);
+	// wrapCells must split them because each glyph is two cells.
+	lines := wrapCells(strings.Repeat("你", 40), 40)
+	if len(lines) < 2 {
+		t.Fatalf("wide glyphs stayed on one line: %q", lines)
+	}
+	for _, ln := range lines {
+		if w := lipgloss.Width(ln); w > 40 {
+			t.Fatalf("wrapCells line width %d > 40 (%q)", w, ln)
+		}
 	}
 }

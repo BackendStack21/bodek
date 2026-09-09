@@ -244,7 +244,7 @@ own front-end settings are separate; see [Configuration](#configuration).
   session title when one exists, and `type a task · ^K`. After `^L`, the
   cleared transcript keeps the last prompt and coding receipt so the
   session is still oriented; `/new` returns to the first-run splash. The
-  footer leads with a mode pill (`composer` / `approval` / `jobs` / …).
+  footer leads with a mode pill (`composer` / `approval` / `question` / `jobs` / …).
 - **Auto-fitting composer** — the input box rests at three rows and grows
   with your prompt (multi-line or a single long line, wide-char aware) up to
   twelve rows or what the terminal can spare; `⇧⏎` inserts a newline
@@ -291,6 +291,11 @@ own front-end settings are separate; see [Configuration](#configuration).
 - **Inline approvals** — odek's `danger` engine prompts sit as a card
   above the still-usable composer: `A`/`D`/`T` decide, every other letter
   types a follow-up draft. See [Approvals](#approvals).
+- **Clarify questions** — when the agent asks a principal-channel
+  question, a card captures typing (spaces, punctuation, paste, `⇧⏎`
+  newlines) and `⏎` sends the answer. The form wraps by cell width and
+  keeps a capped tail so a long paste cannot blow the layout; `Esc`
+  while a turn is running still arms cancel.
 - **Friction & expiry** — repeated same-class approvals require typing
   `approve`; every request is time-boxed, autocloses on expiry (focus
   returns to the latest transcript message), and can never collect an

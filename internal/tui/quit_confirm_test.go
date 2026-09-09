@@ -111,6 +111,7 @@ func TestQuitGateArmsFromEveryContext(t *testing.T) {
 		"popover":     func(m *Model) { m.popover = true },
 		"queue focus": func(m *Model) { m.queue = []string{"q"}; m.Update(key("ctrl+q")) },
 		"approval":    func(m *Model) { m.handleEvent(client.Event{Type: "approval_request", ID: "apr-q"}) },
+		"clarify":     func(m *Model) { m.handleEvent(client.Event{Type: "clarify_request", ID: "clr-q", Question: "q"}) },
 	}
 	for name, setup := range cases {
 		t.Run(name, func(t *testing.T) {
