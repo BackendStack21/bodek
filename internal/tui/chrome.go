@@ -205,6 +205,8 @@ func (m *Model) modeName() string {
 		return "palette"
 	case m.curApproval() != nil:
 		return "approval"
+	case m.clarify != nil:
+		return "question"
 	case m.panel != panelNone:
 		return panelModeName(m.panel)
 	case m.popover:

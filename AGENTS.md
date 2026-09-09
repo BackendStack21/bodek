@@ -178,7 +178,10 @@ feat(tui): compact tool steps with Ctrl+E details toggle
   fit transcript + sheet. Layout-only — tab grammar (`]`/`[`/`⏎`/`esc`)
   stays. Approvals render as a card above a live composer: `A`/`D`/`T`
   decide, other printables type a follow-up draft (friction still
-  captures typing into `apprTyped`). Expiry autocloses the card and
+  captures typing into `apprTyped`). Clarify questions capture the
+  keyboard into `clarifyBuf`: the spacebar is Bubble Tea `KeySpace` (not
+  `KeyRunes`), so every printable — spaces, punctuation, paste — must
+  append; wrap the answer, do not truncate it. Expiry autocloses the card and
   parks `focusIdx` plus the viewport on the latest transcript message
   (a surviving queued successor must not yank scrollback). The unfocused
   queue is a shelf chip; `^Q` unfolds the strip (`qfocus`).
