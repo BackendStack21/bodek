@@ -309,7 +309,10 @@ own front-end settings are separate; see [Configuration](#configuration).
 - **Context gauge** — a pressure-tinted context-window gauge in the header
   (`ctx █▉░░░ 38% 380/1k`, eighth-block fill, green→amber→red). The fill
   is the parent conversation window (`windowTokens` on odek ≥ v2.3), not
-  session spend or sub-agent tokens. Live `plan N/M` and `▶ N jobs` /
+  session spend or sub-agent tokens. The bar saturates at full; if the
+  observed window exceeds the advertised model limit the percent goes
+  over 100% instead of a contradictory `100%` next to a larger used
+  count. Live `plan N/M` and `▶ N jobs` /
   `✗ job` instruments ride the same bar when a plan or background job is
   active.
 - **Per-turn footers & `/stats`** — token counts and latency ride every turn

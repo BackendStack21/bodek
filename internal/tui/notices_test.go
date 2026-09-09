@@ -59,23 +59,22 @@ func assertAlertDwell(t *testing.T, m *Model, cmdArmed bool, substr string) {
 }
 
 // TestTrimSignalSilenced pins the actionable-only contract for agent_signal:
-// the "trim" and "tool_running" subtypes are engine housekeeping (context-
-// window trimming, tool-execution heartbeats) — nothing the user can act
-// on — so they must never surface as notices.
+// odek's context_trimmed (and the older "trim" alias) and tool_running
+// heartbeats are engine housekeeping — nothing the user can act on —
+// so they must never surface as notices.
 // Every other subtype keeps flowing into the strip.
 func TestTrimSignalSilenced(t *testing.T) {
 	m := newTestModel()
-	m.handleEvent(client.Event{Type: "agent_signal", SubType: "trim", Detail: "ctx"})
-	for _, n := range m.notices {
-		if strings.Contains(n, "signal · trim") {
-			t.Fatalf("trim signal surfaced as a notice: %v", m.notices)
-		}
-	}
-
-	m.handleEvent(client.Event{Type: "agent_signal", SubType: "tool_running", Detail: "shell"})
-	for _, n := range m.notices {
-		if strings.Contains(n, "signal · tool_running") {
-			t.Fatalf("tool_running signal surfaced as a notice: %v", m.notices)
+	for _, ev := range []client.Event{
+		{Type: "agent_signal", SubType: "context_trimmed", Detail: "proactive", Count: 3},
+		{Type: "agent_signal", SubType: "trim", Detail: "ctx"},
+		{Type: "agent_signal", SubType: "tool_running", Detail: "shell"},
+	} {
+		m.handleEvent(ev)
+		for _, n := range m.notices {
+			if strings.Contains(n, "signal · "+ev.SubType) {
+				t.Fatalf("%s signal surfaced as a notice: %v", ev.SubType, m.notices)
+			}
 		}
 	}
 

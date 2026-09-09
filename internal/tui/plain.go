@@ -81,6 +81,9 @@ func (m *Model) plainEventLines(ev client.Event) []string {
 	case "memory_event":
 		return []string{"· memory · " + strings.TrimSpace(collapse(ev.SubType+" "+ev.Target)) + eventTail(ev)}
 	case "agent_signal":
+		if silentAgentSignal(ev.SubType) {
+			return nil
+		}
 		return []string{"· signal · " + strings.TrimSpace(collapse(ev.SubType+" "+ev.Detail)) + eventTail(ev)}
 	case "subagent_log":
 		line := strings.TrimSpace(collapse(ev.SubType + " " + ev.Name))

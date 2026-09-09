@@ -138,7 +138,10 @@ feat(tui): compact tool steps with Ctrl+E details toggle
   parent prompt) plus `maxContextTokens` (runtime model limit — beats
   `/api/models`). `done.inputTokens` is billing spend including charged
   sub-agents — never a gauge. Pre-v2.3 still deltas `contextTokens`.
-  Absent/zero `windowTokens` holds the last fill. Live tok/s rides the
+  Absent/zero `windowTokens` holds the last fill. The bar saturates at
+  full; the percent stays honest when `winCtxTok` exceeds `maxContext`
+  (stale catalog / last-resort max) — never a contradictory `100%`
+  beside a larger used count. Live tok/s rides the
   header from this-call `usage`/`done` fields (`generationTokensPerSecond`
   preferred, else `tokensPerSecond`). Absent/zero holds the last rate; a
   new turn clears the chip. Never divide cumulative `outputTokens` by

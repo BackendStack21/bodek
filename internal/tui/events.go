@@ -440,7 +440,7 @@ func (m *Model) handleEvent(ev client.Event) (tea.Model, tea.Cmd) {
 	case "memory_event":
 		m.addTransientNote("memory · " + strings.TrimSpace(ev.SubType+" "+ev.Target) + eventTail(ev))
 	case "agent_signal":
-		if ev.SubType == "trim" || ev.SubType == "tool_running" {
+		if silentAgentSignal(ev.SubType) {
 			// Engine housekeeping: context trimming and tool-running
 			// heartbeats duplicate what the transcript already shows
 			// (the in-flight step spinner) — never reach the strip.
@@ -651,6 +651,17 @@ func stepGlyphs(steps []step) []string {
 		}
 	}
 	return out
+}
+
+// silentAgentSignal reports engine-housekeeping signal subtypes that must
+// never reach the notice strip or --plain scrollback. odek serve wraps
+// loop.SignalEvent as agent_signal with event = SignalEvent.Type.
+func silentAgentSignal(subType string) bool {
+	switch subType {
+	case "context_trimmed", "trim", "tool_running":
+		return true
+	}
+	return false
 }
 
 // eventTail renders the optional ×count / #task-index suffix shared by the
