@@ -65,14 +65,18 @@ func TestPlainEventLinesApproval(t *testing.T) {
 }
 
 func TestPlainEventLinesSuppressed(t *testing.T) {
-	// Streaming fragments and telemetry never print: the reply lands whole
-	// on done, and per-token lines would bury the log.
+	// Streaming fragments, telemetry, and engine-housekeeping signals
+	// never print: the reply lands whole on done, per-token lines would
+	// bury the log, and context trims / tool heartbeats stay silent.
 	m := newTestModel()
 	for _, ev := range []client.Event{
 		{Type: "token", Content: "hel"},
 		{Type: "token_delta", Content: "lo"},
 		{Type: "thinking_delta", Content: "hm"},
 		{Type: "usage", ContextTokens: 99},
+		{Type: "agent_signal", SubType: "context_trimmed", Detail: "proactive", Count: 3},
+		{Type: "agent_signal", SubType: "trim", Detail: "ctx"},
+		{Type: "agent_signal", SubType: "tool_running", Detail: "shell"},
 	} {
 		if got := m.plainEventLines(ev); got != nil {
 			t.Errorf("%s: printed %v, want nothing", ev.Type, got)

@@ -277,6 +277,33 @@ func TestGaugeUsesWindowTokens(t *testing.T) {
 	}
 }
 
+// TestGaugeHonestOverrun pins the header when the advertised max is
+// below the provider-reported parent window (stale catalog or last-resort
+// miss). The bar fills; the label must not say 100% next to 270k/131k.
+func TestGaugeHonestOverrun(t *testing.T) {
+	m := newTestModel()
+	m.model = "deepseek-v4.1"
+	m.models = []client.ModelInfo{{ID: "deepseek-v4.1", MaxContext: 131_072}}
+	m.resolveMaxContext()
+	m.handleEvent(client.Event{Type: "usage", WindowTokens: 270_000, MaxContextTokens: 131_072})
+	if m.winCtxTok != 270_000 {
+		t.Fatalf("winCtxTok = %d, want 270000 (provider parent window)", m.winCtxTok)
+	}
+	if m.maxContext != 131_072 {
+		t.Fatalf("maxContext = %d, want 131072 (wire/catalog, not invented)", m.maxContext)
+	}
+	out := plain(m.ctxGauge(false))
+	if !strings.Contains(out, "206%") {
+		t.Errorf("overrun gauge = %q, want 206%% (270k/131k)", out)
+	}
+	if strings.Contains(out, "100%") {
+		t.Errorf("overrun must not relabel as 100%%: %q", out)
+	}
+	if !strings.Contains(out, "270k/131k") {
+		t.Errorf("overrun gauge = %q, want the raw 270k/131k fraction", out)
+	}
+}
+
 func TestGaugeHoldsOnDoneWithoutWindow(t *testing.T) {
 	m := newTestModel()
 	m.winCtxTok = 41_000

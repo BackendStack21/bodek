@@ -415,13 +415,10 @@ func (m *Model) statsBody() string {
 
 		ctxVal := th.statsValue.Render(human(m.winCtxTok))
 		if m.maxContext > 0 {
-			ratio := float64(m.winCtxTok) / float64(m.maxContext)
-			if ratio > 1 {
-				ratio = 1
-			}
+			bar, raw := m.ctxFillRatio()
 			ctxVal = th.statsValue.Render(human(m.winCtxTok)+"/"+humanCtx(m.maxContext)) +
-				"  " + m.gaugeColor(ratio).Render(gaugeGlyph(ratio)) +
-				" " + th.statsDim.Render(fmt.Sprintf("%d%%", int(ratio*100+0.5)))
+				"  " + m.gaugeColor(bar).Render(gaugeGlyph(bar)) +
+				" " + th.statsDim.Render(fmt.Sprintf("%d%%", int(raw*100+0.5)))
 		}
 
 		latVal := th.statsValue.Render(fmt.Sprintf("%.1fs", mean))

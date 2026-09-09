@@ -77,4 +77,4 @@ These workflows have no server endpoint; bodek cannot offer them:
 | `cancelled` | ← | — | clean cancel close-out |
 | `approval_request` / `approval_ack` | ← | — | approval queue |
 | `clarify_request` / `clarify_ack` / `clarify_expired` | ← | `clarify_response` | principal-channel question card |
-| `skill_event` / `memory_event` / `agent_signal` | ← | — | transient notes (+ suggestion card; `agent_signal:trim` stays silent) |
+| `skill_event` / `memory_event` / `agent_signal` | ← | — | transient notes (+ suggestion card; `agent_signal:context_trimmed` / `trim` / `tool_running` stay silent) |

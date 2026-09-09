@@ -173,24 +173,40 @@ func (m *Model) ctxGauge(compact bool) string {
 	if m.maxContext <= 0 {
 		return ""
 	}
-	ratio := float64(m.winCtxTok) / float64(m.maxContext)
-	if ratio < 0 {
-		ratio = 0
-	}
-	if ratio > 1 {
-		ratio = 1
-	}
-	pct := fmt.Sprintf("%d%%", int(ratio*100+0.5))
+	bar, raw := m.ctxFillRatio()
+	pct := fmt.Sprintf("%d%%", int(raw*100+0.5))
 	// Color carries state, dim carries magnitude: bar and percent share the
 	// pressure tint, raw token counts recede. The "ctx" label anchors the
-	// WebUI's documented `ctx ▓▓▓░░ 40%` idiom.
+	// WebUI's documented `ctx ▓▓▓░░ 40%` idiom. The bar saturates at full;
+	// the percent stays honest when the observed window exceeds the
+	// advertised limit (a stale catalog / last-resort max).
 	g := m.th.headerMeta.Render("ctx ") +
-		m.gaugeColor(ratio).Render(gaugeGlyph(ratio)+" "+pct)
+		m.gaugeColor(bar).Render(gaugeGlyph(bar)+" "+pct)
 	if !compact {
 		// used via human(); max via humanCtx() for a tidy whole-k budget.
 		g += " " + m.th.headerMeta.Render(human(m.winCtxTok)+"/"+humanCtx(m.maxContext))
 	}
 	return g
+}
+
+// ctxFillRatio is used/max for the header and /stats gauge. Negative
+// accounting clamps to 0. The bar saturates at full; the raw ratio is
+// left unclamped so an observed window past the advertised limit reads
+// as over 100% instead of a contradictory "100%" next to a larger used
+// count.
+func (m *Model) ctxFillRatio() (bar, raw float64) {
+	if m.maxContext <= 0 {
+		return 0, 0
+	}
+	raw = float64(m.winCtxTok) / float64(m.maxContext)
+	if raw < 0 {
+		return 0, 0
+	}
+	bar = raw
+	if bar > 1 {
+		bar = 1
+	}
+	return bar, raw
 }
 
 // gaugeColor tints the fill glyph by context pressure: green under 75%, amber

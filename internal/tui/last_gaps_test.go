@@ -84,7 +84,7 @@ func TestShowStatsBranches(t *testing.T) {
 	m.thinking = "medium"
 	m.sessionID = "sess-123"
 	m.maxContext = 100
-	m.winCtxTok = 250 // 250% → clamped to 100%
+	m.winCtxTok = 250 // 250% — bar saturates; the label stays honest
 	m.sessionStart = time.Now().Add(-time.Minute)
 	m.turnStats = []turnStats{
 		{latency: 1.0, thought: true},
@@ -95,7 +95,7 @@ func TestShowStatsBranches(t *testing.T) {
 		t.Fatal("showStats did not open the sheet")
 	}
 	out := plain(m.View())
-	for _, want := range []string{"sess-123", "slowest", "6.0s", "medium", "100%"} {
+	for _, want := range []string{"sess-123", "slowest", "6.0s", "medium", "250%"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("stats card missing %q", want)
 		}
@@ -295,8 +295,8 @@ func TestCapThinkingRuneBoundary(t *testing.T) {
 	}
 }
 
-// TestCtxGaugeClamps covers the negative and >100% ratio clamps in the header
-// gauge.
+// TestCtxGaugeClamps covers the negative clamp and the honest overrun
+// label: the bar saturates at full, but the percent matches used/max.
 func TestCtxGaugeClamps(t *testing.T) {
 	m := newTestModel()
 	m.maxContext = 100
@@ -306,9 +306,13 @@ func TestCtxGaugeClamps(t *testing.T) {
 		t.Errorf("negative ratio gauge = %q, want 0%%", out)
 	}
 
-	m.winCtxTok = 250 // overrun → clamp to 100%
-	if out := plain(m.ctxGauge(false)); !strings.Contains(out, "100%") {
-		t.Errorf("overrun ratio gauge = %q, want 100%%", out)
+	m.winCtxTok = 250 // overrun → 250%, not a contradictory 100%
+	out := plain(m.ctxGauge(false))
+	if !strings.Contains(out, "250%") {
+		t.Errorf("overrun ratio gauge = %q, want 250%%", out)
+	}
+	if strings.Contains(out, "100%") {
+		t.Errorf("overrun must not relabel as 100%%: %q", out)
 	}
 }
 

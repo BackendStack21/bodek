@@ -122,7 +122,7 @@ type Event struct {
 	WSConnections int64  `json:"ws_connections"`
 
 	// skill_event / memory_event / agent_signal / subagent_log: the event
-	// subtype (e.g. "loaded", "merge", "trim") plus a few shared details.
+	// subtype (e.g. "loaded", "merge", "context_trimmed") plus a few shared details.
 	// Status carries the child-reported log status on subagent_log frames.
 	SubType   string `json:"event"`
 	Target    string `json:"target"`
