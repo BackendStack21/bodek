@@ -367,10 +367,19 @@ type programSink struct {
 	mu   sync.Mutex
 	msgs []tea.Msg
 	want int
+	// started, when non-nil, is closed exactly once by Init — which Bubble
+	// Tea invokes after arming its input reader.
+	started   chan struct{}
+	startOnce sync.Once
 }
 
-func (s *programSink) Init() tea.Cmd { return nil }
-func (s *programSink) View() string  { return "" }
+func (s *programSink) Init() tea.Cmd {
+	if s.started != nil {
+		s.startOnce.Do(func() { close(s.started) })
+	}
+	return nil
+}
+func (s *programSink) View() string { return "" }
 
 func (s *programSink) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	s.mu.Lock()
@@ -389,17 +398,50 @@ func (s *programSink) collected() []tea.Msg {
 	return append([]tea.Msg(nil), s.msgs...)
 }
 
-// runProgram drives a real tea.Program over the given reader and returns the
-// messages it produced. The reader stays open, so the only exit is the sink's
-// own Quit or the budget.
+// runProgram drives a real tea.Program over a scripted input and returns the
+// messages it produced. The script is written into an os.Pipe so the
+// reassembler carries a real file descriptor — Linux's epoll cancelreader
+// both requires a valid fd and waits on it, so a bare reader cannot work
+// there.
 //
 // The reassembler is built directly with generous windows: these tests assert
-// reassembly, not the settle timing, so they must not race a timer.
-func runProgram(t *testing.T, src *replayReader, want int, budget time.Duration) []tea.Msg {
+// reassembly, not the settle timing, so they must not race a timer. The pipe
+// stays open, so the only exit is the sink's own Quit or the budget.
+// The reassembler is built directly with generous windows: these tests assert
+// reassembly, not the settle timing, so they must not race a timer. The pipe
+// stays open, so the only exit is the sink's own Quit or the budget.
+func runProgram(t *testing.T, script [][]byte, want int, budget time.Duration) []tea.Msg {
 	t.Helper()
-	sink := &programSink{want: want}
+	pr, pw, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("pipe: %v", err)
+	}
+	t.Cleanup(func() { _ = pr.Close(); _ = pw.Close() })
+	// The script must be written only after the program is running: on macOS
+	// Bubble Tea waits on the pipe descriptor via kqueue, while the
+	// reassembler's pump drains it. Bytes written before the cancelreader is
+	// armed never wake it, and the program sees nothing. Init runs before
+	// that arming, so the writer waits for the sink's first command and then
+	// settles briefly while the reader comes up.
+	started := make(chan struct{})
+	go func() {
+		<-started
+		// Data written before the program's reader arms is safe now:
+		// bytes stay in the pipe until Read consumes them, so there is no
+		// eager-drain race to sleep past.
+		for i, chunk := range script {
+			if i > 0 {
+				// Keep each chunk its own read: a pipe written back to back
+				// coalesces, which would erase the split points under test.
+				time.Sleep(50 * time.Millisecond)
+			}
+			_, _ = pw.Write(chunk)
+		}
+	}()
+
+	sink := &programSink{want: want, started: started}
 	p := tea.NewProgram(sink,
-		tea.WithInput(newInputReassembler(src, 5*time.Second, 5*time.Second)),
+		tea.WithInput(newInputReassembler(pr, 5*time.Second, 5*time.Second)),
 		tea.WithOutput(io.Discard),
 		tea.WithoutRenderer(),
 		tea.WithFilter(FilterShiftEnter),
@@ -447,13 +489,8 @@ func TestProgramParsesEverySplitReportAsMouse(t *testing.T) {
 				continue
 			}
 			parts := []string{report[:cut], report[cut:]}
-			chunks := make([][]byte, 0, len(parts))
-			for _, p := range parts {
-				chunks = append(chunks, []byte(p))
-			}
-			src := &replayReader{chunks: chunks, block: make(chan struct{})}
+			src := [][]byte{[]byte(report[:cut]), []byte(report[cut:])}
 			msgs := runProgram(t, src, 1, 2*time.Second)
-			close(src.block)
 
 			if got := keyMsgs(msgs); len(got) > 0 {
 				t.Fatalf("report %q split %q leaked %d key message(s): %v", report, parts, len(got), got)
@@ -474,12 +511,7 @@ func TestProgramParsesEverySplitReportAsMouse(t *testing.T) {
 }
 
 func TestProgramParsesWholeReportAsMouse(t *testing.T) {
-	src := &replayReader{
-		chunks: [][]byte{[]byte("\x1b[<65;75;25M")},
-		block:  make(chan struct{}),
-	}
-	msgs := runProgram(t, src, 1, 300*time.Millisecond)
-	close(src.block)
+	msgs := runProgram(t, [][]byte{[]byte("\x1b[<65;75;25M")}, 1, 300*time.Millisecond)
 
 	got := mouseMsgs(msgs)
 	if len(got) != 1 {
@@ -493,12 +525,7 @@ func TestProgramParsesWholeReportAsMouse(t *testing.T) {
 func TestProgramKeepsTypedTextThroughSplitReports(t *testing.T) {
 	// A wheel report split across reads must not eat the text typed around
 	// it: the input stream is compared message by message.
-	src := &replayReader{
-		chunks: [][]byte{[]byte("hello"), []byte("\x1b[<65;75"), []byte(";25M"), []byte(" world")},
-		block:  make(chan struct{}),
-	}
-	msgs := runProgram(t, src, 4, 300*time.Millisecond)
-	close(src.block)
+	msgs := runProgram(t, [][]byte{[]byte("hello"), []byte("\x1b[<65;75"), []byte(";25M"), []byte(" world")}, 4, 300*time.Millisecond)
 
 	var typed strings.Builder
 	for _, km := range keyMsgs(msgs) {
@@ -515,12 +542,7 @@ func TestProgramKeepsTypedTextThroughSplitReports(t *testing.T) {
 func TestProgramSurvivesWheelBurst(t *testing.T) {
 	burst := strings.Repeat("\x1b[<65;75;25M", 8)
 	cut := 7
-	src := &replayReader{
-		chunks: [][]byte{[]byte(burst[:cut]), []byte(burst[cut:])},
-		block:  make(chan struct{}),
-	}
-	msgs := runProgram(t, src, 8, 300*time.Millisecond)
-	close(src.block)
+	msgs := runProgram(t, [][]byte{[]byte(burst[:cut]), []byte(burst[cut:])}, 8, 300*time.Millisecond)
 
 	if got := mouseMsgs(msgs); len(got) != 8 {
 		t.Fatalf("burst → %d mouse message(s), want 8", len(got))
@@ -555,9 +577,7 @@ func TestProgramKeepsApplicationKeysIntact(t *testing.T) {
 		{"\x1bOC", "right"},
 		{"\x1bOD", "left"},
 	} {
-		src := &replayReader{chunks: [][]byte{[]byte(tc.seq[:2]), []byte(tc.seq[2:])}, block: make(chan struct{})}
-		msgs := runProgram(t, src, 1, 2*time.Second)
-		close(src.block)
+		msgs := runProgram(t, [][]byte{[]byte(tc.seq[:2]), []byte(tc.seq[2:])}, 1, 2*time.Second)
 
 		keys := keyMsgs(msgs)
 		if len(keys) != 1 {
@@ -577,12 +597,7 @@ func TestProgramSurvivesEveryBurstCut(t *testing.T) {
 	const reps = 4
 	burst := strings.Repeat("\x1b[<65;75;25M", reps)
 	for _, cut := range []int{1, 3, 7, 9, len(burst) / 2, len(burst) - 1} {
-		src := &replayReader{
-			chunks: [][]byte{[]byte(burst[:cut]), []byte(burst[cut:])},
-			block:  make(chan struct{}),
-		}
-		msgs := runProgram(t, src, reps, 2*time.Second)
-		close(src.block)
+		msgs := runProgram(t, [][]byte{[]byte(burst[:cut]), []byte(burst[cut:])}, reps, 2*time.Second)
 
 		if got := mouseMsgs(msgs); len(got) != reps {
 			t.Fatalf("burst cut at %d → %d mouse message(s), want %d", cut, len(got), reps)

@@ -22,7 +22,7 @@ const inputSettle = 10 * time.Millisecond
 // text would type garbage into the composer.
 const mouseAbandon = 250 * time.Millisecond
 
-// inputReadLen sizes the pump's read buffer. Large enough that a whole wheel
+// inputReadLen sizes each source read. Large enough that a whole wheel
 // burst lands in one read, small enough to bound memory.
 const inputReadLen = 4096
 
@@ -47,7 +47,7 @@ const (
 // errNotWritable is returned by Write for a source that is not a file.
 var errNotWritable = errors.New("bodek: input stream is not writable")
 
-// inputChunk is one read from the source handed to the pump channel.
+// inputChunk is one read from the source.
 type inputChunk struct {
 	data []byte
 	err  error
@@ -72,7 +72,7 @@ type inputChunk struct {
 // mode only for input it recognises as a file (tty_unix.go's initInput), and
 // declaring the real descriptor keeps that path intact.
 type inputReassembler struct {
-	chunks  chan inputChunk
+	src     io.Reader
 	file    *os.File
 	buf     []byte
 	settle  time.Duration
@@ -94,9 +94,17 @@ type inputReassembler struct {
 	// are never dropped, whatever they contain.
 	inPaste bool
 
-	// srcErr is the error the pump reported (io.EOF when the source closed
-	// cleanly); it is delivered once the buffer drains.
-	srcErr error
+	// srcErr is the error the source reported (io.EOF when it closed
+	// cleanly); it is delivered once the buffer drains. srcDone marks that
+	// the report happened, so no further source reads are attempted.
+	srcErr  error
+	srcDone bool
+
+	// pending is the in-flight read of a non-file source: one buffered
+	// goroutine whose result is either consumed immediately or picked up by
+	// the next Read. At most one exists at a time, so reads are never
+	// duplicated or reordered.
+	pending chan inputChunk
 
 	done      chan struct{}
 	closeOnce sync.Once
@@ -117,7 +125,6 @@ func AssembleInput(r io.Reader) io.Reader {
 
 func newInputReassembler(src io.Reader, settle, abandon time.Duration) *inputReassembler {
 	r := &inputReassembler{
-		chunks:  make(chan inputChunk, 8),
 		buf:     nil,
 		settle:  settle,
 		abandon: abandon,
@@ -126,7 +133,7 @@ func newInputReassembler(src io.Reader, settle, abandon time.Duration) *inputRea
 		done:    make(chan struct{}),
 	}
 	r.file, _ = src.(*os.File)
-	go r.pump(src)
+	r.src = src
 	return r
 }
 
@@ -162,44 +169,32 @@ func (r *inputReassembler) Write(p []byte) (int, error) {
 	return r.file.Write(p)
 }
 
-// Close stops the pump without closing the descriptor: the program does not
+// Close stops the reader without closing the descriptor: the program does not
 // own stdin, and Bubble Tea restores the terminal through Fd instead.
 func (r *inputReassembler) Close() error {
 	r.closeOnce.Do(func() { close(r.done) })
 	return nil
 }
 
-// ── pumping ───────────────────────────────────────────────────────────────
-
-// pump forwards the source's reads to the consumer, preserving read
-// boundaries: the consumer's decisions depend on where a read ended.
-func (r *inputReassembler) pump(src io.Reader) {
-	defer close(r.chunks)
-	b := make([]byte, inputReadLen)
-	for {
-		n, err := src.Read(b)
-		if n > 0 {
-			data := make([]byte, n)
-			copy(data, b[:n])
-			select {
-			case r.chunks <- inputChunk{data: data}:
-			case <-r.done:
-				return
-			}
-		}
-		if err != nil {
-			select {
-			case r.chunks <- inputChunk{err: err}:
-			case <-r.done:
-			}
-			return
-		}
+// isClosed reports whether Close has been called.
+func (r *inputReassembler) isClosed() bool {
+	select {
+	case <-r.done:
+		return true
+	default:
+		return false
 	}
 }
 
 // ── reading ───────────────────────────────────────────────────────────────
 
 // Read implements io.Reader.
+//
+// The source is consumed synchronously — one read at a time — so bytes stay
+// unread in the kernel buffer until Bubble Tea asks for them. That keeps
+// kqueue/epoll wakeups coherent: a pre-draining pump goroutine would strand
+// already-read bytes where a kevent can never see them, freezing input until
+// an unrelated later keystroke lands.
 func (r *inputReassembler) Read(p []byte) (int, error) {
 	for {
 		if r.headAt > 0 {
@@ -209,16 +204,19 @@ func (r *inputReassembler) Read(p []byte) (int, error) {
 			return r.emit(p, len(r.buf)), nil
 		}
 		if r.headAt == 0 {
+			if r.srcDone {
+				return r.finish(p)
+			}
 			if n, ok := r.held(p); ok {
 				return n, nil
 			}
 			continue
 		}
-		c, ok := <-r.chunks
-		if !ok {
+		if r.srcDone || r.isClosed() {
 			return r.finish(p)
 		}
-		r.absorb(c)
+		c, _ := r.readNext(-1)
+		r.take(c)
 	}
 }
 
@@ -243,15 +241,12 @@ func (r *inputReassembler) held(p []byte) (int, bool) {
 		budget = r.abandon - time.Since(r.since)
 	}
 	if budget > 0 {
-		select {
-		case c, ok := <-r.chunks:
-			if !ok {
+		if c, ok := r.readNext(budget); ok {
+			r.take(c)
+			if r.srcDone {
 				n, err := r.finish(p)
 				return n, err == nil
 			}
-			r.absorb(c)
-			return 0, false
-		case <-time.After(budget):
 			return 0, false
 		}
 	}
@@ -263,6 +258,61 @@ func (r *inputReassembler) held(p []byte) (int, bool) {
 	}
 	return r.emit(p, len(r.buf)), true
 }
+
+// take folds a source read into the buffer and records any error it carried.
+func (r *inputReassembler) take(c inputChunk) {
+	r.absorb(c)
+	if c.err != nil {
+		r.srcErr = c.err
+		r.srcDone = true
+	}
+}
+
+// readNext performs one read from the source, waiting no longer than budget
+// for input to arrive. A negative budget blocks until input or the source
+// ends. It reports false only when the budget lapsed without any data —
+// nothing was consumed, so the caller may retry or give up on the head.
+//
+// For a file source the wait is poll(2) on the descriptor followed by the read
+// itself, so unread bytes stay in the kernel buffer and kqueue/epoll wakeups
+// remain coherent. Non-file sources only occur in unit tests (the wrapper
+// itself is attached to terminals only); for those, a single buffered read
+// goroutine provides the bounded wait without ever losing a read.
+func (r *inputReassembler) readNext(budget time.Duration) (inputChunk, bool) {
+	if r.file != nil {
+		if budget >= 0 && !r.waitReadable(budget) {
+			return inputChunk{}, false
+		}
+		b := make([]byte, inputReadLen)
+		n, err := r.file.Read(b)
+		return inputChunk{data: b[:n], err: err}, true
+	}
+	if r.pending == nil {
+		ch := make(chan inputChunk, 1)
+		r.pending = ch
+		go func() {
+			b := make([]byte, inputReadLen)
+			n, err := r.src.Read(b)
+			ch <- inputChunk{data: b[:n], err: err}
+		}()
+	}
+	if budget >= 0 {
+		select {
+		case c := <-r.pending:
+			r.pending = nil
+			return c, true
+		case <-time.After(budget):
+			return inputChunk{}, false
+		}
+	}
+	c := <-r.pending
+	r.pending = nil
+	return c, true
+}
+
+// waitReadable blocks until the descriptor has input or budget elapses,
+// reporting whether input arrived. Platform-specific: see
+// input_reassembler_poll.go and input_reassembler_poll_windows.go.
 
 // absorb appends a read to the buffer.
 //
