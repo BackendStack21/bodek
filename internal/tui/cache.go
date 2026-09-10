@@ -73,7 +73,7 @@ func stepBlockCacheValid(s step, st *step, m *Model, expanded bool) bool {
 	if st.agentSel != s.agentSel {
 		return false
 	}
-	if s.blockWidth != m.vp.Width {
+	if s.blockWidth != m.vp.Width || s.blockDetailRows != m.toolDetailRows() {
 		return false
 	}
 	if s.blockExpanded != expanded {

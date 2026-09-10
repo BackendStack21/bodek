@@ -1031,6 +1031,7 @@ func (m *Model) handleSessionDetail(msg sessionDetailMsg) tea.Cmd {
 	m.lastLatency = 0
 	m.resetCallMetrics()
 	m.msgs = m.msgs[:0]
+	m.inspect = nil // hit targets belong to the replaced transcript
 	m.resetMsgBlocks()
 	// The plan surface is session-scoped knowledge: drop it and refetch for
 	// the resumed session. Neither live path covers a resume — the replayed
@@ -1169,7 +1170,8 @@ func (m *Model) replayTranscript(msgs []client.SessionMessage) {
 			// Persisted results are wrapped in odek's prompt-injection frame;
 			// live tool_result events carry the raw output — strip it so both
 			// render identically. resultPreview sanitizes the unwrapped output.
-			result := resultPreview(stripToolResultFrame(mm.Content))
+			rawResult := stripToolResultFrame(mm.Content)
+			result := resultPreview(rawResult)
 			// Match by tool_call_id first; fall back to the live tool_result
 			// behavior of scanning backwards by name for an unfinished step.
 			idx, ok := stepByCallID[mm.ToolCallID]
@@ -1189,7 +1191,8 @@ func (m *Model) replayTranscript(msgs []client.SessionMessage) {
 			}
 			cur.steps[idx].done = true
 			cur.steps[idx].result = result
-			cur.steps[idx].isErr = looksLikeError(result)
+			cur.steps[idx].detailResult = boundedStructuredDetail(cur.steps[idx].name, rawResult)
+			cur.steps[idx].isErr = looksLikeError(result) || hasFailedExit(rawResult) || structuredResultFailed(cur.steps[idx].name, rawResult)
 		}
 	}
 	flush()

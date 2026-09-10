@@ -126,6 +126,8 @@ func (m *Model) replyText(msgIdx int) string {
 // copyReplyAt copies the given turn's reply and parks focus on it so a
 // follow-up alt+y copies the same card.
 func (m *Model) copyReplyAt(msgIdx int) tea.Cmd {
+	m.invalidateInspect()
+	m.inspect = nil
 	m.focusIdx = msgIdx
 	return m.copyText(m.replyText(msgIdx))
 }
@@ -227,6 +229,13 @@ func (m *Model) copyFocusedTurn() tea.Cmd {
 
 // focusedCopyText is the sanitized payload for the current inspect surface.
 func (m *Model) focusedCopyText() string {
+	if m.validInspect() {
+		p := m.inspect
+		if p.stepIdx >= 0 {
+			return sanitize(m.msgs[p.msgIdx].steps[p.stepIdx].result)
+		}
+		return sanitize(m.msgs[p.msgIdx].items[p.itemIdx].text)
+	}
 	idx := m.focusIdx
 	if idx < 0 || idx >= len(m.msgs) || m.msgs[idx].role != roleAsst || m.msgs[idx].raw {
 		return m.focusedReply()

@@ -157,9 +157,38 @@ func (m *Model) header() string {
 	// header occupies exactly headerHeight rows, so clamp any residual
 	// overflow ANSI-safely to one line (a no-op whenever the bar fits).
 	if m.width > 0 && lipgloss.Width(bar) > m.width {
-		bar = lipgloss.NewStyle().MaxWidth(m.width).Render(bar)
+		bar = m.compactHeader(modelName, status)
 	}
 	return bar + "\n" + m.rule()
+}
+
+// compactHeader reserves safety and connection state before secondary metadata.
+// Cropping the completed wide header could hide the connection lamp entirely.
+func (m *Model) compactHeader(modelName, status string) string {
+	width := max(1, m.width)
+	safety := m.sandboxBadge()
+	if width < 32 {
+		safety = m.th.badgeWarn.Render("▲")
+		if m.sandbox {
+			safety = m.th.badgeOK.Render("●")
+		}
+	}
+	right := safety + "  " + status
+	if gauge := m.ctxGauge(true); gauge != "" && lipgloss.Width(right)+lipgloss.Width(gauge)+25 <= width {
+		right = gauge + "  " + right
+	}
+	if lipgloss.Width(right) >= width {
+		return ansi.Truncate(status, width, "")
+	}
+	leftBudget := width - lipgloss.Width(right) - 1
+	brand := m.th.logo.Render("⬡ bodek")
+	left := brand
+	if leftBudget >= lipgloss.Width(brand)+5 {
+		left += "  " + m.th.headerKey.Render(truncate(modelName, leftBudget-lipgloss.Width(brand)-2))
+	} else {
+		left = ansi.Truncate(brand, leftBudget, "")
+	}
+	return left + strings.Repeat(" ", max(1, width-lipgloss.Width(left)-lipgloss.Width(right))) + right
 }
 
 // ctxGauge renders the context-window usage indicator for the header right
@@ -455,9 +484,18 @@ func (m *Model) refresh() {
 		return
 	}
 	stick := m.vp.AtBottom()
+	shelfRows := m.shelfHeight()
 	m.vp.SetContent(m.conversation())
 	if stick {
 		m.vp.GotoBottom()
+	}
+	// Content can make the new-output shelf appear or disappear. Account for
+	// that row before drawing, including in very short approval layouts.
+	if m.shelfHeight() != shelfRows {
+		m.relayout()
+		if stick {
+			m.vp.GotoBottom()
+		}
 	}
 }
 
@@ -690,6 +728,9 @@ func (m *Model) renderMessage(msg message, msgIdx, lineOffset int) (string, []st
 				// (details) or a deliberate open (tab / click). The transcript
 				// holds still while odek thinks.
 				if !items[it].open && !m.expandAll {
+					if m.inspect != nil && m.inspect.msgIdx == msgIdx && m.inspect.itemIdx == it && m.inspect.stepIdx < 0 {
+						addBlock(th.asstWork.Render(th.acSel.Render("› reasoning · Enter expand")), false)
+					}
 					continue
 				}
 				// Intent rail body: an opened live block holds completed
@@ -1036,10 +1077,13 @@ func (m *Model) renderStep(s step, streaming bool, msgIdx, stepIdx, startLine in
 	if expanded {
 		chevron = th.stepTree.Render("▼")
 	}
+	if m.inspect != nil && m.inspect.msgIdx == msgIdx && m.inspect.stepIdx == stepIdx {
+		chevron = th.acSel.Render("›")
+	}
 	right := ""
 	live := !s.done && streaming
 	if s.done {
-		right = stepHeadSuffix(s.name, s.arg, s.result, th)
+		right = stepHeadSuffix(s.name, s.arg, stepDetailResult(s), th)
 		// The sealed duration keeps the live clock's slot — “how long did
 		// this tool take” survives completion instead of vanishing with
 		// the running timer. Resumed history (dur 0) shows none.
@@ -1118,7 +1162,7 @@ func (m *Model) renderStep(s step, streaming bool, msgIdx, stepIdx, startLine in
 			if s.resultCard != nil {
 				details = append(details, agentResultLines(m, s.resultCard, detailBudget)...)
 			} else if s.result != "" {
-				details = append(details, stepDetail(s.name, s.result, m.vp.Width, th)...)
+				details = append(details, stepDetail(s.name, stepDetailResult(s), m.vp.Width, th)...)
 			}
 		} else if showFocus {
 			if a := s.cardByIdx(focus); a != nil {
@@ -1130,11 +1174,7 @@ func (m *Model) renderStep(s step, streaming bool, msgIdx, stepIdx, startLine in
 				details = append(details, th.stepArg.Render(truncate(pendingChipLine(focus, s.manifest[focus]), detailBudget)))
 			}
 		}
-		if len(details) > 200 {
-			details = details[:200]
-			details = append(details, th.stepArg.Render("… output truncated"))
-		}
-		for i, d := range details {
+		for i, d := range m.toolDetailPage(&s, details, detailBudget) {
 			conn := "    "
 			if i == 0 {
 				conn = "  ⎿ "
@@ -1147,13 +1187,9 @@ func (m *Model) renderStep(s step, streaming bool, msgIdx, stepIdx, startLine in
 		if s.resultCard != nil {
 			details = append(details, agentResultLines(m, s.resultCard, detailBudget)...)
 		} else {
-			details = append(details, stepDetail(s.name, s.result, m.vp.Width, th)...)
+			details = append(details, stepDetail(s.name, stepDetailResult(s), m.vp.Width, th)...)
 		}
-		if len(details) > 200 {
-			details = details[:200]
-			details = append(details, th.stepArg.Render("… output truncated"))
-		}
-		for i, d := range details {
+		for i, d := range m.toolDetailPage(&s, details, detailBudget) {
 			conn := "    "
 			if i == 0 {
 				conn = "  ⎿ "
@@ -1161,6 +1197,9 @@ func (m *Model) renderStep(s step, streaming bool, msgIdx, stepIdx, startLine in
 			lines = append(lines, th.stepTree.Render(conn)+
 				lipgloss.NewStyle().MaxWidth(detailBudget).Render(d))
 		}
+	}
+	if msgIdx >= 0 && msgIdx < len(m.msgs) && stepIdx >= 0 && stepIdx < len(m.msgs[msgIdx].steps) {
+		m.msgs[msgIdx].steps[stepIdx].detailOffset = s.detailOffset
 	}
 	// Calm default: finished steps render head-only — the result body
 	// waits behind ^E or a deliberate per-step expand.
@@ -1171,6 +1210,7 @@ func (m *Model) renderStep(s step, streaming bool, msgIdx, stepIdx, startLine in
 			st.blockCache = block
 			st.blockRefs = refs
 			st.blockWidth = m.vp.Width
+			st.blockDetailRows = m.toolDetailRows()
 			st.blockExpanded = expanded
 			st.blockExpandAll = m.expandAll
 		}
@@ -1304,16 +1344,16 @@ func (m *Model) renderNotices() string {
 func (m *Model) inputArea() string {
 	box := m.th.inputBox.Width(m.cardWidth()).Render(m.ta.View())
 	var above []string
-	if m.curApproval() != nil {
+	if m.curApproval() != nil && !m.pal.open {
 		above = append(above, m.approvalPanel())
 	}
-	if m.clarify != nil {
+	if m.clarify != nil && !m.pal.open {
 		above = append(above, m.clarifyPanel())
 	}
-	if m.find.open {
-		above = append(above, m.findBar())
-	} else if m.pal.open {
+	if m.pal.open {
 		above = append(above, m.palPopup())
+	} else if m.find.open {
+		above = append(above, m.findBar())
 	} else if m.ac.open {
 		above = append(above, m.acPopup())
 	}
@@ -1374,6 +1414,10 @@ func (m *Model) acPopup() string {
 }
 
 func (m *Model) approvalPanel() string {
+	if m.height < 16 {
+		// Compact terminals spend their rows on the command and controls.
+		return m.approvalBody()
+	}
 	return m.th.apprBox.Width(m.cardWidth()).Render(m.approvalBody())
 }
 
@@ -1412,56 +1456,57 @@ func (m *Model) approvalBody() string {
 		target = a.Name + ": " + target
 	}
 
-	budget := m.cardInner()
-	lines := []string{head}
+	budget := max(1, m.cardInner())
+	lines := []string{ansi.Truncate(head, budget, "…")}
+	var body []string
 	if m.apprExpanded {
-		for _, ln := range wrapText(sanitize(target), budget) {
-			lines = append(lines, th.apprBody.Render(ln))
-		}
+		body = append(body, wrapText(sanitize(target), budget)...)
 		if a.Description != "" {
-			for _, ln := range wrapText(sanitize(a.Description), budget) {
-				lines = append(lines, th.noticeStyle.Render(ln))
-			}
+			body = append(body, wrapText(sanitize(a.Description), budget)...)
 		}
 	} else {
-		lines = append(lines, th.apprBody.Render(truncate(collapse(target), budget)))
+		body = append(body, truncate(collapse(target), budget))
 		if a.Description != "" {
-			lines = append(lines, th.noticeStyle.Render(truncate(collapse(a.Description), budget)))
+			body = append(body, truncate(collapse(a.Description), budget))
 		}
 	}
-
-	if !a.Friction {
-		for i, o := range m.approvalOptions() {
-			prefix, label := "  ", th.apprBody.Render(o.label)
-			if i == m.apprSel {
-				prefix, label = th.apprKey.Render("› "), th.apprKey.Render(o.label)
-			}
-			lines = append(lines, prefix+label)
-		}
-	} else {
-		// Friction gate: no selection shortcut — the typed confirmation line
-		// replaces the options and carries its own key hints.
-		// inputAreaHeight measures this method, so the line count must match
-		// exactly.
-		lines = append(lines, m.frictionHint())
-		keys := th.apprKey.Render("abc") + th.apprBody.Render(" type the word   ") +
-			th.apprKey.Render("⏎") + th.apprBody.Render(" confirm   ") +
-			th.apprKey.Render("tab") + th.apprBody.Render(" expand   ") +
-			th.apprKey.Render("esc") + th.apprBody.Render(" deny")
-		return strings.Join(append(lines, keys), "\n")
+	limit := max(1, min(8, m.height-m.desiredComposerHeight()-headerHeight-footerHeight-8))
+	if a.Friction {
+		limit = max(1, limit-2)
 	}
-
-	keys := th.apprKey.Render("↑↓") + th.apprBody.Render(" select   ") +
-		th.apprKey.Render("⏎") + th.apprBody.Render(" confirm   ") +
-		th.apprKey.Render("tab") + th.apprBody.Render(" expand   ") +
-		th.apprKey.Render("esc") + th.apprBody.Render(" deny")
-	return strings.Join(append(lines, keys), "\n")
+	offset := max(0, min(m.apprOffset, max(0, len(body)-limit)))
+	if !m.apprExpanded {
+		offset = 0
+	}
+	m.apprOffset = offset
+	end := min(len(body), offset+limit)
+	for _, line := range body[offset:end] {
+		lines = append(lines, th.apprBody.Render(ansi.Truncate(line, budget, "")))
+	}
+	if len(body) > limit && m.apprExpanded {
+		lines = append(lines, th.noticeStyle.Render(ansi.Truncate(fmt.Sprintf("%d–%d/%d · Alt+PgUp/PgDn", offset+1, end, len(body)), budget, "")))
+	}
+	if a.Friction {
+		lines = append(lines, ansi.Truncate(m.frictionHint(), budget, "…"))
+		if m.apprEditing {
+			typed := strings.NewReplacer("\n", "↵", "\t", "⇥").Replace(sanitize(m.apprTyped))
+			lines = append(lines, th.apprKey.Render(ansi.Truncate(typed+"▏", budget, "")))
+		}
+	}
+	return strings.Join(lines, "\n")
 }
 
 // ── footer ─────────────────────────────────────────────────────────────────
 
 func (m *Model) footer() string {
+	return ansi.Truncate(m.footerContent(), max(1, m.width), "")
+}
+
+func (m *Model) footerContent() string {
 	th := m.th
+	if m.confirm == confirmCancel {
+		return m.panelFooter("stop running turn?", "y stop", "other key keeps running")
+	}
 	// The quit gate outranks every context — ^C can arm it from panels,
 	// overlays, approvals, and the composer alike, so the gate must show
 	// wherever that keypress landed.
@@ -1472,19 +1517,26 @@ func (m *Model) footer() string {
 			th.footer.Render("any other key cancels"),
 		)
 	}
+	if m.pal.open {
+		action := "⏎ run"
+		if m.pal.mode == palModeThemes {
+			action = "⏎ apply"
+		}
+		return m.panelFooter("↑↓ select", action, "esc close")
+	}
 	if a := m.curApproval(); a != nil {
-		if a.Friction {
-			return m.modePrefix() + th.footer.Render("type the word approve + ⏎ · esc denies")
+		if a.Friction && m.apprEditing {
+			return m.panelFooter("approve + ⏎", "Alt+D deny", "esc compose")
 		}
-		hints := th.footerKey.Render("A") + th.footer.Render("pprove · ") +
-			th.footerKey.Render("D") + th.footer.Render("eny")
-		if a.AllowTrust {
-			hints += " · " + th.footerKey.Render("T") + th.footer.Render("rust")
+		hints := []string{"Alt+A approve", "Alt+D deny"}
+		if a.AllowTrust && !a.Friction {
+			hints = append(hints, "Alt+T trust")
 		}
-		if n := len(m.approvals); n > 1 {
-			hints += th.footerSep.Render(" · ") + th.footer.Render(fmt.Sprintf("%d more queued", n-1))
+		if len(m.approvals) > 1 {
+			hints = append(hints, fmt.Sprintf("%d queued", len(m.approvals)-1))
 		}
-		return m.modePrefix() + hints
+		hints = append(hints, "Tab details")
+		return m.panelFooter(hints...)
 	}
 	if m.disconn {
 		if m.status == "server shut down" {
@@ -1711,12 +1763,15 @@ func (m *Model) footer() string {
 			th.footer.Render("any other key cancels"),
 		)
 	}
+	if m.validInspect() {
+		return m.panelFooter("inspect", "Tab next", "⏎ expand", "[ ] page", "esc compose")
+	}
 	// The status bar carries no static key cheatsheet (the welcome splash and
 	// /help cover that) — only the live run state: a cancel hint while busy on
 	// the left, and latency / scroll position on the right.
 	left := m.modePrefix()
 	if m.busy {
-		left += th.footerKey.Render("esc") + th.footer.Render(" cancel")
+		left += th.footerKey.Render("^X") + th.footer.Render(" stop")
 		if n := len(m.queue); n > 0 {
 			left += th.footerSep.Render(" · ") + th.scroll.Render(fmt.Sprintf("▸ %d queued", n))
 		}
@@ -1762,19 +1817,63 @@ func (m *Model) footer() string {
 	}
 	// The persistent teaching pair: help and the palette, always one chord away.
 	segs = append(segs, th.footerKey.Render("F1")+th.footer.Render(" help · ")+
-		th.footerKey.Render("^K")+th.footer.Render(" clears"))
+		th.footerKey.Render("^K")+th.footer.Render(" commands"))
 	right := strings.Join(segs, th.footerSep.Render("  ·  ")) + "  "
 	gap := m.width - lipgloss.Width(left) - lipgloss.Width(right)
 	if gap < 1 {
-		gap = 1
+		// Keep actionable state instead of letting a long hint rail wrap and
+		// steal a transcript row in split-pane terminals.
+		right = th.footerKey.Render("F1") + th.footer.Render(" help")
+		if !m.vp.AtBottom() {
+			right = th.footerKey.Render("^G") + th.footer.Render(" latest")
+		}
+		left = m.modePrefix()
+		if m.busy {
+			left = "  " + th.footerKey.Render("^X") + th.footer.Render(" stop")
+		}
+		if m.expandAll {
+			left += th.footerSep.Render(" · ") + th.footer.Render("▼ details")
+		}
+		if m.copyFlashing() {
+			left = "  " + th.badgeOK.Render("✓ Copied")
+		}
+		budget := max(0, m.width-lipgloss.Width(right)-1)
+		left = ansi.Truncate(left, budget, "")
+		gap = max(1, m.width-lipgloss.Width(left)-lipgloss.Width(right))
 	}
-	return left + strings.Repeat(" ", gap) + right
+	return ansi.Truncate(left+strings.Repeat(" ", gap)+right, max(1, m.width), "")
 }
 
 // panelFooter joins pre-styled hint segments for an open panel (pre-styled so
 // destructive hints can carry the danger tint).
 func (m *Model) panelFooter(hints ...string) string {
-	return m.modePrefix() + strings.Join(hints, m.th.footerSep.Render("  ·  "))
+	prefix := m.modePrefix()
+	sep := m.th.footerSep.Render(" · ")
+	full := prefix + strings.Join(hints, sep)
+	if lipgloss.Width(full) <= m.width {
+		return full
+	}
+	if len(hints) == 0 {
+		return ansi.Truncate(prefix, max(1, m.width), "")
+	}
+	// Keep the exit/confirmation instruction visible; fit primary actions
+	// before secondary ones. All existing shortcuts remain available.
+	last := hints[len(hints)-1]
+	out := ""
+	for _, hint := range hints[:len(hints)-1] {
+		next := hint
+		if out != "" {
+			next = out + sep + hint
+		}
+		if lipgloss.Width(next+sep+last) > m.width {
+			continue
+		}
+		out = next
+	}
+	if out != "" {
+		out += sep
+	}
+	return ansi.Truncate(out+last, max(1, m.width), "")
 }
 
 // ── small helpers ──────────────────────────────────────────────────────────

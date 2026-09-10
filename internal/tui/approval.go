@@ -29,54 +29,62 @@ func (m *Model) approvalOptions() []approvalOption {
 	return opts
 }
 
-// handleApprovalKey drives the head of the approval queue: arrows move the
-// highlight, enter confirms, esc denies, tab expands the full
-// command/description, and the transcript scroll keys keep working.
-// Decision keys (a/d/t) stay on the card; other printable runes, backspace,
-// and newline chords type into the composer so a follow-up draft survives the gate.
+// handleApprovalKey keeps an approval card from hijacking the composer. Only
+// explicit Alt chords decide; ordinary text, paste, cursor movement, and
+// Enter continue to operate on the draft underneath the card.
 //
-// Friction mode (server flag: 3+ same-class approvals inside 60s) replaces
-// the selection UI entirely: the literal word "approve" must be typed and
-// confirmed with enter before an approval is forwarded — no highlight
-// shortcut. Denial stays one keypress (esc): friction slows approving, not
-// refusing.
+// Friction mode adds a deliberate confirmation editor. Alt+A activates it,
+// then the literal word "approve" followed by Enter forwards approval.
+// Before activation ordinary text still goes to the composer. Alt+D always
+// denies; friction never offers trust.
 func (m *Model) handleApprovalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	a := m.curApproval()
 	if a == nil {
 		return m, nil
 	}
+	if m.apprExpanded {
+		page := max(1, (m.height-12)/2)
+		switch {
+		case msg.Type == tea.KeyPgUp && msg.Alt:
+			m.apprOffset -= page
+			m.relayout()
+			return m, nil
+		case msg.Type == tea.KeyPgDown && msg.Alt:
+			m.apprOffset += page
+			m.relayout()
+			return m, nil
+		}
+	}
 	if a.Friction {
 		return m.handleFrictionKey(msg)
 	}
-	switch msg.String() {
-	case "up", "left":
-		if m.apprSel > 0 {
-			m.apprSel--
-		}
-	case "down", "right":
-		if m.apprSel < len(m.approvalOptions())-1 {
-			m.apprSel++
-		}
-	case "enter":
-		return m, m.answer(m.approvalOptions()[m.apprSel].action)
-	case "a", "A":
+	if approvalAltRune(msg, 'a') {
 		return m, m.answer("approve")
-	case "d", "D":
+	}
+	if approvalAltRune(msg, 'd') {
 		return m, m.answer("deny")
-	case "t", "T":
+	}
+	if approvalAltRune(msg, 't') {
 		if a.AllowTrust {
 			return m, m.answer("trust")
 		}
+		return m, nil
+	}
+	switch msg.String() {
 	case "esc":
 		if m.apprExpanded {
 			m.apprExpanded = false
 			m.relayout()
 			return m, nil
 		}
-		return m, m.answer("deny")
+		if m.busy {
+			return m, m.armConfirm(confirmCancel, "the running turn")
+		}
+		return m, nil
 	case "tab":
 		m.apprExpanded = !m.apprExpanded
 		m.relayout() // the panel grows/shrinks with the full text
+		return m, nil
 	case "pgup", "pgdown", "ctrl+u", "ctrl+d":
 		var cmd tea.Cmd
 		m.vp, cmd = m.vp.Update(msg)
@@ -86,31 +94,38 @@ func (m *Model) handleApprovalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case "ctrl+c":
 		return m, m.armConfirm(confirmQuit, "bodek")
+	case "enter":
+		return m, m.submit()
 	case "shift+enter", "alt+enter", "ctrl+j":
 		return m, m.insertNewline()
-	case "backspace", "delete", "ctrl+w":
-		var cmd tea.Cmd
-		m.ta, cmd = m.ta.Update(msg)
-		m.syncComposer()
-		return m, cmd
-	default:
-		if s := msg.String(); len([]rune(s)) == 1 {
-			var cmd tea.Cmd
-			m.ta, cmd = m.ta.Update(msg)
-			m.syncComposer()
-			return m, cmd
-		}
 	}
-	return m, nil
+	return m, m.updateApprovalComposer(msg)
 }
 
 // frictionWord is the literal confirmation the friction gate demands.
 const frictionWord = "approve"
 
-// handleFrictionKey edits the typed confirmation. Enter approves only on an
-// exact match (a mismatch resets the buffer — retyping is the point); esc
-// still denies; tab still expands; scrolling still works.
+// handleFrictionKey either keeps the normal composer active or, after Alt+A,
+// edits the literal confirmation. Enter approves only on an exact match. Esc
+// leaves confirmation editing without deciding; Alt+D remains an immediate
+// denial in either state.
 func (m *Model) handleFrictionKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if approvalAltRune(msg, 'd') {
+		return m, m.answer("deny")
+	}
+	if !m.apprEditing {
+		if approvalAltRune(msg, 'a') {
+			m.apprEditing = true
+			m.apprTyped = ""
+			m.relayout()
+			m.refresh()
+			return m, nil
+		}
+		if approvalAltRune(msg, 't') {
+			return m, nil
+		}
+		return m.handleApprovalComposerKey(msg)
+	}
 	switch msg.String() {
 	case "enter":
 		if m.apprTyped == frictionWord {
@@ -118,15 +133,14 @@ func (m *Model) handleFrictionKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		m.apprTyped = ""
 	case "esc":
-		if m.apprExpanded {
-			m.apprExpanded = false
-			m.relayout()
-			return m, nil
-		}
-		return m, m.answer("deny")
+		m.apprEditing = false
+		m.apprTyped = ""
+		m.relayout()
+		m.refresh()
+		return m, nil
 	case "backspace":
-		if n := len(m.apprTyped); n > 0 {
-			m.apprTyped = m.apprTyped[:n-1]
+		if runes := []rune(m.apprTyped); len(runes) > 0 {
+			m.apprTyped = string(runes[:len(runes)-1])
 		}
 	case "tab":
 		m.apprExpanded = !m.apprExpanded
@@ -143,12 +157,70 @@ func (m *Model) handleFrictionKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	default:
 		// Single printable runes only — modifiers (ctrl+X, alt+X) must not
 		// splice escape bytes into the confirmation buffer.
-		if s := msg.String(); len([]rune(s)) == 1 {
-			m.apprTyped += s
+		if msg.Type == tea.KeyRunes && !msg.Alt && len(msg.Runes) > 0 {
+			runes := append([]rune(m.apprTyped), msg.Runes...)
+			m.apprTyped = string(runes[:min(len(runes), 64)])
 		}
 	}
 	m.refresh()
 	return m, nil
+}
+
+// handleApprovalComposerKey applies the shared approval-mode controls that
+// must remain available while the card is waiting: scrolling, quit, and the
+// ordinary Esc dismissal/cancel ladder.
+func (m *Model) handleApprovalComposerKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc":
+		if m.apprExpanded {
+			m.apprExpanded = false
+			m.relayout()
+			return m, nil
+		}
+		if m.busy {
+			return m, m.armConfirm(confirmCancel, "the running turn")
+		}
+		return m, nil
+	case "tab":
+		m.apprExpanded = !m.apprExpanded
+		m.relayout()
+		return m, nil
+	case "pgup", "pgdown", "ctrl+u", "ctrl+d":
+		var cmd tea.Cmd
+		m.vp, cmd = m.vp.Update(msg)
+		return m, cmd
+	case "ctrl+g":
+		m.vp.GotoBottom()
+		return m, nil
+	case "ctrl+c":
+		return m, m.armConfirm(confirmQuit, "bodek")
+	case "enter":
+		return m, m.submit()
+	case "shift+enter", "alt+enter", "ctrl+j":
+		return m, m.insertNewline()
+	default:
+		return m, m.updateApprovalComposer(msg)
+	}
+}
+
+// updateApprovalComposer forwards all ordinary approval-mode input to the
+// textarea. This intentionally includes paste and cursor keys.
+func (m *Model) updateApprovalComposer(msg tea.KeyMsg) tea.Cmd {
+	var cmd tea.Cmd
+	m.ta, cmd = m.ta.Update(msg)
+	m.syncComposer()
+	return cmd
+}
+
+func approvalAltRune(msg tea.KeyMsg, want rune) bool {
+	if msg.Type != tea.KeyRunes || !msg.Alt || len(msg.Runes) != 1 {
+		return false
+	}
+	r := msg.Runes[0]
+	if r >= 'A' && r <= 'Z' {
+		r += 'a' - 'A'
+	}
+	return r == want
 }
 
 // frictionHint renders the friction line: the recent-approval count the
@@ -162,12 +234,17 @@ func (m *Model) frictionHint() string {
 	if n < 1 {
 		n = 1 // gate engaged but the count was omitted — don't print "0"
 	}
-	typed := m.apprTyped
+	typed := truncate(collapse(sanitize(m.apprTyped)), 24)
 	if typed == "" {
 		typed = "…"
 	}
+	if !m.apprEditing {
+		return m.th.noticeStyle.Render(fmt.Sprintf(
+			"⏳ friction: %d approvals in the last 60s — Alt+A to confirm · Alt+D denies",
+			n))
+	}
 	return m.th.noticeStyle.Render(fmt.Sprintf(
-		"⏳ friction: %d approvals in the last 60s — type %q + ⏎ (esc denies)   %s",
+		"⏳ friction: %d approvals in the last 60s — type %q + ⏎ · esc returns to draft   %s",
 		n, frictionWord, typed))
 }
 
@@ -177,6 +254,8 @@ func (m *Model) resetApprovalInput() {
 	m.apprSel = 0
 	m.apprExpanded = false
 	m.apprTyped = ""
+	m.apprEditing = false
+	m.apprOffset = 0
 }
 
 // answer sends the decision for the queue head and reopens the run. The

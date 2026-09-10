@@ -39,6 +39,7 @@ func TestEventsSessionFilter(t *testing.T) {
 // footer teaches both targets.
 func TestMemoryEnvConsolidate(t *testing.T) {
 	m := wired(t)
+	m.resize(200, 30) // wide footer retains the secondary management hints
 	m.Update(exec(m.openMemory()))
 	if !strings.Contains(plain(m.View()), "consolidate user") {
 		t.Error("memory footer missing the consolidate hints")

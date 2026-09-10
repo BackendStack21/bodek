@@ -6,6 +6,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/BackendStack21/bodek/internal/client"
 )
@@ -20,15 +21,24 @@ import (
 
 // palEntry is one searchable palette row.
 type palEntry struct {
-	title string // the searchable label
-	hint  string // the chord teaching ("" when none exists)
-	kind  string // "command" · "view" · "action" · "session" · "model"
-	run   func(m *Model) tea.Cmd
+	title  string // the searchable label
+	hint   string // the chord teaching ("" when none exists)
+	kind   string // "command" · "view" · "action" · "session" · "model"
+	detail string // optional readable description shown beside the kind
+	run    func(m *Model) tea.Cmd
 }
+
+type palMode uint8
+
+const (
+	palModeCommands palMode = iota
+	palModeThemes
+)
 
 // palState is the overlay state. Sessions arrive async after open.
 type palState struct {
 	open    bool
+	mode    palMode
 	query   string
 	all     []palEntry // unfiltered source rows
 	items   []palEntry // filtered, ranked
@@ -53,7 +63,7 @@ func (m *Model) togglePalette() tea.Cmd {
 		m.refresh()
 		return nil
 	}
-	m.pal = palState{open: true, loading: true}
+	m.pal = palState{open: true, mode: palModeCommands, loading: true}
 	m.pal.all = m.basePaletteEntries()
 	m.filterPalette()
 	m.relayout()
@@ -71,9 +81,35 @@ func (m *Model) togglePalette() tea.Cmd {
 	}
 }
 
+// openThemePalette opens the palette's compact theme selector. It deliberately
+// replaces the command palette state so a late session fetch cannot leak rows
+// into this selector.
+func (m *Model) openThemePalette() tea.Cmd {
+	m.pal = palState{open: true, mode: palModeThemes, all: themePaletteEntries()}
+	for i, e := range m.pal.all {
+		if e.title == themeName() {
+			m.pal.sel = i
+			break
+		}
+	}
+	m.filterPalette()
+	m.relayout()
+	m.refresh()
+	return nil
+}
+
+func themePaletteEntries() []palEntry {
+	return []palEntry{
+		{title: "ember-dark", kind: "theme", detail: "dark terminal", run: func(m *Model) tea.Cmd { return m.switchTheme("ember-dark") }},
+		{title: "ember-light", kind: "theme", detail: "light parchment", run: func(m *Model) tea.Cmd { return m.switchTheme("ember-light") }},
+		{title: "high-contrast", kind: "theme", detail: "high contrast", run: func(m *Model) tea.Cmd { return m.switchTheme("high-contrast") }},
+		{title: "classic", kind: "theme", detail: "classic violet", run: func(m *Model) tea.Cmd { return m.switchTheme("classic") }},
+	}
+}
+
 // handlePalSessions appends the fetched sessions to the palette source.
 func (m *Model) handlePalSessions(msg palSessionsMsg) tea.Cmd {
-	if !m.pal.open {
+	if !m.pal.open || m.pal.mode != palModeCommands {
 		return nil
 	}
 	m.pal.loading = false
@@ -305,7 +341,15 @@ func (m *Model) palPopup() string {
 	th := m.th
 	innerW := m.cardInner()
 
-	title := th.acTitle.Render("⌘ everything")
+	titleText := "⌘ everything"
+	if m.pal.mode == palModeThemes {
+		titleText = "⌘ themes"
+	}
+	if m.pal.query != "" {
+		budget := max(1, innerW-lipgloss.Width(titleText)-3)
+		titleText += " · " + ansi.Truncate(m.pal.query, budget, "…")
+	}
+	title := th.acTitle.Render(titleText)
 	hint := "  ↑↓ select · ⏎ run · esc close"
 	if lipgloss.Width(title)+lipgloss.Width(hint) <= innerW {
 		title += th.acDim.Render(hint)
@@ -313,19 +357,27 @@ func (m *Model) palPopup() string {
 	var rows []string
 	switch {
 	case len(m.pal.items) == 0 && m.pal.query != "":
-		rows = append(rows, th.acDim.Render("no matches for “"+m.pal.query+"”"))
+		rows = append(rows, ansi.Truncate(th.acDim.Render("no matches for “"+m.pal.query+"”"), max(1, innerW), ""))
 	default:
-		window, start := windowEntries(m.pal.items, m.pal.sel, maxPalRows)
+		window, start := windowEntries(m.pal.items, m.pal.sel, m.palRowLimit())
 		for i, e := range window {
-			prefix, label := "  ", th.acItem.Render(e.title)
-			detail := th.acDetail.Render(e.kind)
+			labelText := e.title
+			if m.pal.mode == palModeThemes && e.title == themeName() {
+				labelText += " ✓"
+			}
+			prefix, label := "  ", th.acItem.Render(labelText)
+			detailText := e.kind
+			if e.detail != "" {
+				detailText = e.detail
+			}
+			detail := th.acDetail.Render(detailText)
 			if e.hint != "" {
 				detail += th.acDetail.Render("  ·  ") + th.footerKey.Render(e.hint)
 			}
 			if start+i == m.pal.sel {
-				prefix, label = th.acSel.Render("› "), th.acSel.Render(e.title)
+				prefix, label = th.acSel.Render("› "), th.acSel.Render(labelText)
 			}
-			rows = append(rows, prefix+label+"  "+detail)
+			rows = append(rows, ansi.Truncate(prefix+label+"  "+detail, max(1, innerW), ""))
 		}
 		if m.pal.loading {
 			rows = append(rows, th.acDim.Render("  … loading sessions"))
@@ -354,8 +406,8 @@ func windowEntries(entries []palEntry, sel, n int) ([]palEntry, int) {
 // palHeight is the palette's rendered height (border + title + rows).
 func (m *Model) palHeight() int {
 	n := len(m.pal.items)
-	if n > maxPalRows {
-		n = maxPalRows
+	if n > m.palRowLimit() {
+		n = m.palRowLimit()
 	}
 	if n == 0 {
 		n = 1
@@ -364,4 +416,26 @@ func (m *Model) palHeight() int {
 		n++
 	}
 	return n + 3
+}
+
+// palRowLimit leaves one transcript row visible while reserving the current
+// composer, status line, and other input chrome. The same budget drives both
+// rendering and layout so a busy palette cannot push the screen past height.
+func (m *Model) palRowLimit() int {
+	rows := maxPalRows
+	reserved := headerHeight + footerHeight + m.ta.Height() + 2 + 1
+	if m.statusLineVisible() {
+		reserved += 2
+	}
+	if m.curApproval() != nil && !m.pal.open {
+		reserved += lineCount(m.approvalPanel())
+	}
+	if m.clarify != nil && !m.pal.open {
+		reserved += lineCount(m.clarifyPanel())
+	}
+	reserved += m.shelfHeight() + m.queueStripHeight()
+	if available := m.height - reserved - 3; available < rows {
+		rows = available
+	}
+	return max(1, rows)
 }

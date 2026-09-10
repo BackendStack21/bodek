@@ -71,10 +71,9 @@ func awaitAction(t *testing.T, actions chan string) string {
 	}
 }
 
-// TestApprovalEnterConfirmsHighlight verifies that only enter on the
-// highlighted option answers the approval, with the same protocol replies as
-// before (approve / deny / trust).
-func TestApprovalEnterConfirmsHighlight(t *testing.T) {
+// TestApprovalAltDecisions verifies that only explicit Alt chords answer an
+// approval; bare letters and Enter remain composer input.
+func TestApprovalAltDecisions(t *testing.T) {
 	m, actions, _ := approvalRecorder(t)
 	cases := []struct {
 		name       string
@@ -82,10 +81,9 @@ func TestApprovalEnterConfirmsHighlight(t *testing.T) {
 		keys       []string
 		want       string
 	}{
-		{"approve is the default highlight", false, []string{"enter"}, "approve"},
-		{"deny one down", false, []string{"down", "enter"}, "deny"},
-		{"trust at the bottom when offered", true, []string{"down", "down", "enter"}, "trust"},
-		{"left/right also navigate", true, []string{"right", "right", "left", "enter"}, "deny"},
+		{"explicit approve", false, []string{"alt+a"}, "approve"},
+		{"explicit deny", false, []string{"alt+d"}, "deny"},
+		{"explicit trust when offered", true, []string{"alt+t"}, "trust"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -105,19 +103,144 @@ func TestApprovalEnterConfirmsHighlight(t *testing.T) {
 	}
 }
 
-// TestApprovalEscDenies verifies esc is the abort path: it denies even when
-// the highlight sits on another option.
-func TestApprovalEscDenies(t *testing.T) {
-	m, actions, _ := approvalRecorder(t)
-	m.handleEvent(client.Event{Type: "approval_request", ID: "apr", AllowTrust: true})
-	m.Update(key("down")) // highlight elsewhere — esc must not confirm it
-	_, cmd := m.Update(key("esc"))
-	exec(cmd)
-	if m.curApproval() != nil {
-		t.Fatal("approval still pending after esc")
+func TestApprovalBareInputAndEnterStayComposer(t *testing.T) {
+	m := newTestModel()
+	busyTurn(m)
+	m.ta.SetValue("draft")
+	m.handleEvent(client.Event{Type: "approval_request", ID: "apr"})
+	for _, k := range []string{"a", "d", "t", "up", "down"} {
+		m.Update(key(k))
 	}
+	if m.curApproval() == nil {
+		t.Fatal("bare input or cursor key answered the approval")
+	}
+	if got := m.ta.Value(); got != "draftadt" {
+		t.Errorf("composer draft = %q, want bare decision letters preserved", got)
+	}
+	m.Update(key("enter"))
+	if m.curApproval() == nil {
+		t.Fatal("Enter with a draft must not answer the approval")
+	}
+	if len(m.queue) != 1 || m.queue[0] != "draftadt" {
+		t.Fatalf("Enter should queue the draft, got queue=%v", m.queue)
+	}
+}
+
+func TestApprovalEscKeepsRequest(t *testing.T) {
+	m, actions, _ := approvalRecorder(t)
+	busyTurn(m)
+	m.handleEvent(client.Event{Type: "approval_request", ID: "apr", AllowTrust: true})
+	m.Update(key("tab"))
+	m.Update(key("esc"))
+	if m.apprExpanded || m.curApproval() == nil {
+		t.Fatal("first esc should collapse without deciding")
+	}
+	m.Update(key("esc"))
+	if m.curApproval() == nil || m.confirm != confirmCancel {
+		t.Fatal("second esc should arm cancellation without denying")
+	}
+	select {
+	case got := <-actions:
+		t.Fatalf("Esc unexpectedly sent approval action %q", got)
+	default:
+	}
+}
+
+func TestApprovalArrivalPreservesTypingAndEnterQueuesDraft(t *testing.T) {
+	m := newTestModel()
+	busyTurn(m)
+	m.ta.SetValue("draft")
+	m.handleEvent(client.Event{Type: "approval_request", ID: "apr"})
+	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(" pasted\nline")})
+	if m.curApproval() == nil {
+		t.Fatal("approval arrival or paste answered the request")
+	}
+	if got := m.ta.Value(); got != "draft pasted\nline" {
+		t.Fatalf("draft after paste = %q", got)
+	}
+	m.Update(key("enter"))
+	if m.curApproval() == nil {
+		t.Fatal("Enter with a draft answered the approval")
+	}
+	if len(m.queue) != 1 || m.queue[0] != "draft pasted\nline" {
+		t.Fatalf("Enter did not queue draft: %v", m.queue)
+	}
+}
+
+func TestFrictionAltActivationAndLiteralConfirmation(t *testing.T) {
+	m, actions, _ := approvalRecorder(t)
+	busyTurn(m)
+	m.handleEvent(client.Event{Type: "approval_request", ID: "apr", Friction: true, FrictionApprovals: 3})
+	m.Update(key("a"))
+	if m.apprEditing || m.apprTyped != "" || m.ta.Value() != "a" {
+		t.Fatalf("bare text should stay in composer before activation: editing=%v typed=%q draft=%q", m.apprEditing, m.apprTyped, m.ta.Value())
+	}
+	m.Update(key("alt+a"))
+	if !m.apprEditing || m.apprTyped != "" {
+		t.Fatalf("Alt+A should activate a fresh friction editor: editing=%v typed=%q", m.apprEditing, m.apprTyped)
+	}
+	m.Update(key("approve"))
+	if m.apprTyped != frictionWord {
+		t.Fatalf("confirmation buffer = %q, want %q", m.apprTyped, frictionWord)
+	}
+	_, cmd := m.Update(key("enter"))
+	exec(cmd)
+	if m.curApproval() != nil || m.apprEditing {
+		t.Fatal("literal confirmation did not clear the approval editor")
+	}
+	if got := awaitAction(t, actions); got != "approve" {
+		t.Errorf("action = %q, want approve", got)
+	}
+}
+
+func TestFrictionEscReturnsToComposerAndAltDDenies(t *testing.T) {
+	m, actions, _ := approvalRecorder(t)
+	m.handleEvent(client.Event{Type: "approval_request", ID: "apr", Friction: true})
+	m.Update(key("alt+a"))
+	m.Update(key("approve"))
+	m.Update(key("esc"))
+	if m.apprEditing || m.apprTyped != "" || m.curApproval() == nil {
+		t.Fatalf("Esc should leave friction editing without deciding: editing=%v typed=%q pending=%v", m.apprEditing, m.apprTyped, m.curApproval() != nil)
+	}
+	_, cmd := m.Update(key("alt+d"))
+	exec(cmd)
 	if got := awaitAction(t, actions); got != "deny" {
 		t.Errorf("action = %q, want deny", got)
+	}
+}
+
+func TestFrictionExpiryClearsEditorForReplacement(t *testing.T) {
+	m, _, _ := approvalRecorder(t)
+	m.handleEvent(client.Event{Type: "approval_request", ID: "apr-1", Friction: true})
+	m.Update(key("alt+a"))
+	m.Update(key("approve"))
+	m.handleEvent(client.Event{Type: "approval_request", ID: "apr-2"})
+	m.apprDeadlines[0] = time.Now().Add(-time.Second)
+	m.Update(approvalExpireMsg{})
+	if got := m.curApproval(); got == nil || got.ID != "apr-2" {
+		t.Fatalf("replacement approval = %+v", got)
+	}
+	if m.apprEditing || m.apprTyped != "" {
+		t.Fatalf("expired head left friction editor state: editing=%v typed=%q", m.apprEditing, m.apprTyped)
+	}
+}
+
+func TestFrictionEditorFitsShortTerminal(t *testing.T) {
+	m := newTestModel()
+	m.resize(40, 12)
+	m.busy = true
+	m.handleEvent(client.Event{Type: "approval_request", ID: "apr", Friction: true, FrictionApprovals: 3})
+	m.Update(key("alt+a"))
+	if !m.apprEditing {
+		t.Fatal("Alt+A did not activate friction editing")
+	}
+	if got := viewRows(m); got != m.height {
+		t.Fatalf("short friction view = %d rows, terminal = %d", got, m.height)
+	}
+	for _, line := range strings.Split(plain(m.View()), "\n") {
+		if len([]rune(line)) > m.width {
+			t.Fatalf("short friction line exceeds width: %d > %d: %q", len([]rune(line)), m.width, line)
+		}
 	}
 }
 
@@ -209,9 +332,9 @@ func TestApprovalSendFailureRestoresHead(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_, cmd := m.Update(key("enter"))
+	_, cmd := m.Update(key("alt+a"))
 	if cmd == nil {
-		t.Fatal("enter must yield a send cmd")
+		t.Fatal("Alt+A must yield a send cmd")
 	}
 	m.Update(exec(cmd))
 

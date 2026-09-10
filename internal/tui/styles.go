@@ -57,9 +57,9 @@ var (
 		yellow:   "#FBBF24",
 		red:      "#F87171",
 		text:     "#E7E9EE",
-		muted:    "#9AA0AE",
-		faint:    "#6B7280",
-		bodyText: "#8B95A8",
+		muted:    "#A8B0C0",
+		faint:    "#7F899C",
+		bodyText: "#A2ACBE",
 		hairline: "#2E3242",
 		// bg-1, not the WebUI's bg-2 card token: the TUI's "page base" is
 		// the terminal's own background — often neutral gray — where bg-2
@@ -72,20 +72,20 @@ var (
 	// emberLight mirrors the WebUI light theme (parchment base, deeper amber
 	// for contrast on light terminals).
 	emberLight = palette{
-		accent:   "#D98E00",
-		accentHi: "#B47300",
-		accentLo: "#E07000",
-		steel:    "#6B7A99",
-		green:    "#0E9F6E",
-		yellow:   "#B45309",
+		accent:   "#8F5E00",
+		accentHi: "#7A5000",
+		accentLo: "#8F5E00",
+		steel:    "#536B8B",
+		green:    "#08754F",
+		yellow:   "#924B00",
 		red:      "#C22B2B",
 		text:     "#22252C",
 		muted:    "#5A5F6D",
-		faint:    "#8A8578",
+		faint:    "#6D6A61",
 		bodyText: "#4A4E59",
 		hairline: "#CFC9BD",
 		surface:  "#EFECE5",
-		grad:     [2][3]int{{0xB4, 0x73, 0x00}, {0xE0, 0x70, 0x00}},
+		grad:     [2][3]int{{0x7A, 0x50, 0x00}, {0x8F, 0x5E, 0x00}},
 	}
 
 	// emberHighContrast is pure neutrals plus amber, for low-vision and
@@ -419,7 +419,7 @@ func themeFrom(p palette) theme {
 
 		statsLabel: lipgloss.NewStyle().Foreground(p.muted),
 		statsValue: lipgloss.NewStyle().Foreground(p.text),
-		statsDim:   lipgloss.NewStyle().Foreground(p.faint).Italic(true),
+		statsDim:   lipgloss.NewStyle().Foreground(p.muted).Italic(true),
 
 		opChip:       lipgloss.NewStyle().Foreground(p.steel),
 		untrustedTag: lipgloss.NewStyle().Foreground(p.yellow),
@@ -435,9 +435,9 @@ func themeFrom(p palette) theme {
 		acBox:    lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(p.accent).Padding(0, 1),
 		acTitle:  lipgloss.NewStyle().Foreground(p.accent).Bold(true),
 		acItem:   lipgloss.NewStyle().Foreground(p.text),
-		acSel:    lipgloss.NewStyle().Foreground(p.accent).Bold(true),
+		acSel:    lipgloss.NewStyle().Foreground(p.accentHi).Bold(true),
 		acDim:    lipgloss.NewStyle().Foreground(p.faint).Italic(true),
-		acDetail: lipgloss.NewStyle().Foreground(p.faint),
+		acDetail: lipgloss.NewStyle().Foreground(p.muted),
 		acIcon:   lipgloss.NewStyle().Foreground(p.steel),
 
 		diffAdd: lipgloss.NewStyle().Foreground(p.green),

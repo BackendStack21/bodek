@@ -482,7 +482,7 @@ func TestCtrlEIndicator(t *testing.T) {
 	// Busy + expandAll: the indicator rides alongside the cancel hint.
 	m.busy = true
 	m.Update(key("ctrl+e"))
-	if foot := plain(m.footer()); !strings.Contains(foot, "cancel") || !strings.Contains(foot, "details") {
+	if foot := plain(m.footer()); !strings.Contains(foot, "^X stop") || !strings.Contains(foot, "details") {
 		t.Errorf("busy footer should carry both hints: %q", foot)
 	}
 }
@@ -495,8 +495,8 @@ func TestExpandedOutputCap(t *testing.T) {
 		{name: "shell", done: true, result: strings.Repeat("line\n", 250)},
 	}})
 	m.toggleStep(0, 0)
-	if out := plain(m.conversation()); !strings.Contains(out, "… output truncated") {
-		t.Errorf("expanded output should be capped:\n%s", out)
+	if out := plain(m.conversation()); !strings.Contains(out, "[ ] page") {
+		t.Errorf("expanded output should have bounded pages:\n%s", out)
 	}
 }
 

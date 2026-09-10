@@ -23,10 +23,12 @@ func lastNote(m *Model) string {
 func TestThemeListNote(t *testing.T) {
 	m := wired(t)
 	m.ta.SetValue("/theme")
-	exec(m.submit())
-	want := "theme: " + themeName()
-	if !strings.Contains(lastNote(m), want) || !strings.Contains(lastNote(m), "classic") {
-		t.Errorf("/theme note = %q, want current theme %q plus options", lastNote(m), want)
+	m.submit()
+	if !m.pal.open || m.pal.mode != palModeThemes {
+		t.Fatal("/theme did not open the theme selector")
+	}
+	if got := m.pal.items[m.pal.sel].title; got != themeName() {
+		t.Errorf("selected theme = %q, want current theme %q", got, themeName())
 	}
 }
 

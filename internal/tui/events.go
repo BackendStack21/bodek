@@ -197,7 +197,8 @@ func (m *Model) handleEvent(ev client.Event) (tea.Model, tea.Cmd) {
 				if steps[j].name == nm && !steps[j].done {
 					steps[j].done = true
 					steps[j].result = resultPreview(ev.Data)
-					steps[j].isErr = looksLikeError(steps[j].result) || hasFailedExit(ev.Data)
+					steps[j].detailResult = boundedStructuredDetail(nm, ev.Data)
+					steps[j].isErr = looksLikeError(steps[j].result) || hasFailedExit(ev.Data) || structuredResultFailed(nm, ev.Data)
 					if steps[j].isErr && !steps[j].expanded {
 						// A failing step is why anyone expands anything —
 						// unfold it once so the diagnosis is on screen
@@ -1210,10 +1211,18 @@ func argPreview(data string) string {
 // without retaining the unbounded output of a chatty tool.
 func resultPreview(data string) string {
 	s := sanitize(normalizeToolResult(data))
+	const byteLimit = 128 * 1024
+	if len(s) > byteLimit {
+		cut := byteLimit
+		for cut > 0 && (s[cut]&0xc0) == 0x80 {
+			cut--
+		}
+		s = s[:cut] + "\n… output preview limited to 128 KiB"
+	}
 	lines := strings.Split(s, "\n")
 	const cap = 200
 	if len(lines) > cap {
-		lines = lines[:cap]
+		lines = append(lines[:cap], "… more output omitted from preview")
 	}
 	return strings.Join(lines, "\n")
 }

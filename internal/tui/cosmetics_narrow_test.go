@@ -16,7 +16,7 @@ func TestWelcomeTipFitsNarrowTerminal(t *testing.T) {
 			t.Errorf("welcome line %d is %d cols (>80): %q", i+1, w, line)
 		}
 	}
-	if !strings.Contains(out, "click to copy") {
-		t.Errorf("narrow welcome lost the copy affordance:\n%s", out)
+	if !strings.Contains(out, "^K commands") {
+		t.Errorf("narrow welcome lost the command discovery:\n%s", out)
 	}
 }

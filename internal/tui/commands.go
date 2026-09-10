@@ -229,7 +229,7 @@ const themeOptions = "ember-dark · ember-light · high-contrast · classic"
 // options; a name switches at runtime and persists via OnThemeChange.
 func runTheme(m *Model, args string) tea.Cmd {
 	if args == "" {
-		return m.transientNoteCmd("theme: " + themeName() + " — options: " + themeOptions)
+		return m.openThemePalette()
 	}
 	return m.switchTheme(args)
 }
