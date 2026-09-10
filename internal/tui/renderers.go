@@ -8,6 +8,8 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+
+	"github.com/charmbracelet/lipgloss"
 )
 
 // ── typed tool renderers ───────────────────────────────────────────────────
@@ -295,7 +297,575 @@ var (
 	httpStatusRe     = regexp.MustCompile(`(?i)^HTTP/[\d.]+ (\d{3})`)
 	wgetStatusRe     = regexp.MustCompile(`awaiting response\.\.\.?[ \t]?(\d{3})`)
 	searchHitsRe     = regexp.MustCompile(`found (\d+) matches`)
+	planHeaderRe     = regexp.MustCompile(`^\[Current plan:\s*v(\d+)\s+—\s+(\d+)/(\d+) done,\s+(\d+) blocked\.`)
+	planCompleteRe   = regexp.MustCompile(`^\[Current plan:\s*v(\d+)\s+—\s+all\s+(\d+)\s+steps?\s+complete\.`)
+	planStepRe       = regexp.MustCompile(`^(\S+)\s+\[([^\]]+)\]\s*(.*)$`)
 )
+
+// structuredToolItem is the small, display-oriented subset shared by odek's
+// batch result envelopes. Keep this deliberately narrower than the wire
+// schema: unknown fields and nested values stay on the generic safe path.
+type structuredToolItem struct {
+	label       string
+	command     string
+	stdout      string
+	stderr      string
+	content     string
+	diff        string
+	error       string
+	status      int
+	contentLen  int64
+	totalLines  int
+	durationMS  int64
+	exitCode    int
+	hasStatus   bool
+	hasExitCode bool
+	hasSuccess  bool
+	success     bool
+}
+
+// structuredTool reports the built-in tools whose results are arrays of
+// independent work items. The name gate is intentional: arbitrary JSON from
+// an MCP tool must continue through the normal renderer without guesswork.
+func structuredTool(name string) bool {
+	n := strings.ToLower(strings.TrimSpace(name))
+	return n == "parallel_shell" || n == "http_batch" ||
+		n == "batch_read" || n == "batch_patch"
+}
+
+func rawString(m map[string]json.RawMessage, key string) string {
+	v, ok := m[key]
+	if !ok || string(v) == "null" {
+		return ""
+	}
+	var s string
+	if json.Unmarshal(v, &s) != nil {
+		return ""
+	}
+	return sanitize(foldUntrustedWrappers(s))
+}
+
+func rawInt64(m map[string]json.RawMessage, key string) (int64, bool) {
+	v, ok := m[key]
+	if !ok || string(v) == "null" {
+		return 0, false
+	}
+	var n int64
+	if json.Unmarshal(v, &n) != nil {
+		return 0, false
+	}
+	return n, true
+}
+
+func rawBool(m map[string]json.RawMessage, key string) (bool, bool) {
+	v, ok := m[key]
+	if !ok || string(v) == "null" {
+		return false, false
+	}
+	var b bool
+	if json.Unmarshal(v, &b) != nil {
+		return false, false
+	}
+	return b, true
+}
+
+// structuredJSONItems decodes only an object with a non-empty results array
+// of known scalar fields. A malformed or foreign envelope returns ok=false,
+// preserving the fail-safe generic JSON renderer.
+func structuredJSONItems(name, data string) ([]structuredToolItem, bool) {
+	if !structuredTool(name) {
+		return nil, false
+	}
+	var env map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(strings.TrimSpace(sanitize(data))), &env); err != nil {
+		return nil, false
+	}
+	raw, ok := env["results"]
+	if !ok {
+		return nil, false
+	}
+	var rows []map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &rows); err != nil || len(rows) == 0 {
+		return nil, false
+	}
+	items := make([]structuredToolItem, 0, len(rows))
+	for _, row := range rows {
+		item := structuredToolItem{
+			label:   rawString(row, "path"),
+			command: rawString(row, "command"),
+			stdout:  rawString(row, "stdout"),
+			stderr:  rawString(row, "stderr"),
+			content: rawString(row, "content"),
+			diff:    rawString(row, "diff"),
+			error:   rawString(row, "error"),
+		}
+		if item.label == "" {
+			item.label = rawString(row, "url")
+		}
+		if n, ok := rawInt64(row, "status"); ok {
+			item.status, item.hasStatus = int(n), true
+		}
+		if n, ok := rawInt64(row, "exit_code"); ok {
+			item.exitCode, item.hasExitCode = int(n), true
+		}
+		if n, ok := rawInt64(row, "content_length"); ok {
+			item.contentLen = n
+		}
+		if n, ok := rawInt64(row, "total_lines"); ok {
+			item.totalLines = int(n)
+		}
+		if n, ok := rawInt64(row, "duration_ms"); ok {
+			item.durationMS = n
+		}
+		if b, ok := rawBool(row, "success"); ok {
+			item.success, item.hasSuccess = b, true
+		}
+		// Require at least one field this renderer understands. In particular,
+		// do not turn {"results":[{"metadata":{...}}]} into an empty card.
+		known := item.label != "" || item.command != "" || item.stdout != "" ||
+			item.stderr != "" || item.content != "" || item.diff != "" || item.error != "" ||
+			item.hasStatus || item.hasExitCode || item.hasSuccess || item.totalLines > 0 || item.contentLen > 0
+		if !known {
+			return nil, false
+		}
+		items = append(items, item)
+	}
+	return items, true
+}
+
+const (
+	structuredDetailCap    = 64 * 1024
+	structuredDetailRows   = 256
+	structuredDetailString = 2048
+)
+
+type structuredDisplayMeta struct {
+	totalItems       int
+	displayTruncated bool
+	bodiesOmitted    bool
+}
+
+func structuredDisplayMetadata(data string, fallbackItems int) structuredDisplayMeta {
+	meta := structuredDisplayMeta{totalItems: fallbackItems}
+	var env struct {
+		TotalItems       int  `json:"total_items"`
+		DisplayTruncated bool `json:"display_truncated"`
+		BodiesOmitted    bool `json:"bodies_omitted"`
+	}
+	if json.Unmarshal([]byte(strings.TrimSpace(sanitize(data))), &env) == nil {
+		if env.TotalItems > meta.totalItems {
+			meta.totalItems = env.TotalItems
+		}
+		meta.displayTruncated = env.DisplayTruncated && meta.totalItems > fallbackItems
+		meta.bodiesOmitted = env.BodiesOmitted
+	}
+	return meta
+}
+
+// boundedStructuredDetail keeps the small, display-oriented metadata needed
+// by typed batch renderers. It is deliberately re-encoded after parsing:
+// truncating the raw JSON could leave an invalid document, while encoding
+// sanitized bounded fields always leaves a parser-safe payload. Unknown or
+// malformed shapes fall back to the ordinary normalized display text.
+func boundedStructuredDetail(name, raw string) string {
+	if !structuredTool(name) {
+		return ""
+	}
+	items, ok := structuredJSONItems(name, raw)
+	if !ok {
+		return boundedStructuredFallback(raw)
+	}
+	totalItems := len(items)
+	if len(items) > structuredDetailRows {
+		items = items[:structuredDetailRows]
+	}
+	displayTruncated := len(items) < totalItems
+
+	// Re-encode through maps so the renderer sees the same field names it
+	// understands on the wire (path/url, command, stdout, and so on).
+	build := func(limit int, bodies bool) string {
+		rows := make([]map[string]any, 0, len(items))
+		for _, item := range items {
+			row := make(map[string]any, 12)
+			if item.label != "" {
+				if strings.EqualFold(name, "http_batch") {
+					row["url"] = boundedStructuredString(item.label, min(limit, 512))
+				} else {
+					row["path"] = boundedStructuredString(item.label, min(limit, 512))
+				}
+			}
+			if item.command != "" {
+				row["command"] = boundedStructuredString(item.command, limit)
+			}
+			if bodies {
+				if item.stdout != "" {
+					row["stdout"] = boundedStructuredString(item.stdout, limit)
+				}
+				if item.stderr != "" {
+					row["stderr"] = boundedStructuredString(item.stderr, limit)
+				}
+				if item.content != "" {
+					row["content"] = boundedStructuredString(item.content, limit)
+				}
+				if item.diff != "" {
+					row["diff"] = boundedStructuredString(item.diff, limit)
+				}
+				if item.error != "" {
+					row["error"] = boundedStructuredString(item.error, limit)
+				}
+			}
+			if item.hasStatus {
+				row["status"] = item.status
+			}
+			if item.hasExitCode {
+				row["exit_code"] = item.exitCode
+			}
+			if item.hasSuccess {
+				row["success"] = item.success
+			}
+			if item.contentLen != 0 {
+				row["content_length"] = item.contentLen
+			}
+			if item.totalLines != 0 {
+				row["total_lines"] = item.totalLines
+			}
+			if item.durationMS != 0 {
+				row["duration_ms"] = item.durationMS
+			}
+			rows = append(rows, row)
+		}
+		envelope := map[string]any{"results": rows}
+		if displayTruncated {
+			envelope["display_truncated"] = true
+			envelope["total_items"] = totalItems
+		}
+		if !bodies {
+			envelope["bodies_omitted"] = true
+		}
+		encoded, err := json.Marshal(envelope)
+		if err != nil || len(encoded) > structuredDetailCap {
+			return ""
+		}
+		return string(encoded)
+	}
+
+	for limit := structuredDetailString; limit >= 128; limit /= 2 {
+		if encoded := build(limit, true); encoded != "" {
+			return encoded
+		}
+	}
+	// Labels, status, and exit metadata are more useful than an unbounded body
+	// when a result contains hundreds of large outputs.
+	if encoded := build(256, false); encoded != "" {
+		return encoded
+	}
+	return boundedStructuredFallback(raw)
+}
+
+func boundedStructuredFallback(raw string) string {
+	s := resultPreview(raw)
+	if len(s) <= structuredDetailCap {
+		return s
+	}
+	// This fallback is plain display text, so a rune-safe cap is preferable to
+	// slicing a JSON document and leaving the typed parser with broken syntax.
+	cut := structuredDetailCap - len("…")
+	for cut > 0 && cut < len(s) && (s[cut]&0xc0) == 0x80 {
+		cut--
+	}
+	return s[:cut] + "…"
+}
+
+func structuredResultFailed(name, raw string) bool {
+	items, ok := structuredJSONItems(name, raw)
+	if !ok {
+		return false
+	}
+	for _, item := range items {
+		if structuredItemFailed(item) {
+			return true
+		}
+	}
+	return false
+}
+
+func boundedStructuredString(s string, max int) string {
+	s = sanitize(foldUntrustedWrappers(s))
+	return truncate(s, max)
+}
+
+// stepDetailResult selects the structured bounded payload when one was kept
+// during ingestion, while preserving compatibility with hand-built and old
+// history steps that only have the normalized result.
+func stepDetailResult(s step) string {
+	if s.detailResult != "" {
+		return s.detailResult
+	}
+	return s.result
+}
+
+func structuredItems(name, data string) ([]structuredToolItem, bool) {
+	// Structured grouping is authoritative only when it comes from the
+	// supported JSON envelope. Normalized legacy text may contain arbitrary
+	// bracketed lines such as "[2] warning"; treating those as item headers
+	// invents counts and can hide the real failure shape.
+	return structuredJSONItems(name, data)
+}
+
+func structuredItemFailed(it structuredToolItem) bool {
+	return (it.hasExitCode && it.exitCode != 0) ||
+		(it.hasStatus && (it.status < 200 || it.status >= 400)) ||
+		(it.hasSuccess && !it.success) || it.error != ""
+}
+
+func structuredHeadSuffix(name, result string, th theme) string {
+	items, ok := structuredItems(name, result)
+	if !ok || len(items) == 0 {
+		return ""
+	}
+	failed := 0
+	confirmed := 0
+	for _, it := range items {
+		if structuredItemFailed(it) {
+			failed++
+		}
+		if (it.hasExitCode && it.exitCode == 0) || (it.hasSuccess && it.success) || (it.hasStatus && it.status >= 200 && it.status < 400) {
+			confirmed++
+		}
+	}
+	n := len(items)
+	label := "items"
+	switch strings.ToLower(name) {
+	case "parallel_shell":
+		label = "commands"
+	case "batch_read":
+		label = "files"
+	case "batch_patch":
+		label = "patches"
+	case "http_batch":
+		label = "urls"
+	}
+	meta := structuredDisplayMetadata(result, n)
+	count := fmt.Sprintf("%d %s", n, label)
+	if meta.displayTruncated {
+		count = fmt.Sprintf("%d/%d %s shown", n, meta.totalItems, label)
+	}
+	if failed > 0 {
+		return th.stepErr.Render(fmt.Sprintf("%s · %d failed", count, failed))
+	}
+	// Normalized bodies can lose success metadata; count them without
+	// claiming a verified successful execution.
+	if confirmed != n {
+		return th.stepRes.Render(count)
+	}
+	if meta.displayTruncated {
+		return th.stepRes.Render(count)
+	}
+	if strings.ToLower(name) == "batch_patch" {
+		return th.stepDone.Render(fmt.Sprintf("✓ %d patched", n))
+	}
+	return th.stepDone.Render(fmt.Sprintf("✓ %d %s", n, label))
+}
+
+func planSnapshotLines(result string, width int, th theme) []string {
+	s := sanitize(foldUntrustedWrappers(result))
+	lines := strings.Split(s, "\n")
+	var out []string
+	matched := false
+	for _, ln := range lines {
+		t := strings.TrimSpace(ln)
+		if t == "" {
+			continue
+		}
+		if m := planHeaderRe.FindStringSubmatch(t); m != nil {
+			matched = true
+			text := fmt.Sprintf("plan v%s · %s/%s done · %s blocked", m[1], m[2], m[3], m[4])
+			out = append(out, th.stepName.Render(truncate(text, detailWidth(width))))
+			continue
+		}
+		if m := planCompleteRe.FindStringSubmatch(t); m != nil {
+			matched = true
+			text := fmt.Sprintf("plan v%s · %s/%s done · 0 blocked", m[1], m[2], m[2])
+			out = append(out, th.stepName.Render(truncate(text, detailWidth(width))))
+			continue
+		}
+		if m := planStepRe.FindStringSubmatch(t); m != nil {
+			matched = true
+			status := strings.ToLower(sanitize(m[2]))
+			glyph := "○"
+			switch status {
+			case "done", "complete", "completed":
+				glyph = "✓"
+			case "in_progress", "running":
+				glyph = "▸"
+			case "blocked":
+				glyph = "!"
+			}
+			row := glyph + " " + sanitize(m[1])
+			if title := collapse(m[3]); title != "" {
+				row += "  " + title
+			}
+			out = append(out, th.stepRes.Render(truncate(row, detailWidth(width))))
+			if len(out) >= maxDetailLines {
+				return append(out, th.stepArg.Render("… output truncated"))
+			}
+		}
+	}
+	if !matched {
+		return nil
+	}
+	return out
+}
+
+func planHeadSuffix(result string, th theme) string {
+	for _, ln := range strings.Split(sanitize(foldUntrustedWrappers(result)), "\n") {
+		if m := planHeaderRe.FindStringSubmatch(strings.TrimSpace(ln)); m != nil {
+			return th.stepRes.Render(fmt.Sprintf("v%s · %s/%s done · %s blocked", m[1], m[2], m[3], m[4]))
+		}
+		if m := planCompleteRe.FindStringSubmatch(strings.TrimSpace(ln)); m != nil {
+			return th.stepRes.Render(fmt.Sprintf("v%s · %s/%s done · 0 blocked", m[1], m[2], m[2]))
+		}
+	}
+	return ""
+}
+
+func structuredItemHead(name string, item structuredToolItem, index int) (string, bool) {
+	label := item.label
+	if label == "" {
+		label = fmt.Sprintf("item %d", index+1)
+	}
+	switch strings.ToLower(name) {
+	case "parallel_shell":
+		if item.hasExitCode && item.exitCode != 0 {
+			return fmt.Sprintf("%s · exit %d", label, item.exitCode), true
+		}
+		return label, structuredItemFailed(item)
+	case "batch_patch":
+		if item.hasSuccess && !item.success || item.error != "" {
+			return "✗ " + label, true
+		}
+		if item.hasSuccess {
+			return "✓ " + label, false
+		}
+		return label, false
+	case "batch_read":
+		return label, structuredItemFailed(item)
+	case "http_batch":
+		if item.hasStatus {
+			return fmt.Sprintf("%s · %d", label, item.status), structuredItemFailed(item)
+		}
+		return label, structuredItemFailed(item)
+	default:
+		return label, structuredItemFailed(item)
+	}
+}
+
+func appendStructuredLine(out *[]string, line string, width int, style lipgloss.Style) bool {
+	if len(*out) >= maxDetailLines {
+		return false
+	}
+	*out = append(*out, style.Render(truncate(strings.TrimRight(sanitize(line), " \t"), detailWidth(width))))
+	return true
+}
+
+// structuredDetailLines renders one result row per batch item. It is used
+// only after a deliberate expand, and therefore may show command/path/URL
+// labels that are deliberately absent from the calm one-line preview.
+func structuredDetailLines(name, result string, width int, th theme) []string {
+	items, ok := structuredItems(name, result)
+	if !ok || len(items) == 0 {
+		return nil
+	}
+	meta := structuredDisplayMetadata(result, len(items))
+	out := make([]string, 0, min(len(items)*3, maxDetailLines))
+	if meta.displayTruncated {
+		omitted := meta.totalItems - len(items)
+		if omitted > 0 {
+			appendStructuredLine(&out, fmt.Sprintf("… %d more items omitted", omitted), width, th.stepArg)
+		}
+	}
+	if meta.bodiesOmitted {
+		appendStructuredLine(&out, "… item output omitted to stay within the detail limit", width, th.stepArg)
+	}
+	for i, item := range items {
+		head, failed := structuredItemHead(name, item, i)
+		style := th.stepName
+		if failed {
+			style = th.stepErr
+		}
+		if !appendStructuredLine(&out, head, width, style) {
+			break
+		}
+		if item.command != "" {
+			if !appendStructuredLine(&out, "$ "+item.command, width, th.stepArg) {
+				break
+			}
+		}
+
+		appendBody := func(body string, bodyStyle lipgloss.Style) bool {
+			body = sanitize(foldUntrustedWrappers(body))
+			for _, ln := range strings.Split(body, "\n") {
+				if strings.TrimSpace(ln) == "" {
+					continue
+				}
+				if !appendStructuredLine(&out, "  "+ln, width, bodyStyle) {
+					return false
+				}
+			}
+			return true
+		}
+
+		if item.diff != "" {
+			diff := sanitize(foldUntrustedWrappers(item.diff))
+			var body []string
+			switch {
+			case hasFencedDiff(diff):
+				body = renderMixedDiff(diff, width, th)
+			case diffLooksLike(diff):
+				body = renderDiff(diff, width, th)
+			default:
+				body = []string{th.stepRes.Render(truncate(diff, detailWidth(width)))}
+			}
+			for _, ln := range body {
+				if len(out) >= maxDetailLines {
+					break
+				}
+				out = append(out, ln)
+			}
+		}
+		if item.content != "" && !appendBody(item.content, th.stepRes) {
+			break
+		}
+		if item.stdout != "" && !appendBody(item.stdout, th.stepRes) {
+			break
+		}
+		if item.stderr != "" && !appendBody("stderr: "+item.stderr, th.stepErr) {
+			break
+		}
+		if item.error != "" && item.stderr == "" && !appendBody(item.error, th.stepErr) {
+			break
+		}
+		if strings.ToLower(name) == "parallel_shell" && item.durationMS > 0 {
+			if !appendStructuredLine(&out, fmt.Sprintf("  %dms", item.durationMS), width, th.stepArg) {
+				break
+			}
+		}
+		if strings.ToLower(name) == "http_batch" && item.contentLen > 0 {
+			if !appendStructuredLine(&out, fmt.Sprintf("  %d bytes", item.contentLen), width, th.stepArg) {
+				break
+			}
+		}
+		if strings.ToLower(name) == "batch_read" && item.totalLines > 0 {
+			if !appendStructuredLine(&out, fmt.Sprintf("  %d total lines", item.totalLines), width, th.stepArg) {
+				break
+			}
+		}
+	}
+	if len(out) >= maxDetailLines {
+		out = append(out[:maxDetailLines-1], th.stepArg.Render("… output truncated"))
+	}
+	return out
+}
 
 // testSummary extracts a compact pass/fail summary from test-runner output
 // (go test / pytest / jest / vitest / cargo / TAP). ok=false when nothing
@@ -439,6 +1009,14 @@ func cutPrefixTrim(s, prefix string) (string, bool) {
 // test runs summarize, everything else falls back to verbatim lines. The
 // returned lines are fully styled and truncated — append them verbatim.
 func stepDetail(name, result string, width int, th theme) []string {
+	if strings.EqualFold(strings.TrimSpace(name), "plan") {
+		if out := planSnapshotLines(result, width, th); len(out) > 0 {
+			return out
+		}
+	}
+	if out := structuredDetailLines(name, result, width, th); len(out) > 0 {
+		return out
+	}
 	switch {
 	case hasFencedDiff(result):
 		// Fences first: prose stays verbatim, only the fenced content tints.
@@ -475,6 +1053,14 @@ func stepDetail(name, result string, width int, th theme) []string {
 // lint, warning, and HTTP hints for shell steps; a hit count for searches.
 // At most one chip per step, in that precedence.
 func stepHeadSuffix(name, arg, result string, th theme) string {
+	if strings.EqualFold(strings.TrimSpace(name), "plan") {
+		if chip := planHeadSuffix(result, th); chip != "" {
+			return chip
+		}
+	}
+	if chip := structuredHeadSuffix(name, result, th); chip != "" {
+		return chip
+	}
 	if adds, dels, ok := diffStatOf(result); ok {
 		return th.diffAdd.Render(fmt.Sprintf("  +%d", adds)) +
 			th.diffDel.Render(fmt.Sprintf(" −%d", dels))

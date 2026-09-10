@@ -202,12 +202,14 @@ func TestApprovalFriction(t *testing.T) {
 		t.Error("selection shortcut rendered in friction mode")
 	}
 
-	// Enter on a partial/absent word does not approve.
+	// Enter before the explicit friction editor is active belongs to the
+	// composer and does not approve.
 	m.Update(key("enter"))
 	if m.curApproval() == nil {
-		t.Fatal("partial word approved")
+		t.Fatal("composer Enter approved friction")
 	}
-	// Typing the literal word + enter approves.
+	// Alt+A activates the editor; typing the literal word + enter approves.
+	m.Update(key("alt+a"))
 	for _, r := range "approve" {
 		m.Update(key(string(r)))
 	}
@@ -229,10 +231,15 @@ func TestApprovalFriction(t *testing.T) {
 	if m.apprTyped != "" {
 		t.Errorf("buffer not reset: %q", m.apprTyped)
 	}
-	// Esc still denies in one keypress.
+	// Esc exits confirmation editing without deciding; Alt+D denies.
+	m.Update(key("alt+a"))
 	m.Update(key("esc"))
+	if m.curApproval() == nil || m.apprEditing {
+		t.Fatal("esc should return to the draft without deciding")
+	}
+	m.Update(key("alt+d"))
 	if m.curApproval() != nil {
-		t.Fatal("esc did not deny")
+		t.Fatal("Alt+D did not deny")
 	}
 }
 

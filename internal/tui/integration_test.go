@@ -324,12 +324,18 @@ func key(s string) tea.KeyMsg {
 		return tea.KeyMsg{Type: tea.KeyPgUp}
 	case "pgdown":
 		return tea.KeyMsg{Type: tea.KeyPgDown}
+	case "alt+pgup":
+		return tea.KeyMsg{Type: tea.KeyPgUp, Alt: true}
+	case "alt+pgdown":
+		return tea.KeyMsg{Type: tea.KeyPgDown, Alt: true}
 	case "ctrl+d":
 		return tea.KeyMsg{Type: tea.KeyCtrlD}
 	case "ctrl+g":
 		return tea.KeyMsg{Type: tea.KeyCtrlG}
 	case "ctrl+c":
 		return tea.KeyMsg{Type: tea.KeyCtrlC}
+	case "ctrl+x":
+		return tea.KeyMsg{Type: tea.KeyCtrlX}
 	case "ctrl+r":
 		return tea.KeyMsg{Type: tea.KeyCtrlR}
 	case "ctrl+o":
@@ -354,6 +360,12 @@ func key(s string) tea.KeyMsg {
 		return tea.KeyMsg{Type: tea.KeyBackspace}
 	case "alt+s":
 		return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("s"), Alt: true}
+	case "alt+a":
+		return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("a"), Alt: true}
+	case "alt+d":
+		return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("d"), Alt: true}
+	case "alt+t":
+		return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("t"), Alt: true}
 	case "alt+x":
 		return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("x"), Alt: true}
 	case "alt+f":
@@ -481,8 +493,8 @@ func TestApprovalFlow(t *testing.T) {
 	// starts fresh.
 	m.approvals = nil
 	m.relayout()
-	// Trust (highlight → enter), then a fresh approval and deny, then approve.
-	for _, keys := range [][]string{{"down", "down", "enter"}, {"down", "enter"}, {"enter"}} {
+	// Explicit Alt chords answer; ordinary Enter remains the composer submit.
+	for _, keys := range [][]string{{"alt+t"}, {"alt+d"}, {"alt+a"}} {
 		m.handleEvent(client.Event{Type: "approval_request", ID: "id", AllowTrust: true})
 		var cmd tea.Cmd
 		for _, k := range keys {

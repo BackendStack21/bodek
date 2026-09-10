@@ -148,7 +148,12 @@ own front-end settings are separate; see [Configuration](#configuration).
 - **EMBER Terminal** — the WebUI's design language (electric amber on
   blue-charcoal) as terminal tokens; four themes (`ember-dark` ·
   `ember-light` · `high-contrast` · `classic`), switchable live with `/theme`
-  and persisted to `~/.bodek/config.json`.
+  and persisted to `~/.bodek/config.json`. Secondary labels and focused rows
+  stay readable across dark, light, and high-contrast surfaces. The terminal
+  controls the font; bodek does not replace it.
+- **Split-pane layouts** — crowded headers preserve connection and sandbox
+  status, compact footers keep cancel/help/jump actions within the terminal,
+  and the first-run hints wrap by display cells (including wide characters).
 - **The palette (`^K`)** — every command, session, model, and drawer tab one
   fuzzy search away; every row teaches its chord.
 - **Turn cards** — telemetry sits under the assistant reply, a coding receipt
@@ -164,7 +169,10 @@ own front-end settings are separate; see [Configuration](#configuration).
   structured output only: test verdicts (`✓ 5 passed · 2 skipped`, go
   coverage), git commits/pushes (`⎇ a1b2c3d`, `↑ main`), lint results,
   compiler warning counts, HTTP statuses, and search hit counts. Prose like
-  "Build passed" never goes green.
+  "Build passed" never goes green. Plans show compact progress and step rows;
+  parallel shell, batched reads/patches, and HTTP batches show item counts and
+  failures, with per-item detail behind `^E`. Missing success metadata stays
+  neutral rather than claiming that a command passed.
 - **Streaming answers** rendered as Markdown
   ([glamour](https://github.com/charmbracelet/glamour)).
 - **Tool activity** — every `tool_call`/`tool_result` shown live with a glyph
@@ -194,8 +202,8 @@ own front-end settings are separate; see [Configuration](#configuration).
 
 - **Live reasoning** — the model's pre-tool thinking is captured per beat
   but stays hidden in the calm default: the transcript holds still while
-  odek thinks. `^E` unfolds every stored block; `tab` unfolds
-  the latest one — a live opened block holds finished sentences until the
+  odek thinks. `^E` unfolds every stored block; `Tab` / `Shift+Tab` selects an item
+  and `Enter` opens just that item — a live opened block holds finished sentences until the
   next lands, never a token ticker. Elapsed time per beat; the clock
   freezes when that think cycle yields (a tool or the reply). A turn that
   thinks more than once labels each block `beat 2/3` — one beat is one
@@ -209,10 +217,10 @@ own front-end settings are separate; see [Configuration](#configuration).
   glyph: `●` idle, `◉` a turn in flight, `◌` reconnecting, `○` down.
 - **Sub-agents** — a delegation paints an always-on chip strip under the
   parent step (`⟳ SA1 explore · ✓ SA2 lint · ✗ SA3 types`), so you can
-  see who is running or who failed without expanding. Click a chip or
-  `tab` (on a swarm turn) focuses one agent: identity + live beat
-  (current tool, step, budget, cost). `^E` / expand still dumps that
-  agent's logs, artifacts, and the framed result. Tasks the wire hasn't
+  see who is running or who failed without expanding. Click a chip, or select its parent tool with `Tab` and press `Right`
+  to cycle agent focus: identity + live beat
+  (current tool, step, budget, cost). `^E` / expand shows that
+  agent's logs, artifacts, and framed result in bounded pages. Tasks the wire hasn't
   confirmed yet show as `◔` pending chips from the `delegate_tasks`
   argument. Glyphs: `✓` success, `◐` partial, `✗` error, `⊘` cancelled,
   `⏱` timeout, `×` lost on disconnect. The parent rollup still counts
@@ -289,15 +297,15 @@ own front-end settings are separate; see [Configuration](#configuration).
 ### Safety
 
 - **Inline approvals** — odek's `danger` engine prompts sit as a card
-  above the still-usable composer: `A`/`D`/`T` decide, every other letter
-  types a follow-up draft. See [Approvals](#approvals).
+  above the still-usable composer: `Alt+A`/`Alt+D`/`Alt+T` decide; ordinary
+  typing, paste, and Enter keep working on the follow-up draft. See [Approvals](#approvals).
 - **Clarify questions** — when the agent asks a principal-channel
   question, a card captures typing (spaces, punctuation, paste, `⇧⏎`
   newlines) and `⏎` sends the answer. The form wraps by cell width and
   keeps a capped tail so a long paste cannot blow the layout; `Esc`
   while a turn is running still arms cancel.
-- **Friction & expiry** — repeated same-class approvals require typing
-  `approve`; every request is time-boxed, autocloses on expiry (focus
+- **Friction & expiry** — repeated same-class approvals require `Alt+A`
+  to focus confirmation, then typing `approve` and pressing Enter; every request is time-boxed, autocloses on expiry (focus
   returns to the latest transcript message), and can never collect an
   approval for a prompt the engine already abandoned.
 - **Death-gates everywhere** — deletes are two-step, `/stop` and `^L` are
@@ -394,7 +402,9 @@ own front-end settings are separate; see [Configuration](#configuration).
 | `alt+r` | Re-send the last prompt (`/retry`) |
 | `alt+f` | Search the transcript (`⏎`/`n` next match · `N` previous · a hit expands the hidden step or reasoning block) |
 | `^F` | Fold/unfold the most recent turn card (or click any turn head) |
-| `tab` | Focus the next sub-agent chip on a swarm turn; otherwise open/close the latest reasoning block; with neither, toggle the latest step's expansion |
+| `Tab` / `Shift+Tab` | Select the next / previous tool or reasoning item; `Enter` expands it, `Esc` returns to the composer |
+| `[` / `]` (inspecting a tool) | Previous / next response page; `Right` cycles sub-agent chips when present |
+| `^X` | Stop the running turn from any panel or inspection state (`y` confirms); unrelated expanded items stay open |
 | `^R` | Browse & resume saved sessions |
 | `^O` | Switch the model |
 | `^Q` | Unfold the queue strip from the composer shelf (`↑↓`/`jk` select · `←→`/`hl` move · `d d` two-step delete · `esc`/`⏎` folds it back; full manager: `/queue`) |
@@ -404,7 +414,7 @@ own front-end settings are separate; see [Configuration](#configuration).
 | `^L` | Clear the conversation (two-step confirm: `y` clears, any other key cancels) |
 | `^E` | Toggle details — reasoning previews and every step's full output/logs (hidden in the calm default) |
 | `^Y` | Copy the last reply to the clipboard (local helper — `pbcopy`/`wl-copy`/`clip` — with OSC 52 fallback) |
-| `Esc` | Close the topmost window (palette, drawer, find, `@`, queue, stats, expanded details, help, skill chip). Bare composer: cancel the running turn (two-step: `y` confirms). Approvals: collapse the expanded command, then deny. |
+| `Esc` | Close the topmost window or leave item inspection. Bare composer: dismiss details, then arm cancellation (`y` confirms). Approvals: fold details or leave confirmation editing; use `Alt+D` to deny. |
 | `↑` / `↓` / `PgUp` / `PgDn` / `^U` / `^D` | Scroll the transcript (arrows at the input's edge lines) |
 | `^P` / `^N` | Recall previous prompts (prompt history) |
 | `^G` / `End` (empty input) | Jump to the latest output |
@@ -414,10 +424,25 @@ own front-end settings are separate; see [Configuration](#configuration).
 | `⏎` (after a failed turn, empty input) | Re-send the failed prompt |
 | `^C` | Quit (confirm: `y` or a second `^C`) |
 
-**Every printable character always types.** No bare letter, digit, or
-punctuation key is ever bound in the composer — actions live on chords and
+**Every printable character types while the composer has focus**, including
+when an approval arrives. No bare letter, digit, or punctuation key is bound in the composer — actions live on chords and
 non-character keys (`^K` palette, `alt+↑↓` turn jumps, `F1` help), so a
 prompt can start with `?`, `[`, or any other character.
+
+### Inspecting tool responses
+
+Select an item with `Tab` / `Shift+Tab`, then press Enter to expand it. Tool
+responses display at most eight body rows plus a paging indicator, with fewer
+rows in short terminals. Use `[` / `]` to page, `Alt+Y` to copy the retained
+response, and Escape to return to typing. Clicking a tool header also selects
+it. The global `^E` details toggle uses the same page limits.
+
+Batch results retain command/file labels and original item counts; bracketed
+log lines are never treated as extra commands. Plans render creation, updates,
+blocked steps, and completion. Text previews retain up to 128 KiB and 200 lines;
+structured detail metadata is capped at 64 KiB and 256 items. Omitted content
+and subset counts are labelled, so a preview is never presented as the full
+result when it was shortened.
 
 ### The prompt queue
 
@@ -449,7 +474,7 @@ full command and press `⏎`.
 | `/export` | Save the session transcript next to you — `/export [md|json]` (markdown by default, never overwrites) |
 | `/retry` | Re-send the last prompt (queues it if a turn is running) |
 | `/queue` | Manage the prompt queue — priority, delete, send now (the full manager over the `^Q` strip) |
-| `/theme [name]` | Switch the color theme at runtime and persist it (`ember-dark` · `ember-light` · `high-contrast` · `classic`) |
+| `/theme [name]` | Open a searchable theme selector with the current theme marked; arrows + Enter apply and save, Esc keeps the current theme. `/theme name` still switches directly (`ember-dark` · `ember-light` · `high-contrast` · `classic`) |
 | `/verbosity [quiet\|normal\|detailed]` | One-dial noise policy (persisted): quiet hides engine traces, detailed switches on the `^E` expand-all view; bare `/verbosity` cycles |
 | `/stats` | Session metrics sheet (speed, TTFT, cost, cache, context gauge) |
 | `/server` | Cockpit — server, link, budget & session in one card (or click the header) |
@@ -536,23 +561,26 @@ sessions are resumed via `/sessions` or `^R`, not `@`.)
 
 ### Approvals
 
-When the agent requests approval for a dangerous operation, the card sits
-above the composer. `A` / `D` / `T` (and `⏎` / `Esc`) decide; every other
-letter types into the draft so a follow-up survives the gate:
+When the agent requests approval, its card appears above the composer without
+stealing typing focus. Ordinary text, paste, cursor movement, and Enter continue
+to edit or queue the follow-up draft. Decisions use explicit modified shortcuts:
 
 | Key | Action |
 |-----|--------|
-| `↑` / `↓` (or `←` / `→`) | Move the highlight (Approve / Deny / Trust class when offered) |
-| `⏎` | Confirm the highlighted option |
-| `Esc` | Deny (abort) |
-| `Tab` | Expand/collapse the full command & description text |
-| `PgUp` / `PgDn` / `^U` / `^D` | Scroll the transcript while the panel is open |
+| `Alt+A` | Approve; in friction mode, first open the confirmation editor |
+| `Alt+D` | Deny |
+| `Alt+T` | Trust the class, only when the server offers it and friction is off |
+| `Tab` | Expand/collapse command and description details |
+| `Alt+PgUp` / `Alt+PgDn` | Page expanded approval details |
+| `Esc` | Return from confirmation editing, or fold details; otherwise arm turn cancellation when busy |
+| `^X` | Arm turn cancellation from any state; `y` confirms |
+| `PgUp` / `PgDn` / `^U` / `^D` | Scroll the transcript |
 
 After three same-class approvals inside a minute the server engages
-**friction mode**: the panel shows the recent-approval count, the trust
-shortcut is withdrawn, and approving requires typing the literal word
-`approve` and pressing `⏎` (a mistyped word resets — retyping is the point).
-Denying stays one `Esc`.
+**friction mode**. The card shows the recent count and withdraws trust.
+Press `Alt+A`, type the literal word `approve`, then press Enter. Escape returns
+to the draft without deciding; `Alt+D` denies immediately. The confirmation
+editor and expanded command pages are bounded to fit short terminals.
 
 Approvals are time-boxed by the engine (60s by default), and an expired
 request is dead — odek fails the tool call and picks an alternative path.

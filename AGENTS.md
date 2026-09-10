@@ -100,8 +100,8 @@ feat(tui): compact tool steps with Ctrl+E details toggle
   messages; turn markers (`**Cancelled.**` etc.) attach to the last reply.
   The calm default hides reasoning previews and tool responses: the intent
   rail and step result bodies paint only under `^E` (details) or a
-  deliberate expand — `tab` opens one reasoning block; click or tab's
-  fallback expands one step; the result peek is gone. While a turn
+  deliberate expand — `Tab`/`Shift+Tab` selects an item and `Enter` opens it;
+  click selects and expands one step; the result peek is gone. While a turn
   streams, its head line carries the run's elapsed counter right-aligned
   at the viewport edge (the `runStart` clock, whole seconds, dropped on
   finalize — the sealed telemetry row sits under the reply). A deliberately opened
@@ -147,7 +147,7 @@ feat(tui): compact tool steps with Ctrl+E details toggle
   new turn clears the chip. Never divide cumulative `outputTokens` by
   wall latency.
 - `internal/tui` is split by responsibility: `model.go` holds the core
-  model, `events.go` event handling, `input.go` key/text input,
+  model, `inspect.go` owns transcript item focus and bounded tool paging, `events.go` event handling, `input.go` key/text input,
   `approval.go` the approval flow, `chrome.go` drawer-sheet / shelf /
   header-instrument / session-home layout, `reconnect.go` socket recovery.
   Put new code in the matching file instead of growing `model.go`.
@@ -179,9 +179,10 @@ feat(tui): compact tool steps with Ctrl+E details toggle
 - The management drawer is a bottom sheet: keep ~8 transcript rows above
   it (`sheetTranscriptMin`); full-bleed only when the terminal cannot
   fit transcript + sheet. Layout-only — tab grammar (`]`/`[`/`⏎`/`esc`)
-  stays. Approvals render as a card above a live composer: `A`/`D`/`T`
-  decide, other printables type a follow-up draft (friction still
-  captures typing into `apprTyped`). Clarify questions capture the
+  stays. Approvals render above a live composer: only `Alt+A`/`Alt+D`/`Alt+T`
+  decide. Text, paste, cursor keys, and Enter retain composer behavior. Friction
+  captures `apprTyped` only after explicit `Alt+A`; Escape returns to the draft
+  without deciding. Keep the editor rune/row bounded and reset it on head changes. Clarify questions capture the
   keyboard into `clarifyBuf`: the spacebar is Bubble Tea `KeySpace` (not
   `KeyRunes`), so every printable — spaces, punctuation, paste — must
   append. Wrap the answer by cell width and paint only a capped tail so
@@ -208,10 +209,12 @@ feat(tui): compact tool steps with Ctrl+E details toggle
 - ESC closes the topmost window, then inspect chrome, then (if busy)
   arms cancel. Order: confirm disarm → palette → drawer edit/detail/tab
   → cockpit → find → `@`/`/` popup → queue strip → approval (collapse
-  expand, then deny) → clarify (arm cancel while busy; the card stays)
+  details, then arm cancellation; `Alt+D` denies) → clarify (arm cancel while busy; the card stays)
   → skill chip / `^E` / open thinking / agent
   focus / expanded step / help card → cancel gate. Do not let a leftover
-  overlay swallow ESC without dismissing.
+  overlay swallow ESC without dismissing. `Ctrl+X` independently arms turn
+  cancellation before modal routing; the confirmation footer must remain visible
+  above every panel and approval. Inspect Escape returns to the composer first.
 - Management drawer tabs (memory/skills/tools/config — and jobs) have a detail
   submode: `⏎` expands the selected row (skill description, full fact
   text, MCP args, raw config JSON — everything through `sanitize()`),
@@ -263,3 +266,43 @@ feat(tui): compact tool steps with Ctrl+E details toggle
   sync when you change user-visible behaviour.
 - CI (`.github/workflows`) runs build, vet, lint, and race tests on every
   push — a red pipeline means the commit checklist above was skipped.
+
+## Terminal polish regression bar
+
+- Crowded headers preserve sandbox and connection state before version metadata;
+  compact composer footers must fit one terminal row and retain actionable keys.
+- Home hints wrap by display cells, including wide Unicode paths. Keep the home
+  free of a second wordmark or an additional feature dashboard.
+- Structured batch summaries must not invent successful execution when normalized
+  results omit exit/status metadata. Expanded plan and batch views remain behind
+  existing details controls and preserve the chronological transcript.
+- `TestTerminalWorkflowLayouts` checks real views across four themes at 40, 80,
+  and 120 columns. Set `BODEK_RENDER_PREVIEW_DIR` to write optional ANSI fixtures
+  for visual review without an engine/provider; generated captures are not source.
+
+## Interaction and response bounds
+
+- `Tab`/`Shift+Tab` traverses chronological tools and reasoning, with visible focus;
+  `Enter` expands the selected item. Typing returns to the composer. `[`/`]`
+  pages a selected tool and Right cycles its sub-agent chips. Copy uses the
+  selected item. Clear/resume must discard stale inspect coordinates.
+- Expanded tool and sub-agent response bodies show at most eight display rows
+  plus one pager row, shrinking with terminal height. Split embedded newlines
+  before counting and clamp ANSI display widths. Clamp paging at both ends;
+  invalidate per-step caches when selection, offset, height, or theme changes.
+- Keep normalized `step.result` for copying/error compatibility and bounded
+  `step.detailResult` for structured display. Preserve sanitized command/path
+  identity through live and history ingestion; never infer item boundaries from
+  `[N]` text. Report omitted bodies/items and total subset counts explicitly.
+  Generic previews cap at 128 KiB/200 lines; structured details at 64 KiB/256 items.
+- Completed plans include the producer's `all N steps complete` format.
+- All footer modes fit one display row, prioritizing primary and exit actions.
+  Recompute viewport height when the new-output shelf changes. Approval details
+  page with Alt+PgUp/PgDn; compact terminals drop decorative card borders.
+- `/theme` uses the existing searchable selector, preselecting/marking the current
+  choice. Enter applies/persists, Escape leaves the theme unchanged. Keep direct
+  `/theme name` aliases. Late session results cannot contaminate the theme list.
+- Test state transitions and real event-to-view rendering, including approvals
+  arriving during typing/paste, stop from overlays, tool paging, plan completion,
+  active theme selection, and narrow/short layouts. Semantic small-text colors
+  must pass contrast checks, not only body text.

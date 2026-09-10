@@ -131,30 +131,33 @@ func TestErrorResultAutoExpands(t *testing.T) {
 	}
 }
 
-func TestTabFallsBackToLastStep(t *testing.T) {
+func TestTabSelectsToolsAndReasoning(t *testing.T) {
 	m := liveTurnModel()
 	runMiniTurn(t, m, "read_file", "one")
 	runMiniTurn(t, m, "shell", "two")
 	m.handleEvent(client.Event{Type: "done"})
 	last := len(m.msgs) - 1
-
 	m.Update(key("tab"))
+	if m.inspect == nil || m.inspect.stepIdx != 0 {
+		t.Fatal("Tab must select the first tool in the latest turn")
+	}
+	m.Update(key("enter"))
+	if !m.msgs[last].steps[0].expanded {
+		t.Fatal("Enter must expand the selected tool")
+	}
+	m.Update(key("tab"))
+	m.Update(key("enter"))
 	if !m.msgs[last].steps[1].expanded {
-		t.Fatal("tab with no swarm/thinking must toggle the latest step")
+		t.Fatal("next tool must be reachable independently")
 	}
-	m.Update(key("tab"))
-	if m.msgs[last].steps[1].expanded {
-		t.Fatal("second tab must collapse the latest step again")
-	}
-	// Reasoning blocks keep priority: with a thinking item present, tab
-	// opens it and leaves the step alone.
 	ti := len(m.msgs[last].items)
 	m.msgs[last].items = append(m.msgs[last].items, turnItem{thinking: true, text: "deliberation"})
 	m.Update(key("tab"))
+	m.Update(key("enter"))
 	if !m.msgs[last].items[ti].open {
-		t.Fatal("tab must still toggle the reasoning block when one exists")
+		t.Fatal("reasoning must remain individually reachable")
 	}
-	if m.msgs[last].steps[1].expanded {
-		t.Fatal("tab must not touch the step while a reasoning block wins")
+	if !m.msgs[last].steps[1].expanded {
+		t.Fatal("opening reasoning must preserve existing tool state")
 	}
 }

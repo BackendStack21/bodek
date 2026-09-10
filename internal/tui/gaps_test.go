@@ -9,8 +9,8 @@ import (
 
 func TestApprovalDecisionLetters(t *testing.T) {
 	m := wired(t)
-	// Decision letters a/d/t resolve the card; every other letter types
-	// into the composer so a follow-up draft survives the gate.
+	// Bare decision letters stay in the composer, including when they arrive
+	// alongside cursor movement.
 	m.approvals = []client.Event{{Type: "approval_request", AllowTrust: false}}
 	m.Update(key("y"))
 	m.Update(key("n"))
@@ -21,35 +21,28 @@ func TestApprovalDecisionLetters(t *testing.T) {
 	if m.ta.Value() != "ynz" {
 		t.Fatalf("non-decision letters must type into the composer, got %q", m.ta.Value())
 	}
-	_, cmd := m.Update(key("a")) // approve
-	exec(cmd)
-	if m.curApproval() != nil {
-		t.Fatal("a did not approve")
-	}
-
-	m.approvals = []client.Event{{Type: "approval_request", AllowTrust: false}}
-	_, cmd = m.Update(key("d")) // deny
-	exec(cmd)
-	if m.curApproval() != nil {
-		t.Fatal("d did not deny")
-	}
-
-	// AllowTrust=false: t does nothing, and the highlight clamps at "deny" —
-	// trust is unreachable both ways.
-	m.approvals = []client.Event{{Type: "approval_request", AllowTrust: false}}
-	m.Update(key("t"))
+	m.Update(key("a"))
 	if m.curApproval() == nil {
-		t.Fatal("t decided without allow_trust")
+		t.Fatal("bare a answered the approval")
 	}
-	m.Update(key("down"))
-	m.Update(key("down"))
-	if m.apprSel != 1 {
-		t.Errorf("apprSel = %d, want clamped at 1 (deny)", m.apprSel)
-	}
-	_, cmd = m.Update(key("enter"))
+	_, cmd := m.Update(key("alt+a")) // approve
 	exec(cmd)
 	if m.curApproval() != nil {
-		t.Error("enter on deny should clear the approval")
+		t.Fatal("Alt+A did not approve")
+	}
+
+	m.approvals = []client.Event{{Type: "approval_request", AllowTrust: false}}
+	_, cmd = m.Update(key("alt+d")) // deny
+	exec(cmd)
+	if m.curApproval() != nil {
+		t.Fatal("Alt+D did not deny")
+	}
+
+	// AllowTrust=false: Alt+T does nothing, and trust is unreachable.
+	m.approvals = []client.Event{{Type: "approval_request", AllowTrust: false}}
+	m.Update(key("alt+t"))
+	if m.curApproval() == nil {
+		t.Fatal("Alt+T decided without allow_trust")
 	}
 }
 
@@ -63,11 +56,11 @@ func TestApprovalQueueFIFO(t *testing.T) {
 		t.Fatalf("queue = %d", len(m.approvals))
 	}
 	out := plain(m.View())
-	if !strings.Contains(out, "1 more queued") {
+	if !strings.Contains(out, "1 queued") {
 		t.Errorf("queue depth missing from panel:\n%s", out)
 	}
 	// Deny answers apr-1; apr-2 becomes the head with its own input state.
-	_, cmd := m.Update(key("esc"))
+	_, cmd := m.Update(key("alt+d"))
 	exec(cmd)
 	if got := awaitAction(t, actions); got != "deny" {
 		t.Fatalf("first answer = %q", got)
@@ -78,15 +71,14 @@ func TestApprovalQueueFIFO(t *testing.T) {
 	if m.apprTyped != "" || m.apprSel != 0 {
 		t.Error("input state not reset for the new head")
 	}
-	// A queued friction request engages friction once it reaches the head —
-	// letters feed the typed buffer, not decisions.
-	_, cmd = m.Update(key("esc")) // deny apr-2 → queue drains
+	// A friction request keeps ordinary letters in the composer until Alt+A
+	// explicitly activates its confirmation editor.
+	_, cmd = m.Update(key("alt+d")) // deny apr-2 → queue drains
 	exec(cmd)
 	m.handleEvent(client.Event{Type: "approval_request", ID: "apr-3", Friction: true, FrictionApprovals: 3})
-	_, cmd = m.Update(key("d"))
-	exec(cmd)
-	if m.apprTyped != "d" {
-		t.Fatalf("friction head consumed a letter as decision: typed=%q", m.apprTyped)
+	m.Update(key("d"))
+	if m.apprTyped != "" || m.ta.Value() != "d" {
+		t.Fatalf("friction head should keep ordinary typing in composer: typed=%q draft=%q", m.apprTyped, m.ta.Value())
 	}
 	if len(m.approvals) != 1 {
 		t.Fatal("letter decided a friction approval")

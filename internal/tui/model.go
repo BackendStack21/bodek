@@ -30,26 +30,29 @@ const (
 
 // step is a single tool invocation within an assistant turn.
 type step struct {
-	name       string
-	arg        string
-	result     string // sanitized tool output (multi-line); excerpted at render
-	done       bool
-	isErr      bool          // the result reads as a failure (tints the status glyph red)
-	subagent   bool          // this call delegates to a sub-agent (renders its log tree)
-	logs       []string      // nested sub-agent activity, from subagent_log events
-	agents     []*agentCard  // live per-task telemetry, from subagent_state frames
-	manifest   []taskSlot    // delegate arg parsed at tool-call time: per-task identity
-	resultCard *agentResult  // framed result envelope (delegate tools)
-	expanded   bool          // user has expanded this step to show full output/logs
-	agentSel   int           // focused chip: 0 = none, else 1-based SA number
-	started    time.Time     // when the tool_call arrived; zero for resumed history
-	dur        time.Duration // wall-clock the call took; 0 until the result lands
+	name         string
+	arg          string
+	result       string // sanitized tool output (multi-line); excerpted at render
+	detailResult string // bounded structured display data; normalized result remains copyable
+	detailOffset int    // first visible line in the expanded response
+	done         bool
+	isErr        bool          // the result reads as a failure (tints the status glyph red)
+	subagent     bool          // this call delegates to a sub-agent (renders its log tree)
+	logs         []string      // nested sub-agent activity, from subagent_log events
+	agents       []*agentCard  // live per-task telemetry, from subagent_state frames
+	manifest     []taskSlot    // delegate arg parsed at tool-call time: per-task identity
+	resultCard   *agentResult  // framed result envelope (delegate tools)
+	expanded     bool          // user has expanded this step to show full output/logs
+	agentSel     int           // focused chip: 0 = none, else 1-based SA number
+	started      time.Time     // when the tool_call arrived; zero for resumed history
+	dur          time.Duration // wall-clock the call took; 0 until the result lands
 	// Render cache for finished steps (peek/detail are expensive to re-parse).
-	blockCache     string
-	blockRefs      []stepRef
-	blockWidth     int
-	blockExpanded  bool
-	blockExpandAll bool
+	blockCache      string
+	blockRefs       []stepRef
+	blockWidth      int
+	blockExpanded   bool
+	blockExpandAll  bool
+	blockDetailRows int
 }
 
 // replyCardIdx is the stepIdx sentinel for answer-card hit boxes
@@ -209,6 +212,8 @@ type Model struct {
 	apprSel       int              // highlighted option in the approval panel
 	apprExpanded  bool             // tab: show the full command/description text
 	apprTyped     string           // friction mode: the literal word being typed ("approve")
+	apprEditing   bool             // explicit focus on the friction confirmation editor
+	apprOffset    int              // expanded approval command page
 	ac            autocomplete     // @-reference completion state
 	pal           palState         // ⌘K command palette — the navigation spine
 	skillSuggest  *client.Event    // pending skill suggestion card (skill_event "suggested")
@@ -231,6 +236,7 @@ type Model struct {
 	homeSessDone  bool             // the current clear's fetch already ran
 	homeSessGen   int              // bumped per clear; stale fetches dropped
 	focusIdx      int              // transcript cursor: turn head alt+↑/↓ last jumped to (-1 none)
+	inspect       *inspectTarget   // explicit keyboard focus on one transcript item
 
 	history   []string // submitted prompts, newest last (recalled with ↑)
 	histNav   bool     // true while ^P/^N is walking the history
@@ -849,6 +855,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					return m, nil
 				}
 				if msgIdx, stepIdx, ok := m.stepAtLine(line); ok {
+					m.invalidateInspect()
+					m.inspect = &inspectTarget{msgIdx: msgIdx, stepIdx: stepIdx, itemIdx: -1}
+					m.focusIdx = msgIdx
 					m.toggleStep(msgIdx, stepIdx)
 					m.refresh()
 					return m, nil
@@ -862,6 +871,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		var cmd tea.Cmd
 		m.vp, cmd = m.vp.Update(msg)
+		m.relayout()
 		return m, cmd
 	}
 
@@ -878,6 +888,10 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// disarms. Deletes never fire on the keypress that armed them.
 	if m.confirm != confirmNone {
 		return m.handleConfirmKey(msg)
+	}
+	// Stop has one stable path, independent of open drawers or historical details.
+	if msg.String() == "ctrl+x" && m.busy {
+		return m, m.armConfirm(confirmCancel, "the running turn")
 	}
 	// The palette works from every rung of the modality ladder.
 	if m.pal.open {
@@ -957,6 +971,9 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	if cmd := m.handleHomeResumeKey(msg.String()); cmd != nil {
 		return m, cmd
+	}
+	if handled := m.handleInspectKey(msg); handled {
+		return m, nil
 	}
 
 	switch msg.String() {
@@ -1090,17 +1107,8 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// bare letters belong to the composer.
 		m.toggleCollapseLast()
 		return m, nil
-	case "tab":
-		// Cycle the latest swarm's focused chip when one is on screen;
-		// otherwise open/close the most recent reasoning accordion; with
-		// neither, toggle the latest step (keyboard parity for
-		// click-to-expand).
-		if !m.ac.open {
-			if !m.cycleAgentFocus() && !m.toggleThinkingLast() {
-				m.toggleLastStep()
-			}
-			m.refresh()
-		}
+	case "tab", "shift+tab":
+		m.moveInspect(msg.String() == "shift+tab")
 		return m, nil
 	case "end":
 		// End doubles as jump-to-latest — only with an empty input, so its
@@ -1112,6 +1120,7 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "pgup", "pgdown", "ctrl+u", "ctrl+d":
 		var cmd tea.Cmd
 		m.vp, cmd = m.vp.Update(msg)
+		m.relayout()
 		return m, cmd
 	}
 
@@ -1129,6 +1138,7 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 // of reporting turns, tools, tokens, and age from before it (mirrors the
 // reset done when resuming a session).
 func (m *Model) clearConversation() tea.Cmd {
+	m.inspect = nil
 	captureHome(m)
 	m.msgs = nil
 	m.curIdx = -1
@@ -1350,6 +1360,19 @@ func (m *Model) relayout() {
 	}
 	m.vp.Width = m.width
 	m.vp.Height = vpH
+	// Shrinking the viewport can itself reveal the new-output shelf. Settle
+	// that dependent row before drawing so the footer stays inside the screen.
+	for attempt := 0; attempt < 2; attempt++ {
+		room := m.height - headerHeight - footerHeight - m.inputAreaHeight() - m.drawerLayoutBudget()
+		if room < 1 && m.ta.Height() > 1 {
+			m.ta.SetHeight(max(1, m.ta.Height()-(1-room)))
+			room = m.height - headerHeight - footerHeight - m.inputAreaHeight() - m.drawerLayoutBudget()
+		}
+		if max(1, room) == m.vp.Height {
+			break
+		}
+		m.vp.Height = max(1, room)
+	}
 }
 
 // inputAreaHeight is the number of rows below the transcript viewport — the
@@ -1357,10 +1380,10 @@ func (m *Model) relayout() {
 // shrinks by exactly the right amount and the footer never moves.
 func (m *Model) inputAreaHeight() int {
 	h := m.ta.Height() + 2 // composer box: text rows + top/bottom border
-	if m.curApproval() != nil {
+	if m.curApproval() != nil && !m.pal.open {
 		h += lineCount(m.approvalPanel()) // boxed card sits above the composer
 	}
-	if m.clarify != nil {
+	if m.clarify != nil && !m.pal.open {
 		h += lineCount(m.clarifyPanel())
 	}
 	if m.statusLineVisible() {
@@ -1369,10 +1392,10 @@ func (m *Model) inputAreaHeight() int {
 	if m.pal.open {
 		h += m.palHeight()
 	}
-	if m.ac.open {
+	if m.ac.open && !m.pal.open {
 		h += m.ac.height()
 	}
-	if m.find.open {
+	if m.find.open && !m.pal.open {
 		h++ // the one-row search strip above the input box
 	}
 	h += m.shelfHeight()
@@ -1605,26 +1628,6 @@ func (m *Model) toggleThinkingLast() bool {
 				m.invalidateMsgBlock(i)
 				return true
 			}
-		}
-		return false
-	}
-	return false
-}
-
-// toggleLastStep flips the most recent step's expansion — tab's final
-// fallback, keyboard parity for click-to-expand aimed at the step the user
-// just watched finish. Same latest-assistant-message scope as
-// toggleThinkingLast; false when there is no step to toggle.
-func (m *Model) toggleLastStep() bool {
-	for i := len(m.msgs) - 1; i >= 0; i-- {
-		if m.msgs[i].role != roleAsst {
-			continue
-		}
-		if n := len(m.msgs[i].steps); n > 0 {
-			clearStepBlockCache(&m.msgs[i].steps[n-1])
-			m.msgs[i].steps[n-1].expanded = !m.msgs[i].steps[n-1].expanded
-			m.invalidateMsgBlock(i)
-			return true
 		}
 		return false
 	}

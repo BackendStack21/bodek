@@ -194,8 +194,9 @@ func TestEveryWindowClosesWithEsc(t *testing.T) {
 	})
 }
 
-func TestApprovalEscCollapsesThenDenies(t *testing.T) {
+func TestApprovalEscCollapsesThenArmsCancel(t *testing.T) {
 	m, actions, _ := approvalRecorder(t)
+	busyTurn(m)
 	m.handleEvent(client.Event{Type: "approval_request", ID: "apr", Command: "rm x"})
 	m.Update(key("tab"))
 	if !m.apprExpanded {
@@ -206,15 +207,16 @@ func TestApprovalEscCollapsesThenDenies(t *testing.T) {
 		t.Fatal("first esc should collapse the expanded command")
 	}
 	if m.curApproval() == nil {
-		t.Fatal("first esc must not deny")
+		t.Fatal("first esc must not decide")
 	}
-	_, cmd := m.Update(key("esc"))
-	exec(cmd)
-	if m.curApproval() != nil {
-		t.Fatal("second esc should deny")
+	m.Update(key("esc"))
+	if m.curApproval() == nil || m.confirm != confirmCancel {
+		t.Fatal("second esc should arm cancellation")
 	}
-	if got := awaitAction(t, actions); got != "deny" {
-		t.Errorf("action = %q, want deny", got)
+	select {
+	case got := <-actions:
+		t.Fatalf("Esc unexpectedly sent approval action %q", got)
+	default:
 	}
 }
 

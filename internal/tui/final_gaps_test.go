@@ -67,8 +67,8 @@ func TestAcPopupLoadingAndEmpty(t *testing.T) {
 func TestFooterBusyAndRenderPanelSmall(t *testing.T) {
 	m := wired(t)
 	m.busy = true
-	if !strings.Contains(plain(m.footer()), "cancel") {
-		t.Error("busy footer should show cancel hint")
+	if !strings.Contains(plain(m.footer()), "^X stop") {
+		t.Error("busy footer should show the stop shortcut")
 	}
 	// renderPanel with a tiny height exercises the visible<1 clamp.
 	m.panel = panelSessions

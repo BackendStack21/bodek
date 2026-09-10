@@ -13,18 +13,17 @@ import (
 // ── C2: the first-run home signposts the core interactions ────────────────
 
 // TestWelcomeTipSignpostsCoreInteractions: the welcome tip must name the
-// three interactions a new user cannot otherwise discover — copy-on-click,
-// the ^E details toggle, and tab-to-expand.
+// core composer interactions and command discovery.
 func TestWelcomeTipSignpostsCoreInteractions(t *testing.T) {
 	out := plain(welcome(newTheme(), 120, "/somewhere", ""))
-	for _, want := range []string{"click to copy", "^E details", "tab expands"} {
+	for _, want := range []string{"⏎ send", "⇧⏎ newline", "^K commands"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("welcome tip missing %q:\n%s", want, out)
 		}
 	}
 	// C11: the ^K microcopy reads as a verb, not jargon.
-	if !strings.Contains(out, "^K clears") {
-		t.Errorf("welcome tip should say what ^K clears:\n%s", out)
+	if !strings.Contains(out, "^K commands") {
+		t.Errorf("welcome tip should identify the command palette:\n%s", out)
 	}
 	if strings.Contains(out, "^K everything") {
 		t.Errorf("welcome tip still carries the cryptic '^K everything':\n%s", out)
@@ -140,7 +139,7 @@ func TestApprovalHeadDropsQueuedChip(t *testing.T) {
 		t.Errorf("approval card head still carries the queued count:\n%s", body)
 	}
 	foot := plain(m.footer())
-	if !strings.Contains(foot, "more queued") {
+	if !strings.Contains(foot, "1 queued") {
 		t.Errorf("footer lost the queued count:\n%s", foot)
 	}
 }
