@@ -1528,9 +1528,9 @@ func (m *Model) footerContent() string {
 		if a.Friction && m.apprEditing {
 			return m.panelFooter("approve + ⏎", "Alt+D deny", "esc compose")
 		}
-		hints := []string{"Alt+A approve", "Alt+D deny"}
+		hints := []string{"a approve", "d deny"}
 		if a.AllowTrust && !a.Friction {
-			hints = append(hints, "Alt+T trust")
+			hints = append(hints, "t trust")
 		}
 		if len(m.approvals) > 1 {
 			hints = append(hints, fmt.Sprintf("%d queued", len(m.approvals)-1))
