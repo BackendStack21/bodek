@@ -36,7 +36,7 @@ func (m *Model) View() string {
 		parts = append(parts, s)
 	}
 	parts = append(parts, m.inputArea(), m.footer())
-	return strings.Join(parts, "\n")
+	return m.paintCanvas(strings.Join(parts, "\n"))
 }
 
 // plainView composes linear mode's bottom chrome: status line, capped

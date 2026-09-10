@@ -249,6 +249,10 @@ func (m *Model) switchTheme(name string) tea.Cmd {
 	themeOverride = canonical
 	m.th = themeFrom(paletteByName(canonical))
 	m.ta.FocusedStyle.CursorLine = m.th.taCursorLine
+	m.ta.FocusedStyle.Text = m.th.inputText
+	m.ta.BlurredStyle.Text = m.th.inputText
+	m.ta.FocusedStyle.Placeholder = m.th.inputPlaceholder
+	m.ta.BlurredStyle.Placeholder = m.th.inputPlaceholder
 	m.logoCache = "" // the banner gradient is palette-dependent
 	m.resize(m.width, m.height)
 	if m.opts.OnThemeChange != nil {

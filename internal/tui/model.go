@@ -407,6 +407,10 @@ func New(cl *client.Client, opts Options) *Model {
 	ta.CharLimit = 0
 	ta.SetHeight(3)
 	ta.FocusedStyle.CursorLine = th.taCursorLine
+	ta.FocusedStyle.Text = th.inputText
+	ta.BlurredStyle.Text = th.inputText
+	ta.FocusedStyle.Placeholder = th.inputPlaceholder
+	ta.BlurredStyle.Placeholder = th.inputPlaceholder
 	ta.Focus()
 
 	sp := spinner.New()

@@ -41,6 +41,7 @@ type palette struct {
 	// stays pure text-on-terminal). Backgrounds are copy-safe: selections
 	// carry the text, never the SGR fill.
 	surface lipgloss.Color
+	canvas  lipgloss.Color // optional full-screen background; light mode must not inherit a dark terminal
 
 	grad [2][3]int // banner gradient endpoints (hi → lo)
 }
@@ -72,6 +73,7 @@ var (
 	// emberLight mirrors the WebUI light theme (parchment base, deeper amber
 	// for contrast on light terminals).
 	emberLight = palette{
+		canvas:   "#FAF8F2",
 		accent:   "#8F5E00",
 		accentHi: "#7A5000",
 		accentLo: "#8F5E00",
@@ -249,10 +251,14 @@ const (
 
 // theme holds every reusable style. Built once and shared by the model.
 type theme struct {
-	logo       lipgloss.Style
-	headerMeta lipgloss.Style
-	headerKey  lipgloss.Style
-	rule       lipgloss.Style
+	canvasColor      lipgloss.Color
+	canvas           lipgloss.Style
+	inputText        lipgloss.Style
+	inputPlaceholder lipgloss.Style
+	logo             lipgloss.Style
+	headerMeta       lipgloss.Style
+	headerKey        lipgloss.Style
+	rule             lipgloss.Style
 
 	userLabel  lipgloss.Style
 	userBar    lipgloss.Style
@@ -346,7 +352,11 @@ func newTheme() theme {
 // EMBER tokens to component styles.
 func themeFrom(p palette) theme {
 	return theme{
-		grad: p.grad,
+		grad:             p.grad,
+		canvasColor:      p.canvas,
+		canvas:           chooseCanvasStyle(p.canvas, p.text),
+		inputText:        lipgloss.NewStyle().Foreground(p.text),
+		inputPlaceholder: lipgloss.NewStyle().Foreground(p.muted),
 
 		logo:       lipgloss.NewStyle().Bold(true).Foreground(p.accent),
 		headerMeta: lipgloss.NewStyle().Foreground(p.muted),
@@ -455,6 +465,17 @@ func surfaceStyle(c lipgloss.Color) lipgloss.Style {
 		st = st.Background(c)
 	}
 	return st
+}
+
+// chooseCanvasStyle paints a full-screen background only when the palette
+// explicitly provides one. Without a canvas color this intentionally returns
+// a raw style so light-only backgrounds never leak into dark themes.
+func chooseCanvasStyle(canvasColor, textColor lipgloss.Color) lipgloss.Style {
+	st := lipgloss.NewStyle().Padding(1, 1)
+	if canvasColor != "" {
+		st = st.Background(canvasColor)
+	}
+	return st.Foreground(textColor)
 }
 
 // gradient colors a string left-to-right by interpolating between two RGB
