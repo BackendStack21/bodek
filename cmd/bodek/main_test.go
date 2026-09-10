@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -101,8 +102,14 @@ func TestParseConfigHelp(t *testing.T) {
 
 func TestBuildProgramOptionsDefault(t *testing.T) {
 	opts := buildProgramOptions(false)
-	if len(opts) != 3 {
-		t.Fatalf("expected 3 default program options (filter, alt-screen, mouse), got %d", len(opts))
+	// filter + input assembler + alt-screen + mouse (the assembler is
+	// skipped on Windows, where Bubble Tea owns the console reader).
+	want := 4
+	if runtime.GOOS == "windows" {
+		want = 3
+	}
+	if len(opts) != want {
+		t.Fatalf("expected %d default program options (filter, assembler, alt-screen, mouse), got %d", want, len(opts))
 	}
 	// Sanity check: the option is callable like a real tea.ProgramOption.
 	var p tea.Program
@@ -111,8 +118,14 @@ func TestBuildProgramOptionsDefault(t *testing.T) {
 }
 
 func TestBuildProgramOptionsPlain(t *testing.T) {
-	if opts := buildProgramOptions(true); len(opts) != 1 {
-		t.Fatalf("plain mode must skip alt-screen and mouse (filter only), got %d options", len(opts))
+	// Plain mode keeps the filter and the input assembler, and skips
+	// alt-screen and mouse.
+	want := 2
+	if runtime.GOOS == "windows" {
+		want = 1
+	}
+	if opts := buildProgramOptions(true); len(opts) != want {
+		t.Fatalf("plain mode must skip alt-screen and mouse (filter + assembler only), got %d options", len(opts))
 	}
 }
 

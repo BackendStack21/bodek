@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"os/signal"
+	"runtime"
 	"strings"
 	"syscall"
 
@@ -114,6 +115,14 @@ func buildProgramOptions(plain bool) []tea.ProgramOption {
 	// Filter first so Shift+Enter CSI sequences become a KeyMsg before
 	// any other option's machinery sees them.
 	opts := []tea.ProgramOption{tea.WithFilter(tui.FilterShiftEnter)}
+	// A terminal read can end in the middle of an escape sequence — most
+	// visibly a mouse report. Bubble Tea parses each read independently, so
+	// a split report would land in the composer as text: reassemble the
+	// stream before it gets there. Windows keeps the console input reader
+	// Bubble Tea owns (coninput), which this wrapper would bypass.
+	if runtime.GOOS != "windows" {
+		opts = append(opts, tea.WithInput(tui.AssembleInput(os.Stdin)))
+	}
 	if !plain {
 		// The alt-screen transcript is the default surface. Linear mode
 		// (--plain) stays on the main buffer so printed lines persist in
