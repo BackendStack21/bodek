@@ -71,6 +71,14 @@ func (m *Model) insertNewline() tea.Cmd {
 // chords (so ^C, ^K, and esc still reach the model after we ask xterm.js
 // to encode Shift+Enter).
 func FilterShiftEnter(_ tea.Model, msg tea.Msg) tea.Msg {
+	if km, ok := msg.(tea.KeyMsg); ok {
+		if cleaned, changed := stripLeakedMouseReports(km); changed {
+			if len(cleaned.Runes) == 0 {
+				return nil
+			}
+			return cleaned
+		}
+	}
 	b := csiBytes(msg)
 	if len(b) == 0 {
 		return msg
@@ -86,6 +94,25 @@ func FilterShiftEnter(_ tea.Model, msg tea.Msg) tea.Msg {
 		return tea.KeyMsg{Type: tea.KeyEscape}
 	}
 	return msg
+}
+
+// Some terminal stacks split an SGR mouse report after ESC. Bubble Tea then
+// delivers the printable tail as text, which would otherwise land in the
+// composer. Remove only complete report tails from non-paste rune messages;
+// adjacent typed text and deliberate pasted text remain intact.
+var leakedMouseReportRe = regexp.MustCompile(`(?:\[<\d{1,3};\d{1,5};\d{1,5}[Mm])|(?:^(?:\d{1,3};\d{1,5};\d{1,5}[Mm])+)`)
+
+func stripLeakedMouseReports(msg tea.KeyMsg) (tea.KeyMsg, bool) {
+	if msg.Type != tea.KeyRunes || msg.Alt || msg.Paste || len(msg.Runes) == 0 {
+		return msg, false
+	}
+	before := string(msg.Runes)
+	after := leakedMouseReportRe.ReplaceAllString(before, "")
+	if after == before {
+		return msg, false
+	}
+	msg.Runes = []rune(after)
+	return msg, true
 }
 
 // csiBytes extracts a CSI payload from a raw []byte or a named []byte

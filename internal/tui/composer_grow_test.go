@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"reflect"
 	"strings"
 	"testing"
 
@@ -82,6 +83,40 @@ func TestFilterShiftEnterRewritesCSI(t *testing.T) {
 	}
 	if msg := FilterShiftEnter(nil, key("enter")); msg.(tea.KeyMsg).String() != "enter" {
 		t.Error("FilterShiftEnter must leave enter alone")
+	}
+}
+
+func TestFilterDropsFragmentedMouseReports(t *testing.T) {
+	// The terminal's SGR wheel-down report is ESC [ < 65 ; x ; y M.
+	// If ESC arrives in a separate read, Bubble Tea v1 exposes the printable
+	// tail as KeyRunes. This is the repeated pattern captured in the bug report.
+	leaked := "65;75;25M" + strings.Repeat("[<65;75;25M", 12)
+	if got := FilterShiftEnter(nil, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(leaked)}); got != nil {
+		t.Fatalf("fragmented mouse reports were not dropped: %#v", got)
+	}
+
+	// Motion reports ('m' terminator) and repeated bare-head fragments
+	// (each ESC split into its own read) are equally garbage.
+	motion := "64;10;8m" + "[<64;10;8m"
+	if got := FilterShiftEnter(nil, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(motion)}); got != nil {
+		t.Fatalf("motion mouse reports were not dropped: %#v", got)
+	}
+	heads := "65;75;25M65;75;25M65;75;25M"
+	if got := FilterShiftEnter(nil, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(heads)}); got != nil {
+		t.Fatalf("repeated head fragments were not dropped: %#v", got)
+	}
+}
+
+func TestFilterStripsMouseReportsWithoutEatingInput(t *testing.T) {
+	msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("hello[<64;12;8M world")}
+	got, ok := FilterShiftEnter(nil, msg).(tea.KeyMsg)
+	if !ok || string(got.Runes) != "hello world" {
+		t.Fatalf("mixed input = %#v, want preserved text without mouse report", got)
+	}
+
+	paste := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("[<64;12;8M"), Paste: true}
+	if got := FilterShiftEnter(nil, paste); !reflect.DeepEqual(got, paste) {
+		t.Fatalf("deliberate paste changed: %#v", got)
 	}
 }
 
