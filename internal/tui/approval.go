@@ -58,6 +58,15 @@ func (m *Model) handleApprovalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if a.Friction {
 		return m.handleFrictionKey(msg)
 	}
+	// Plain-letter shortcuts: terminals that cannot deliver Alt chords
+	// (macOS Option-as-UTF-8) still let a bare a/d/t decide — but only on
+	// an empty composer and never from a paste, so typing always wins.
+	if action, ok := m.plainApprovalAction(msg); ok {
+		if action == "trust" && !a.AllowTrust {
+			return m, nil
+		}
+		return m, m.answer(action)
+	}
 	if approvalAltRune(msg, 'a') {
 		return m, m.answer("approve")
 	}
@@ -216,11 +225,35 @@ func approvalAltRune(msg tea.KeyMsg, want rune) bool {
 	if msg.Type != tea.KeyRunes || !msg.Alt || len(msg.Runes) != 1 {
 		return false
 	}
-	r := msg.Runes[0]
-	if r >= 'A' && r <= 'Z' {
-		r += 'a' - 'A'
+	return lowerRune(msg.Runes[0]) == want
+}
+
+// plainApprovalAction maps a bare a/d/t KeyMsg to its decision while the
+// composer draft is empty. Modified or pasted runes never qualify — a
+// non-empty draft must keep routing the letters to the composer.
+func (m *Model) plainApprovalAction(msg tea.KeyMsg) (string, bool) {
+	if msg.Type != tea.KeyRunes || msg.Alt || msg.Paste || len(msg.Runes) != 1 {
+		return "", false
 	}
-	return r == want
+	if m.ta.Value() != "" {
+		return "", false
+	}
+	switch lowerRune(msg.Runes[0]) {
+	case 'a':
+		return "approve", true
+	case 'd':
+		return "deny", true
+	case 't':
+		return "trust", true
+	}
+	return "", false
+}
+
+func lowerRune(r rune) rune {
+	if r >= 'A' && r <= 'Z' {
+		return r + 'a' - 'A'
+	}
+	return r
 }
 
 // frictionHint renders the friction line: the recent-approval count the

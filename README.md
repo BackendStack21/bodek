@@ -297,7 +297,8 @@ own front-end settings are separate; see [Configuration](#configuration).
 ### Safety
 
 - **Inline approvals** — odek's `danger` engine prompts sit as a card
-  above the still-usable composer: `Alt+A`/`Alt+D`/`Alt+T` decide; ordinary
+  above the still-usable composer: plain `a`/`d`/`t` decide while the
+  draft is empty (or `Alt+A`/`Alt+D`/`Alt+T` anywhere); ordinary
   typing, paste, and Enter keep working on the follow-up draft. See [Approvals](#approvals).
 - **Clarify questions** — when the agent asks a principal-channel
   question, a card captures typing (spaces, punctuation, paste, `⇧⏎`
@@ -563,13 +564,15 @@ sessions are resumed via `/sessions` or `^R`, not `@`.)
 
 When the agent requests approval, its card appears above the composer without
 stealing typing focus. Ordinary text, paste, cursor movement, and Enter continue
-to edit or queue the follow-up draft. Decisions use explicit modified shortcuts:
+to edit or queue the follow-up draft. The fastest decisions are plain letters,
+active only while the composer is empty; Alt chords work everywhere a terminal
+can encode them:
 
 | Key | Action |
 |-----|--------|
-| `Alt+A` | Approve; in friction mode, first open the confirmation editor |
-| `Alt+D` | Deny |
-| `Alt+T` | Trust the class, only when the server offers it and friction is off |
+| `a` / `Alt+A` | Approve (plain key: empty composer only); in friction mode, first open the confirmation editor |
+| `d` / `Alt+D` | Deny (plain key: empty composer only) |
+| `t` / `Alt+T` | Trust the class, only when the server offers it and friction is off (plain key: empty composer only) |
 | `Tab` | Expand/collapse command and description details |
 | `Alt+PgUp` / `Alt+PgDn` | Page expanded approval details |
 | `Esc` | Return from confirmation editing, or fold details; otherwise arm turn cancellation when busy |

@@ -195,7 +195,9 @@ feat(tui): compact tool steps with Ctrl+E details toggle
 - The management drawer is a bottom sheet: keep ~8 transcript rows above
   it (`sheetTranscriptMin`); full-bleed only when the terminal cannot
   fit transcript + sheet. Layout-only — tab grammar (`]`/`[`/`⏎`/`esc`)
-  stays. Approvals render above a live composer: only `Alt+A`/`Alt+D`/`Alt+T`
+  stays. Approvals render above a live composer: bare `a`/`d`/`t` decide
+only while the composer draft is empty (a non-empty draft, paste, or any
+modifier routes to the composer), and `Alt+A`/`Alt+D`/`Alt+T`
   decide. Text, paste, cursor keys, and Enter retain composer behavior. Friction
   captures `apprTyped` only after explicit `Alt+A`; Escape returns to the draft
   without deciding. Keep the editor rune/row bounded and reset it on head changes. Clarify questions capture the
