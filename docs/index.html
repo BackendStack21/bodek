@@ -4,8 +4,8 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="theme-color" content="#050507">
-  <title>bodek — a terminal for the odek agent</title>
-  <meta name="description" content="bodek is a lightweight Bubble Tea terminal for the odek agent — reasoning, tool calls, approvals, and sub-agents streamed live from odek serve over one WebSocket. Pure front-end, zero re-implementation.">
+  <title>bodek — Stay in the terminal. Stay in command.</title>
+  <meta name="description" content="A terminal workspace for the Odek agent. Follow tools, inspect changes, manage sub-agents, and make approval decisions without leaving your terminal.">
   <link rel="canonical" href="https://bodek.21no.de/">
   <link rel="robots" href="/robots.txt">
   <link rel="sitemap" href="/sitemap.xml">
@@ -15,198 +15,72 @@
   <meta property="og:url" content="https://bodek.21no.de/">
   <meta property="og:title" content="bodek — a terminal for the odek agent">
   <meta property="og:description" content="A lightweight Bubble Tea terminal for the odek agent. Pure front-end, zero re-implementation.">
-  <meta property="og:image" content="https://bodek.21no.de/odek-bodek-tui.png">
-  <meta property="og:image:secure_url" content="https://bodek.21no.de/odek-bodek-tui.png">
-  <meta property="og:image:type" content="image/png">
-  <meta property="og:image:width" content="2496">
-  <meta property="og:image:height" content="1344">
-  <meta property="og:image:alt" content="bodek running in a terminal — a live odek session streaming reasoning, tool steps, and replies.">
-  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:card" content="summary">
   <meta name="twitter:title" content="bodek — a terminal for the odek agent">
   <meta name="twitter:description" content="A lightweight Bubble Tea terminal for the odek agent. Pure front-end, zero re-implementation.">
-  <meta name="twitter:image" content="https://bodek.21no.de/odek-bodek-tui.png">
-  <meta name="twitter:image:alt" content="bodek running in a terminal — a live odek session streaming reasoning, tool steps, and replies.">
   <meta name="robots" content="index, follow">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'self' 'unsafe-inline' https://assets.21no.de; font-src https://assets.21no.de; img-src 'self' https://21no.de; base-uri 'none'; form-action 'none'">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline' https://assets.21no.de; font-src https://assets.21no.de; img-src 'self' https://21no.de; base-uri 'none'; form-action 'none'">
   <link rel="icon" type="image/svg+xml" href="/favicon.svg">
   <link rel="icon" type="image/png" href="https://21no.de/logo-v2.png">
   <link rel="apple-touch-icon" href="https://21no.de/logo-v2.png">
   <link rel="preconnect" href="https://assets.21no.de" crossorigin>
   <link rel="dns-prefetch" href="https://assets.21no.de">
   <link rel="stylesheet" crossorigin="anonymous" href="https://assets.21no.de/fonts/fonts.css">
-  <style>
-    /* bodek's own palette — EMBER amber on blue-charcoal (internal/tui/styles.go, emberDark) */
-    :root {
-      --bg: #050507;
-      --bg-soft: #09090b;
-      --card: #11141c;
-      --border: rgba(152, 170, 200, 0.16);
-      --text: #E7E9EE;
-      --muted: #9AA0AE;
-      --accent: #FFB224;
-      --green: #34D399;
-      --mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, monospace;
-      --sans: 'Space Grotesk', system-ui, -apple-system, sans-serif;
-    }
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    body {
-      background: var(--bg);
-      color: var(--text);
-      font-family: var(--sans);
-      line-height: 1.65;
-      -webkit-font-smoothing: antialiased;
-    }
-    ::selection { background: rgba(255, 178, 36, 0.28); color: #fff; }
-    .wrap { max-width: 720px; margin: 0 auto; padding: 0 24px; }
-    a { color: var(--accent); text-decoration: none; }
-    a:hover { text-decoration: underline; }
-    a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
-
-    /* header */
-    header { padding: 28px 0; }
-    header .wrap { display: flex; align-items: baseline; justify-content: space-between; }
-    .brand { color: var(--text); font-weight: 700; font-size: 1.15rem; letter-spacing: 0.2px; }
-    .brand b { color: var(--accent); font-weight: 700; }
-    .brand:hover { text-decoration: none; }
-    nav.links { display: flex; gap: 20px; font-size: 0.9rem; }
-
-    /* hero */
-    main { padding: 40px 0 72px; }
-    h1 { font-size: 2.6rem; font-weight: 700; line-height: 1.15; letter-spacing: -0.5px; margin-bottom: 16px; }
-    h1 span { color: var(--accent); }
-    .lede { color: var(--muted); font-size: 1.06rem; max-width: 60ch; margin-bottom: 36px; }
-    .lede strong { color: var(--text); font-weight: 600; }
-
-    /* install */
-    .term {
-      background: var(--card);
-      border: 1px solid var(--border);
-      border-radius: 14px;
-      padding: 22px 24px;
-      overflow-x: auto;
-    }
-    .term code {
-      font-family: var(--mono);
-      font-size: 0.84rem;
-      line-height: 2.05;
-      white-space: pre;
-      display: block;
-    }
-    .cm { color: var(--muted); }
-    .ps { color: var(--accent); }
-    .cmd { color: var(--text); }
-    .hint { margin-top: 14px; font-size: 0.88rem; color: var(--muted); }
-    .hint code { font-family: var(--mono); font-size: 0.82em; color: var(--text); }
-
-    /* hero screenshot — a real bodek session, breaking out of the text column.
-       Cap = the real terminal window (1248×672 pt Retina capture): wider would
-       magnify the capture — zoom — so past that it stays at real size. */
-    .shot {
-      background: var(--card);
-      border: 1px solid var(--border);
-      border-radius: 14px;
-      overflow: hidden;
-      margin-bottom: 36px;
-      width: min(1248px, calc(100vw - 48px));
-      margin-left: 50%;
-      transform: translateX(-50%);
-    }
-    .shot img { display: block; width: 100%; height: auto; }
-
-    /* sections */
-    section { margin-top: 56px; }
-    h2 { font-size: 0.78rem; text-transform: uppercase; letter-spacing: 1.5px; color: var(--muted); margin-bottom: 18px; }
-    ul.plain { list-style: none; }
-    ul.plain li { padding-left: 18px; position: relative; margin-bottom: 14px; }
-    ul.plain li::before { content: "▸"; position: absolute; left: 0; color: var(--accent); }
-    ul.plain b { color: var(--text); font-weight: 600; }
-    ul.grid { list-style: none; display: grid; grid-template-columns: 1fr 1fr; gap: 14px 28px; }
-    ul.grid li { padding-left: 18px; position: relative; font-size: 0.95rem; color: var(--muted); }
-    ul.grid li::before { content: "▸"; position: absolute; left: 0; color: var(--accent); }
-    ul.grid b { color: var(--text); font-weight: 600; }
-    code.k { font-family: var(--mono); font-size: 0.85em; color: var(--green); }
-
-    /* footer */
-    footer { border-top: 1px solid var(--border); padding: 28px 0 56px; }
-    footer .wrap { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
-    footer p { color: var(--muted); font-size: 0.85rem; }
-    footer nav { display: flex; gap: 18px; flex-wrap: wrap; font-size: 0.85rem; }
-
-    @media (max-width: 640px) {
-      h1 { font-size: 2rem; }
-      ul.grid { grid-template-columns: 1fr; }
-      header .wrap, footer .wrap { flex-direction: column; align-items: flex-start; gap: 10px; }
-    }
-  </style>
+  <link rel="stylesheet" href="/landing.css">
 </head>
 <body>
-
-<header>
-  <div class="wrap">
-    <span class="brand">bodek<b>.</b></span>
-    <nav class="links" aria-label="Primary">
-      <a href="https://github.com/BackendStack21/bodek" target="_blank" rel="noopener">GitHub</a>
-      <a href="https://github.com/BackendStack21/bodek/releases" target="_blank" rel="noopener">Releases</a>
-    </nav>
+<a class="skip" href="#main">Skip to content</a>
+<header><div class="wrap"><a class="brand" href="#main" aria-label="Bodek home">bodek<b>_</b></a><nav aria-label="Primary"><a href="#showcase">The interface</a><a href="#why">Why Bodek</a><a href="https://github.com/BackendStack21/bodek" target="_blank" rel="noopener">Source ↗</a><a class="nav-start" href="#start">Get started</a></nav></div></header>
+<main id="main"><div class="wrap">
+  <div class="hero">
+    <p class="eyebrow">THE TERMINAL, WITH FOLLOW-THROUGH.</p>
+    <h1>Stay in the terminal.<br><span>Stay in command.</span></h1>
+    <p class="lede">Your agent is working. You’re in the loop. Follow the tools, inspect the changes, and make the call—with Odek’s power at your fingertips.</p>
+    <div class="hero-actions"><a class="button primary" href="#start">Get Bodek <span aria-hidden="true">↗</span></a><a class="button" href="#showcase">Take a closer look <span aria-hidden="true">↓</span></a></div>
+    <p class="hero-meta">Go + Bubble Tea <span> / </span> MIT licensed <span> / </span> Powered by Odek</p>
   </div>
-</header>
-
-<main>
-  <div class="wrap">
-
-    <h1>The terminal for the <span>odek</span> agent.</h1>
-    <p class="lede"><strong>bodek</strong> streams everything <a href="https://github.com/BackendStack21/odek" target="_blank" rel="noopener"><strong>odek</strong></a> already speaks — reasoning, tokens, tool calls, approvals, sub-agents — into a fast <strong>Bubble Tea</strong> TUI over one WebSocket. The engine does the work; bodek renders it. New to odek? It's the agent — it plans, calls tools, and asks before acting.</p>
-
-    <figure class="shot">
-      <img src="/odek-bodek-tui.png" width="2496" height="1344" decoding="async"
-           srcset="/odek-bodek-tui-960.png 960w, /odek-bodek-tui-1344.png 1344w, /odek-bodek-tui.png 2496w"
-           sizes="(min-width: 1296px) 1248px, calc(100vw - 48px)"
-           alt="bodek running in a terminal: a live odek session with the transcript — user prompt, reasoning, tool steps, and the agent's reply — and the composer at the bottom.">
-    </figure>
-
-    <div class="term" role="group" aria-label="Run bodek">
-      <code><span class="cm"># once installed — chat. bodek spawns (or attaches to) odek serve</span>
-<span class="ps">$</span> <span class="cmd">bodek</span></code>
-    </div>
-    <p class="hint">Installation lives in one place: the <a href="https://github.com/BackendStack21/odek/blob/main/GETTING_STARTED.md" target="_blank" rel="noopener">odek Getting Started guide</a> — engine, provider key, and this TUI, end to end. Prefer a binary? Grab one from <a href="https://github.com/BackendStack21/bodek/releases" target="_blank" rel="noopener">Releases</a> for Linux, macOS, or Windows.</p>
-
-    <section>
-      <h2>Why bodek</h2>
-      <ul class="plain">
-        <li><b>One protocol, zero duplication.</b> odek serve already speaks a public WebSocket protocol — bodek renders it. Tools, sandbox, approvals, skills, and memory keep running inside odek, untouched.</li>
-        <li><b>Full fidelity.</b> Turns arrive exactly as the engine emits them: thinking, tool steps, and replies, in order — not a summary.</li>
-        <li><b>Upgrade odek, get it free.</b> New engine behaviour appears in the TUI with no bodek update.</li>
-      </ul>
-    </section>
-
-    <section>
-      <h2>Highlights</h2>
-      <ul class="grid">
-        <li><b>Live turns</b> — reasoning, tool calls, and replies interleave as they stream.</li>
-        <li><b>Sub-agents, readable</b> — a chip per task; drill in for its steps and artifacts.</li>
-        <li><b>Approvals inline</b> — allow or deny with one key, expiry countdown included.</li>
-        <li><b>Everything else in a drawer</b> — skills, memory, tools, config, jobs.</li>
-        <li><b>EMBER themes</b> — four looks via <code class="k">/theme</code>, or <code class="k">--plain</code> for pipes.</li>
-        <li><b>Resilient</b> — spawns or attaches to <code class="k">odek serve</code>, reconnects and resumes, wakes on background jobs.</li>
-      </ul>
-    </section>
-
-  </div>
-</main>
-
-<footer>
-  <div class="wrap">
-    <p>bodek · pure front-end for the odek agent</p>
-    <nav aria-label="Footer">
-      <a href="https://github.com/BackendStack21/bodek" target="_blank" rel="noopener">GitHub</a>
-      <a href="https://github.com/BackendStack21/odek" target="_blank" rel="noopener">odek</a>
-      <a href="https://github.com/BackendStack21/bodek/blob/main/README.md" target="_blank" rel="noopener">README</a>
-      <a href="https://github.com/BackendStack21/bodek/blob/main/docs/INTEGRATIONS.md" target="_blank" rel="noopener">Wire protocol</a>
-      <a href="https://github.com/BackendStack21/bodek/blob/main/docs/CONFIGURATION.md" target="_blank" rel="noopener">Configuration</a>
-      <a href="https://21no.de" target="_blank" rel="noopener">21no.de</a>
-    </nav>
-  </div>
-</footer>
-
-</body>
-</html>
+  <section class="showcase" id="showcase" aria-labelledby="showcase-h">
+    <div class="section-head"><div><p class="eyebrow">01 / THE WORK, IN VIEW</p><h2 id="showcase-h">A clear head.<br>A capable terminal.</h2></div><p>Live steps. Readable results.<br>Details when you want them.</p></div>
+    <div class="tabset theme-gallery" data-tabset>
+      <div class="tabs" role="tablist" aria-label="Terminal theme" hidden>
+<button type="button" role="tab" id="tab-ember-dark" aria-controls="panel-ember-dark" aria-selected="true" tabindex="0"><span class="theme-swatch ember-dark" aria-hidden="true"></span>Ember Dark</button>
+<button type="button" role="tab" id="tab-ember-light" aria-controls="panel-ember-light" aria-selected="false" tabindex="-1"><span class="theme-swatch ember-light" aria-hidden="true"></span>Ember Light</button>
+<button type="button" role="tab" id="tab-high-contrast" aria-controls="panel-high-contrast" aria-selected="false" tabindex="-1"><span class="theme-swatch high-contrast" aria-hidden="true"></span>High Contrast</button>
+<button type="button" role="tab" id="tab-classic" aria-controls="panel-classic" aria-selected="false" tabindex="-1"><span class="theme-swatch classic" aria-hidden="true"></span>Classic</button>
+</div>
+<div class="theme-panel" id="panel-ember-dark" data-panel><div class="terminal-bar"><span>~/workspace/payments</span><span>Ember Dark / 120 columns</span></div><a href="/gallery/ember-dark.svg" target="_blank" rel="noopener" aria-label="Open full-size Ember Dark terminal render"><img src="/gallery/ember-dark.svg" width="1240" height="744" fetchpriority="high" alt="Bodek in Ember Dark: a sample checkout review with plan progress, shell test output, an assistant reply, and the composer."></a></div>
+<div class="theme-panel" id="panel-ember-light" data-panel><div class="terminal-bar"><span>~/workspace/payments</span><span>Ember Light / 120 columns</span></div><a href="/gallery/ember-light.svg" target="_blank" rel="noopener" aria-label="Open full-size Ember Light terminal render"><img src="/gallery/ember-light.svg" width="1240" height="744" loading="lazy" alt="Bodek in Ember Light: a sample checkout review with plan progress, shell test output, an assistant reply, and the composer."></a></div>
+<div class="theme-panel" id="panel-high-contrast" data-panel><div class="terminal-bar"><span>~/workspace/payments</span><span>High Contrast / 120 columns</span></div><a href="/gallery/high-contrast.svg" target="_blank" rel="noopener" aria-label="Open full-size High Contrast terminal render"><img src="/gallery/high-contrast.svg" width="1240" height="744" loading="lazy" alt="Bodek in High Contrast: a sample checkout review with plan progress, shell test output, an assistant reply, and the composer."></a></div>
+<div class="theme-panel" id="panel-classic" data-panel><div class="terminal-bar"><span>~/workspace/payments</span><span>Classic / 120 columns</span></div><a href="/gallery/classic.svg" target="_blank" rel="noopener" aria-label="Open full-size Classic terminal render"><img src="/gallery/classic.svg" width="1240" height="744" loading="lazy" alt="Bodek in Classic: a sample checkout review with plan progress, shell test output, an assistant reply, and the composer."></a></div>
+</div>
+    <div class="gallery-caption"><p>Actual Bodek renderer · Synthetic example session · Open a theme at full size.</p><code>/theme</code><span>Make it feel like home.</span></div>
+  </section>
+  <section class="workflow" aria-label="Built for terminal flow">
+    <article><span class="feature-key"><kbd>Ctrl</kbd> + <kbd>E</kbd></span><h3>Quiet on the surface.<br>Deep on demand.</h3><p>Keep the transcript calm. Expand reasoning and tool output when you need the full picture.</p></article>
+    <article><span class="feature-key"><kbd>Ctrl</kbd> + <kbd>K</kbd></span><h3>Find your next move.<br>Keep your momentum.</h3><p>Search commands, sessions, models, and drawer tabs from one keyboard-driven palette.</p></article>
+    <article><span class="feature-key"><kbd>Alt</kbd> + <kbd>A</kbd> / <kbd>D</kbd></span><h3>Read the action.<br>Make the call.</h3><p>Review Odek’s approval requests in place. Approve or deny explicitly; friction prompts keep their extra confirmation.</p></article>
+  </section>
+  <section class="why-section" id="why" aria-labelledby="why-h">
+    <div class="why-intro"><p class="eyebrow">02 / FIVE WHYS</p><h2 id="why-h">Power is useful.<br><span>Clarity is essential.</span></h2><p>Your terminal is already where the work happens. Bodek gives the agent a place in that workflow.</p><a href="https://github.com/BackendStack21/bodek#features">Explore every feature ↗</a></div>
+    <ol class="why-list">
+      <li><span class="number">01</span><div><p class="eyebrow">WHY STAY IN THE TERMINAL?</p><h3>Keep your hands<br>where the work happens.</h3><p>Navigate turns, switch models, queue prompts, and return to a session with the keyboard. Launch a local engine or attach to one you already run.</p></div></li>
+      <li><span class="number">02</span><div><p class="eyebrow">WHY A CALM INTERFACE?</p><h3>Attention is part<br>of the budget.</h3><p>Compact tool rows and turn receipts make progress easy to scan. Details expand on demand, and scrolling back to read doesn’t surrender your place to incoming output.</p></div></li>
+      <li><span class="number">03</span><div><p class="eyebrow">WHY STRUCTURED RESULTS?</p><h3>Confidence<br>needs receipts.</h3><p>Inspect diffs, test verdicts, and per-tool durations. Sub-agent chips show who is working and who failed. Missing success metadata stays neutral; prose alone never earns a green check.</p></div></li>
+      <li><span class="number">04</span><div><p class="eyebrow">WHY A SEPARATE FRONT-END?</p><h3>A richer terminal.<br>A focused engine.</h3><p>Bodek brings the Bubble Tea interface. Odek owns tools, memory, sandboxing, and execution policy. Presentation dependencies stay in the client; security decisions stay with the engine.</p><a href="/INTEGRATIONS.md">See the integration contract ↗</a></div></li>
+      <li><span class="number">05</span><div><p class="eyebrow">WHY OPEN SOURCE?</p><h3>Read both sides<br>of the connection.</h3><p>Trace how Bodek presents an action and how Odek enforces its boundaries. Both projects are MIT licensed, with source you can inspect, modify, and build yourself.</p><a href="https://github.com/BackendStack21/bodek">Inspect Bodek ↗</a> <a href="https://github.com/BackendStack21/odek">Inspect Odek ↗</a></div></li>
+    </ol>
+  </section>
+  <section class="engine-section" aria-labelledby="engine-h"><div><p class="eyebrow">ONE ENGINE. YOUR CHOICE OF INTERFACE.</p><h2 id="engine-h">Odek does the work.<br>Bodek keeps it in view.</h2><p>Use your existing Odek provider configuration, sessions, and tools. The terminal connects to the same engine as the Web UI.</p><a href="https://odek.21no.de">Meet the engine ↗</a></div><div class="connection" aria-label="Bodek connects over WebSocket to Odek, which runs tools and enforces policy"><div><strong>bodek</strong><span>terminal interface</span></div><p>↕ <span>WebSocket · live events &amp; decisions</span></p><div><strong>odek serve</strong><span>tools · memory · sandbox · policy</span></div></div></section>
+  <section class="start-section" id="start" aria-labelledby="start-h"><div class="section-head"><div><p class="eyebrow">03 / MAKE YOUR NEXT MOVE</p><h2 id="start-h">One command.<br>Back in your flow.</h2></div><p>Install Odek and Bodek, configure your provider,<br>then choose how you want to work.</p></div>
+    <div class="install-links"><a class="button primary" href="https://github.com/BackendStack21/odek/blob/main/GETTING_STARTED.md">Installation guide ↗</a><a class="button" href="https://github.com/BackendStack21/bodek/releases">Download Bodek ↗</a><span>Prebuilt Bodek binaries for macOS, Linux, and Windows.</span></div>
+    <div class="tabset launch-examples" data-tabset><div class="tabs" role="tablist" aria-label="Launch mode" hidden><button type="button" role="tab" id="tab-launch" aria-controls="panel-launch" aria-selected="true" tabindex="0">Launch locally</button><button type="button" role="tab" id="tab-resume" aria-controls="panel-resume" aria-selected="false" tabindex="-1">Resume work</button><button type="button" role="tab" id="tab-attach" aria-controls="panel-attach" aria-selected="false" tabindex="-1">Attach to Odek</button></div>
+    <div id="panel-launch" data-panel><h3>Start here. Build from here.</h3><p>Starts Odek’s server and opens a fresh session in the current directory.</p><div class="command"><pre><code>bodek</code></pre><button type="button" data-copy hidden>Copy</button></div></div>
+    <div id="panel-resume" data-panel><h3>Pick up the thread.</h3><p>Continue this directory’s last session instead of starting fresh.</p><div class="command"><pre><code>bodek --resume</code></pre><button type="button" data-copy hidden>Copy</button></div></div>
+    <div id="panel-attach" data-panel><h3>Your engine is already running.</h3><p>Replace the example URL with the full token URL printed by your Odek server.</p><div class="command"><pre><code>bodek --url 'http://127.0.0.1:8080/?token=YOUR_TOKEN'</code></pre><button type="button" data-copy hidden>Copy</button></div></div></div>
+    <p class="hint">Bodek is the front-end and needs the Odek engine. Provider keys and agent configuration stay with Odek. <a href="/CONFIGURATION.md">Bodek settings ↗</a></p>
+  </section>
+  <div class="closing"><span class="brand">bodek<b>_</b></span><p>Keep the power.<br><span>Find your focus.</span></p><a href="#start">Your terminal is ready ↗</a></div>
+</div></main>
+<footer><div class="wrap"><p>bodek · Open source. MIT licensed.<br>A terminal interface for the Odek agent.</p><nav aria-label="Footer"><a href="https://github.com/BackendStack21/bodek">GitHub</a><a href="https://odek.21no.de">Odek</a><a href="https://github.com/BackendStack21/bodek/blob/main/README.md">Documentation</a><a href="/INTEGRATIONS.md">Protocol</a><a href="https://21no.de">21no.de</a></nav></div></footer>
+<script src="/landing.js"></script>
+</body></html>

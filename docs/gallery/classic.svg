@@ -1,0 +1,195 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1240" height="744" viewBox="0 0 1240 744">
+<title>Bodek terminal layout — synthetic checkout review session</title>
+<rect width="100%" height="100%" fill="#111118"/>
+<text x="20" y="36" fill="#a78bfa" font-family="monospace" font-size="16" font-weight="700" xml:space="preserve" textLength="10" lengthAdjust="spacingAndGlyphs">⬡</text>
+<text x="40" y="36" fill="#c082e3" font-family="monospace" font-size="16" font-weight="400" xml:space="preserve" textLength="10" lengthAdjust="spacingAndGlyphs">b</text>
+<text x="50" y="36" fill="#cd7ed8" font-family="monospace" font-size="16" font-weight="400" xml:space="preserve" textLength="10" lengthAdjust="spacingAndGlyphs">o</text>
+<text x="60" y="36" fill="#da79cc" font-family="monospace" font-size="16" font-weight="400" xml:space="preserve" textLength="10" lengthAdjust="spacingAndGlyphs">d</text>
+<text x="70" y="36" fill="#e776c1" font-family="monospace" font-size="16" font-weight="400" xml:space="preserve" textLength="10" lengthAdjust="spacingAndGlyphs">e</text>
+<text x="80" y="36" fill="#f371b6" font-family="monospace" font-size="16" font-weight="400" xml:space="preserve" textLength="10" lengthAdjust="spacingAndGlyphs">k</text>
+<text x="100" y="36" fill="#9ca3af" font-family="monospace" font-size="16" font-weight="400" xml:space="preserve" textLength="70" lengthAdjust="spacingAndGlyphs">v1.11.2</text>
+<text x="200" y="36" fill="#67e8f9" font-family="monospace" font-size="16" font-weight="400" xml:space="preserve" textLength="170" lengthAdjust="spacingAndGlyphs">deepseek-v4-flash</text>
+<text x="370" y="36" fill="#9ca3af" font-family="monospace" font-size="16" font-weight="400" xml:space="preserve" textLength="100" lengthAdjust="spacingAndGlyphs">  ·  odek </text>
+<text x="470" y="36" fill="#67e8f9" font-family="monospace" font-size="16" font-weight="400" xml:space="preserve" textLength="70" lengthAdjust="spacingAndGlyphs">v2.14.0</text>
+<text x="540" y="36" fill="#9ca3af" font-family="monospace" font-size="16" font-weight="400" xml:space="preserve" textLength="50" lengthAdjust="spacingAndGlyphs">  ·  </text>
+<text x="590" y="36" fill="#34d399" font-family="monospace" font-size="16" font-weight="400" xml:space="preserve" textLength="110" lengthAdjust="spacingAndGlyphs">● sandboxed</text>
+<text x="1210" y="36" fill="#34d399" font-family="monospace" font-size="16" font-weight="400" xml:space="preserve" textLength="10" lengthAdjust="spacingAndGlyphs">◉</text>
+<text x="20" y="58" fill="#a78bfa" font-family="monospace" font-size="16" font-weight="400" xml:space="preserve" textLength="10" lengthAdjust="spacingAndGlyphs">─</text>
+<text x="30" y="58" fill="#a78af9" font-family="monospace" font-size="16" font-weight="400" xml:space="preserve" textLength="10" lengthAdjust="spacingAndGlyphs">─</text>
+<text x="40" y="58" fill="#a88af8" font-family="monospace" font-size="16" font-weight="400" xml:space="preserve" textLength="10" lengthAdjust="spacingAndGlyphs">─</text>
+<text x="50" y="58" fill="#a88af8" font-family="monospace" font-size="16" font-weight="400" xml:space="preserve" textLength="10" lengthAdjust="spacingAndGlyphs">─</text>
+<text x="60" y="58" fill="#a98af7" font-family="monospace" font-size="16" font-weight="400" xml:space="preserve" textLength="10" lengthAdjust="spacingAndGlyphs">─</text>
+<text x="70" y="58" fill="#aa89f7" font-family="monospace" font-size="16" font-weight="400" xml:space="preserve" textLength="10" lengthAdjust="spacingAndGlyphs">─</text>
+<text x="80" y="58" fill="#aa89f6" font-family="monospace" font-size="16" font-weight="400" xml:space="preserve" textLength="10" lengthAdjust="spacingAndGlyphs">─</text>
+<text x="90" y="58" fill="#ab89f6" font-family="monospace" font-size="16" font-weight="400" xml:space="preserve" textLength="10" lengthAdjust="spacingAndGlyphs">─</text>
+<text x="100" y="58" fill="#ac89f5" font-family="monospace" font-size="16" font-weight="400" xml:space="preserve" textLength="10" lengthAdjust="spacingAndGlyphs">─</text>
+<text x="110" y="58" fill="#ac89f3" font-family="monospace" font-size="16" font-weight="400" xml:space="preserve" textLength="10" lengthAdjust="spacingAndGlyphs">─</text>
+<text x="120" y="58" fill="#ad88f3" font-family="monospace" font-size="16" font-weight="400" xml:space="preserve" textLength="10" lengthAdjust="spacingAndGlyphs">─</text>
+<text x="130" y="58" fill="#ae88f3" font-family="monospace" font-size="16" font-weight="400" xml:space="preserve" textLength="10" lengthAdjust="spacingAndGlyphs">─</text>
+<text x="140" y="58" fill="#ae88f3" font-family="monospace" font-size="16" font-weight="400" xml:space="preserve" textLength="10" lengthAdjust="spacingAndGlyphs">─</text>
+<text x="150" y="58" fill="#af88f2" font-family="monospace" font-size="16" font-weight="400" xml:space="preserve" textLength="10" lengthAdjust="spacingAndGlyphs">─</text>
+<text x="160" y="58" fill="#b088f2" font-family="monospace" font-size="16" font-weight="400" xml:space="preserve" textLength="10" lengthAdjust="spacingAndGlyphs">─</text>
+<text x="170" y="58" fill="#b087f1" font-family="monospace" font-size="16" font-weight="400" xml:space="preserve" textLength="10" lengthAdjust="spacingAndGlyphs">─</text>
+<text x="180" y="58" fill="#b187f0" font-family="monospace" font-size="16" font-weight="400" xml:space="preserve" textLength="10" lengthAdjust="spacingAndGlyphs">─</text>
+<text x="190" y="58" fill="#b287f0" font-family="monospace" font-size="16" font-weight="400" xml:space="preserve" textLength="10" lengthAdjust="spacingAndGlyphs">─</text>
+<text x="200" y="58" fill="#b287ef" font-family="monospace" font-size="16" font-weight="400" xml:space="preserve" textLength="10" lengthAdjust="spacingAndGlyphs">─</text>
+<text x="210" y="58" fill="#b387ef" font-family="monospace" font-size="16" font-weight="400" xml:space="preserve" textLength="10" lengthAdjust="spacingAndGlyphs">─</text>
+<text x="220" y="58" fill="#b386ee" font-family="monospace" font-size="16" font-weight="400" xml:space="preserve" textLength="10" lengthAdjust="spacingAndGlyphs">─</text>
+<text x="230" y="58" fill="#b386ee" font-family="monospace" font-size="16" font-weight="400" xml:space="preserve" textLength="10" lengthAdjust="spacingAndGlyphs">─</text>
+<text x="240" y="58" fill="#b586ed" font-family="monospace" font-size="16" font-weight="400" xml:space="preserve" textLength="10" lengthAdjust="spacingAndGlyphs">─</text>
+<text x="250" y="58" fill="#b586ec" font-family="monospace" font-size="16" font-weight="400" xml:space="preserve" textLength="10" lengthAdjust="spacingAndGlyphs">─</text>
+<text x="260" y="58" fill="#b685ec" font-family="monospace" font-size="16" font-weight="400" xml:space="preserve" textLength="10" lengthAdjust="spacingAndGlyphs">─</text>
+<text x="270" y="58" fill="#b785eb" font-family="monospace" font-size="16" font-weight="400" xml:space="preserve" textLength="10" lengthAdjust="spacingAndGlyphs">─</text>
+<text x="280" y="58" fill="#b785eb" font-family="monospace" font-size="16" font-weight="400" xml:space="preserve" textLength="10" lengthAdjust="spacingAndGlyphs">─</text>
+<text x="290" y="58" fill="#b885ea" font-family="monospace" font-size="16" font-weight="400" xml:space="preserve" textLength="10" lengthAdjust="spacingAndGlyphs">─</text>
+<text x="300" y="58" fill="#b985ea" font-family="monospace" font-size="16" font-weight="400" xml:space="preserve" textLength="10" lengthAdjust="spacingAndGlyphs">─</text>
+<text x="310" y="58" fill="#b983e9" font-family="monospace" font-size="16" font-weight="400" xml:space="preserve" textLength="10" lengthAdjust="spacingAndGlyphs">─</text>
+<text x="320" y="58" fill="#ba83e8" font-family="monospace" font-size="16" font-weight="400" xml:space="preserve" textLength="10" lengthAdjust="spacingAndGlyphs">─</text>
+<text x="330" y="58" fill="#bb83e8" font-family="monospace" font-size="16" font-weight="400" xml:space="preserve" textLength="10" lengthAdjust="spacingAndGlyphs">─</text>
+<text x="340" y="58" fill="#bb83e7" font-family="monospace" font-size="16" font-weight="400" xml:space="preserve" textLength="10" lengthAdjust="spacingAndGlyphs">─</text>
+<text x="350" y="58" fill="#bc83e7" font-family="monospace" font-size="16" font-weight="400" xml:space="preserve" textLength="10" lengthAdjust="spacingAndGlyphs">─</text>
+<text x="360" y="58" fill="#bd83e6" font-family="monospace" font-size="16" font-weight="400" xml:space="preserve" textLength="10" lengthAdjust="spacingAndGlyphs">─</text>
+<text x="370" y="58" fill="#bd83e6" font-family="monospace" font-size="16" font-weight="400" xml:space="preserve" textLength="10" lengthAdjust="spacingAndGlyphs">─</text>
+<text x="380" y="58" fill="#be83e5" font-family="monospace" font-size="16" font-weight="400" xml:space="preserve" textLength="10" lengthAdjust="spacingAndGlyphs">─</text>
+<text x="390" y="58" fill="#be83e3" font-family="monospace" font-size="16" font-weight="400" xml:space="preserve" textLength="10" lengthAdjust="spacingAndGlyphs">─</text>
+<text x="400" y="58" fill="#bf83e3" font-family="monospace" font-size="16" font-weight="400" xml:space="preserve" textLength="10" lengthAdjust="spacingAndGlyphs">─</text>
+<text x="410" y="58" fill="#c082e3" font-family="monospace" font-size="16" font-weight="400" xml:space="preserve" textLength="10" lengthAdjust="spacingAndGlyphs">─</text>
+<text x="420" y="58" fill="#c082e3" font-family="monospace" font-size="16" font-weight="400" xml:space="preserve" textLength="10" lengthAdjust="spacingAndGlyphs">─</text>
+<text x="430" y="58" fill="#c182e2" font-family="monospace" font-size="16" font-weight="400" xml:space="preserve" textLength="10" lengthAdjust="spacingAndGlyphs">─</text>
+<text x="440" y="58" fill="#c282e2" font-family="monospace" font-size="16" font-weight="400" xml:space="preserve" textLength="10" lengthAdjust="spacingAndGlyphs">─</text>
+<text x="450" y="58" fill="#c281e1" font-family="monospace" font-size="16" font-weight="400" xml:space="preserve" textLength="10" lengthAdjust="spacingAndGlyphs">─</text>
+<text x="460" y="58" fill="#c381e0" font-family="monospace" font-size="16" font-weight="400" xml:space="preserve" textLength="10" lengthAdjust="spacingAndGlyphs">─</text>
+<text x="470" y="58" fill="#c381e0" font-family="monospace" font-size="16" font-weight="400" xml:space="preserve" textLength="10" lengthAdjust="spacingAndGlyphs">─</text>
+<text x="480" y="58" fill="#c381df" font-family="monospace" font-size="16" font-weight="400" xml:space="preserve" textLength="10" lengthAdjust="spacingAndGlyphs">─</text>
+<text x="490" y="58" fill="#c581df" font-family="monospace" font-size="16" font-weight="400" xml:space="preserve" textLength="10" lengthAdjust="spacingAndGlyphs">─</text>
+<text x="500" y="58" fill="#c680de" font-family="monospace" font-size="16" font-weight="400" xml:space="preserve" textLength="10" lengthAdjust="spacingAndGlyphs">─</text>
+<text x="510" y="58" fill="#c680de" font-family="monospace" font-size="16" font-weight="400" xml:space="preserve" textLength="10" lengthAdjust="spacingAndGlyphs">─</text>
+<text x="520" y="58" fill="#c780dd" font-family="monospace" font-size="16" font-weight="400" xml:space="preserve" textLength="10" lengthAdjust="spacingAndGlyphs">─</text>
+<text x="530" y="58" fill="#c880dc" font-family="monospace" font-size="16" font-weight="400" xml:space="preserve" textLength="10" lengthAdjust="spacingAndGlyphs">─</text>
+<text x="540" y="58" fill="#c880dc" font-family="monospace" font-size="16" font-weight="400" xml:space="preserve" textLength="10" lengthAdjust="spacingAndGlyphs">─</text>
+<text x="550" y="58" fill="#c97fdb" font-family="monospace" font-size="16" font-weight="400" xml:space="preserve" textLength="10" lengthAdjust="spacingAndGlyphs">─</text>
+<text x="560" y="58" fill="#c97fdb" font-family="monospace" font-size="16" font-weight="400" xml:space="preserve" textLength="10" lengthAdjust="spacingAndGlyphs">─</text>
+<text x="570" y="58" fill="#ca7fda" font-family="monospace" font-size="16" font-weight="400" xml:space="preserve" textLength="10" lengthAdjust="spacingAndGlyphs">─</text>
+<text x="580" y="58" fill="#cb7fda" font-family="monospace" font-size="16" font-weight="400" xml:space="preserve" textLength="10" lengthAdjust="spacingAndGlyphs">─</text>
+<text x="590" y="58" fill="#cb7fd9" font-family="monospace" font-size="16" font-weight="400" xml:space="preserve" textLength="10" lengthAdjust="spacingAndGlyphs">─</text>
+<text x="600" y="58" fill="#cc7ed8" font-family="monospace" font-size="16" font-weight="400" xml:space="preserve" textLength="10" lengthAdjust="spacingAndGlyphs">─</text>
+<text x="610" y="58" fill="#cd7ed8" font-family="monospace" font-size="16" font-weight="400" xml:space="preserve" textLength="10" lengthAdjust="spacingAndGlyphs">─</text>
+<text x="620" y="58" fill="#cd7ed7" font-family="monospace" font-size="16" font-weight="400" xml:space="preserve" textLength="10" lengthAdjust="spacingAndGlyphs">─</text>
+<text x="630" y="58" fill="#ce7ed7" font-family="monospace" font-size="16" font-weight="400" xml:space="preserve" textLength="10" lengthAdjust="spacingAndGlyphs">─</text>
+<text x="640" y="58" fill="#cf7dd6" font-family="monospace" font-size="16" font-weight="400" xml:space="preserve" textLength="10" lengthAdjust="spacingAndGlyphs">─</text>
+<text x="650" y="58" fill="#cf7dd6" font-family="monospace" font-size="16" font-weight="400" xml:space="preserve" textLength="10" lengthAdjust="spacingAndGlyphs">─</text>
+<text x="660" y="58" fill="#d07dd5" font-family="monospace" font-size="16" font-weight="400" xml:space="preserve" textLength="10" lengthAdjust="spacingAndGlyphs">─</text>
+<text x="670" y="58" fill="#d17dd3" font-family="monospace" font-size="16" font-weight="400" xml:space="preserve" textLength="10" lengthAdjust="spacingAndGlyphs">─</text>
+<text x="680" y="58" fill="#d17dd3" font-family="monospace" font-size="16" font-weight="400" xml:space="preserve" textLength="10" lengthAdjust="spacingAndGlyphs">─</text>
+<text x="690" y="58" fill="#d27cd3" font-family="monospace" font-size="16" font-weight="400" xml:space="preserve" textLength="10" lengthAdjust="spacingAndGlyphs">─</text>
+<text x="700" y="58" fill="#d37cd3" font-family="monospace" font-size="16" font-weight="400" xml:space="preserve" textLength="10" lengthAdjust="spacingAndGlyphs">─</text>
+<text x="710" y="58" fill="#d37cd2" font-family="monospace" font-size="16" font-weight="400" xml:space="preserve" textLength="10" lengthAdjust="spacingAndGlyphs">─</text>
+<text x="720" y="58" fill="#d37cd2" font-family="monospace" font-size="16" font-weight="400" xml:space="preserve" textLength="10" lengthAdjust="spacingAndGlyphs">─</text>
+<text x="730" y="58" fill="#d37cd1" font-family="monospace" font-size="16" font-weight="400" xml:space="preserve" textLength="10" lengthAdjust="spacingAndGlyphs">─</text>
+<text x="740" y="58" fill="#d57bd0" font-family="monospace" font-size="16" font-weight="400" xml:space="preserve" textLength="10" lengthAdjust="spacingAndGlyphs">─</text>
+<text x="750" y="58" fill="#d67bd0" font-family="monospace" font-size="16" font-weight="400" xml:space="preserve" textLength="10" lengthAdjust="spacingAndGlyphs">─</text>
+<text x="760" y="58" fill="#d67bcf" font-family="monospace" font-size="16" font-weight="400" xml:space="preserve" textLength="10" lengthAdjust="spacingAndGlyphs">─</text>
+<text x="770" y="58" fill="#d77bcf" font-family="monospace" font-size="16" font-weight="400" xml:space="preserve" textLength="10" lengthAdjust="spacingAndGlyphs">─</text>
+<text x="780" y="58" fill="#d87bce" font-family="monospace" font-size="16" font-weight="400" xml:space="preserve" textLength="10" lengthAdjust="spacingAndGlyphs">─</text>
+<text x="790" y="58" fill="#d879ce" font-family="monospace" font-size="16" font-weight="400" xml:space="preserve" textLength="10" lengthAdjust="spacingAndGlyphs">─</text>
+<text x="800" y="58" fill="#d979cd" font-family="monospace" font-size="16" font-weight="400" xml:space="preserve" textLength="10" lengthAdjust="spacingAndGlyphs">─</text>
+<text x="810" y="58" fill="#da79cc" font-family="monospace" font-size="16" font-weight="400" xml:space="preserve" textLength="10" lengthAdjust="spacingAndGlyphs">─</text>
+<text x="820" y="58" fill="#da79cc" font-family="monospace" font-size="16" font-weight="400" xml:space="preserve" textLength="10" lengthAdjust="spacingAndGlyphs">─</text>
+<text x="830" y="58" fill="#db79cb" font-family="monospace" font-size="16" font-weight="400" xml:space="preserve" textLength="10" lengthAdjust="spacingAndGlyphs">─</text>
+<text x="840" y="58" fill="#dc79cb" font-family="monospace" font-size="16" font-weight="400" xml:space="preserve" textLength="10" lengthAdjust="spacingAndGlyphs">─</text>
+<text x="850" y="58" fill="#dc79ca" font-family="monospace" font-size="16" font-weight="400" xml:space="preserve" textLength="10" lengthAdjust="spacingAndGlyphs">─</text>
+<text x="860" y="58" fill="#dd79ca" font-family="monospace" font-size="16" font-weight="400" xml:space="preserve" textLength="10" lengthAdjust="spacingAndGlyphs">─</text>
+<text x="870" y="58" fill="#de79c9" font-family="monospace" font-size="16" font-weight="400" xml:space="preserve" textLength="10" lengthAdjust="spacingAndGlyphs">─</text>
+<text x="880" y="58" fill="#de78c8" font-family="monospace" font-size="16" font-weight="400" xml:space="preserve" textLength="10" lengthAdjust="spacingAndGlyphs">─</text>
+<text x="890" y="58" fill="#df78c8" font-family="monospace" font-size="16" font-weight="400" xml:space="preserve" textLength="10" lengthAdjust="spacingAndGlyphs">─</text>
+<text x="900" y="58" fill="#df78c7" font-family="monospace" font-size="16" font-weight="400" xml:space="preserve" textLength="10" lengthAdjust="spacingAndGlyphs">─</text>
+<text x="910" y="58" fill="#e078c7" font-family="monospace" font-size="16" font-weight="400" xml:space="preserve" textLength="10" lengthAdjust="spacingAndGlyphs">─</text>
+<text x="920" y="58" fill="#e178c6" font-family="monospace" font-size="16" font-weight="400" xml:space="preserve" textLength="10" lengthAdjust="spacingAndGlyphs">─</text>
+<text x="930" y="58" fill="#e177c6" font-family="monospace" font-size="16" font-weight="400" xml:space="preserve" textLength="10" lengthAdjust="spacingAndGlyphs">─</text>
+<text x="940" y="58" fill="#e277c5" font-family="monospace" font-size="16" font-weight="400" xml:space="preserve" textLength="10" lengthAdjust="spacingAndGlyphs">─</text>
+<text x="950" y="58" fill="#e377c3" font-family="monospace" font-size="16" font-weight="400" xml:space="preserve" textLength="10" lengthAdjust="spacingAndGlyphs">─</text>
+<text x="960" y="58" fill="#e377c3" font-family="monospace" font-size="16" font-weight="400" xml:space="preserve" textLength="10" lengthAdjust="spacingAndGlyphs">─</text>
+<text x="970" y="58" fill="#e377c3" font-family="monospace" font-size="16" font-weight="400" xml:space="preserve" textLength="10" lengthAdjust="spacingAndGlyphs">─</text>
+<text x="980" y="58" fill="#e576c3" font-family="monospace" font-size="16" font-weight="400" xml:space="preserve" textLength="10" lengthAdjust="spacingAndGlyphs">─</text>
+<text x="990" y="58" fill="#e576c2" font-family="monospace" font-size="16" font-weight="400" xml:space="preserve" textLength="10" lengthAdjust="spacingAndGlyphs">─</text>
+<text x="1000" y="58" fill="#e676c2" font-family="monospace" font-size="16" font-weight="400" xml:space="preserve" textLength="10" lengthAdjust="spacingAndGlyphs">─</text>
+<text x="1010" y="58" fill="#e776c1" font-family="monospace" font-size="16" font-weight="400" xml:space="preserve" textLength="10" lengthAdjust="spacingAndGlyphs">─</text>
+<text x="1020" y="58" fill="#e775c0" font-family="monospace" font-size="16" font-weight="400" xml:space="preserve" textLength="10" lengthAdjust="spacingAndGlyphs">─</text>
+<text x="1030" y="58" fill="#e875c0" font-family="monospace" font-size="16" font-weight="400" xml:space="preserve" textLength="10" lengthAdjust="spacingAndGlyphs">─</text>
+<text x="1040" y="58" fill="#e975bf" font-family="monospace" font-size="16" font-weight="400" xml:space="preserve" textLength="10" lengthAdjust="spacingAndGlyphs">─</text>
+<text x="1050" y="58" fill="#e975bf" font-family="monospace" font-size="16" font-weight="400" xml:space="preserve" textLength="10" lengthAdjust="spacingAndGlyphs">─</text>
+<text x="1060" y="58" fill="#ea75be" font-family="monospace" font-size="16" font-weight="400" xml:space="preserve" textLength="10" lengthAdjust="spacingAndGlyphs">─</text>
+<text x="1070" y="58" fill="#ea74be" font-family="monospace" font-size="16" font-weight="400" xml:space="preserve" textLength="10" lengthAdjust="spacingAndGlyphs">─</text>
+<text x="1080" y="58" fill="#eb74bd" font-family="monospace" font-size="16" font-weight="400" xml:space="preserve" textLength="10" lengthAdjust="spacingAndGlyphs">─</text>
+<text x="1090" y="58" fill="#ec74bc" font-family="monospace" font-size="16" font-weight="400" xml:space="preserve" textLength="10" lengthAdjust="spacingAndGlyphs">─</text>
+<text x="1100" y="58" fill="#ec74bc" font-family="monospace" font-size="16" font-weight="400" xml:space="preserve" textLength="10" lengthAdjust="spacingAndGlyphs">─</text>
+<text x="1110" y="58" fill="#ed74bb" font-family="monospace" font-size="16" font-weight="400" xml:space="preserve" textLength="10" lengthAdjust="spacingAndGlyphs">─</text>
+<text x="1120" y="58" fill="#ee73bb" font-family="monospace" font-size="16" font-weight="400" xml:space="preserve" textLength="10" lengthAdjust="spacingAndGlyphs">─</text>
+<text x="1130" y="58" fill="#ee73ba" font-family="monospace" font-size="16" font-weight="400" xml:space="preserve" textLength="10" lengthAdjust="spacingAndGlyphs">─</text>
+<text x="1140" y="58" fill="#ef73ba" font-family="monospace" font-size="16" font-weight="400" xml:space="preserve" textLength="10" lengthAdjust="spacingAndGlyphs">─</text>
+<text x="1150" y="58" fill="#f073b9" font-family="monospace" font-size="16" font-weight="400" xml:space="preserve" textLength="10" lengthAdjust="spacingAndGlyphs">─</text>
+<text x="1160" y="58" fill="#f073b8" font-family="monospace" font-size="16" font-weight="400" xml:space="preserve" textLength="10" lengthAdjust="spacingAndGlyphs">─</text>
+<text x="1170" y="58" fill="#f171b8" font-family="monospace" font-size="16" font-weight="400" xml:space="preserve" textLength="10" lengthAdjust="spacingAndGlyphs">─</text>
+<text x="1180" y="58" fill="#f271b7" font-family="monospace" font-size="16" font-weight="400" xml:space="preserve" textLength="10" lengthAdjust="spacingAndGlyphs">─</text>
+<text x="1190" y="58" fill="#f271b7" font-family="monospace" font-size="16" font-weight="400" xml:space="preserve" textLength="10" lengthAdjust="spacingAndGlyphs">─</text>
+<text x="1200" y="58" fill="#f371b6" font-family="monospace" font-size="16" font-weight="400" xml:space="preserve" textLength="10" lengthAdjust="spacingAndGlyphs">─</text>
+<text x="1210" y="58" fill="#f371b6" font-family="monospace" font-size="16" font-weight="400" xml:space="preserve" textLength="10" lengthAdjust="spacingAndGlyphs">─</text>
+<text x="20" y="80" fill="#f371b6" font-family="monospace" font-size="16" font-weight="700" xml:space="preserve" textLength="50" lengthAdjust="spacingAndGlyphs">❯ you</text>
+<text x="20" y="124" fill="#e5e7eb" font-family="monospace" font-size="16" font-weight="400" xml:space="preserve" textLength="460" lengthAdjust="spacingAndGlyphs">Review the checkout flow and verify the tests.</text>
+<text x="20" y="168" fill="#9ca3af" font-family="monospace" font-size="16" font-weight="700" xml:space="preserve" textLength="60" lengthAdjust="spacingAndGlyphs">⬡ odek</text>
+<text x="100" y="168" fill="#9ca3af" font-family="monospace" font-size="16" font-weight="400" xml:space="preserve" textLength="70" lengthAdjust="spacingAndGlyphs">tests ✓</text>
+<text x="1110" y="168" fill="#a78bfa" font-family="monospace" font-size="16" font-weight="400" xml:space="preserve" textLength="110" lengthAdjust="spacingAndGlyphs">running 12s</text>
+<text x="40" y="212" fill="#3b3b4f" font-family="monospace" font-size="16" font-weight="400" xml:space="preserve" textLength="10" lengthAdjust="spacingAndGlyphs">▼</text>
+<text x="60" y="212" fill="#34d399" font-family="monospace" font-size="16" font-weight="400" xml:space="preserve" textLength="10" lengthAdjust="spacingAndGlyphs">✓</text>
+<text x="80" y="212" fill="#67e8f9" font-family="monospace" font-size="16" font-weight="400" xml:space="preserve" textLength="10" lengthAdjust="spacingAndGlyphs">✦</text>
+<text x="100" y="212" fill="#67e8f9" font-family="monospace" font-size="16" font-weight="400" xml:space="preserve" textLength="40" lengthAdjust="spacingAndGlyphs">plan</text>
+<text x="140" y="212" fill="#9ca3af" font-family="monospace" font-size="16" font-weight="400" xml:space="preserve" textLength="80" lengthAdjust="spacingAndGlyphs">  create</text>
+<text x="890" y="212" fill="#8b93a3" font-family="monospace" font-size="16" font-weight="400" xml:space="preserve" textLength="250" lengthAdjust="spacingAndGlyphs">v2 · 1/2 done · 0 blocked</text>
+<text x="1140" y="212" fill="#9ca3af" font-family="monospace" font-size="16" font-weight="400" xml:space="preserve" textLength="30" lengthAdjust="spacingAndGlyphs"> · </text>
+<text x="1170" y="212" fill="#a78bfa" font-family="monospace" font-size="16" font-weight="400" xml:space="preserve" textLength="30" lengthAdjust="spacingAndGlyphs">0ms</text>
+<text x="40" y="234" fill="#3b3b4f" font-family="monospace" font-size="16" font-weight="400" xml:space="preserve" textLength="40" lengthAdjust="spacingAndGlyphs">  ⎿ </text>
+<text x="80" y="234" fill="#67e8f9" font-family="monospace" font-size="16" font-weight="400" xml:space="preserve" textLength="300" lengthAdjust="spacingAndGlyphs">plan v2 · 1/2 done · 0 blocked</text>
+<text x="80" y="256" fill="#8b93a3" font-family="monospace" font-size="16" font-weight="400" xml:space="preserve" textLength="300" lengthAdjust="spacingAndGlyphs">✓ review  Review checkout flow</text>
+<text x="80" y="278" fill="#8b93a3" font-family="monospace" font-size="16" font-weight="400" xml:space="preserve" textLength="220" lengthAdjust="spacingAndGlyphs">▸ verify  Verify tests</text>
+<text x="40" y="300" fill="#3b3b4f" font-family="monospace" font-size="16" font-weight="400" xml:space="preserve" textLength="10" lengthAdjust="spacingAndGlyphs">▼</text>
+<text x="60" y="300" fill="#34d399" font-family="monospace" font-size="16" font-weight="400" xml:space="preserve" textLength="10" lengthAdjust="spacingAndGlyphs">✓</text>
+<text x="80" y="300" fill="#67e8f9" font-family="monospace" font-size="16" font-weight="400" xml:space="preserve" textLength="10" lengthAdjust="spacingAndGlyphs">❯</text>
+<text x="100" y="300" fill="#67e8f9" font-family="monospace" font-size="16" font-weight="400" xml:space="preserve" textLength="50" lengthAdjust="spacingAndGlyphs">shell</text>
+<text x="150" y="300" fill="#9ca3af" font-family="monospace" font-size="16" font-weight="400" xml:space="preserve" textLength="290" lengthAdjust="spacingAndGlyphs">  go test ./internal/checkout</text>
+<text x="1020" y="300" fill="#34d399" font-family="monospace" font-size="16" font-weight="400" xml:space="preserve" textLength="120" lengthAdjust="spacingAndGlyphs">✓ tests pass</text>
+<text x="1140" y="300" fill="#9ca3af" font-family="monospace" font-size="16" font-weight="400" xml:space="preserve" textLength="30" lengthAdjust="spacingAndGlyphs"> · </text>
+<text x="1170" y="300" fill="#a78bfa" font-family="monospace" font-size="16" font-weight="400" xml:space="preserve" textLength="30" lengthAdjust="spacingAndGlyphs">0ms</text>
+<text x="40" y="322" fill="#3b3b4f" font-family="monospace" font-size="16" font-weight="400" xml:space="preserve" textLength="40" lengthAdjust="spacingAndGlyphs">  ⎿ </text>
+<text x="80" y="322" fill="#8b93a3" font-family="monospace" font-size="16" font-weight="400" xml:space="preserve" textLength="200" lengthAdjust="spacingAndGlyphs">ok  checkout  0.042s</text>
+<rect x="20" y="350" width="1200" height="22" fill="#16161e"/>
+<rect x="20" y="372" width="10" height="22" fill="#16161e"/>
+<rect x="30" y="372" width="830" height="22" fill="#16161e"/>
+<text x="30" y="388" fill="#E5E7EB" font-family="monospace" font-size="16" font-weight="400" xml:space="preserve" textLength="830" lengthAdjust="spacingAndGlyphs">The checkout flow preserves the cart on payment failure. All checkout tests passed.</text>
+<rect x="860" y="372" width="10" height="22" fill="#16161e"/>
+<rect x="870" y="372" width="350" height="22" fill="#16161e"/>
+<rect x="20" y="394" width="1200" height="22" fill="#16161e"/>
+<text x="20" y="586" fill="#a78bfa" font-family="monospace" font-size="16" font-weight="400" xml:space="preserve" textLength="10" lengthAdjust="spacingAndGlyphs">|</text>
+<text x="40" y="586" fill="#fbbf24" font-family="monospace" font-size="16" font-weight="400" xml:space="preserve" textLength="90" lengthAdjust="spacingAndGlyphs">composing</text>
+<text x="130" y="586" fill="#9ca3af" font-family="monospace" font-size="16" font-weight="400" xml:space="preserve" textLength="140" lengthAdjust="spacingAndGlyphs"> · running 12s</text>
+<text x="20" y="608" fill="#3b3b4f" font-family="monospace" font-size="16" font-weight="400" xml:space="preserve" textLength="1200" lengthAdjust="spacingAndGlyphs">╭──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮</text>
+<text x="20" y="630" fill="#3b3b4f" font-family="monospace" font-size="16" font-weight="400" xml:space="preserve" textLength="10" lengthAdjust="spacingAndGlyphs">│</text>
+<text x="50" y="630" fill="#E5E7EB" font-family="monospace" font-size="16" font-weight="400" xml:space="preserve" textLength="10" lengthAdjust="spacingAndGlyphs">D</text>
+<text x="60" y="630" fill="#E5E7EB" font-family="monospace" font-size="16" font-weight="400" xml:space="preserve" textLength="170" lengthAdjust="spacingAndGlyphs">escribe the work…</text>
+<text x="1210" y="630" fill="#3b3b4f" font-family="monospace" font-size="16" font-weight="400" xml:space="preserve" textLength="10" lengthAdjust="spacingAndGlyphs">│</text>
+<text x="20" y="652" fill="#3b3b4f" font-family="monospace" font-size="16" font-weight="400" xml:space="preserve" textLength="10" lengthAdjust="spacingAndGlyphs">│</text>
+<text x="1210" y="652" fill="#3b3b4f" font-family="monospace" font-size="16" font-weight="400" xml:space="preserve" textLength="10" lengthAdjust="spacingAndGlyphs">│</text>
+<text x="20" y="674" fill="#3b3b4f" font-family="monospace" font-size="16" font-weight="400" xml:space="preserve" textLength="10" lengthAdjust="spacingAndGlyphs">│</text>
+<text x="1210" y="674" fill="#3b3b4f" font-family="monospace" font-size="16" font-weight="400" xml:space="preserve" textLength="10" lengthAdjust="spacingAndGlyphs">│</text>
+<text x="20" y="696" fill="#3b3b4f" font-family="monospace" font-size="16" font-weight="400" xml:space="preserve" textLength="1200" lengthAdjust="spacingAndGlyphs">╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯</text>
+<text x="40" y="718" fill="#9ca3af" font-family="monospace" font-size="16" font-weight="700" xml:space="preserve" textLength="80" lengthAdjust="spacingAndGlyphs">composer</text>
+<text x="120" y="718" fill="#3b3b4f" font-family="monospace" font-size="16" font-weight="400" xml:space="preserve" textLength="30" lengthAdjust="spacingAndGlyphs"> · </text>
+<text x="150" y="718" fill="#9ca3af" font-family="monospace" font-size="16" font-weight="700" xml:space="preserve" textLength="20" lengthAdjust="spacingAndGlyphs">^X</text>
+<text x="170" y="718" fill="#6b7180" font-family="monospace" font-size="16" font-weight="400" xml:space="preserve" textLength="50" lengthAdjust="spacingAndGlyphs"> stop</text>
+<text x="220" y="718" fill="#3b3b4f" font-family="monospace" font-size="16" font-weight="400" xml:space="preserve" textLength="30" lengthAdjust="spacingAndGlyphs"> · </text>
+<text x="250" y="718" fill="#9ca3af" font-family="monospace" font-size="16" font-weight="700" xml:space="preserve" textLength="10" lengthAdjust="spacingAndGlyphs">▼</text>
+<text x="260" y="718" fill="#6b7180" font-family="monospace" font-size="16" font-weight="400" xml:space="preserve" textLength="80" lengthAdjust="spacingAndGlyphs"> details</text>
+<text x="990" y="718" fill="#9ca3af" font-family="monospace" font-size="16" font-weight="700" xml:space="preserve" textLength="20" lengthAdjust="spacingAndGlyphs">F1</text>
+<text x="1010" y="718" fill="#6b7180" font-family="monospace" font-size="16" font-weight="400" xml:space="preserve" textLength="80" lengthAdjust="spacingAndGlyphs"> help · </text>
+<text x="1090" y="718" fill="#9ca3af" font-family="monospace" font-size="16" font-weight="700" xml:space="preserve" textLength="20" lengthAdjust="spacingAndGlyphs">^K</text>
+<text x="1110" y="718" fill="#6b7180" font-family="monospace" font-size="16" font-weight="400" xml:space="preserve" textLength="90" lengthAdjust="spacingAndGlyphs"> commands</text>
+</svg>
