@@ -148,7 +148,8 @@ feat(tui): compact tool steps with Ctrl+E details toggle
   wall latency.
 - `internal/tui` is split by responsibility: `model.go` holds the core
   model, `inspect.go` owns transcript item focus and bounded tool paging, `events.go` event handling, `input.go` key/text input,
-  `approval.go` the approval flow, `chrome.go` drawer-sheet / shelf /
+  `input_reassembler.go` the raw terminal input stream, `approval.go`
+  the approval flow, `chrome.go` drawer-sheet / shelf /
   header-instrument / session-home layout, `reconnect.go` socket recovery.
   Put new code in the matching file instead of growing `model.go`.
 - First-run home (`welcome` in `banner.go`) is the working directory plus
@@ -162,7 +163,22 @@ feat(tui): compact tool steps with Ctrl+E details toggle
   keys". `FilterShiftEnter` rewrites those CSI sequences (and the
   remapped `^C` / `^K` / esc) back into KeyMsgs — Codium/Cursor encode
   Ctrl+C as CSI once those modes are on. `RestoreEnhancedKeys` clears
-  leftovers on startup and shutdown. Alt-screen always enables mouse
+  leftovers on startup and shutdown. A terminal read can end mid-sequence:
+  `AssembleInput` (wired in `buildProgramOptions`, non-Windows) reassembles
+  it before Bubble Tea parses each read. Partial `ESC [ < …` heads wait for
+  their tail; a mouse-shaped head whose tail never arrives is dropped — never
+  echoed into the composer. Only the SGR form is disposable: the legacy X10
+  form is joined but never dropped, because its coordinate bytes are
+  indistinguishable from typed text. Bracket-paste bodies are user data and
+  are never dropped, whatever they contain. A mouse head a fresh read cannot
+  continue is a truncated report and is discarded so the read is not eaten.
+  The wrapper only wraps a terminal file; a pipe or redirected stdin keeps
+  Bubble Tea's own handling. It also presents itself as a `term.File` with the
+  real descriptor, because Bubble Tea enables and restores raw mode only for
+  input it recognises as a file (`tty_unix.go` `initInput`) — a plain wrapper
+  would leave the program in cooked mode. One pump goroutine per program
+  instance; `Close` stops it without closing stdin, which the program does not
+  own. Alt-screen always enables mouse
   cell-motion so the wheel scrolls (and clicks hit turn heads / answer
   cards / steps / the queue). A left-click on an answer card (or a
   collapsed summary) copies that turn's `msg.content` — final or the
