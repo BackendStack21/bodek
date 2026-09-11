@@ -619,8 +619,9 @@ func TestTurnStatLineShowsTokPerSec(t *testing.T) {
 	if !strings.Contains(foot, "↗") || !strings.Contains(foot, "25.2 tok/s") {
 		t.Errorf("turn foot missing generation tok/s: %q", foot)
 	}
-	if !strings.Contains(plain(m.header()), "25.2 tok/s") {
-		t.Errorf("header missing live tok/s chip:\n%s", plain(m.header()))
+	// The header no longer carries tok/s — the cockpit owns the live rate.
+	if strings.Contains(plain(m.header()), "tok/s") {
+		t.Errorf("header must not show tok/s:\n%s", plain(m.header()))
 	}
 }
 
@@ -632,8 +633,10 @@ func TestChromeFooterOmitsTokPerSec(t *testing.T) {
 	})
 	m.sendPrompt("next")
 	m.handleEvent(client.Event{Type: "usage", TokensPerSecond: 9.6})
-	if !strings.Contains(plain(m.header()), "9.6 tok/s") {
-		t.Errorf("header should show live in-flight rate:\n%s", plain(m.header()))
+	// The header no longer carries the in-flight rate — the cockpit owns it;
+	// the sealed turn foot keeps the last sealed rate.
+	if strings.Contains(plain(m.header()), "tok/s") {
+		t.Errorf("header must not show tok/s:\n%s", plain(m.header()))
 	}
 	foot := plain(m.footer())
 	if strings.Contains(foot, "tok/s") {
@@ -658,8 +661,8 @@ func TestUsageAppliesLiveSpeed(t *testing.T) {
 	if m.ttftMs != 420 || m.callDurMs != 8100 {
 		t.Fatalf("live timing = ttft %d call %d", m.ttftMs, m.callDurMs)
 	}
-	if out := plain(m.header()); !strings.Contains(out, "25.2 tok/s") {
-		t.Errorf("header chip missing mid-run tok/s:\n%s", out)
+	if out := plain(m.header()); strings.Contains(out, "25.2 tok/s") {
+		t.Errorf("header must not show tok/s: %q", out)
 	}
 	if m.msgs[0].stats != nil {
 		t.Fatal("usage must not seal turn stats")

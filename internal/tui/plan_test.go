@@ -387,13 +387,20 @@ func TestPlanPoll_SkipsFetchWhileDirty(t *testing.T) {
 	if c == nil {
 		t.Fatal("dirty tick must re-arm rather than drop the chain")
 	}
-	// A dirty tick re-issues a CONFIRM fetch (not a poll): the in-flight
-	// confirm may be dead (superseded by a poll that bumped planReqSeq),
-	// and waiting for it forever froze the strip at the optimistic patch.
-	// The newest confirm reply is what clears planDirty — see
-	// TestPlanDirtyTickReissuesConfirm in plan_realtime_test.go.
-	if !m.planConfirmArmed {
-		t.Fatal("dirty tick must re-issue the confirm fetch")
+	// A dirty tick re-issues a CONFIRM fetch only after the tool_result
+	// debounce fired one (planConfirmIssued): before that, a fetch would
+	// hit the PRE-write store and wipe the optimistic patch (create leaves
+	// planVer at 0, so the monotonic guard cannot reject it). Until the
+	// debounce fires, the tick stays armed and the debounce owns the fetch.
+	req := m.planReqSeq
+	m.handlePlanTick(planTickMsg{seq: m.planPollSeq})
+	if m.planReqSeq != req {
+		t.Fatal("dirty tick before any confirm was issued must NOT fetch")
+	}
+	m.planConfirmIssued = true
+	m.handlePlanTick(planTickMsg{seq: m.planPollSeq})
+	if m.planReqSeq == req {
+		t.Fatal("dirty tick after a dead confirm must re-issue the fetch")
 	}
 }
 

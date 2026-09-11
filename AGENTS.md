@@ -141,11 +141,11 @@ feat(tui): compact tool steps with Ctrl+E details toggle
   Absent/zero `windowTokens` holds the last fill. The bar saturates at
   full; the percent stays honest when `winCtxTok` exceeds `maxContext`
   (stale catalog / last-resort max) — never a contradictory `100%`
-  beside a larger used count. Live tok/s rides the
-  header from this-call `usage`/`done` fields (`generationTokensPerSecond`
-  preferred, else `tokensPerSecond`). Absent/zero holds the last rate; a
-  new turn clears the chip. Never divide cumulative `outputTokens` by
-  wall latency.
+  beside a larger used count. Live tok/s is tracked from this-call
+  `usage`/`done` fields (`generationTokensPerSecond` preferred, else
+  `tokensPerSecond`) and renders in the cockpit stats sheet — the header
+  carries no rate chip. Absent/zero holds the last rate; a new turn
+  clears it. Never divide cumulative `outputTokens` by wall latency.
 - `internal/tui` is split by responsibility: `model.go` holds the core
   model, `inspect.go` owns transcript item focus and bounded tool paging, `events.go` event handling, `input.go` key/text input,
   `input_reassembler.go` the raw terminal input stream, `approval.go`

@@ -97,7 +97,9 @@ func (m *Model) issuePlanFetch(confirm bool) tea.Cmd {
 		return nil
 	}
 	m.planReqSeq++
-	m.planConfirmArmed = confirm // test-visible: the newest fetch's kind
+	if confirm {
+		m.planConfirmIssued = true // the tool_result debounce fired
+	}
 	cl := m.cl
 	want := m.sessionID
 	token := m.authToken
@@ -156,6 +158,7 @@ func (m *Model) handlePlanMsg(msg planMsg) (cmd tea.Cmd) {
 	m.planVer = msg.snap.Version
 	m.planInit = true
 	m.planDirty = false
+	m.planConfirmIssued = false
 	if m.panel == panelPlan {
 		m.syncPlanPanelMsg()
 	}
@@ -191,10 +194,16 @@ func (m *Model) handlePlanTick(msg planTickMsg) tea.Cmd {
 		// The confirm fetch is the only reply that can clear a dirty
 		// strip — and it can die in flight (superseded by a poll/kick that
 		// bumped planReqSeq). Waiting forever for a dead reply froze the
-		// strip at the optimistic patch. Re-issue instead: the fetch is an
-		// idempotent GET, confirm=true keeps it eligible to clear the dirty
-		// flag, and the newest reply wins.
-		return tea.Batch(m.fetchPlanConfirm(), m.armPlanPoll())
+		// strip at the optimistic patch. BUT a confirm is only legitimate
+		// AFTER the tool_result debounce fired: re-issuing before that
+		// would fetch the PRE-write store (create leaves planVer at 0, so
+		// the monotonic guard cannot reject it) and wipe the optimistic
+		// steps. So: re-issue only once a confirm was issued; until then
+		// the debounce owns the fetch and the tick stays armed.
+		if m.planConfirmIssued {
+			return tea.Batch(m.fetchPlanConfirm(), m.armPlanPoll())
+		}
+		return m.armPlanPoll()
 	}
 	return m.fetchPlan()
 }
@@ -307,6 +316,7 @@ func (m *Model) resetPlanState() {
 	m.planVer, m.planInit = 0, false
 	m.planAvail = planUnknown
 	m.planDirty = false
+	m.planConfirmIssued = false
 	m.planLiveKick = false
 	m.planDebSeq++
 	m.planReqSeq++
@@ -478,6 +488,14 @@ func (m *Model) planFollowup() tea.Cmd {
 		m.planLiveKick = false
 		if c := m.kickPlanLive(); c != nil {
 			cmds = append(cmds, c)
+		}
+		// A dirty strip whose confirm died in flight (run went idle before
+		// the reply landed) would stay frozen until the first busy tick.
+		// Re-issue immediately at the turn boundary — only after the
+		// debounce fired (planConfirmIssued), so a pre-write fetch can
+		// never wipe the optimistic patch.
+		if m.planDirty && m.planConfirmIssued {
+			cmds = append(cmds, m.fetchPlanConfirm())
 		}
 	}
 	switch len(cmds) {

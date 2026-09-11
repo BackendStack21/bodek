@@ -147,23 +147,6 @@ func (m *Model) shelfView() string {
 
 // ── header instruments ──────────────────────────────────────────────────────
 
-func (m *Model) headerPlanLabel() string {
-	if !m.planInit || m.planAvail != planAvailable || !m.plan.Found {
-		return ""
-	}
-	total := len(m.plan.Steps)
-	if total == 0 {
-		return ""
-	}
-	done := 0
-	for _, st := range m.plan.Steps {
-		if st.Status == client.PlanDone {
-			done++
-		}
-	}
-	return fmt.Sprintf("plan %d/%d", done, total)
-}
-
 func (m *Model) headerJobsLabel() string {
 	n := 0
 	failed := false
@@ -184,11 +167,11 @@ func (m *Model) headerJobsLabel() string {
 	return ""
 }
 
+// headerInstruments renders the header's status strip. Plan progress no
+// longer rides here — the /plan tab owns it — and jobs remain: a running
+// or failed job is actionable from any surface.
 func (m *Model) headerInstruments() string {
 	var parts []string
-	if s := m.headerPlanLabel(); s != "" {
-		parts = append(parts, s)
-	}
 	if s := m.headerJobsLabel(); s != "" {
 		parts = append(parts, s)
 	}

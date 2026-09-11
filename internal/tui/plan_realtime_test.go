@@ -53,6 +53,7 @@ func TestPlanDirtyTickReissuesConfirm(t *testing.T) {
 	m.planAvail = planAvailable
 	m.plan.Steps = []client.PlanStep{{ID: "a", Status: client.PlanDone}, {ID: "b"}}
 	m.planDirty = true
+	m.planConfirmIssued = true // the tool_result debounce fired; its reply died in flight
 	cmd := m.handlePlanTick(planTickMsg{seq: m.planPollSeq})
 	if cmd == nil {
 		t.Fatal("dirty tick must re-issue the confirm fetch")
