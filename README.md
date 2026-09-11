@@ -411,7 +411,7 @@ own front-end settings are separate; see [Configuration](#configuration).
 | `^Q` | Unfold the queue strip from the composer shelf (`↑↓`/`jk` select · `←→`/`hl` move · `d d` two-step delete · `esc`/`⏎` folds it back; full manager: `/queue`) |
 | `^S` | Stop the running sub-agent (two-step confirm: `y` stops, any other key continues) |
 | `^T` | Cycle reasoning depth (`disabled` → `low` → `medium` → `high`) |
-| `⇧⏎` | Insert a newline in the input (`^J` still works on terminals that cannot tell Shift+Enter from Enter) |
+| `⇧⏎` | Insert a newline in the input (`^J` and `Ctrl+Enter` still work on terminals that cannot tell Shift+Enter from Enter) |
 | `^L` | Clear the conversation (two-step confirm: `y` clears, any other key cancels) |
 | `^E` | Toggle details — reasoning previews and every step's full output/logs (hidden in the calm default) |
 | `^Y` | Copy the last reply to the clipboard (local helper — `pbcopy`/`wl-copy`/`clip` — with OSC 52 fallback) |

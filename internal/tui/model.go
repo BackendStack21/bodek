@@ -1002,7 +1002,7 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, m.openModels()
 	case "enter":
 		return m, m.submit()
-	case "shift+enter", "alt+enter", "ctrl+j":
+	case "shift+enter", "ctrl+enter", "alt+enter", "ctrl+j":
 		return m, tea.Batch(m.insertNewline(), m.syncAC())
 	case "ctrl+q":
 		// Queue-strip focus: a chord, so typing a q is never hijacked.

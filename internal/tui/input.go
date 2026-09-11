@@ -46,7 +46,8 @@ func (m *Model) handleACKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case "ctrl+c":
 		return m, m.armConfirm(confirmQuit, "bodek")
-	case "shift+enter", "alt+enter", "ctrl+j":
+	case "shift+enter", "ctrl+enter", "alt+enter", "ctrl+j":
+		m.acceptCompletion()
 		return m, tea.Batch(m.insertNewline(), m.syncAC())
 	}
 	// Any other key is plain input: forward it to the textarea, then
@@ -183,6 +184,11 @@ func keyMsgFromCode(key, mod int) (tea.KeyMsg, bool) {
 		if shift {
 			return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("shift+enter")}, true
 		}
+		if ctrl {
+			// Enhanced-key terminals make Ctrl+Enter distinguishable from
+			// plain Enter; keep it a newline chord so it never submits.
+			return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("ctrl+enter")}, true
+		}
 		if alt {
 			return tea.KeyMsg{Type: tea.KeyEnter, Alt: true}, true
 		}
@@ -211,6 +217,15 @@ func keyMsgFromCode(key, mod int) (tea.KeyMsg, bool) {
 	}
 	if key >= 32 && key < 127 && alt && !ctrl {
 		return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{rune(key)}, Alt: true}, true
+	}
+	// Shift+printable (modifyOtherKeys level 2 / kitty CSI-u): without this
+	// branch the chord is dropped entirely — the keystroke never types.
+	if key >= 32 && key < 127 && shift && !ctrl && !alt {
+		r := rune(key)
+		if r >= 'a' && r <= 'z' {
+			r -= 'a' - 'A'
+		}
+		return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}}, true
 	}
 	return tea.KeyMsg{}, false
 }

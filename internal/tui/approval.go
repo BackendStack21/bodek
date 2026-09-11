@@ -141,6 +141,10 @@ func (m *Model) handleFrictionKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, m.answer("approve")
 		}
 		m.apprTyped = ""
+	case "shift+enter", "ctrl+enter":
+		// Synthesized newline chords must not splice their sentinel text
+		// into the confirmation buffer (a newline can never match the word).
+		return m, nil
 	case "esc":
 		m.apprEditing = false
 		m.apprTyped = ""
@@ -205,7 +209,7 @@ func (m *Model) handleApprovalComposerKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, m.armConfirm(confirmQuit, "bodek")
 	case "enter":
 		return m, m.submit()
-	case "shift+enter", "alt+enter", "ctrl+j":
+	case "shift+enter", "ctrl+enter", "alt+enter", "ctrl+j":
 		return m, m.insertNewline()
 	default:
 		return m, m.updateApprovalComposer(msg)
