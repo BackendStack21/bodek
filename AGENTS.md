@@ -260,7 +260,16 @@ modifier routes to the composer), and `Alt+A`/`Alt+D`/`Alt+T`
   `kickJobsFetch()` for an immediate snapshot, watcher tick as fallback;
   `bg_wake` frames become transient notes. Generation counters
   (`jobsSeq`/`jobsWatchSeq`) drop stale ticks — keep both chains
-  generation-guarded when touching the cadence.
+  generation-guarded when touching the cadence. The same push-beats-poll
+  pattern drives the other tabs: `subagent_state` and `memory_event` frames
+  set `kickAgents`/`kickMemory` flags that `flushKicks()` drains into ONE
+  fetch per burst (per-event cmds would starve inside `ingestWireBatch`);
+  the events tab polls the runtime ring at 3s while visible with seq-stamped
+  fetches (`eventsMsg.seq` — a late landing never clobbers a filter change,
+  and open/toggle/clear bump `eventsTabSeq`). Agents-tab rows prefer live
+  card telemetry over the REST snapshot (skipping lost cards), and drawer
+  selections anchor by identity (fact text / TaskID) across rebuilds so a
+  refresh never silently retargets the detail view or the stop gate.
 - The narration-line plan strip (`planStripLabel` in `plan.go`) patches
   on `plan` tool_call (`applyPlanMutation`) so the count moves on that
   frame. REST (`GET /api/sessions/{id}/plan`) confirms after

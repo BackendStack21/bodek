@@ -275,8 +275,11 @@ type Model struct {
 	confirm     confirmKind   // armed destructive action: y fires, any other key disarms
 	stopTarget  string        // task_id armed by confirmStopAgent
 
-	agentsReg []client.SubagentEntry // agents tab: sub-agent registry snapshot
-	agentsSeq int                    // agents-tab poll generation; stale ticks drop
+	agentsReg    []client.SubagentEntry // agents tab: sub-agent registry snapshot
+	agentsSeq    int                    // agents-tab poll generation; stale ticks drop
+	eventsTabSeq int                    // events-tab poll generation; stale ticks drop
+	kickAgents   bool                   // pending agents-tab refresh (flushKicks)
+	kickMemory   bool                   // pending memory-tab refresh (flushKicks)
 
 	// Background jobs tab + lifecycle watcher (odek v1.38+ /api/jobs — the
 	// engine pushes nothing for job lifecycle, so bodek watches REST).
@@ -681,8 +684,12 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.panel == panelEvents {
 			m.handleEventsMsg(msg)
 			m.refresh()
+			return m, m.armEventsPoll() // keeps the 3s chain alive while visible
 		}
 		return m, nil
+
+	case eventsTickMsg:
+		return m, m.handleEventsTick(msg)
 
 	case runsTickMsg:
 		return m, m.handleRunsTick(msg)
