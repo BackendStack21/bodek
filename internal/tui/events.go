@@ -67,6 +67,8 @@ func (m *Model) ingestWireBatch(events []client.Event) (tea.Model, tea.Cmd) {
 		}
 	}
 	pm := model.(*Model)
+	// Kicks ride as model flags so a burst coalesces into ONE fetch per
+	// kind — a swarm of state frames must not flood the registry endpoint.
 	return pm, tea.Batch(
 		listen(pm.events),
 		pm.rearmRenderFlush(),
@@ -74,6 +76,7 @@ func (m *Model) ingestWireBatch(events []client.Event) (tea.Model, tea.Cmd) {
 		pm.approvalSweep(),
 		pm.sendQueued(),
 		pm.planFollowup(),
+		pm.flushKicks(),
 	)
 }
 
@@ -440,6 +443,10 @@ func (m *Model) handleEvent(ev client.Event) (tea.Model, tea.Cmd) {
 		m.addTransientNote("skill · " + strings.TrimSpace(ev.SubType+" "+ev.SkillName) + eventTail(ev))
 	case "memory_event":
 		m.addTransientNote("memory · " + strings.TrimSpace(ev.SubType+" "+ev.Target) + eventTail(ev))
+		// Facts just changed server-side: refresh the open memory tab so
+		// the list never lies about what exists. The flag flushes as ONE
+		// coalesced fetch (bursty writers must not flood the endpoint).
+		m.kickMemory = true
 	case "agent_signal":
 		if silentAgentSignal(ev.SubType) {
 			// Engine housekeeping: context trimming and tool-running
@@ -476,6 +483,11 @@ func (m *Model) handleEvent(ev client.Event) (tea.Model, tea.Cmd) {
 		// The finished frame's final cost banks first — spent is spent
 		// even when the frame has no step left to attach to.
 		m.recordSubCost(ev)
+		// Progress moved: refresh the open agents tab now instead of
+		// waiting for the 3s poll. The flag flushes as ONE coalesced fetch
+		// per burst; the live card below also feeds the renderer between
+		// polls.
+		m.kickAgents = true
 		if i := m.cur(); i >= 0 && m.attachSubState(i, ev) {
 			stream = true // coalesce redraws — state frames arrive in bursts
 			m.subagentTerminalNote(ev)
@@ -573,11 +585,34 @@ func (m *Model) handleEvent(ev client.Event) (tea.Model, tea.Cmd) {
 	}
 
 	if stream {
-		return m, tea.Batch(listen(m.events), m.noticeSweep(), m.approvalSweep(), m.queueRender())
+		return m, tea.Batch(listen(m.events), m.noticeSweep(), m.approvalSweep(), m.queueRender(), m.flushKicks())
 	}
 	m.refresh()
 	// A turn that just ended (done / error) drains the next queued prompt.
-	return m, tea.Batch(listen(m.events), m.noticeSweep(), m.approvalSweep(), m.sendQueued(), m.planFollowup(), attn)
+	return m, tea.Batch(listen(m.events), m.noticeSweep(), m.approvalSweep(), m.sendQueued(), m.planFollowup(), attn, m.flushKicks())
+}
+
+// flushKicks drains the pending open-tab refresh flags into ONE fetch per
+// kind — bursty wire frames coalesce instead of flooding the endpoints,
+// and the flags survive batch ingestion (a per-event cmd would not).
+func (m *Model) flushKicks() tea.Cmd {
+	var cmds []tea.Cmd
+	if m.kickAgents {
+		m.kickAgents = false
+		if cmd := m.kickAgentsFetch(); cmd != nil {
+			cmds = append(cmds, cmd)
+		}
+	}
+	if m.kickMemory {
+		m.kickMemory = false
+		if cmd := m.kickMemoryFetch(); cmd != nil {
+			cmds = append(cmds, cmd)
+		}
+	}
+	if len(cmds) == 0 {
+		return nil
+	}
+	return tea.Batch(cmds...)
 }
 
 // openWakeTurn opens a streaming assistant card for a server-initiated turn

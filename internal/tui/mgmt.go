@@ -110,6 +110,22 @@ func (m *Model) openMemory() tea.Cmd {
 	m.relayout()
 	m.refresh()
 	cl := m.cl
+	if cl == nil {
+		return nil
+	}
+	return func() tea.Msg {
+		mem, err := cl.Memory()
+		return mgmtMsg{tab: panelMemory, mem: mem, err: err}
+	}
+}
+
+// kickMemoryFetch refreshes the open memory tab on a memory_event wire
+// frame (kick pattern, jobs-tab) so facts written mid-session appear.
+func (m *Model) kickMemoryFetch() tea.Cmd {
+	if m.panel != panelMemory || m.cl == nil {
+		return nil
+	}
+	cl := m.cl
 	return func() tea.Msg {
 		mem, err := cl.Memory()
 		return mgmtMsg{tab: panelMemory, mem: mem, err: err}
@@ -176,8 +192,15 @@ func (m *Model) handleMgmtMsg(msg mgmtMsg) {
 	}
 	switch msg.tab {
 	case panelMemory:
+		// Anchor the selection by identity across rebuilds: a fact inserted
+		// above the selection must not silently swap the open detail.
+		var sel string
+		if m.panelSel >= 0 && m.panelSel < len(m.memRows) {
+			sel = m.memRows[m.panelSel].text
+		}
 		m.memView = msg.mem
 		m.memRows = buildMemRows(msg.mem)
+		m.panelSel = anchorRow(m.panelSel, m.memRows, sel)
 		if len(m.memRows) == 0 {
 			m.panelMsg = "no facts or pending episodes"
 		} else {
@@ -201,7 +224,19 @@ func (m *Model) handleMgmtMsg(msg mgmtMsg) {
 		m.cfgRows = buildCfgRows(msg.cfg, msg.usr, msg.con)
 		m.panelMsg = ""
 	case panelAgents:
+		// Anchor the selection by TaskID across rebuilds: a registry insert
+		// above must not silently re-target the stop gate.
+		var selTask string
+		if m.panelSel >= 0 && m.panelSel < len(m.agentsReg) {
+			selTask = m.agentsReg[m.panelSel].TaskID
+		}
 		m.agentsReg = msg.sag
+		for i := range m.agentsReg {
+			if m.agentsReg[i].TaskID == selTask {
+				m.panelSel = i
+				break
+			}
+		}
 		if len(msg.sag) == 0 {
 			m.panelMsg = "no sub-agent activity recorded"
 		} else if m.confirm != confirmStopAgent {
@@ -211,6 +246,20 @@ func (m *Model) handleMgmtMsg(msg mgmtMsg) {
 	if m.panelSel >= m.panelLen() {
 		m.panelSel = max(m.panelLen()-1, 0)
 	}
+}
+
+// anchorRow re-locates a selection by its row text after a rebuild: an
+// insert above must not silently change what the selection points at. Falls
+// back to clamping when the row vanished.
+func anchorRow(prev int, rows []memRow, text string) int {
+	if text != "" {
+		for i := range rows {
+			if rows[i].text == text {
+				return i
+			}
+		}
+	}
+	return max(0, min(prev, len(rows)-1))
 }
 
 func buildMemRows(v client.MemoryView) []memRow {
@@ -616,26 +665,52 @@ func (m *Model) agentRowsRender(w int) []string {
 			sa = a.idx + 1
 		}
 		var detail string
-		if e.Phase == "finished" {
-			detail = fmt.Sprintf("  %s · %d it · %s tok", collapse(e.Status), e.Iterations, human(e.TokensUsed))
+		// Prefer the live card's telemetry — it moves on every wire state
+		// frame while the REST row lags up to a poll period behind. Lost
+		// cards (socket dropped mid-run) are skipped: their frozen values
+		// would lie forever. A finished card always supplies the FINAL
+		// telemetry (the wire carries it at finish; discarding it would roll
+		// the numbers back for a poll period), and cost comes from the card
+		// too so the row never pairs fresh tokens with a stale dollar figure.
+		phase, status, step, tool := e.Phase, e.Status, e.Step, e.LastTool
+		iters, tokens, durS, cost := e.Iterations, e.TokensUsed, e.DurationSeconds, e.CostUSD
+		if card := m.liveCard(e.TaskID); card != nil && !card.lost {
+			phase, status = card.phase, card.status
+			step, tool = card.step, card.tool
+			iters, tokens, durS = card.iters, card.tokens, card.durS
+			if card.costUSD > 0 {
+				cost = card.costUSD
+			}
+		} else if card := m.cardByTask(e.TaskID); card != nil && !card.lost {
+			phase, status = card.phase, card.status
+			step, tool = card.step, card.tool
+			iters, tokens, durS = card.iters, card.tokens, card.durS
+			if card.costUSD > 0 {
+				cost = card.costUSD
+			}
+		}
+		if phase == "finished" {
+			detail = fmt.Sprintf("  %s · %d it · %s tok", collapse(status), iters, human(tokens))
 		} else {
-			tool := collapse(e.LastTool)
-			if tool == "" && e.Step > 0 {
-				tool = fmt.Sprintf("step %d", e.Step)
+			t := collapse(tool)
+			if t == "" && step > 0 {
+				t = fmt.Sprintf("step %d", step)
 			}
-			if tool == "" {
-				tool = "running"
+			if t == "" {
+				t = "running"
 			}
-			detail = "  running · " + tool
+			detail = "  running · " + t
 		}
-		if e.DurationSeconds > 0 {
-			detail += fmt.Sprintf(" · %.1fs", e.DurationSeconds)
+		if durS > 0 {
+			detail += fmt.Sprintf(" · %.1fs", durS)
 		}
-		if e.CostUSD > 0 {
-			detail += " · " + fmtCost(e.CostUSD)
+		if cost > 0 {
+			detail += " · " + fmtCost(cost)
 		}
 		budget := w - 2 - lipgloss.Width(detail)
-		label := agentStatusGlyph(e.Phase, e.Status) + fmt.Sprintf(" SA%d ", sa) + goal
+		// The glyph reads the merged phase/status so a row never shows a
+		// spinning glyph beside a finished summary (or the reverse).
+		label := agentStatusGlyph(phase, status) + fmt.Sprintf(" SA%d ", sa) + goal
 		prefix, lab := "  ", th.acItem.Render(truncate(label, budget))
 		if i == m.panelSel {
 			prefix, lab = th.acSel.Render("› "), th.acSel.Render(truncate(label, budget))

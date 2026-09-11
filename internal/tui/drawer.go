@@ -60,10 +60,12 @@ type runsMsg struct {
 	err  error
 }
 
-// eventsMsg carries an events fetch.
+// eventsMsg carries an events fetch; seq stamps the eventsTabSeq it was
+// armed under so a late landing cannot clobber a newer filter state.
 type eventsMsg struct {
 	events []client.RuntimeEvent
 	err    error
+	seq    int
 }
 
 // runActionMsg reports a run cancel / approval-answer outcome.
@@ -130,6 +132,16 @@ func (m *Model) fetchAgents() tea.Cmd {
 }
 
 const agentsPollEvery = 3 * time.Second
+
+// kickAgentsFetch refreshes the open agents tab immediately on a wire
+// subagent_state frame — the same push-beats-poll pattern kickJobsFetch
+// uses for bg_job frames. The 3s chain stays as the fallback.
+func (m *Model) kickAgentsFetch() tea.Cmd {
+	if m.panel != panelAgents || m.cl == nil {
+		return nil
+	}
+	return m.fetchAgents()
+}
 
 // agentsTickMsg re-arms the agents-tab poll (runsTickMsg pattern) — the
 // registry is a live view while visible, not a stale snapshot.
@@ -462,13 +474,47 @@ func (m *Model) renderRunStatus(i int, label string) string {
 
 // ── events tab ──────────────────────────────────────────────────────────────
 
+// eventsPollEvery is the events-tab refresh cadence while visible — the
+// ring is live server-side, so the view must not be a frozen slice.
+const eventsPollEvery = 3 * time.Second
+
+// eventsTickMsg re-arms the events-tab poll (runsTickMsg pattern).
+type eventsTickMsg struct{ seq int }
+
+// armEventsPoll schedules the next events refresh while the tab is visible.
+func (m *Model) armEventsPoll() tea.Cmd {
+	m.eventsTabSeq++
+	seq := m.eventsTabSeq
+	return tea.Tick(eventsPollEvery, func(time.Time) tea.Msg {
+		return eventsTickMsg{seq: seq}
+	})
+}
+
+// handleEventsTick refetches the ring only for the newest generation on the
+// visible tab — stale ticks and closed tabs drop silently.
+func (m *Model) handleEventsTick(msg eventsTickMsg) tea.Cmd {
+	if msg.seq != m.eventsTabSeq || m.panel != panelEvents {
+		return nil
+	}
+	if m.cl == nil {
+		return nil // no connection: nothing to poll
+	}
+	return m.fetchEvents()
+}
+
 func (m *Model) openEvents() tea.Cmd {
 	m.panel = panelEvents
 	m.panelSel = 0
 	m.panelEdit = panelEditNone
 	m.panelMsg = "loading events…"
+	m.eventsTabSeq++ // in-flight fetches from a previous view state are stale
 	m.relayout()
 	m.refresh()
+	if m.cl == nil {
+		return nil // no connection: nothing to fetch, nothing to poll
+	}
+	// The fetch stays the single returned cmd so exec()-style tests keep
+	// working; the first eventsMsg arms the poll chain (see Update).
 	return m.fetchEvents()
 }
 
@@ -480,9 +526,10 @@ func (m *Model) fetchEvents() tea.Cmd {
 	} else if m.evSessionFilter {
 		sid = m.sessionID
 	}
+	seq := m.eventsTabSeq // stamp: a late landing must not clobber a newer filter state
 	return func() tea.Msg {
 		evs, err := cl.RuntimeEvents(100, rid, sid)
-		return eventsMsg{events: evs, err: err}
+		return eventsMsg{events: evs, err: err, seq: seq}
 	}
 }
 
@@ -493,6 +540,7 @@ func (m *Model) toggleEventFilter() tea.Cmd {
 	if m.evSessionFilter {
 		m.evRunFilter = ""
 	}
+	m.eventsTabSeq++ // the in-flight unfiltered poll must not clobber the new filter
 	return m.fetchEvents()
 }
 
@@ -500,6 +548,7 @@ func (m *Model) toggleEventFilter() tea.Cmd {
 func (m *Model) clearEventFilters() tea.Cmd {
 	m.evRunFilter = ""
 	m.evSessionFilter = false
+	m.eventsTabSeq++
 	return m.fetchEvents()
 }
 
@@ -516,11 +565,15 @@ func (m *Model) drillIntoRunEvents() tea.Cmd {
 }
 
 func (m *Model) handleEventsMsg(msg eventsMsg) {
+	if msg.seq != 0 && msg.seq != m.eventsTabSeq {
+		return // a fetch armed before a filter change / reopen — stale
+	}
 	if msg.err != nil {
 		m.panelMsg = "error: " + msg.err.Error()
 		return
 	}
 	m.feed = msg.events
+	m.panelSel = max(0, min(m.panelSel, len(m.feed)-1)) // shrink clamps the selection
 	if len(m.feed) == 0 {
 		m.panelMsg = "no runtime events yet — every WS prompt and REST run feeds this ring"
 	} else {

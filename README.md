@@ -486,7 +486,7 @@ full command and press `⏎`.
 | `/sessions` | Browse, search, pin, rename, export & resume sessions |
 | `/runs` | Headless REST runs — live status, remote approvals, cancel |
 | `/run <prompt>` | Start a headless run (fresh session) and watch it in the runs tab |
-| `/events` | The `odek.event/v1` runtime feed |
+| `/events` | The `odek.event/v1` runtime feed (live 3s refresh while the tab is open) |
 | `/jobs` | Background jobs — live status, output viewer, `s` stop (requires odek ≥ v1.38) |
 | `/plan` | Structured task plan of this session (live status) |
 | `/memory` | Facts by target, pending-episode promote, consolidate |
@@ -522,7 +522,9 @@ shared grammar:
   `⏎` resume.
 - **Runs** — live 3s poll, `A`/`D`/`T` remote approvals, `c` cancel,
   `p` refresh pending approvals, `e` drill into the run's event trail.
-- **Agents** — the serve instance's sub-agent registry, live-polled every 3s;
+- **Agents** — the serve instance's sub-agent registry, live-polled every 3s
+  and refreshed immediately on every sub-agent state frame; rows prefer the
+  live telemetry (tool, step, tokens, cost, duration) over the REST snapshot;
   `c` stop the highlighted row (two-step, same gate as `/stop`), `o` jump to
   the delegating transcript step, `⏎` the full registry record — trust,
   budget, cost, and artifact lines included.
