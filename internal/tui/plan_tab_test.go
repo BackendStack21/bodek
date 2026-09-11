@@ -1,7 +1,7 @@
 package tui
 
 import (
-	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -14,7 +14,7 @@ import (
 // house grammar (⏎ expand / esc fold), and the silent-degrade empty states.
 // Snapshots are injected through handlePlanMsg so no server is involved.
 
-var errPlanRoute = errors.New("session plan: status 404 Not Found")
+var errPlanRoute = fmt.Errorf("%w: status 404 Not Found", client.ErrPlanUnavailable)
 
 func planFixture() client.PlanSnapshot {
 	return client.PlanSnapshot{

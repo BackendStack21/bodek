@@ -2,6 +2,7 @@ package tui
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -96,6 +97,7 @@ func (m *Model) issuePlanFetch(confirm bool) tea.Cmd {
 		return nil
 	}
 	m.planReqSeq++
+	m.planConfirmArmed = confirm // test-visible: the newest fetch's kind
 	cl := m.cl
 	want := m.sessionID
 	token := m.authToken
@@ -117,8 +119,17 @@ func (m *Model) handlePlanMsg(msg planMsg) (cmd tea.Cmd) {
 		}
 	}()
 	if msg.err != nil {
-		m.planAvail = planUnavailable
-		if m.panel == panelPlan {
+		// Only a 404 (old engine, route absent) is permanent. A transient
+		// error — timeout under load, a 5xx, a transport blip — must not
+		// kill the poll chain: the defer below re-arms and the next tick
+		// retries. Freezing the strip on one slow GET was the "plan 0/6
+		// forever" bug.
+		if errors.Is(msg.err, client.ErrPlanUnavailable) {
+			m.planAvail = planUnavailable
+			if m.panel == panelPlan {
+				m.syncPlanPanelMsg()
+			}
+		} else if m.panel == panelPlan {
 			m.syncPlanPanelMsg()
 		}
 		return nil
@@ -177,8 +188,13 @@ func (m *Model) handlePlanTick(msg planTickMsg) tea.Cmd {
 		return nil
 	}
 	if m.planDirty {
-		// Stay armed; do not bump planReqSeq over the in-flight confirm.
-		return m.armPlanPoll()
+		// The confirm fetch is the only reply that can clear a dirty
+		// strip — and it can die in flight (superseded by a poll/kick that
+		// bumped planReqSeq). Waiting forever for a dead reply froze the
+		// strip at the optimistic patch. Re-issue instead: the fetch is an
+		// idempotent GET, confirm=true keeps it eligible to clear the dirty
+		// flag, and the newest reply wins.
+		return tea.Batch(m.fetchPlanConfirm(), m.armPlanPoll())
 	}
 	return m.fetchPlan()
 }

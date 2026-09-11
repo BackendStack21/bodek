@@ -1,6 +1,7 @@
 package client
 
 import (
+	"errors"
 	"net/http"
 	"strings"
 	"testing"
@@ -70,6 +71,8 @@ func TestSessionPlan_HTTP404(t *testing.T) {
 		t.Fatal("expected error on 404")
 	} else if !strings.Contains(err.Error(), "404") {
 		t.Errorf("error should mention status, got: %v", err)
+	} else if !errors.Is(err, ErrPlanUnavailable) {
+		t.Errorf("404 must wrap ErrPlanUnavailable (permanent, stops the poll chain), got: %v", err)
 	}
 }
 

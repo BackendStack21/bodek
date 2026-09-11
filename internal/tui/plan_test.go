@@ -1,7 +1,7 @@
 package tui
 
 import (
-	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -15,7 +15,7 @@ import (
 // closures are never executed — the wire contract lives in internal/client,
 // and invoking arbitrary batch children (listen…) would block a test.
 
-var errTestPlanRoute = errors.New("session plan: status 404 Not Found")
+var errTestPlanRoute = fmt.Errorf("%w: status 404 Not Found", client.ErrPlanUnavailable)
 
 func planCallEvent(name string) client.Event {
 	return client.Event{Type: "tool_call", Name: name, Data: "{}"}
@@ -383,13 +383,17 @@ func TestPlanPoll_SkipsFetchWhileDirty(t *testing.T) {
 	if c := m.armPlanPoll(); c == nil {
 		t.Fatal("busy run must arm the live poll")
 	}
-	req := m.planReqSeq
 	c := m.handlePlanTick(planTickMsg{seq: m.planPollSeq})
 	if c == nil {
 		t.Fatal("dirty tick must re-arm rather than drop the chain")
 	}
-	if m.planReqSeq != req {
-		t.Fatal("dirty tick must not issue a fetch (would supersede confirm)")
+	// A dirty tick re-issues a CONFIRM fetch (not a poll): the in-flight
+	// confirm may be dead (superseded by a poll that bumped planReqSeq),
+	// and waiting for it forever froze the strip at the optimistic patch.
+	// The newest confirm reply is what clears planDirty — see
+	// TestPlanDirtyTickReissuesConfirm in plan_realtime_test.go.
+	if !m.planConfirmArmed {
+		t.Fatal("dirty tick must re-issue the confirm fetch")
 	}
 }
 

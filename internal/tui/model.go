@@ -275,11 +275,12 @@ type Model struct {
 	confirm     confirmKind   // armed destructive action: y fires, any other key disarms
 	stopTarget  string        // task_id armed by confirmStopAgent
 
-	agentsReg    []client.SubagentEntry // agents tab: sub-agent registry snapshot
-	agentsSeq    int                    // agents-tab poll generation; stale ticks drop
-	eventsTabSeq int                    // events-tab poll generation; stale ticks drop
-	kickAgents   bool                   // pending agents-tab refresh (flushKicks)
-	kickMemory   bool                   // pending memory-tab refresh (flushKicks)
+	agentsReg        []client.SubagentEntry // agents tab: sub-agent registry snapshot
+	agentsSeq        int                    // agents-tab poll generation; stale ticks drop
+	eventsTabSeq     int                    // events-tab poll generation; stale ticks drop
+	kickAgents       bool                   // pending agents-tab refresh (flushKicks)
+	kickMemory       bool                   // pending memory-tab refresh (flushKicks)
+	planConfirmArmed bool                   // newest plan fetch is a tool_result confirm
 
 	// Background jobs tab + lifecycle watcher (odek v1.38+ /api/jobs — the
 	// engine pushes nothing for job lifecycle, so bodek watches REST).
