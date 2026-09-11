@@ -142,9 +142,9 @@ func (m *Model) handleInspectKey(msg tea.KeyMsg) bool {
 		return false
 	}
 	switch msg.String() {
-	case "tab", "down":
+	case "down":
 		m.moveInspect(false)
-	case "shift+tab", "up":
+	case "up":
 		m.moveInspect(true)
 	case "enter", " ":
 		p := m.inspect
@@ -169,11 +169,11 @@ func (m *Model) handleInspectKey(msg tea.KeyMsg) bool {
 		m.invalidateInspect()
 		m.refresh()
 		m.revealInspect()
-	case "[", "]":
+	case "pgup", "pgdown":
 		if m.inspect.stepIdx >= 0 {
 			s := &m.msgs[m.inspect.msgIdx].steps[m.inspect.stepIdx]
 			delta := m.toolDetailRows()
-			if msg.String() == "[" {
+			if msg.String() == "pgup" {
 				delta = -delta
 			}
 			s.detailOffset = max(0, s.detailOffset+delta)
@@ -235,7 +235,7 @@ func (m *Model) toolDetailPage(s *step, details []string, width int) []string {
 	s.detailOffset = offset
 	end := min(len(rows), offset+limit)
 	out := append([]string(nil), rows[offset:end]...)
-	label := fmt.Sprintf("%d–%d/%d · Tab select · [ ] page", offset+1, end, len(rows))
+	label := fmt.Sprintf("%d–%d/%d · PgUp PgDn page", offset+1, end, len(rows))
 	out = append(out, m.th.stepArg.Render(ansi.Truncate(label, max(1, width), "")))
 	return out
 }

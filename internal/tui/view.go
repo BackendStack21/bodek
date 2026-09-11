@@ -725,8 +725,8 @@ func (m *Model) renderMessage(msg message, msgIdx, lineOffset int) (string, []st
 					continue
 				}
 				// Calm default: reasoning previews paint only on demand — ^E
-				// (details) or a deliberate open (tab / click). The transcript
-				// holds still while odek thinks.
+				// (details) or a deliberate open (click / inspect + Enter). The
+				// transcript holds still while odek thinks.
 				if !items[it].open && !m.expandAll {
 					if m.inspect != nil && m.inspect.msgIdx == msgIdx && m.inspect.itemIdx == it && m.inspect.stepIdx < 0 {
 						addBlock(th.asstWork.Render(th.acSel.Render("› reasoning · Enter expand")), false)
@@ -1764,7 +1764,7 @@ func (m *Model) footerContent() string {
 		)
 	}
 	if m.validInspect() {
-		return m.panelFooter("inspect", "Tab next", "⏎ expand", "[ ] page", "esc compose")
+		return m.panelFooter("inspect", "↑↓ next", "⏎ expand", "Pg↑↓ page", "esc compose")
 	}
 	// The status bar carries no static key cheatsheet (the welcome splash and
 	// /help cover that) — only the live run state: a cancel hint while busy on

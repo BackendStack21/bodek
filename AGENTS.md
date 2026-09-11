@@ -100,7 +100,7 @@ feat(tui): compact tool steps with Ctrl+E details toggle
   messages; turn markers (`**Cancelled.**` etc.) attach to the last reply.
   The calm default hides reasoning previews and tool responses: the intent
   rail and step result bodies paint only under `^E` (details) or a
-  deliberate expand — `Tab`/`Shift+Tab` selects an item and `Enter` opens it;
+  deliberate expand — `↑`/`↓` selects an item and `Enter` opens it;
   click selects and expands one step; the result peek is gone. While a turn
   streams, its head line carries the run's elapsed counter right-aligned
   at the viewport edge (the `runStart` clock, whole seconds, dropped on
@@ -315,8 +315,8 @@ modifier routes to the composer), and `Alt+A`/`Alt+D`/`Alt+T`
 
 ## Interaction and response bounds
 
-- `Tab`/`Shift+Tab` traverses chronological tools and reasoning, with visible focus;
-  `Enter` expands the selected item. Typing returns to the composer. `[`/`]`
+- `↑`/`↓` traverses chronological tools and reasoning while inspecting, with visible focus;
+  `Enter` expands the selected item. Typing returns to the composer. `PgUp`/`PgDn`
   pages a selected tool and Right cycles its sub-agent chips. Copy uses the
   selected item. Clear/resume must discard stale inspect coordinates.
 - Expanded tool and sub-agent response bodies show at most eight display rows

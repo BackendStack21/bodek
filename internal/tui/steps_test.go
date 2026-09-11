@@ -495,7 +495,7 @@ func TestExpandedOutputCap(t *testing.T) {
 		{name: "shell", done: true, result: strings.Repeat("line\n", 250)},
 	}})
 	m.toggleStep(0, 0)
-	if out := plain(m.conversation()); !strings.Contains(out, "[ ] page") {
+	if out := plain(m.conversation()); !strings.Contains(out, "PgUp PgDn page") {
 		t.Errorf("expanded output should have bounded pages:\n%s", out)
 	}
 }

@@ -15,23 +15,23 @@ func TestInspectReachesToolAfterReasoning(t *testing.T) {
 	busyTurn(m)
 	m.msgs[1].items = []turnItem{{thinking: true, text: "reasoning"}, {stepIdx: 0}, {stepIdx: 1}}
 	m.msgs[1].steps = []step{{name: "shell", done: true, result: "first"}, {name: "shell", done: true, result: "second"}}
-	m.Update(key("tab"))
+	m.moveInspect(false)
 	if m.inspect == nil || m.inspect.itemIdx != 0 {
-		t.Fatal("Tab must visibly select reasoning")
+		t.Fatal("first traversal must visibly select reasoning")
 	}
-	m.Update(key("tab"))
+	m.handleKey(key("down"))
 	m.Update(key("enter"))
 	if m.inspect.stepIdx != 0 || !m.msgs[1].steps[0].expanded || m.msgs[1].steps[1].expanded {
 		t.Fatal("Enter must expand only the selected tool")
 	}
-	m.Update(key("tab"))
+	m.handleKey(key("down"))
 	m.Update(key("enter"))
 	if !m.msgs[1].steps[1].expanded {
-		t.Fatal("Tab must reach the next tool")
+		t.Fatal("down must reach the next tool")
 	}
-	m.Update(tea.KeyMsg{Type: tea.KeyShiftTab})
+	m.handleKey(key("up"))
 	if m.inspect.stepIdx != 0 {
-		t.Fatal("Shift+Tab must move backward")
+		t.Fatal("up must move backward")
 	}
 	m.Update(key("esc"))
 	if m.inspect != nil || m.confirm != confirmNone {
@@ -43,7 +43,7 @@ func TestInspectTypingReturnsToComposer(t *testing.T) {
 	m := newTestModel()
 	busyTurn(m)
 	m.msgs[1].steps = []step{{name: "shell"}}
-	m.Update(key("tab"))
+	m.moveInspect(false)
 	m.Update(key("h"))
 	if m.inspect != nil || m.ta.Value() != "h" {
 		t.Fatalf("typing should resume composer: %q", m.ta.Value())
@@ -90,16 +90,16 @@ func TestExpandedToolResponsesStayBoundedAndPage(t *testing.T) {
 		if strings.Contains(out, "line 099") {
 			t.Fatal("first page should not contain tail")
 		}
-		m.Update(key("]"))
+		m.handleKey(key("pgdown"))
 		next, _, _ := m.renderStep(m.msgs[1].steps[0], false, 1, 0, 0)
 		if next == out || m.msgs[1].steps[0].detailOffset == 0 {
 			t.Fatal("paging did not advance")
 		}
 		for i := 0; i < 100/m.toolDetailRows()+3; i++ {
-			m.Update(key("]"))
+			m.handleKey(key("pgdown"))
 		}
 		last := m.msgs[1].steps[0].detailOffset
-		m.Update(key("["))
+		m.handleKey(key("pgup"))
 		if m.msgs[1].steps[0].detailOffset >= last {
 			t.Fatal("paging beyond tail must not trap navigation")
 		}
