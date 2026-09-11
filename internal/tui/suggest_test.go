@@ -76,10 +76,11 @@ func TestSkillSuggestionCard(t *testing.T) {
 		}
 	}
 
-	// Typing is never captured by the card.
-	m.Update(key("s"))
+	// Typing still wins: a letter that is not a decision key never
+	// answers, and decision letters only fire on the empty draft.
+	m.Update(key("h"))
 	if m.skillSuggest == nil {
-		t.Fatal("a bare letter answered the suggestion")
+		t.Fatal("a non-decision letter answered the suggestion")
 	}
 
 	// alt+s saves: the ack reaches the socket and the card clears.

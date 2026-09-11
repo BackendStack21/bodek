@@ -897,11 +897,13 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if msg.String() == "ctrl+x" && m.busy {
 		return m, m.armConfirm(confirmCancel, "the running turn")
 	}
-	// The palette works from every rung of the modality ladder.
+	// The palette works from every rung of the modality ladder — except over
+	// a live approval or clarify card, which captures the keyboard until
+	// answered (a chord answering underneath would be a surprise decision).
 	if m.pal.open {
 		return m.handlePaletteKey(msg)
 	}
-	if msg.String() == "ctrl+k" {
+	if msg.String() == "ctrl+k" && m.curApproval() == nil && m.clarify == nil {
 		return m, m.togglePalette()
 	}
 
@@ -956,9 +958,22 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleACKey(msg)
 	}
 
-	// A pending skill suggestion answers on alt-chords — never bare keys or
-	// ⏎/esc, which belong to the composer.
-	if mm, cmd, handled := m.handleSuggestKeys(msg.String()); handled {
+	// An unmapped enhanced-key chord surfaces as a note instead of
+	// vanishing silently — the FilterShiftEnter sentinel never types.
+	if msg.String() == "alt+unmapped-chord" {
+		return m, m.transientNoteCmd("unmapped key chord ignored")
+	}
+
+	// The queue strip holds focus before the skill suggestion chip: a
+	// chord underneath must not answer a passive card while the operator
+	// is managing the queue.
+	if m.qfocus {
+		return m.queueStripKey(msg)
+	}
+
+	// A pending skill suggestion answers on alt-chords — or bare s/x on an
+	// empty draft, mirroring the approval card's plain-key fallback.
+	if mm, cmd, handled := m.handleSuggestKeys(msg); handled {
 		return mm, cmd
 	}
 
@@ -969,15 +984,18 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	// Queue-strip focus captures everything (except quit) until esc/⏎/ctrl+q
 	// returns it to the composer.
-	if m.qfocus {
-		return m.queueStripKey(msg)
-	}
 
 	if cmd := m.handleHomeResumeKey(msg.String()); cmd != nil {
 		return m, cmd
 	}
 	if handled := m.handleInspectKey(msg); handled {
 		return m, nil
+	}
+
+	// The newline family routes through one helper before the binding
+	// switch so no consumer can drift from the chord set.
+	if s := msg.String(); s != "enter" && newlineChord(s) {
+		return m, tea.Batch(m.insertNewline(), m.syncAC())
 	}
 
 	switch msg.String() {
@@ -1002,8 +1020,6 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, m.openModels()
 	case "enter":
 		return m, m.submit()
-	case "shift+enter", "ctrl+enter", "alt+enter", "ctrl+j":
-		return m, tea.Batch(m.insertNewline(), m.syncAC())
 	case "ctrl+q":
 		// Queue-strip focus: a chord, so typing a q is never hijacked.
 		// Only latches when there is something queued to manage.

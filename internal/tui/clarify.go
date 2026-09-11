@@ -31,7 +31,7 @@ func (m *Model) handleClarifyKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case "ctrl+c":
 		return m, m.armConfirm(confirmQuit, "bodek")
-	case "shift+enter", "alt+enter", "ctrl+j":
+	case "shift+enter", "ctrl+enter", "alt+enter", "ctrl+j":
 		m.appendClarify("\n")
 		return m, nil
 	case "pgup", "pgdown", "ctrl+u", "ctrl+d":

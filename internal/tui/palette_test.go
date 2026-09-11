@@ -168,21 +168,29 @@ func TestPaletteSelectionTracksScroll(t *testing.T) {
 	}
 }
 
-// TestPaletteFromApproval verifies the palette works from the approval rung.
+// TestPaletteFromApproval pins the bindings-standardization contract: ^K is
+// gated while an approval card is head (the approval captures the keyboard
+// until answered), and still opens the moment the card clears.
 func TestPaletteFromApproval(t *testing.T) {
 	m := wired(t)
 	m.busy = true
 	m.handleEvent(client.Event{Type: "approval_request", ID: "apr", Command: "x"})
 	m.Update(key("ctrl+k"))
-	if !m.pal.open {
-		t.Fatal("^K did not open over the approval panel")
+	if m.pal.open {
+		t.Fatal("^K opened the palette over a live approval card")
 	}
-	// Esc closes the palette, not the approval.
+	if m.curApproval() == nil {
+		t.Fatal("approval must remain head after ^K")
+	}
+	// Once the card clears, the palette opens from the approval rung again.
+	m.Update(key("alt+d")) // deny → approval answered
+	m.Update(key("ctrl+k"))
+	if !m.pal.open {
+		t.Fatal("^K must open the palette once no approval is pending")
+	}
+	// Esc closes the palette, not the underlying chrome.
 	m.Update(key("esc"))
 	if m.pal.open {
 		t.Error("esc did not close the palette")
-	}
-	if m.curApproval() == nil {
-		t.Error("esc closed the palette straight through the approval")
 	}
 }

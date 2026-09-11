@@ -13,15 +13,26 @@ import (
 // acknowledgment; skill auto-save governs real persistence server-side.
 
 // handleSuggestKeys answers a pending skill suggestion when one shows.
-func (m *Model) handleSuggestKeys(s string) (tea.Model, tea.Cmd, bool) {
+// Alt chords decide everywhere; bare s/x decide only on an empty draft —
+// the same fallback the approval card uses for terminals that cannot
+// deliver Alt chords (macOS Option-as-UTF-8). Typing always wins.
+func (m *Model) handleSuggestKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd, bool) {
 	if m.skillSuggest == nil {
 		return m, nil, false
 	}
-	switch s {
+	switch msg.String() {
 	case "alt+s":
 		return m, m.answerSuggestion("save"), true
 	case "alt+x":
 		return m, m.answerSuggestion("skip"), true
+	}
+	if msg.Type == tea.KeyRunes && !msg.Alt && !msg.Paste && len(msg.Runes) == 1 && m.ta.Value() == "" {
+		switch lowerRune(msg.Runes[0]) {
+		case 's':
+			return m, m.answerSuggestion("save"), true
+		case 'x':
+			return m, m.answerSuggestion("skip"), true
+		}
 	}
 	return m, nil, false
 }

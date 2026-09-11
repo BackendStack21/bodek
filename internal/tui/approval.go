@@ -209,9 +209,10 @@ func (m *Model) handleApprovalComposerKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, m.armConfirm(confirmQuit, "bodek")
 	case "enter":
 		return m, m.submit()
-	case "shift+enter", "ctrl+enter", "alt+enter", "ctrl+j":
-		return m, m.insertNewline()
 	default:
+		if newlineChord(msg.String()) {
+			return m, m.insertNewline()
+		}
 		return m, m.updateApprovalComposer(msg)
 	}
 }

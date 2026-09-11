@@ -412,6 +412,9 @@ own front-end settings are separate; see [Configuration](#configuration).
 | `^S` | Stop the running sub-agent (two-step confirm: `y` stops, any other key continues) |
 | `^T` | Cycle reasoning depth (`disabled` → `low` → `medium` → `high`) |
 | `⇧⏎` | Insert a newline in the input (`^J` and `Ctrl+Enter` still work on terminals that cannot tell Shift+Enter from Enter) |
+| `s` / `x` | Save / skip a pending skill-suggestion chip while the composer is empty (`alt+s`/`alt+x` work everywhere) |
+| `F1` | Inspector help in the details view |
+| `1`–`9` | Resume a recent session from the home screen |
 | `^L` | Clear the conversation (two-step confirm: `y` clears, any other key cancels) |
 | `^E` | Toggle details — reasoning previews and every step's full output/logs (hidden in the calm default) |
 | `^Y` | Copy the last reply to the clipboard (local helper — `pbcopy`/`wl-copy`/`clip` — with OSC 52 fallback) |
