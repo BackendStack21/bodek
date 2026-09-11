@@ -202,7 +202,8 @@ own front-end settings are separate; see [Configuration](#configuration).
 
 - **Live reasoning** — the model's pre-tool thinking is captured per beat
   but stays hidden in the calm default: the transcript holds still while
-  odek thinks. `^E` unfolds every stored block; `Tab` / `Shift+Tab` selects an item
+  odek thinks. `^E` unfolds every stored block; `↑`/`↓` (while inspecting)
+  selects an item
   and `Enter` opens just that item — a live opened block holds finished sentences until the
   next lands, never a token ticker. Elapsed time per beat; the clock
   freezes when that think cycle yields (a tool or the reply). A turn that
@@ -217,7 +218,7 @@ own front-end settings are separate; see [Configuration](#configuration).
   glyph: `●` idle, `◉` a turn in flight, `◌` reconnecting, `○` down.
 - **Sub-agents** — a delegation paints an always-on chip strip under the
   parent step (`⟳ SA1 explore · ✓ SA2 lint · ✗ SA3 types`), so you can
-  see who is running or who failed without expanding. Click a chip, or select its parent tool with `Tab` and press `Right`
+  see who is running or who failed without expanding. Click a chip, or select its parent tool with `↑↓` and press `Right`
   to cycle agent focus: identity + live beat
   (current tool, step, budget, cost). `^E` / expand shows that
   agent's logs, artifacts, and framed result in bounded pages. Tasks the wire hasn't
@@ -403,8 +404,8 @@ own front-end settings are separate; see [Configuration](#configuration).
 | `alt+r` | Re-send the last prompt (`/retry`) |
 | `alt+f` | Search the transcript (`⏎`/`n` next match · `N` previous · a hit expands the hidden step or reasoning block) |
 | `^F` | Fold/unfold the most recent turn card (or click any turn head) |
-| `Tab` / `Shift+Tab` | Select the next / previous tool or reasoning item; `Enter` expands it, `Esc` returns to the composer |
-| `[` / `]` (inspecting a tool) | Previous / next response page; `Right` cycles sub-agent chips when present |
+| `↑`/`↓` (inspecting) | Select the previous / next tool or reasoning item; `Enter` expands it, `Esc` returns to the composer |
+| `PgUp`/`PgDn` (inspecting a tool) | Previous / next response page; `Right` cycles sub-agent chips when present |
 | `^X` | Stop the running turn from any panel or inspection state (`y` confirms); unrelated expanded items stay open |
 | `^R` | Browse & resume saved sessions |
 | `^O` | Switch the model |
@@ -434,11 +435,12 @@ prompt can start with `?`, `[`, or any other character.
 
 ### Inspecting tool responses
 
-Select an item with `Tab` / `Shift+Tab`, then press Enter to expand it. Tool
-responses display at most eight body rows plus a paging indicator, with fewer
-rows in short terminals. Use `[` / `]` to page, `Alt+Y` to copy the retained
-response, and Escape to return to typing. Clicking a tool header also selects
-it. The global `^E` details toggle uses the same page limits.
+Click a tool header or reasoning block to inspect it; while inspecting, `↑`/
+`↓` move between items and Enter expands the focused one. Tool responses
+display at most eight body rows plus a paging indicator, with fewer
+rows in short terminals. Use `PgUp`/`PgDn` to page, `Alt+Y` to copy the
+retained response, and Escape to return to typing. The global `^E`
+details toggle uses the same page limits.
 
 Batch results retain command/file labels and original item counts; bracketed
 log lines are never treated as extra commands. Plans render creation, updates,

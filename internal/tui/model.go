@@ -1128,9 +1128,6 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// bare letters belong to the composer.
 		m.toggleCollapseLast()
 		return m, nil
-	case "tab", "shift+tab":
-		m.moveInspect(msg.String() == "shift+tab")
-		return m, nil
 	case "end":
 		// End doubles as jump-to-latest — only with an empty input, so its
 		// cursor-movement meaning inside a draft keeps working.
