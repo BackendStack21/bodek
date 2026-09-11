@@ -897,6 +897,13 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if msg.String() == "ctrl+x" && m.busy {
 		return m, m.armConfirm(confirmCancel, "the running turn")
 	}
+	// An unmapped enhanced-key chord is a diagnostic, not input: intercept
+	// the sentinel at the very top of the ladder so no capture surface
+	// (palette, popups, find bar, approval composer, queue strip) can type
+	// or swallow it — it always becomes the transient note.
+	if msg.String() == "alt+unmapped-chord" {
+		return m, m.transientNoteCmd("unmapped key chord ignored")
+	}
 	// The palette works from every rung of the modality ladder — except over
 	// a live approval or clarify card, which captures the keyboard until
 	// answered (a chord answering underneath would be a surprise decision).
@@ -956,12 +963,6 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// The @-reference popup captures navigation keys while open.
 	if m.ac.open {
 		return m.handleACKey(msg)
-	}
-
-	// An unmapped enhanced-key chord surfaces as a note instead of
-	// vanishing silently — the FilterShiftEnter sentinel never types.
-	if msg.String() == "alt+unmapped-chord" {
-		return m, m.transientNoteCmd("unmapped key chord ignored")
 	}
 
 	// The queue strip holds focus before the skill suggestion chip: a
