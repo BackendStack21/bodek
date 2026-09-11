@@ -133,7 +133,7 @@ func (m *Model) shelfView() string {
 			name = "skill"
 		}
 		chips = append(chips, th.acTitle.Render("✦ "+truncate(sanitize(name), 20))+
-			th.acDim.Render(" alt+s save · alt+x skip"))
+			th.acDim.Render(" alt+s/s save · alt+x/x skip"))
 	}
 	if len(chips) == 0 {
 		return ""

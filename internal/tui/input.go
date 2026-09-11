@@ -18,6 +18,13 @@ import (
 // handleACKey navigates/accepts/dismisses the completion popup (@ files and
 // sessions, or / commands) while it has keyboard capture.
 func (m *Model) handleACKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	// The newline family routes through one helper before the binding
+	// switch so no consumer can drift from the chord set. On the AC popup
+	// the chord inserts a newline only — accepting the completion is
+	// Enter's job (main's behavior).
+	if newlineChord(msg.String()) {
+		return m, tea.Batch(m.insertNewline(), m.syncAC())
+	}
 	switch msg.String() {
 	case "up", "ctrl+p":
 		if m.ac.sel > 0 {
@@ -46,8 +53,6 @@ func (m *Model) handleACKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case "ctrl+c":
 		return m, m.armConfirm(confirmQuit, "bodek")
-	case "shift+enter", "alt+enter", "ctrl+j":
-		return m, tea.Batch(m.insertNewline(), m.syncAC())
 	}
 	// Any other key is plain input: forward it to the textarea, then
 	// re-evaluate the popup against the new value — typing narrows the
@@ -56,6 +61,17 @@ func (m *Model) handleACKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	m.ta, cmd = m.ta.Update(msg)
 	m.syncComposer()
 	return m, tea.Batch(cmd, m.syncAC(), m.schedulePersist())
+}
+
+// newlineChord is the single source of truth for the composer newline
+// family: every surface that accepts Enter must treat these chords as a
+// newline, never a submit. Keep all consumers in sync through this helper.
+func newlineChord(s string) bool {
+	switch s {
+	case "shift+enter", "ctrl+enter", "alt+enter", "ctrl+j":
+		return true
+	}
+	return false
 }
 
 // insertNewline drops a line break at the caret and refits the composer.
@@ -86,6 +102,12 @@ func FilterShiftEnter(_ tea.Model, msg tea.Msg) tea.Msg {
 	s := string(b)
 	if km, ok := parseEnhancedKey(s); ok {
 		return km
+	}
+	// A well-formed enhanced-key chord that failed to decode (unknown key
+	// code) surfaces as an Alt sentinel so it can never type into the
+	// composer; handleKey turns it into a transient diagnostic note.
+	if unmappedChord(s) {
+		return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("unmapped-chord"), Alt: true}
 	}
 	if shiftEnterCSI(s) {
 		return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("shift+enter")}
@@ -143,11 +165,26 @@ func disambiguatedEsc(s string) bool {
 	return disambiguatedEscRe.MatchString(s)
 }
 
+// unmappedChord reports whether s is a well-formed modifyOtherKeys or kitty
+// CSI-u chord whose key code keyMsgFromCode could not decode. Key
+// release/repeat reports never qualify — they are not keystrokes.
+func unmappedChord(s string) bool {
+	if _, ok := parseEnhancedKey(s); ok {
+		return false
+	}
+	if m := kittyCSIuRe.FindStringSubmatch(s); m != nil && m[3] != "2" && m[3] != "3" {
+		return true
+	}
+	return modifyOtherKeysRe.MatchString(s)
+}
+
 var (
 	// xterm modifyOtherKeys=2: CSI 27 ; modifier ; key ~ (some hosts use u)
 	modifyOtherKeysRe = regexp.MustCompile(`^\x1b\[27;(\d+);(\d+)[~u]$`)
-	// kitty CSI-u: CSI key ; modifier [; event] u
-	kittyCSIuRe = regexp.MustCompile(`^\x1b\[(\d+)(?:;(\d+)(?:;\d+)?)?u$`)
+	// kitty CSI-u: CSI key ; modifier [; event] u. The event field is
+	// captured so key release/repeat reports (2/3) can be rejected — only
+	// presses (1 or absent) are keys.
+	kittyCSIuRe = regexp.MustCompile(`^\x1b\[(\d+)(?:;(\d+)(?:;([123]))?)?u$`)
 )
 
 // parseEnhancedKey decodes xterm modifyOtherKeys and kitty CSI-u. Codium /
@@ -158,6 +195,9 @@ func parseEnhancedKey(s string) (tea.KeyMsg, bool) {
 		return keyMsgFromCode(atoi(m[2]), atoi(m[1]))
 	}
 	if m := kittyCSIuRe.FindStringSubmatch(s); m != nil {
+		if m[3] == "2" || m[3] == "3" {
+			return tea.KeyMsg{}, false // release/repeat — never a fresh keypress
+		}
 		mod := 1
 		if m[2] != "" {
 			mod = atoi(m[2])
@@ -182,6 +222,11 @@ func keyMsgFromCode(key, mod int) (tea.KeyMsg, bool) {
 	case 13:
 		if shift {
 			return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("shift+enter")}, true
+		}
+		if ctrl {
+			// Enhanced-key terminals make Ctrl+Enter distinguishable from
+			// plain Enter; keep it a newline chord so it never submits.
+			return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("ctrl+enter")}, true
 		}
 		if alt {
 			return tea.KeyMsg{Type: tea.KeyEnter, Alt: true}, true
@@ -211,6 +256,19 @@ func keyMsgFromCode(key, mod int) (tea.KeyMsg, bool) {
 	}
 	if key >= 32 && key < 127 && alt && !ctrl {
 		return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{rune(key)}, Alt: true}, true
+	}
+	// Shift+printable (modifyOtherKeys level 2 / kitty CSI-u): without this
+	// branch the chord is dropped entirely. Only letters can be safely
+	// uppercased — the shifted glyph of digits/punctuation is
+	// keyboard-layout-dependent, so those fall through to the unmapped
+	// sentinel (a visible note) rather than a silently wrong character.
+	if key >= 'a' && key <= 'z' && shift && !ctrl && !alt {
+		return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{rune(key - 'a' + 'A')}}, true
+	}
+	// Unmodified CSI-u printable (some hosts encode plain keys too): pass
+	// the rune through so typing never silently dies on a conforming host.
+	if key >= 32 && key < 127 && !shift && !ctrl && !alt {
+		return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{rune(key)}}, true
 	}
 	return tea.KeyMsg{}, false
 }

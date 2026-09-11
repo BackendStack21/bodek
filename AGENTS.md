@@ -156,7 +156,22 @@ feat(tui): compact tool steps with Ctrl+E details toggle
   one next-action tip. Branding lives in the header — do not reintroduce a
   splash wordmark. After `^L`, `sessionHome` keeps last prompt / receipt /
   recents; `/new` returns to first-run.
-- Composer newline is `⇧⏎` (`shift+enter`, also `alt+enter` / `^J`).
+- Composer newline is `⇧⏎` (`shift+enter`, also `alt+enter` / `^J` / `ctrl+enter`).
+  `keyMsgFromCode` must keep ctrl+enter distinct from plain enter (an
+  accidental submit) and must decode shift+printable CSI chords (kitty CSI-u
+  `97;2u`, xterm `27;2;97~`) into their uppercase rune instead of dropping
+  them; the friction editor treats the `shift+enter`/`ctrl+enter` sentinels
+  as no-ops so their literal text never splices into `apprTyped`. The
+  newline chord set lives in one helper — `newlineChord` in `input.go` —
+  and every Enter-accepting surface routes through it (composer, AC popup,
+  approval composer, clarify); a well-formed enhanced-key chord that fails
+  to decode becomes an `alt+unmapped-chord` sentinel that `handleKey`
+  reports as a transient note instead of silent drop. `^K` is gated while
+  an approval or clarify card is head, and queue-strip focus outranks the
+  skill-suggestion chip (its chords never answer a passive card while
+  `qfocus` is set). Bare `s`/`x` save/skip a pending suggestion only on an
+  empty draft — the same modifier-free fallback approvals use for
+  terminals that cannot deliver Alt chords (macOS Option-as-UTF-8).
   Enable kitty disambiguate (flag 1) and xterm `modifyOtherKeys=2` from
   `Init` — after alt-screen — so Cursor/xterm.js encodes Shift+Enter
   (`CSI 27 ; 2 ; 13 ~`) instead of CR. Never enable kitty "report all
