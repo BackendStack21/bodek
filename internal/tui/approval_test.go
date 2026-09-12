@@ -172,8 +172,8 @@ func TestFrictionAltActivationAndLiteralConfirmation(t *testing.T) {
 	busyTurn(m)
 	m.handleEvent(client.Event{Type: "approval_request", ID: "apr", Friction: true, FrictionApprovals: 3})
 	m.Update(key("a"))
-	if m.apprEditing || m.apprTyped != "" || m.ta.Value() != "a" {
-		t.Fatalf("bare text should stay in composer before activation: editing=%v typed=%q draft=%q", m.apprEditing, m.apprTyped, m.ta.Value())
+	if !m.apprEditing || m.apprTyped != "" || m.ta.Value() != "" {
+		t.Fatalf("bare 'a' should open a fresh friction editor: editing=%v typed=%q draft=%q", m.apprEditing, m.apprTyped, m.ta.Value())
 	}
 	m.Update(key("alt+a"))
 	if !m.apprEditing || m.apprTyped != "" {

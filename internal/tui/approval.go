@@ -114,10 +114,14 @@ func (m *Model) handleApprovalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 // frictionWord is the literal confirmation the friction gate demands.
 const frictionWord = "approve"
 
-// handleFrictionKey either keeps the normal composer active or, after Alt+A,
-// edits the literal confirmation. Enter approves only on an exact match. Esc
-// leaves confirmation editing without deciding; Alt+D remains an immediate
-// denial in either state.
+// handleFrictionKey either keeps the normal composer active or, after Alt+A
+// or a bare 'a' on an empty draft, edits the literal confirmation. Enter
+// approves only on an exact match. Esc leaves confirmation editing without
+// deciding; Alt+D and a bare 'd' (empty draft) remain immediate denials —
+// the friction gate slows approving, never blocking. Plain keys reuse the
+// empty-draft guard of the normal approval path so terminals that cannot
+// deliver Alt chords (macOS Option-as-UTF-8) stay usable; opening the editor
+// with 'a' never approves by itself.
 func (m *Model) handleFrictionKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if approvalAltRune(msg, 'd') {
 		return m, m.answer("deny")
@@ -129,6 +133,20 @@ func (m *Model) handleFrictionKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.relayout()
 			m.refresh()
 			return m, nil
+		}
+		if action, ok := m.plainApprovalAction(msg); ok {
+			switch action {
+			case "approve":
+				// The friction gate's whole point: a plain 'a' only opens
+				// the confirmation editor; the typed word still decides.
+				m.apprEditing = true
+				m.apprTyped = ""
+				m.relayout()
+				m.refresh()
+				return m, nil
+			case "deny":
+				return m, m.answer("deny")
+			}
 		}
 		if approvalAltRune(msg, 't') {
 			return m, nil
@@ -278,7 +296,7 @@ func (m *Model) frictionHint() string {
 	}
 	if !m.apprEditing {
 		return m.th.noticeStyle.Render(fmt.Sprintf(
-			"⏳ friction: %d approvals in the last 60s — Alt+A to confirm · Alt+D denies",
+			"⏳ friction: %d approvals in the last 60s — 'a' (or Alt+A) to confirm · 'd'/Alt+D denies · plain keys need an empty composer",
 			n))
 	}
 	return m.th.noticeStyle.Render(fmt.Sprintf(

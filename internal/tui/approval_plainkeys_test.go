@@ -80,7 +80,8 @@ func TestApprovalPlainKeysNeedEmptyComposer(t *testing.T) {
 }
 
 // TestApprovalPlainKeysInertDuringFriction verifies the friction gate still
-// demands the literal word — plain letters type into the editor/composer.
+// demands the literal word — a plain 'a' opens the editor but never approves,
+// and pasted letters land in the composer instead.
 func TestApprovalPlainKeysInertDuringFriction(t *testing.T) {
 	m := newTestModel()
 	busyTurn(m)
@@ -89,8 +90,14 @@ func TestApprovalPlainKeysInertDuringFriction(t *testing.T) {
 	if m.curApproval() == nil {
 		t.Fatal("plain a must not approve under friction")
 	}
-	if m.apprEditing {
-		t.Fatal("plain a must not open the friction editor")
+	if !m.apprEditing {
+		t.Fatal("plain a should open the friction editor (macOS has no Alt chords)")
+	}
+	// Paste must never activate or decide anything.
+	m.apprEditing = false
+	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("a"), Paste: true})
+	if m.apprEditing || m.curApproval() == nil {
+		t.Fatal("pasted 'a' must not open the friction editor")
 	}
 }
 
