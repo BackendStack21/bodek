@@ -27,5 +27,12 @@ func (m *Model) paintCanvas(body string) string {
 	base := fg + bg
 	frame = strings.NewReplacer("\x1b[0m", "\x1b[0m"+base,
 		"\x1b[m", "\x1b[m"+base, "\x1b[49m", bg, "\x1b[39m", fg).Replace(frame)
+	// Reset-at-line-start insurance: a reset at the very end of a row clears
+	// the background for the whole following row on some terminals, and rows
+	// that never carried an escape (blank transcript rows, plain text lines,
+	// bottom padding) were painted by nothing at all — the terminal's own
+	// background bled through as black stripes on the parchment canvas.
+	// Every row starts on the canvas.
+	frame = strings.ReplaceAll(frame, "\n", "\n"+base)
 	return base + frame + "\x1b[0m"
 }

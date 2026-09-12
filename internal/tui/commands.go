@@ -254,6 +254,16 @@ func (m *Model) switchTheme(name string) tea.Cmd {
 	m.ta.FocusedStyle.Placeholder = m.th.inputPlaceholder
 	m.ta.BlurredStyle.Placeholder = m.th.inputPlaceholder
 	m.logoCache = "" // the banner gradient is palette-dependent
+	// Raw cards are point-in-time snapshots and never go through glamour
+	// (resize skips them) — the /help card must still follow the palette, so
+	// regenerate it in place, preserving transcript position.
+	for i := range m.msgs {
+		if m.msgs[i].help {
+			card := m.buildHelpCard()
+			m.msgs[i].content = card
+			m.msgs[i].rendered = card
+		}
+	}
 	m.resize(m.width, m.height)
 	if m.opts.OnThemeChange != nil {
 		if err := m.opts.OnThemeChange(canonical); err != nil {
@@ -266,6 +276,16 @@ func (m *Model) switchTheme(name string) tea.Cmd {
 // showHelp appends a help card listing commands and key bindings. It is
 // pre-styled to the brand palette (raw), not glamour's stock dark style.
 func (m *Model) showHelp() {
+	card := m.buildHelpCard()
+	m.msgs = append(m.msgs, message{role: roleAsst, content: card, rendered: card, raw: true, help: true})
+	m.refresh()
+}
+
+// buildHelpCard renders the /help card against the active theme. It is a
+// point-in-time styled snapshot (raw), so switchTheme regenerates every help
+// card in the transcript through this builder instead of leaving it on the
+// previous palette.
+func (m *Model) buildHelpCard() string {
 	th := m.th
 	// Same framed-card contract as the composer, palette, and drawer: the
 	// box spans the terminal and the rule fills the inner text column.
@@ -317,8 +337,7 @@ func (m *Model) showHelp() {
 	}
 
 	card := th.acBox.Width(m.cardWidth()).Render(b.String())
-	m.msgs = append(m.msgs, message{role: roleAsst, content: card, rendered: card, raw: true})
-	m.refresh()
+	return card
 }
 
 // runExport saves the current session transcript next to the user —
