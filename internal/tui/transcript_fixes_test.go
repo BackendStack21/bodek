@@ -104,8 +104,10 @@ func TestNewOutputRowSteady(t *testing.T) {
 // ── F4: a failed turn marks its head ───────────────────────────────────────
 
 // TestFailedTurnHeadMarked: an error event on the streaming turn sets a
-// sanitized failed flag that paints ✗ on the turn head — and survives
-// finalization (history rendering keeps it).
+// sanitized failed flag that paints ✗ on the turn head and survives
+// finalization within this session. (Replay does not restore it: the
+// persisted transcript carries no error marker record, so a resumed
+// session's history does not re-derive the flag — an in-session contract.)
 func TestFailedTurnHeadMarked(t *testing.T) {
 	m := newTestModel()
 	m.msgs = append(m.msgs,

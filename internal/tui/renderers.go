@@ -295,7 +295,9 @@ var (
 	// Build / vet verdict patterns: compiler errors (go/rust/tsc shapes) and
 	// failed exits mark a failed build; vet diagnostics are file:line: col.
 	// Success rides the silent-output convention instead of a pattern.
-	buildFailRe     = regexp.MustCompile(`(?m)^(?:#\s+\S|error\[E\d+\]|ERROR:|exit status \d+)|(?:^|\n)[^\n]*:\d+:\d+: [^\n]*\berror\b|(?:^|\n)[^\n]*\(\d+,\d+\): error TS`)
+	// '# pkg' headers only count when a file:line diagnostic follows — a
+	// markdown heading alone must not paint 'build failed'.
+	buildFailRe     = regexp.MustCompile(`(?m)^(?:#\s+\S[^\n]*\n[^\n]*:\d+:\d+: |error\[E\d+\]|ERROR:|exit status \d+)|(?:^|\n)[^\n]*:\d+:\d+: [^\n]*\berror\b|(?:^|\n)[^\n]*\(\d+,\d+\): error TS`)
 	vetFailRe       = regexp.MustCompile(`(?m)^[^\n]*\.go:\d+:\d+: `)
 	warnEmittedRe   = regexp.MustCompile(`^warning: (\d+) warnings? emitted\.?$`)
 	warnGeneratedRe = regexp.MustCompile(`^(\d+) warnings? generated\.?$`)
@@ -1056,8 +1058,16 @@ func stepDetail(name, result string, width int, th theme) []string {
 // stepHeadSuffix renders the typed chip a step line gains from its result:
 // a diffstat for diffs; a pass/fail summary for test runs; arg-gated git,
 // lint, warning, and HTTP hints for shell steps; a hit count for searches.
-// At most one chip per step, in that precedence.
+// At most one chip per step, in that precedence. isErr carries the step's
+// raw failure state: a failed step never paints a success-flavored chip —
+// success is only claimed when the result's own metadata says so.
+// stepHeadSuffix is the isErr=false convenience for callers without raw
+// failure state; the chip logic lives in stepHeadSuffixFor.
 func stepHeadSuffix(name, arg, result string, th theme) string {
+	return stepHeadSuffixFor(name, arg, result, false, th)
+}
+
+func stepHeadSuffixFor(name, arg, result string, isErr bool, th theme) string {
 	if strings.EqualFold(strings.TrimSpace(name), "plan") {
 		if chip := planHeadSuffix(result, th); chip != "" {
 			return chip
@@ -1083,7 +1093,8 @@ func stepHeadSuffix(name, arg, result string, th theme) string {
 	if raceFlagged(arg) && strings.Contains(result, "WARNING: DATA RACE") {
 		return th.stepErr.Render("race detected")
 	}
-	if s, ok := testSummary(result); ok {
+	if s, ok := testSummary(result); ok && (!isErr || strings.HasPrefix(s, "✗")) {
+		// isErr suppresses pass verdicts: a failed step never claims a pass.
 		if strings.HasPrefix(s, "✗") {
 			// The step's status icon already flags the failure — the chip
 			// names what failed, without a second ✗.
@@ -1095,10 +1106,10 @@ func stepHeadSuffix(name, arg, result string, th theme) string {
 		return th.stepDone.Render(s)
 	}
 	for _, chip := range []string{
-		buildChip(arg, result, th),
-		vetChip(arg, result, th),
+		buildChip(arg, result, isErr, th),
+		vetChip(arg, result, isErr, th),
 		gitChip(arg, result, th),
-		lintChip(arg, result, th),
+		lintChip(arg, result, isErr, th),
 		warnChip(result, th),
 		httpChip(arg, result, th),
 	} {
@@ -1232,19 +1243,21 @@ func silentBuildOutput(result string) bool {
 	return t == "" || t == "(no output)"
 }
 
-// buildChip reports the build verdict: '✓ built' for a compile gate with the
-// silent success convention, 'build failed' on recognized compiler errors
-// or a failed exit. Unrecognized non-silent output yields no chip — it
-// carries no exit metadata, so success is never fabricated.
-func buildChip(arg, result string, th theme) string {
+// buildChip reports the build verdict: a neutral 'built' for a compile gate
+// with the silent success convention (silent output carries no exit
+// metadata, so success is never claimed — no ✓), 'build failed' on
+// recognized compiler errors or a failed exit. A step already marked failed
+// yields no success-flavored chip at all. Unrecognized non-silent output
+// yields no chip.
+func buildChip(arg, result string, isErr bool, th theme) string {
 	if !buildGate(arg) {
 		return ""
 	}
 	if buildFailRe.MatchString(result) {
 		return th.stepErr.Render("build failed")
 	}
-	if silentBuildOutput(result) {
-		return th.stepDone.Render("✓ built")
+	if silentBuildOutput(result) && !isErr {
+		return th.statsDim.Render("built")
 	}
 	return ""
 }
@@ -1252,7 +1265,7 @@ func buildChip(arg, result string, th theme) string {
 // vetChip reports the go vet verdict with the same silent-success rule as
 // buildChip: vet prints nothing when clean and file:line diagnostics when
 // not. Gated on the vet verb (go vet ./...).
-func vetChip(arg, result string, th theme) string {
+func vetChip(arg, result string, isErr bool, th theme) string {
 	words := shellWords(arg)
 	vet := false
 	for i, w := range words {
@@ -1269,15 +1282,16 @@ func vetChip(arg, result string, th theme) string {
 	if vetFailRe.MatchString(result) {
 		return th.stepErr.Render("vet failed")
 	}
-	if silentBuildOutput(result) {
-		return th.stepDone.Render("✓ vet")
+	if silentBuildOutput(result) && !isErr {
+		// Same neutral convention as buildChip: no ✓ without exit metadata.
+		return th.statsDim.Render("vet")
 	}
 	return ""
 }
 
 // lintChip reports the linter outcome: "✓ lint" or a red issue count. Gated on linter-sounding commands, so ruff's "All checks passed"
 // cannot leak into arbitrary output.
-func lintChip(arg, result string, th theme) string {
+func lintChip(arg, result string, isErr bool, th theme) string {
 	words := shellWords(arg)
 	linters := []string{"lint", "golangci-lint", "ruff", "eslint", "clippy"}
 	gate := false
@@ -1296,15 +1310,24 @@ func lintChip(arg, result string, th theme) string {
 		t := strings.TrimSpace(ln)
 		if m := lintIssuesRe.FindStringSubmatch(t); m != nil {
 			if n, _ := strconv.Atoi(m[1]); n == 0 {
+				if isErr {
+					return "" // a failed step never paints a ✓ verdict
+				}
 				return th.stepDone.Render("✓ lint")
 			}
 			return th.stepErr.Render("lint " + m[1])
 		}
 		if strings.HasPrefix(t, "All checks passed") {
+			if isErr {
+				return ""
+			}
 			return th.stepDone.Render("✓ lint")
 		}
 		if m := eslintProblemsRe.FindStringSubmatch(t); m != nil {
 			if n, _ := strconv.Atoi(m[1]); n == 0 {
+				if isErr {
+					return ""
+				}
 				return th.stepDone.Render("✓ lint")
 			}
 			return th.stepErr.Render("lint " + m[1])

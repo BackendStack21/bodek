@@ -22,8 +22,8 @@ func TestBuildVerdictChips(t *testing.T) {
 	cases := []struct {
 		name, arg, result, want string
 	}{
-		{"build pass (silent)", "go build ./...", "", "✓ built"},
-		{"build no output marker", "go build ./...", "(no output)", "✓ built"},
+		{"build pass (silent)", "go build ./...", "", "built"},
+		{"build no output marker", "go build ./...", "(no output)", "built"},
 		{"build fail", "go build ./...",
 			"# github.com/x/y\ny.go:9:2: undefined: Foo\nexit status 1", "build failed"},
 		{"build fail rust", "cargo build", "error[E0432]: unresolved import `x`", "build failed"},
@@ -31,7 +31,7 @@ func TestBuildVerdictChips(t *testing.T) {
 		{"build fail exit only", "make build", "some noise\nexit status 2", "build failed"},
 		{"no fabricated success", "go build ./...", "0 issues.", ""},
 		{"build needs gate", "cat build.log", "y.go:9:2: undefined: Foo", ""},
-		{"vet pass", "go vet ./...", "", "✓ vet"},
+		{"vet pass", "go vet ./...", "", "vet"},
 		{"vet fail", "go vet ./...",
 			"# github.com/x/y\ny.go:5:2: Printf call has arguments but no formatting directives", "vet failed"},
 		{"vet needs gate", "grep vet notes.txt", "", ""},

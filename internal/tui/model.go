@@ -120,7 +120,7 @@ type message struct {
 	sentAt     time.Time  // user turns: when the prompt was submitted (drives the head's age)
 	collapsed  bool       // turn card folded to its head + summary line (c)
 	systemWake bool       // server-initiated turn (background-job wake): marker on the card
-	failed     bool       // the run ended in error — ✗ marks the turn head, including history
+	failed     bool       // the run ended in error — ✗ marks the turn head (in-session state; replay does not restore it)
 }
 
 // Options carries startup display info into the model.
@@ -374,6 +374,7 @@ type Model struct {
 	status        string
 	notices       []string
 	noticeExp     []time.Time     // parallel to notices; when each one fades
+	noticeAlert   []bool          // parallel to notices; true = alert tier (addNote)
 	hintsShown    map[string]bool // JIT hints already delivered (hints.go)
 	verbosity     int             // noise dial: 0 normal · 1 quiet · 2 detailed
 	disconn       bool

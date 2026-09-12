@@ -949,7 +949,9 @@ func foldTally(msg message) string {
 	if total >= time.Second {
 		d = formatDuration(total)
 	}
-	parts = append(parts, d)
+	if total > 0 {
+		parts = append(parts, d) // resumed history (all durs 0) shows none
+	}
 	return strings.Join(parts, " · ")
 }
 
@@ -1195,7 +1197,7 @@ func (m *Model) renderStep(s step, streaming bool, msgIdx, stepIdx, startLine in
 	right := ""
 	live := !s.done && streaming
 	if s.done {
-		right = stepHeadSuffix(s.name, s.arg, stepDetailResult(s), th)
+		right = stepHeadSuffixFor(s.name, s.arg, stepDetailResult(s), s.isErr, th)
 		// The sealed duration keeps the live clock's slot — “how long did
 		// this tool take” survives completion instead of vanishing with
 		// the running timer. Resumed history (dur 0) shows none.
@@ -1456,6 +1458,20 @@ func (m *Model) renderNotices() string {
 	}
 	if latest < 0 {
 		return ""
+	}
+	// Alert-tier notices (errors, disconnects) outrank transients: a newer
+	// benign transient never buries a still-live alert — scan back for the
+	// latest unexpired alert when the newest entry is transient-tier.
+	if latest >= len(m.noticeAlert) || !m.noticeAlert[latest] {
+		for i := latest - 1; i >= 0 && i < len(m.noticeAlert); i-- {
+			if exp := m.noticeExp[i]; !exp.IsZero() && !now.Before(exp) {
+				continue
+			}
+			if m.noticeAlert[i] {
+				latest = i
+				break
+			}
+		}
 	}
 	line := th.noticeStyle.Render("· " + m.notices[latest])
 	if older > 1 {
