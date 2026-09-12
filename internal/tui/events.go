@@ -58,6 +58,7 @@ func (m *Model) ingestWireEvent(ev client.Event) (tea.Model, tea.Cmd) {
 // listen inside another Batch left execBatchMsg waiting on a nested listen
 // and the header's ready badge never came back after Hi.
 func (m *Model) ingestWireBatch(events []client.Event) (tea.Model, tea.Cmd) {
+	m.lastEvent = time.Now() // (R5) the head's last-event age resets on each batch
 	var model tea.Model = m
 	for _, ev := range events {
 		var cmd tea.Cmd
@@ -382,6 +383,13 @@ func (m *Model) handleEvent(ev client.Event) (tea.Model, tea.Cmd) {
 				// classified card renders below a partial reply, or as the
 				// turn's only content. No side-note degradation.
 				setTurnMarker(&m.msgs[i], m.errorCard(ev.Message))
+				m.msgs[i].failed = true // ✗ marks the head for this session; a resumed transcript re-derives nothing
+				// (A3) one BEL per failed turn: the guard latches until the next
+				// turn opens, so trailing retries cannot re-ring it.
+				if !m.failBellFired {
+					m.failBellFired = true
+					attn = m.attentionCmd(m.attentionFor(attentionFailed))
+				}
 			}
 		} else if !cancelled {
 			m.addNote("error: " + ev.Message)
@@ -651,9 +659,10 @@ func (m *Model) beginWireTurn(wake bool) {
 	m.msgs = append(m.msgs, message{role: roleAsst, streaming: true, systemWake: wake})
 	m.curIdx = len(m.msgs) - 1
 	m.busy = true
-	m.cancelAck = false  // a wake run's errors are real errors again
-	m.skillSuggest = nil // the suggestion's window closed with the last turn
-	m.wakeArmed = false  // consumed: the marker lives on the card now
+	m.cancelAck = false     // a wake run's errors are real errors again
+	m.failBellFired = false // a fresh turn re-arms the failure BEL
+	m.skillSuggest = nil    // the suggestion's window closed with the last turn
+	m.wakeArmed = false     // consumed: the marker lives on the card now
 	if wake {
 		m.status = "waking for bg job"
 	} else {
@@ -1167,11 +1176,18 @@ func (m *Model) transientNoteCmd(s string) tea.Cmd {
 func (m *Model) pushNote(s string, exp time.Time) {
 	// Provider errors routinely embed full 4xx bodies — cap the size so one
 	// verbose notice cannot flood the transcript tail (count caps below).
+	// Tier rides the deadline: alert dwell ⇒ alert tier (errors,
+	// disconnects) outranking newer transients in the one-line pick. The
+	// threshold sits between noticeTTL and alertTTL so scheduling jitter
+	// cannot misfile either tier.
+	alert := time.Until(exp) > noticeTTL
 	m.notices = append(m.notices, truncate(sanitize(s), 400))
 	m.noticeExp = append(m.noticeExp, exp)
+	m.noticeAlert = append(m.noticeAlert, alert)
 	if len(m.notices) > 6 {
 		m.notices = m.notices[len(m.notices)-6:]
 		m.noticeExp = m.noticeExp[len(m.noticeExp)-6:]
+		m.noticeAlert = m.noticeAlert[len(m.noticeAlert)-6:]
 	}
 }
 
@@ -1179,14 +1195,17 @@ func (m *Model) pushNote(s string, exp time.Time) {
 func (m *Model) pruneNotices(now time.Time) {
 	kept := m.notices[:0]
 	keptExp := m.noticeExp[:0]
+	keptAlert := m.noticeAlert[:0]
 	for i, n := range m.notices {
 		if exp := m.noticeExp[i]; exp.IsZero() || now.Before(exp) {
 			kept = append(kept, n)
 			keptExp = append(keptExp, exp)
+			keptAlert = append(keptAlert, m.noticeAlert[i])
 		}
 	}
 	m.notices = kept
 	m.noticeExp = keptExp
+	m.noticeAlert = keptAlert
 }
 
 // noticeSweep schedules the next expiry sweep at the earliest pending

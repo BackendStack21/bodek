@@ -138,8 +138,10 @@ func TestApprovalHeadDropsQueuedChip(t *testing.T) {
 	if strings.Contains(body, "queued") {
 		t.Errorf("approval card head still carries the queued count:\n%s", body)
 	}
+	// F1: the shelf chip is the single owner of the PROMPT-queue count — the
+	// footer must not repeat it (the approval head's own queue hint stays).
 	foot := plain(m.footer())
-	if !strings.Contains(foot, "1 queued") {
-		t.Errorf("footer lost the queued count:\n%s", foot)
+	if strings.Contains(foot, "▸") && strings.Contains(foot, "queued") {
+		t.Errorf("footer still carries the prompt-queue count:\n%s", foot)
 	}
 }

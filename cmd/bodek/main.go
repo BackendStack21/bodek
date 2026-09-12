@@ -44,6 +44,7 @@ type config struct {
 	thinking  string // startup reasoning depth (empty = inherit / seed from serve)
 	fresh     bool   // --new: skip last-session resume
 	resume    bool   // --resume: opt back in to last-session resume (default false)
+	reduceMot bool   // --reduce-motion: calmer transcript (slower clock lane, no accent pulses)
 	extraArgs []string
 
 	persist settings.Settings // the loaded file, re-saved when /theme switches
@@ -82,6 +83,7 @@ func parseConfig(args []string, output io.Writer) (config, error) {
 	fs.StringVar(&cfg.verbosity, "verbosity", verbDefault, "noise dial: quiet (info notes hidden, compact steps), normal, detailed (steps expand) — /verbosity switches at runtime and persists")
 	fs.StringVar(&cfg.thinking, "thinking", st.Thinking, "reasoning depth: disabled, low, medium, high — /thinking and ^T switch at runtime and persist")
 	fs.BoolVar(&cfg.resume, "resume", st.Bool(st.Resume, false), "resume this directory's last session on start (--resume=false disables; off by default)")
+	fs.BoolVar(&cfg.reduceMot, "reduce-motion", st.Bool(st.ReduceMotion, false), "calm transcript for motion-sensitive readers: clock lane ticks at 2s, no accent pulses")
 	fs.BoolVar(&cfg.fresh, "new", false, "start a fresh session (always skips last-session resume)")
 	fs.Usage = func() {
 		_, _ = fmt.Fprintf(fs.Output(), "Usage: bodek [options] [-- <odek serve flags>]\n\n")
@@ -215,19 +217,20 @@ func run() error {
 	setupSignalHandler(srv, cl)
 
 	model := tui.New(cl, tui.Options{
-		Sandbox:     cfg.sandbox,
-		CWD:         cwd,
-		LogPath:     logPath,
-		OdekVersion: srv.Version,
-		Version:     currentVersion(),
-		Bell:        cfg.bel,
-		Notify:      cfg.notify,
-		Plain:       cfg.plain,
-		Theme:       cfg.theme,
-		Verbosity:   cfg.verbosity,
-		Thinking:    cfg.thinking,
-		Workspace:   workspace.Open(),
-		Fresh:       cfg.fresh || !cfg.resume,
+		Sandbox:      cfg.sandbox,
+		CWD:          cwd,
+		LogPath:      logPath,
+		OdekVersion:  srv.Version,
+		Version:      currentVersion(),
+		Bell:         cfg.bel,
+		Notify:       cfg.notify,
+		Plain:        cfg.plain,
+		ReduceMotion: cfg.reduceMot,
+		Theme:        cfg.theme,
+		Verbosity:    cfg.verbosity,
+		Thinking:     cfg.thinking,
+		Workspace:    workspace.Open(),
+		Fresh:        cfg.fresh || !cfg.resume,
 		OnThemeChange: func(name string) error {
 			cfg.persist.Theme = name
 			return settings.Save(cfg.persist)

@@ -331,6 +331,19 @@ func (m *Model) statusLine() string {
 		return ""
 	}
 	th := m.th
+	// F2: a dropped socket is exactly when the reader needs this row —
+	// instead of hiding, the status line owns the reconnect state in-place.
+	if m.disconn {
+		label := "◌ disconnected · ⏎ retry"
+		if strings.HasPrefix(m.status, "reconnecting") {
+			label = fmt.Sprintf("◌ reconnecting · backoff %ds", int(reconnectBackoff(m.reconnAttempt).Seconds()))
+		}
+		row := th.badgeDanger.Render(label)
+		if w := lipgloss.Width(row); w > m.width {
+			row = ansi.Truncate(row, m.width-1, "") + "…"
+		}
+		return "\n" + row
+	}
 	var label string
 	switch {
 	case m.lastTool != "":
@@ -345,12 +358,9 @@ func (m *Model) statusLine() string {
 	if e := m.elapsed(); e != "" {
 		el = th.headerMeta.Render(" · " + e)
 	}
-	// Held prompts ride the same row: mid-turn ⏎ queues invisibly, so the
-	// count shows where the eyes already are (mirrors the footer indicator).
+	// Held prompts ride the footer's queue chip alone (F1: single owner)
+	// — the shelf shows the count while the strip is folded.
 	q := ""
-	if n := len(m.queue); n > 0 {
-		q = th.acDetail.Render(fmt.Sprintf(" · %d queued", n))
-	}
 	// Live plan strip: rides the same row,
 	// silent unless a run is active AND a plan exists — absence costs zero
 	// pixels. Bounded to a short label so small terminals keep the row sane.
@@ -370,11 +380,11 @@ func (m *Model) statusLine() string {
 }
 
 // statusLineVisible reports whether the status line occupies a row, keeping
-// View and inputAreaHeight in agreement. While an approval card is up or
-// the socket is down, the header badge carries the busy state and the row
-// stays hidden.
+// View and inputAreaHeight in agreement. While an approval card is up the
+// header badge carries the busy state and the row stays hidden; a dropped
+// socket instead KEEPS the row — it renders the reconnect state in-place.
 func (m *Model) statusLineVisible() bool {
-	return m.busy && m.curApproval() == nil && !m.disconn
+	return (m.busy || m.disconn) && m.curApproval() == nil
 }
 
 // ── transcript ───────────────────────────────────────────────────────────
@@ -388,6 +398,20 @@ const streamRenderInterval = 80 * time.Millisecond
 // The status-line spinner animates outside the viewport; this lane only
 // refreshes running step clocks without rebuilding on every spinner frame.
 const tailClockInterval = 250 * time.Millisecond
+
+// reduceMotionClockInterval is the calmer cadence for --reduce-motion:
+// transcript clock repaints (head counter, step timers) drop to one per
+// 2s so live numbers barely move.
+const reduceMotionClockInterval = 2 * time.Second
+
+// tailClockTick resolves the transcript clock lane's interval for the
+// current motion mode.
+func (m *Model) tailClockTick() time.Duration {
+	if m.reduceMotion {
+		return reduceMotionClockInterval
+	}
+	return tailClockInterval
+}
 
 // renderFlushMsg fires streamRenderInterval after the first coalesced
 // streaming event; a stale seq means a newer flush superseded it.
@@ -438,7 +462,7 @@ func (m *Model) queueTailClock() tea.Cmd {
 	m.tailClockPending = true
 	m.tailClockSeq++
 	seq := m.tailClockSeq
-	return tea.Tick(tailClockInterval, func(time.Time) tea.Msg {
+	return tea.Tick(m.tailClockTick(), func(time.Time) tea.Msg {
 		return tailClockFlushMsg{seq: seq}
 	})
 }
@@ -649,10 +673,26 @@ func (m *Model) renderMessage(msg message, msgIdx, lineOffset int) (string, []st
 			// is the card's identity.
 			label += th.asstLabel.Render(" · wake")
 		}
+		if msg.failed {
+			// (F4) a failed run marks the head — the flag is model-owned
+			// state, never wire text — and persists through finalization.
+			label += " " + th.badgeDanger.Render(lampError)
+		}
 		if rec := formatReceipt(scanReceipt(msg)); rec != "" {
 			room := m.vp.Width - lipgloss.Width(label) - 4
 			if room > 8 {
 				label += "  " + th.statsDim.Render(truncate(rec, room))
+			}
+		}
+		if !msg.streaming {
+			// (A2) Sealed-turn tally on the head: 'N tools · M agents · Ts' in
+			// the same dim secondary style and width budget as the receipt —
+			// model-owned counts only, never wire text.
+			if tal := foldTally(msg); tal != "" {
+				room := m.vp.Width - lipgloss.Width(label) - 4
+				if room > 8 {
+					label += "  " + th.statsDim.Render(truncate(tal, room))
+				}
 			}
 		}
 		if msg.collapsed {
@@ -830,7 +870,13 @@ func (m *Model) collapseSummary(msg message) string {
 	}
 	parts := []string{"⋯ collapsed"}
 	if n := len(msg.steps); n > 0 {
-		parts = append(parts, fmt.Sprintf("%d tool steps", n))
+		plural := "steps"
+		if n == 1 {
+			plural = "step"
+		}
+		// Compact dot tally (· per step, ✗ failed) rides the numeric count —
+		// the count stays for screen readers / copy, the dots for scanning.
+		parts = append(parts, fmt.Sprintf("%d tool %s · %s", n, plural, stepTally(msg)))
 	}
 	if strings.TrimSpace(msg.thinking) != "" {
 		parts = append(parts, "reasoning")
@@ -839,6 +885,81 @@ func (m *Model) collapseSummary(msg message) string {
 		parts = append(parts, "reply: "+truncate(collapse(c), 60))
 	}
 	return strings.Join(parts, " · ")
+}
+
+// stepTallyMax caps the collapsed dot tally's width: 23 glyphs plus the
+// ellipsis head that stands for the steps cut off the front.
+const stepTallyMax = 24
+
+// stepTally renders the collapsed-turn dot tally — one glyph per step, ✗ for
+// failed steps, · otherwise. Model-owned constants, sanitized like every
+// other rendered string; long turns keep the tail and lead with ….
+func stepTally(msg message) string {
+	n := len(msg.steps)
+	if n == 0 {
+		return ""
+	}
+	var b strings.Builder
+	steps := msg.steps
+	if n > stepTallyMax {
+		b.WriteString("…")
+		steps = steps[n-(stepTallyMax-1):]
+	}
+	for i := range steps {
+		if steps[i].isErr {
+			b.WriteString("✗")
+		} else {
+			b.WriteString("·")
+		}
+	}
+	return sanitize(b.String())
+}
+
+// foldTally builds the sealed-turn head tally 'N tools · M agents · T':
+// N counts the chronological tool steps on items[], M the sub-agent
+// children across steps, and T the sealed duration — the sum of per-step
+// durs (parallel steps make wall time under-report the work). '<1s' when
+// the total is under a second; empty pieces stay off the string, and a
+// zero-step turn yields no tool segment at all.
+func foldTally(msg message) string {
+	n := 0
+	for _, it := range msg.items {
+		if !it.thinking && !it.reply {
+			n++
+		}
+	}
+	if n == 0 {
+		return "" // a reply-only turn keeps a quiet head
+	}
+	agents := 0
+	var total time.Duration
+	for i := range msg.steps {
+		agents += len(msg.steps[i].agents)
+		total += msg.steps[i].dur
+	}
+	parts := []string{fmt.Sprintf("%d tools", n)}
+	if agents > 0 {
+		plural := "agents"
+		if agents == 1 {
+			plural = "agent"
+		}
+		parts = append(parts, fmt.Sprintf("%d %s", agents, plural))
+	}
+	d := "<1s"
+	if total >= time.Second {
+		d = formatDuration(total)
+	}
+	if total > 0 {
+		parts = append(parts, d) // resumed history (all durs 0) shows none
+	}
+	return strings.Join(parts, " · ")
+}
+
+// outputRowAccent reports whether the new-output row carries its busy
+// accent (scroll style). Reduced motion keeps the steady dim render —
+// color pulses are exactly what the mode strips.
+func (m *Model) outputRowAccent() bool {
+	return m.busy && !m.reduceMotion
 }
 
 // renderIntentRail paints a reasoning block as a whispered plan: a faint
@@ -1076,7 +1197,7 @@ func (m *Model) renderStep(s step, streaming bool, msgIdx, stepIdx, startLine in
 	right := ""
 	live := !s.done && streaming
 	if s.done {
-		right = stepHeadSuffix(s.name, s.arg, stepDetailResult(s), th)
+		right = stepHeadSuffixFor(s.name, s.arg, stepDetailResult(s), s.isErr, th)
 		// The sealed duration keeps the live clock's slot — “how long did
 		// this tool take” survives completion instead of vanishing with
 		// the running timer. Resumed history (dur 0) shows none.
@@ -1281,7 +1402,9 @@ func (m *Model) renderChipStrip(chips []agentChip, focus, width, msgIdx, stepIdx
 			txt := cell.text()
 			w := lipgloss.Width(txt)
 			styled := th.stepArg.Render(txt)
-			if c.failed {
+			if c.dim {
+				styled = th.statsDim.Render(txt) // lost card: muted ✗, distinct from a hard failure
+			} else if c.failed {
 				styled = th.stepErr.Render(txt)
 			} else if !c.pending && c.glyph == "✓" {
 				styled = th.stepDone.Render(txt)
@@ -1322,14 +1445,39 @@ func resultExcerpt(result string) []string {
 func (m *Model) renderNotices() string {
 	th := m.th
 	now := time.Now()
-	lines := make([]string, 0, len(m.notices))
-	for i, n := range m.notices {
+	// (F5) one visible line: the latest unexpired notice wins and older ones
+	// fold into a count — a notice burst must not stack rows over the tail.
+	latest := -1
+	older := 0
+	for i := range m.notices {
 		if exp := m.noticeExp[i]; !exp.IsZero() && !now.Before(exp) {
 			continue // expired transient, pending the next sweep
 		}
-		lines = append(lines, th.noticeStyle.Render("· "+n))
+		older++
+		latest = i
 	}
-	return strings.Join(lines, "\n")
+	if latest < 0 {
+		return ""
+	}
+	// Alert-tier notices (errors, disconnects) outrank transients: a newer
+	// benign transient never buries a still-live alert — scan back for the
+	// latest unexpired alert when the newest entry is transient-tier.
+	if latest >= len(m.noticeAlert) || !m.noticeAlert[latest] {
+		for i := latest - 1; i >= 0 && i < len(m.noticeAlert); i-- {
+			if exp := m.noticeExp[i]; !exp.IsZero() && !now.Before(exp) {
+				continue
+			}
+			if m.noticeAlert[i] {
+				latest = i
+				break
+			}
+		}
+	}
+	line := th.noticeStyle.Render("· " + m.notices[latest])
+	if older > 1 {
+		line += th.acDetail.Render(fmt.Sprintf("  ⓘ %d notes", older-1))
+	}
+	return line
 }
 
 // ── input / approval area ──────────────────────────────────────────────────
@@ -1765,9 +1913,6 @@ func (m *Model) footerContent() string {
 	left := m.modePrefix()
 	if m.busy {
 		left += th.footerKey.Render("^X") + th.footer.Render(" stop")
-		if n := len(m.queue); n > 0 {
-			left += th.footerSep.Render(" · ") + th.scroll.Render(fmt.Sprintf("▸ %d queued", n))
-		}
 	} else if m.status == "error" && m.ta.Value() == "" && m.lastPrompt != "" {
 		// A failed turn with an empty input: ⏎ resends the preserved
 		// prompt — the same contract the error card states. Hidden while a
@@ -1797,9 +1942,14 @@ func (m *Model) footerContent() string {
 		segs = append(segs, seg)
 	}
 	if !m.vp.AtBottom() {
+		// (F3) One steady row: the indicator never inserts/removes a segment —
+		// accent while a run streams fresh output, a dim placeholder otherwise,
+		// so the layout never reflows on the toggle.
 		seg := ""
-		if m.busy {
+		if m.outputRowAccent() {
 			seg = th.scroll.Render("↓ new output") + th.footerSep.Render(" · ")
+		} else {
+			seg = th.footer.Render("↓ new output") + th.footerSep.Render(" · ")
 		}
 		seg += th.footerKey.Render("PgUp") + th.footer.Render(" more") +
 			th.footerSep.Render(" · ") +

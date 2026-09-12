@@ -120,6 +120,7 @@ type message struct {
 	sentAt     time.Time  // user turns: when the prompt was submitted (drives the head's age)
 	collapsed  bool       // turn card folded to its head + summary line (c)
 	systemWake bool       // server-initiated turn (background-job wake): marker on the card
+	failed     bool       // the run ended in error — ✗ marks the turn head (in-session state; replay does not restore it)
 }
 
 // Options carries startup display info into the model.
@@ -136,6 +137,10 @@ type Options struct {
 	// Notify raises desktop notifications via OSC 9 (--notify).
 	Bell   bool
 	Notify bool
+
+	// ReduceMotion slows the transcript's live-motion surfaces (clock lane
+	// cadence, accent pulses) for motion-sensitive readers (--reduce-motion).
+	ReduceMotion bool
 
 	// Theme names the startup palette (ember-dark, ember-light,
 	// high-contrast, classic). Empty defers to BODEK_THEME, then the
@@ -182,14 +187,15 @@ type Options struct {
 
 // Model is the Bubble Tea model for bodek.
 type Model struct {
-	cl     *client.Client
-	events <-chan client.Event
-	opts   Options
-	th     theme
-	tokens *tokens.Store
-	bell   bool // terminal bell on done / approval (--bel)
-	notify bool // OSC 9 desktop notifications (--notify)
-	plain  bool // linear mode: scrollback transcript, minimal chrome (--plain)
+	cl           *client.Client
+	events       <-chan client.Event
+	opts         Options
+	th           theme
+	tokens       *tokens.Store
+	bell         bool // terminal bell on done / approval (--bel)
+	notify       bool // OSC 9 desktop notifications (--notify)
+	plain        bool // linear mode: scrollback transcript, minimal chrome (--plain)
+	reduceMotion bool // calmer transcript: slower clock lane, no accent pulses
 
 	width, height int
 	ready         bool
@@ -204,8 +210,12 @@ type Model struct {
 	busy      bool
 	wakeArmed bool // bg_wake seen but its turn not carded yet: arms the lazy wake marker
 	runStart  time.Time
+	lastEvent time.Time // (R5) last eventBatchMsg arrival; drives the stale-age head segment
 	lastTool  string
 	lastArg   string
+
+	failBellFired bool // (A3) the failure BEL rang for this turn — guard against double-fire
+	apprBellFired bool // (A3) the urgent-window BEL rang for this approval head
 
 	approvals     []client.Event   // pending approval queue — odek runs parallel tools, so requests FIFO
 	apprDeadlines []time.Time      // per-approval expiry, stamped on arrival (parallel to approvals)
@@ -361,13 +371,15 @@ type Model struct {
 	planReqSeq       int                 // fetch request sequence
 	planPollSeq      int                 // armed poll tick sequence
 
-	status     string
-	notices    []string
-	noticeExp  []time.Time     // parallel to notices; when each one fades
-	hintsShown map[string]bool // JIT hints already delivered (hints.go)
-	verbosity  int             // noise dial: 0 normal · 1 quiet · 2 detailed
-	disconn    bool
-	quitting   bool
+	status        string
+	notices       []string
+	noticeExp     []time.Time     // parallel to notices; when each one fades
+	noticeAlert   []bool          // parallel to notices; true = alert tier (addNote)
+	hintsShown    map[string]bool // JIT hints already delivered (hints.go)
+	verbosity     int             // noise dial: 0 normal · 1 quiet · 2 detailed
+	disconn       bool
+	reconnAttempt int // current redial attempt index (drives the status-line backoff readout)
+	quitting      bool
 
 	gradRule  string // cached full-width gradient rule
 	gradRuleW int
@@ -452,6 +464,7 @@ func New(cl *client.Client, opts Options) *Model {
 		bodekVersion: opts.Version,
 		bell:         opts.Bell,
 		notify:       opts.Notify,
+		reduceMotion: opts.ReduceMotion,
 		plain:        opts.Plain,
 	}
 	m.restoreWorkspace()
@@ -1437,10 +1450,37 @@ func (m *Model) elapsed() string {
 		return ""
 	}
 	d := time.Since(m.runStart)
+	var s string
 	if d < time.Minute {
-		return fmt.Sprintf("running %ds", int(d.Seconds()))
+		s = fmt.Sprintf("running %ds", int(d.Seconds()))
+	} else {
+		s = fmt.Sprintf("running %dm%02ds", int(d.Minutes()), int(d.Seconds())%60)
 	}
-	return fmt.Sprintf("running %dm%02ds", int(d.Minutes()), int(d.Seconds())%60)
+	// (R5) the last-event age rides the same segment: whole seconds since
+	// the last event batch, only while busy and past the staleness threshold.
+	// Rides the slow tail-clock lane with the elapsed counter (no extra row).
+	if a := m.staleAge(); a != "" {
+		s += " " + a
+	}
+	return s
+}
+
+// staleEventThreshold is how long a busy turn may stay silent before the
+// head admits it: below this the stream reads as merely between tokens.
+const staleEventThreshold = 5 * time.Second
+
+// staleAge renders the '· Ns' last-event age for the streaming head: the
+// whole seconds since the last eventBatchMsg landed, only when the turn is
+// busy and the gap exceeds staleEventThreshold. Empty otherwise.
+func (m *Model) staleAge() string {
+	if !m.busy || m.lastEvent.IsZero() {
+		return ""
+	}
+	d := time.Since(m.lastEvent)
+	if d < staleEventThreshold {
+		return ""
+	}
+	return fmt.Sprintf("· %ds", int(d.Seconds()))
 }
 
 // sanitize strips terminal-hostile content from untrusted text before it is

@@ -737,19 +737,15 @@ func agentStatusGlyph(phase, status string) string {
 		if phase == "queued" {
 			return "◔" // ◔ not ◌: the lamp glyphs belong to the connection state
 		}
-		return "⟳"
+		return "▸"
 	}
 	switch status {
 	case "success":
 		return "✓"
 	case "partial", "budget_exhausted":
 		return "◐"
-	case "error":
+	case "error", "cancelled", "timeout":
 		return "✗"
-	case "cancelled":
-		return "⊘"
-	case "timeout":
-		return "⏱"
 	}
 	return "•"
 }

@@ -474,9 +474,10 @@ func (m *Model) sendPrompt(text string) tea.Cmd {
 	m.ta.Reset()
 	m.closeAC()
 	m.busy = true
-	m.cancelAck = false  // a fresh run's errors are real errors again
-	m.skillSuggest = nil // the suggestion's window closed with the turn
-	m.wakeArmed = false  // a local send is never a wake turn
+	m.cancelAck = false     // a fresh run's errors are real errors again
+	m.failBellFired = false // a fresh local turn re-arms the failure BEL
+	m.skillSuggest = nil    // the suggestion's window closed with the turn
+	m.wakeArmed = false     // a local send is never a wake turn
 	m.status = "thinking"
 	m.runStart = time.Now()
 	if m.sessionStart.IsZero() {

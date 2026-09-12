@@ -47,29 +47,27 @@ type agentCard struct {
 // finished reports whether the card reached a terminal state.
 func (a *agentCard) finished() bool { return a.phase == "finished" }
 
-// glyph picks the status glyph: live ⟳, then the terminal set mirroring
-// odek's status framing (user cancel and deadline timeout never conflate).
+// glyph picks the status glyph: live ▸, then the terminal set mirroring
+// the chip vocabulary (queued ○; running ▸; done ✓; every failed terminal
+// state ✗ — cancel, deadline, and lost included; the dim style separates a
+// lost card from a hard failure).
 func (a *agentCard) glyph() string {
 	if !a.finished() {
 		switch {
 		case a.lost:
-			return "×" // orphaned by a disconnect: dead, not spinning
+			return "✗" // orphaned by a disconnect: dead, not spinning
 		case a.phase == "queued":
-			return "◔" // ◔ not ◌: the lamp glyphs belong to the connection state
+			return "◔" // lamp glyphs (◌ ○ ●) belong to the connection state
 		}
-		return "⟳"
+		return "▸"
 	}
 	switch a.status {
 	case "success":
 		return "✓"
 	case "partial", "budget_exhausted":
 		return "◐"
-	case "error":
+	case "error", "cancelled", "timeout":
 		return "✗"
-	case "cancelled":
-		return "⊘"
-	case "timeout":
-		return "⏱"
 	default:
 		return "•"
 	}
@@ -269,6 +267,7 @@ type agentChip struct {
 	idx     int
 	pending bool
 	failed  bool
+	dim     bool // lost card: same ✗ glyph, muted style
 	glyph   string
 	label   string // "SA1 explore repo" — goal first after the id
 }
@@ -300,7 +299,7 @@ func (s *step) agentChips() []agentChip {
 			}
 		}
 		out = append(out, agentChip{
-			idx: a.idx, failed: a.failed(), glyph: a.glyph(),
+			idx: a.idx, failed: a.failed(), dim: a.lost, glyph: a.glyph(),
 			label: fmt.Sprintf("SA%d %s", a.idx+1, label),
 		})
 		seen[a.idx] = true

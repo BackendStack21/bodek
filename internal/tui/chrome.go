@@ -121,12 +121,10 @@ func (m *Model) shelfView() string {
 		}
 		chips = append(chips, th.headerKey.Render("📎 "+truncate(strings.Join(names, " · "), max(m.width/3, 12))))
 	}
-	if n := len(m.queue); n > 0 && !m.qfocus && m.curApproval() == nil && m.panel != panelQueue {
+	if n := len(m.queue); n > 0 && !m.qfocus && m.panel != panelQueue {
 		chips = append(chips, th.scroll.Render(fmt.Sprintf("▸ %d queued", n)))
 	}
-	if m.busy && !m.vp.AtBottom() {
-		chips = append(chips, th.scroll.Render("↓ new output"))
-	}
+	// (F3) new-output lives on one steady footer row — no shelf duplicate.
 	if m.skillSuggest != nil {
 		name := m.skillSuggest.SkillName
 		if name == "" {

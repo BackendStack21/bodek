@@ -238,7 +238,7 @@ func TestAgentGlyphFollowsCard(t *testing.T) {
 		{TaskID: "t1", Phase: "active", Status: "running", Goal: "g"},
 	}})
 	rows := m.agentRowsRender(120)
-	if strings.Contains(strings.Join(rows, " "), "⟳") {
+	if strings.Contains(strings.Join(rows, " "), "▸") {
 		t.Errorf("running glyph shown for a finished card: %q", rows)
 	}
 }
