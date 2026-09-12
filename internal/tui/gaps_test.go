@@ -71,17 +71,18 @@ func TestApprovalQueueFIFO(t *testing.T) {
 	if m.apprTyped != "" || m.apprSel != 0 {
 		t.Error("input state not reset for the new head")
 	}
-	// A friction request keeps ordinary letters in the composer until Alt+A
-	// explicitly activates its confirmation editor.
+	// A friction request answers plain keys: 'd' denies immediately, and
+	// 'a' opens the confirmation editor without approving.
 	_, cmd = m.Update(key("alt+d")) // deny apr-2 → queue drains
 	exec(cmd)
 	m.handleEvent(client.Event{Type: "approval_request", ID: "apr-3", Friction: true, FrictionApprovals: 3})
-	m.Update(key("d"))
-	if m.apprTyped != "" || m.ta.Value() != "d" {
-		t.Fatalf("friction head should keep ordinary typing in composer: typed=%q draft=%q", m.apprTyped, m.ta.Value())
+	_, cmd = m.Update(key("d"))
+	exec(cmd)
+	if got := awaitAction(t, actions); got != "deny" {
+		t.Fatalf("plain 'd' on friction head = %q, want deny", got)
 	}
-	if len(m.approvals) != 1 {
-		t.Fatal("letter decided a friction approval")
+	if len(m.approvals) != 0 {
+		t.Fatalf("plain 'd' did not drain the queue: %+v", m.approvals)
 	}
 }
 

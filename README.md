@@ -307,8 +307,8 @@ own front-end settings are separate; see [Configuration](#configuration).
   newlines) and `⏎` sends the answer. The form wraps by cell width and
   keeps a capped tail so a long paste cannot blow the layout; `Esc`
   while a turn is running still arms cancel.
-- **Friction & expiry** — repeated same-class approvals require `Alt+A`
-  to focus confirmation, then typing `approve` and pressing Enter; every request is time-boxed, autocloses on expiry (focus
+- **Friction & expiry** — repeated same-class approvals require `a`
+  (or `Alt+A`) to focus confirmation, then typing `approve` and pressing Enter; every request is time-boxed, autocloses on expiry (focus
   returns to the latest transcript message), and can never collect an
   approval for a prompt the engine already abandoned.
 - **Death-gates everywhere** — deletes are two-step, `/stop` and `^L` are
@@ -589,8 +589,8 @@ can encode them:
 
 After three same-class approvals inside a minute the server engages
 **friction mode**. The card shows the recent count and withdraws trust.
-Press `Alt+A`, type the literal word `approve`, then press Enter. Escape returns
-to the draft without deciding; `Alt+D` denies immediately. The confirmation
+Press `a` (or `Alt+A`) on an empty composer, type the literal word `approve`, then press Enter. Escape returns
+to the draft without deciding; `d` (or `Alt+D`) denies immediately. The confirmation
 editor and expanded command pages are bounded to fit short terminals.
 
 Approvals are time-boxed by the engine (60s by default), and an expired
