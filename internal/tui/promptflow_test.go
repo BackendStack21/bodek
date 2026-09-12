@@ -170,8 +170,11 @@ func TestSubmitWhileBusyQueues(t *testing.T) {
 	if len(m.msgs) != 2 {
 		t.Error("queued prompt must not enter the transcript before it is sent")
 	}
-	if foot := plain(m.footer()); !strings.Contains(foot, "1 queued") {
-		t.Errorf("footer missing queued indicator: %q", foot)
+	if foot := plain(m.footer()); strings.Contains(foot, "queued") {
+		t.Errorf("footer must not repeat the queue count: %q", foot)
+	}
+	if shelf := plain(m.shelfView()); !strings.Contains(shelf, "1 queued") {
+		t.Errorf("shelf chip missing queued count: %q", shelf)
 	}
 }
 

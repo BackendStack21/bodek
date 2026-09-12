@@ -35,6 +35,7 @@ func (m *Model) scheduleReconnect(attempt int) tea.Cmd {
 	if hook == nil {
 		return nil
 	}
+	m.reconnAttempt = attempt // the status line's backoff readout follows the chain
 	return tea.Tick(reconnectBackoff(attempt), func(time.Time) tea.Msg {
 		cl, err := hook()
 		return reconnectMsg{attempt: attempt, cl: cl, err: err}

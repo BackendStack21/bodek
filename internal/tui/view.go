@@ -331,6 +331,19 @@ func (m *Model) statusLine() string {
 		return ""
 	}
 	th := m.th
+	// F2: a dropped socket is exactly when the reader needs this row —
+	// instead of hiding, the status line owns the reconnect state in-place.
+	if m.disconn {
+		label := "◌ disconnected · ⏎ retry"
+		if strings.HasPrefix(m.status, "reconnecting") {
+			label = fmt.Sprintf("◌ reconnecting · backoff %ds", int(reconnectBackoff(m.reconnAttempt).Seconds()))
+		}
+		row := th.badgeDanger.Render(label)
+		if w := lipgloss.Width(row); w > m.width {
+			row = ansi.Truncate(row, m.width-1, "") + "…"
+		}
+		return "\n" + row
+	}
 	var label string
 	switch {
 	case m.lastTool != "":
@@ -345,12 +358,9 @@ func (m *Model) statusLine() string {
 	if e := m.elapsed(); e != "" {
 		el = th.headerMeta.Render(" · " + e)
 	}
-	// Held prompts ride the same row: mid-turn ⏎ queues invisibly, so the
-	// count shows where the eyes already are (mirrors the footer indicator).
+	// Held prompts ride the footer's queue chip alone (F1: single owner)
+	// — the shelf shows the count while the strip is folded.
 	q := ""
-	if n := len(m.queue); n > 0 {
-		q = th.acDetail.Render(fmt.Sprintf(" · %d queued", n))
-	}
 	// Live plan strip: rides the same row,
 	// silent unless a run is active AND a plan exists — absence costs zero
 	// pixels. Bounded to a short label so small terminals keep the row sane.
@@ -370,11 +380,11 @@ func (m *Model) statusLine() string {
 }
 
 // statusLineVisible reports whether the status line occupies a row, keeping
-// View and inputAreaHeight in agreement. While an approval card is up or
-// the socket is down, the header badge carries the busy state and the row
-// stays hidden.
+// View and inputAreaHeight in agreement. While an approval card is up the
+// header badge carries the busy state and the row stays hidden; a dropped
+// socket instead KEEPS the row — it renders the reconnect state in-place.
 func (m *Model) statusLineVisible() bool {
-	return m.busy && m.curApproval() == nil && !m.disconn
+	return (m.busy || m.disconn) && m.curApproval() == nil
 }
 
 // ── transcript ───────────────────────────────────────────────────────────
@@ -648,6 +658,11 @@ func (m *Model) renderMessage(msg message, msgIdx, lineOffset int) (string, []st
 			// Server-initiated wake (background-job completion): the marker
 			// is the card's identity.
 			label += th.asstLabel.Render(" · wake")
+		}
+		if msg.failed {
+			// (F4) a failed run marks the head — the flag is model-owned
+			// state, never wire text — and persists through finalization.
+			label += " " + th.badgeDanger.Render(lampError)
 		}
 		if rec := formatReceipt(scanReceipt(msg)); rec != "" {
 			room := m.vp.Width - lipgloss.Width(label) - 4
@@ -1322,14 +1337,25 @@ func resultExcerpt(result string) []string {
 func (m *Model) renderNotices() string {
 	th := m.th
 	now := time.Now()
-	lines := make([]string, 0, len(m.notices))
-	for i, n := range m.notices {
+	// (F5) one visible line: the latest unexpired notice wins and older ones
+	// fold into a count — a notice burst must not stack rows over the tail.
+	latest := -1
+	older := 0
+	for i := range m.notices {
 		if exp := m.noticeExp[i]; !exp.IsZero() && !now.Before(exp) {
 			continue // expired transient, pending the next sweep
 		}
-		lines = append(lines, th.noticeStyle.Render("· "+n))
+		older++
+		latest = i
 	}
-	return strings.Join(lines, "\n")
+	if latest < 0 {
+		return ""
+	}
+	line := th.noticeStyle.Render("· " + m.notices[latest])
+	if older > 1 {
+		line += th.acDetail.Render(fmt.Sprintf("  ⓘ %d notes", older-1))
+	}
+	return line
 }
 
 // ── input / approval area ──────────────────────────────────────────────────
@@ -1765,9 +1791,6 @@ func (m *Model) footerContent() string {
 	left := m.modePrefix()
 	if m.busy {
 		left += th.footerKey.Render("^X") + th.footer.Render(" stop")
-		if n := len(m.queue); n > 0 {
-			left += th.footerSep.Render(" · ") + th.scroll.Render(fmt.Sprintf("▸ %d queued", n))
-		}
 	} else if m.status == "error" && m.ta.Value() == "" && m.lastPrompt != "" {
 		// A failed turn with an empty input: ⏎ resends the preserved
 		// prompt — the same contract the error card states. Hidden while a
@@ -1797,9 +1820,14 @@ func (m *Model) footerContent() string {
 		segs = append(segs, seg)
 	}
 	if !m.vp.AtBottom() {
+		// (F3) One steady row: the indicator never inserts/removes a segment —
+		// accent while a run streams fresh output, a dim placeholder otherwise,
+		// so the layout never reflows on the toggle.
 		seg := ""
 		if m.busy {
 			seg = th.scroll.Render("↓ new output") + th.footerSep.Render(" · ")
+		} else {
+			seg = th.footer.Render("↓ new output") + th.footerSep.Render(" · ")
 		}
 		seg += th.footerKey.Render("PgUp") + th.footer.Render(" more") +
 			th.footerSep.Render(" · ") +

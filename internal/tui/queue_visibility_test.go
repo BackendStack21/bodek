@@ -7,10 +7,10 @@ import (
 	"github.com/BackendStack21/bodek/internal/client"
 )
 
-// TestQueuedCountOnStatusLine verifies the in-flight status row — the line
-// the eyes are on while a turn runs — carries the queue depth, and that the
-// count clears once the turn ends and the queue drains into the next turn.
-func TestQueuedCountOnStatusLine(t *testing.T) {
+// TestQueuedCountOnShelfChip verifies the queue depth has a single owner:
+// the shelf chip above the composer carries it while a turn runs, the count
+// steps down as turns drain the queue, and the chip disappears when empty.
+func TestQueuedCountOnShelfChip(t *testing.T) {
 	m := newTestModel()
 	busyTurn(m)
 
@@ -18,11 +18,11 @@ func TestQueuedCountOnStatusLine(t *testing.T) {
 		m.ta.SetValue(p)
 		m.submit()
 	}
-	if line := plain(m.statusLine()); !strings.Contains(line, "2 queued") {
-		t.Errorf("status line missing queued count: %q", line)
+	if line := plain(m.statusLine()); strings.Contains(line, "queued") {
+		t.Errorf("status line must not repeat the queue count: %q", line)
 	}
-	if foot := plain(m.footer()); !strings.Contains(foot, "2 queued") {
-		t.Errorf("footer missing queued count: %q", foot)
+	if shelf := plain(m.shelfView()); !strings.Contains(shelf, "2 queued") {
+		t.Errorf("shelf chip missing queued count: %q", shelf)
 	}
 
 	// Each turn-end drains exactly one queued prompt: the count steps down
@@ -31,15 +31,15 @@ func TestQueuedCountOnStatusLine(t *testing.T) {
 	if len(m.queue) != 1 {
 		t.Fatalf("one done should drain one prompt, queue = %v", m.queue)
 	}
-	if line := plain(m.statusLine()); !strings.Contains(line, "1 queued") {
-		t.Errorf("status line should show the remaining prompt: %q", line)
+	if shelf := plain(m.shelfView()); !strings.Contains(shelf, "1 queued") {
+		t.Errorf("shelf chip should show the remaining prompt: %q", shelf)
 	}
 	m.handleEvent(client.Event{Type: "done", Latency: 1})
 	if len(m.queue) != 0 {
 		t.Fatalf("queue should be empty now, got %v", m.queue)
 	}
-	if line := plain(m.statusLine()); strings.Contains(line, "queued") {
-		t.Errorf("status line still shows a queue after the drain: %q", line)
+	if shelf := plain(m.shelfView()); strings.Contains(shelf, "queued") {
+		t.Errorf("shelf chip still shows a queue after the drain: %q", shelf)
 	}
 }
 

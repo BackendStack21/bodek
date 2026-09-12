@@ -382,6 +382,7 @@ func (m *Model) handleEvent(ev client.Event) (tea.Model, tea.Cmd) {
 				// classified card renders below a partial reply, or as the
 				// turn's only content. No side-note degradation.
 				setTurnMarker(&m.msgs[i], m.errorCard(ev.Message))
+				m.msgs[i].failed = true // ✗ marks the head, in history too
 			}
 		} else if !cancelled {
 			m.addNote("error: " + ev.Message)
