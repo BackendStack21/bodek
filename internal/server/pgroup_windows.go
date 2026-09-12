@@ -2,7 +2,11 @@
 
 package server
 
-import "os/exec"
+import (
+	"os"
+	"os/exec"
+	"syscall"
+)
 
 // watchdogArg is unused on windows: there is no process-group signalling,
 // so no orphan guard is spawned.
