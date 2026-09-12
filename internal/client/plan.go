@@ -2,6 +2,7 @@ package client
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -41,6 +42,12 @@ type PlanSnapshot struct {
 	Steps     []PlanStep `json:"steps"`
 }
 
+// ErrPlanUnavailable marks a 404 from the plan route — the engine is too
+// old to serve it. Permanent for this process; every other error (timeout,
+// 5xx, transport blip) is transient and must not stop the client's poll
+// chain (ErrJobsUnavailable pattern).
+var ErrPlanUnavailable = errors.New("session plan route unavailable")
+
 // SessionPlan fetches the structured plan of a session. The token is the
 // session-scoped auth token (same as cancel/resume); rate limiting and auth
 // match every sibling session endpoint.
@@ -51,6 +58,9 @@ func (c *Client) SessionPlan(sessionID, sessionToken string) (PlanSnapshot, erro
 		return PlanSnapshot{}, err
 	}
 	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode == http.StatusNotFound {
+		return PlanSnapshot{}, fmt.Errorf("%w: status %s", ErrPlanUnavailable, resp.Status)
+	}
 	if resp.StatusCode != http.StatusOK {
 		return PlanSnapshot{}, fmt.Errorf("session plan: status %s", resp.Status)
 	}

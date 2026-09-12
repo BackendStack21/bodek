@@ -251,7 +251,7 @@ type Model struct {
 	thinking  string // canonical: "" inherit, or disabled|low|medium|high
 	expandAll bool   // Ctrl+E: render every step's full output/logs
 
-	odekVersion  string // engine version shown in the header ("" hides it)
+	odekVersion  string // engine version, shown in the cockpit stats sheet ("" hides it)
 	bodekVersion string // bodek's own version, for the startup update check
 
 	panel    panelMode
@@ -275,11 +275,12 @@ type Model struct {
 	confirm     confirmKind   // armed destructive action: y fires, any other key disarms
 	stopTarget  string        // task_id armed by confirmStopAgent
 
-	agentsReg    []client.SubagentEntry // agents tab: sub-agent registry snapshot
-	agentsSeq    int                    // agents-tab poll generation; stale ticks drop
-	eventsTabSeq int                    // events-tab poll generation; stale ticks drop
-	kickAgents   bool                   // pending agents-tab refresh (flushKicks)
-	kickMemory   bool                   // pending memory-tab refresh (flushKicks)
+	agentsReg         []client.SubagentEntry // agents tab: sub-agent registry snapshot
+	agentsSeq         int                    // agents-tab poll generation; stale ticks drop
+	eventsTabSeq      int                    // events-tab poll generation; stale ticks drop
+	kickAgents        bool                   // pending agents-tab refresh (flushKicks)
+	kickMemory        bool                   // pending memory-tab refresh (flushKicks)
+	planConfirmIssued bool                   // tool_result debounce fired a confirm fetch
 
 	// Background jobs tab + lifecycle watcher (odek v1.38+ /api/jobs — the
 	// engine pushes nothing for job lifecycle, so bodek watches REST).

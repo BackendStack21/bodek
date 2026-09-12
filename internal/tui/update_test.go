@@ -9,16 +9,17 @@ import (
 // TestHeaderShowsOdekVersion verifies the engine version appears in the header
 // left cluster when known, and leaves no stray separator when it is not.
 func TestHeaderShowsOdekVersion(t *testing.T) {
+	// The header dropped its odek segment (simplification): the engine
+	// version now lives in the cockpit stats sheet.
 	m := newTestModel()
 	m.model = "deepseek-v4-flash"
 	m.odekVersion = "v0.2.0"
-	if out := plain(m.header()); !strings.Contains(out, "odek v0.2.0") {
-		t.Errorf("header missing odek version: %q", out)
+	if out := plain(m.header()); strings.Contains(out, "odek v0.2.0") {
+		t.Errorf("header must not show the odek version: %q", out)
 	}
-
-	m.odekVersion = ""
-	if out := plain(m.header()); strings.Contains(out, "odek v") {
-		t.Errorf("header should hide the odek segment when unknown: %q", out)
+	m.popover = true
+	if out := plain(m.View()); !strings.Contains(out, "v0.2.0") {
+		t.Errorf("cockpit missing engine version: %q", out)
 	}
 }
 

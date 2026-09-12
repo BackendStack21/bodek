@@ -100,9 +100,6 @@ func (m *Model) header() string {
 	if inst := m.headerInstruments(); inst != "" {
 		tail += th.headerMeta.Render("  ·  ") + th.headerKey.Render(truncate(inst, 28))
 	}
-	if m.odekVersion != "" {
-		tail += th.headerMeta.Render("  ·  odek ") + th.headerKey.Render(m.odekVersion)
-	}
 	// Sandbox status, prominently colored: green ● when isolated, amber ▲
 	// when the agent has host access.
 	tail += th.headerMeta.Render("  ·  ") + m.sandboxBadge()
@@ -112,10 +109,6 @@ func (m *Model) header() string {
 	if inPrice, outPrice := m.prices(); inPrice > 0 && outPrice > 0 {
 		tail += th.headerMeta.Render("  ·  ") + th.headerKey.Render(formatUSD(costUSD(m.sessCtxTok, m.sessOutTok, inPrice, outPrice)+m.subCostTotal()))
 	}
-	if s := formatTokPerSec(m.tokPerSec); s != "" {
-		tail += th.headerMeta.Render("  ·  ") + th.headerKey.Render("↗ "+s)
-	}
-
 	status := m.statusBadge()
 	// The gauge is the header's sole token metric — session totals live in
 	// /stats and the per-turn stat line, so a fresh session never flashes

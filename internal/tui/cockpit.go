@@ -108,8 +108,9 @@ func (m *Model) popoverView(w, h int) string {
 // cockpitServerSection is the server/link card: identity and liveness from
 // the server_info/pong snapshot plus the heartbeat round-trip.
 func (m *Model) cockpitServerSection() string {
+	// The engine version row lives in the session stats sheet below (⬢ engine)
+	// — rendering it here too duplicated it inside the same cockpit.
 	rows := [][2]string{
-		{"version", orDash(prefixVersion("odek ", m.odekVersion))},
 		{"model", orDash(m.model)},
 		{"stream", boolDash(m.serverStream, "⚡ live deltas", "buffered")},
 		{"sandbox", boolDash(m.sandbox, "isolated", "host access")},
@@ -195,14 +196,6 @@ func (m *Model) cockpitRows(title string, rows [][2]string) string {
 		b.WriteString("\n  " + th.statsDim.Render(r[0]) + pad + th.statsValue.Render(r[1]))
 	}
 	return b.String()
-}
-
-// prefixVersion prepends a label when v is non-empty.
-func prefixVersion(label, v string) string {
-	if v == "" {
-		return ""
-	}
-	return label + v
 }
 
 // boolDash renders a yes/no value with distinct labels per state.

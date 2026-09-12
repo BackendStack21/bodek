@@ -97,22 +97,24 @@ func TestApprovalKeepsComposer(t *testing.T) {
 
 func TestHeaderInstruments(t *testing.T) {
 	m := newTestModel()
+	m.jobs = []client.Job{{Status: "running"}, {Status: "running"}}
+	if got := m.headerJobsLabel(); got != "▶ 2 jobs" {
+		t.Errorf("jobs label = %q, want ▶ 2 jobs", got)
+	}
+	// Plan progress no longer rides the header (the /plan tab owns it) —
+	// even with an accepted, progressing plan on the model.
 	m.planInit = true
 	m.planAvail = planAvailable
 	m.plan = client.PlanSnapshot{Found: true, Steps: []client.PlanStep{
 		{ID: "a", Status: client.PlanDone},
 		{ID: "b", Status: client.PlanPending},
 	}}
-	m.jobs = []client.Job{{Status: "running"}, {Status: "running"}}
-	if got := m.headerPlanLabel(); got != "plan 1/2" {
-		t.Errorf("plan label = %q, want plan 1/2", got)
-	}
-	if got := m.headerJobsLabel(); got != "▶ 2 jobs" {
-		t.Errorf("jobs label = %q, want ▶ 2 jobs", got)
-	}
 	head := plain(m.header())
-	if !strings.Contains(head, "plan 1/2") || !strings.Contains(head, "2 jobs") {
-		t.Errorf("header missing instruments:\n%s", head)
+	if strings.Contains(head, "plan 1/2") {
+		t.Errorf("plan label must not render in the header:\n%s", head)
+	}
+	if !strings.Contains(head, "2 jobs") {
+		t.Errorf("header missing jobs instrument:\n%s", head)
 	}
 
 	m.jobs = []client.Job{{Status: "failed"}}

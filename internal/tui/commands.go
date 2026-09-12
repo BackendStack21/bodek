@@ -539,6 +539,20 @@ func (m *Model) statsBody() string {
 		}
 	}
 
+	// The engine version lives here now — the header dropped its odek
+	// segment — and it renders even before the first turn: knowing the
+	// engine build is a fresh-attach question, not a session-rollup one.
+	if m.odekVersion != "" {
+		rows = append(rows, row{"⬢", th.statsLabel, "engine", th.statsValue.Render(m.odekVersion)})
+	}
+	// Live rate while a turn streams: the sealed rows below only exist
+	// after done, but the cockpit is the rate's home now — the header
+	// dropped its chip, so an open sheet must not go blind mid-turn.
+	if m.busy && m.tokPerSec > 0 {
+		live := th.statsValue.Render(formatTokPerSec(m.tokPerSec)) + th.statsDim.Render("  · live")
+		rows = append(rows, row{"↗", th.statTime, "speed", live})
+	}
+
 	// Align values into a column just past the widest label.
 	gutter := 0
 	for _, r := range rows {

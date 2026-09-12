@@ -322,19 +322,20 @@ own front-end settings are separate; see [Configuration](#configuration).
   session spend or sub-agent tokens. The bar saturates at full; if the
   observed window exceeds the advertised model limit the percent goes
   over 100% instead of a contradictory `100%` next to a larger used
-  count. Live `plan N/M` and `▶ N jobs` /
-  `✗ job` instruments ride the same bar when a plan or background job is
-  active.
+  count. `▶ N jobs` / `✗ job` instruments ride the same bar when a
+  background job is active; plan progress rides the busy line while a
+  turn runs and the `/plan` tab otherwise.
 - **Per-turn footers & `/stats`** — token counts and latency ride every turn
   head (`⚡` latency, `⌂` context, `↳` output tokens, `↗` tok/s, `⚒` tools);
   `/stats` opens a sheet that rolls up the session (speed, TTFT, LLM time,
   cost, cache, context). The `⎇` glyph is reserved for git commits in the
   transcript.
-- **Generation speed** — live `↗ tok/s` in the header from `usage` frames
+- **Generation speed** — live `↗ tok/s` in the cockpit stats sheet
+  (`/server`) from `usage` frames
   (prefers `generationTokensPerSecond` when the stream measured TTFT;
   otherwise end-to-end `tokensPerSecond`). The same rate seals onto the
   turn footer after `done`. Missing/zero rates are held, never invented
-  from cumulative output ÷ wall latency; a new turn clears the chip.
+  from cumulative output ÷ wall latency; a new turn clears it.
 - **Cost tracking** — when odek has token prices configured, the header shows
   the running session spend, each turn footer its estimated cost, and
   `/stats` adds the `max_cost_usd` cap when set; hidden entirely otherwise.
