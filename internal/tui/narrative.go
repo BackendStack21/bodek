@@ -221,13 +221,13 @@ func scanReceipt(msg message) receipt {
 func formatReceipt(r receipt) string {
 	var parts []string
 	if r.files > 0 {
-		parts = append(parts, fmt.Sprintf("touched %d", r.files))
+		parts = append(parts, fmt.Sprintf("✎ %d", r.files))
 	}
 	if r.hasDiff {
 		parts = append(parts, fmt.Sprintf("+%d −%d", r.adds, r.dels))
 	}
 	if r.tests != "" {
-		parts = append(parts, "tests "+r.tests)
+		parts = append(parts, r.tests+" tests")
 	}
 	return strings.Join(parts, " · ")
 }

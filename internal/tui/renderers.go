@@ -292,14 +292,19 @@ var (
 	gitNewRefRe      = regexp.MustCompile(`\[(?:new branch|new tag)\][ \t]+(\S+)[ \t]+->`)
 	lintIssuesRe     = regexp.MustCompile(`^(\d+) issues?\.?:?$`)
 	eslintProblemsRe = regexp.MustCompile(`✖ (\d+) problems`)
-	warnEmittedRe    = regexp.MustCompile(`^warning: (\d+) warnings? emitted\.?$`)
-	warnGeneratedRe  = regexp.MustCompile(`^(\d+) warnings? generated\.?$`)
-	httpStatusRe     = regexp.MustCompile(`(?i)^HTTP/[\d.]+ (\d{3})`)
-	wgetStatusRe     = regexp.MustCompile(`awaiting response\.\.\.?[ \t]?(\d{3})`)
-	searchHitsRe     = regexp.MustCompile(`found (\d+) matches`)
-	planHeaderRe     = regexp.MustCompile(`^\[Current plan:\s*v(\d+)\s+—\s+(\d+)/(\d+) done,\s+(\d+) blocked\.`)
-	planCompleteRe   = regexp.MustCompile(`^\[Current plan:\s*v(\d+)\s+—\s+all\s+(\d+)\s+steps?\s+complete\.`)
-	planStepRe       = regexp.MustCompile(`^(\S+)\s+\[([^\]]+)\]\s*(.*)$`)
+	// Build / vet verdict patterns: compiler errors (go/rust/tsc shapes) and
+	// failed exits mark a failed build; vet diagnostics are file:line: col.
+	// Success rides the silent-output convention instead of a pattern.
+	buildFailRe     = regexp.MustCompile(`(?m)^(?:#\s+\S|error\[E\d+\]|ERROR:|exit status \d+)|(?:^|\n)[^\n]*:\d+:\d+: [^\n]*\berror\b|(?:^|\n)[^\n]*\(\d+,\d+\): error TS`)
+	vetFailRe       = regexp.MustCompile(`(?m)^[^\n]*\.go:\d+:\d+: `)
+	warnEmittedRe   = regexp.MustCompile(`^warning: (\d+) warnings? emitted\.?$`)
+	warnGeneratedRe = regexp.MustCompile(`^(\d+) warnings? generated\.?$`)
+	httpStatusRe    = regexp.MustCompile(`(?i)^HTTP/[\d.]+ (\d{3})`)
+	wgetStatusRe    = regexp.MustCompile(`awaiting response\.\.\.?[ \t]?(\d{3})`)
+	searchHitsRe    = regexp.MustCompile(`found (\d+) matches`)
+	planHeaderRe    = regexp.MustCompile(`^\[Current plan:\s*v(\d+)\s+—\s+(\d+)/(\d+) done,\s+(\d+) blocked\.`)
+	planCompleteRe  = regexp.MustCompile(`^\[Current plan:\s*v(\d+)\s+—\s+all\s+(\d+)\s+steps?\s+complete\.`)
+	planStepRe      = regexp.MustCompile(`^(\S+)\s+\[([^\]]+)\]\s*(.*)$`)
 )
 
 // structuredToolItem is the small, display-oriented subset shared by odek's
@@ -1075,15 +1080,23 @@ func stepHeadSuffix(name, arg, result string, th theme) string {
 		}
 		return ""
 	}
+	if raceFlagged(arg) && strings.Contains(result, "WARNING: DATA RACE") {
+		return th.stepErr.Render("race detected")
+	}
 	if s, ok := testSummary(result); ok {
 		if strings.HasPrefix(s, "✗") {
 			// The step's status icon already flags the failure — the chip
 			// names what failed, without a second ✗.
 			return th.stepErr.Render(strings.TrimPrefix(s, "✗ "))
 		}
+		if raceFlagged(arg) {
+			s += " · race"
+		}
 		return th.stepDone.Render(s)
 	}
 	for _, chip := range []string{
+		buildChip(arg, result, th),
+		vetChip(arg, result, th),
 		gitChip(arg, result, th),
 		lintChip(arg, result, th),
 		warnChip(result, th),
@@ -1172,8 +1185,97 @@ func gitChip(arg, result string, th theme) string {
 	return ""
 }
 
-// lintChip reports the linter outcome: "✓ lint clean" or a red issue
-// count. Gated on linter-sounding commands, so ruff's "All checks passed"
+// raceFlagged reports whether the command asked for race detection
+// (go test -race and friends).
+func raceFlagged(arg string) bool {
+	for _, w := range shellWords(arg) {
+		if w == "-race" || w == "--race" || strings.HasPrefix(w, "-race=") {
+			return true
+		}
+	}
+	return false
+}
+
+// buildGate reports whether the command's job is compiling code. Build
+// systems (make/cargo/gradle/mvn) qualify unless the run names another
+// concern (lint/test/vet/check); toolchain verbs (go build, npm run build,
+// tsc) qualify on the verb. git never does — a commit message may quote
+// the word "build".
+func buildGate(arg string) bool {
+	words := shellWords(arg)
+	if hasWord(words, "git") {
+		return false
+	}
+	for _, w := range words {
+		switch w {
+		case "lint", "test", "vet", "check":
+			return false
+		}
+	}
+	for i, w := range words {
+		switch w {
+		case "make", "cmake", "cargo", "gradle", "mvn":
+			return true
+		case "build", "tsc", "rustc", "gcc", "clang":
+			if i == 0 || words[0] != "git" {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// silentBuildOutput reports output that the compile-success convention
+// produces: nothing at all, or the normalized no-output placeholder.
+func silentBuildOutput(result string) bool {
+	t := strings.TrimSpace(result)
+	return t == "" || t == "(no output)"
+}
+
+// buildChip reports the build verdict: '✓ built' for a compile gate with the
+// silent success convention, 'build failed' on recognized compiler errors
+// or a failed exit. Unrecognized non-silent output yields no chip — it
+// carries no exit metadata, so success is never fabricated.
+func buildChip(arg, result string, th theme) string {
+	if !buildGate(arg) {
+		return ""
+	}
+	if buildFailRe.MatchString(result) {
+		return th.stepErr.Render("build failed")
+	}
+	if silentBuildOutput(result) {
+		return th.stepDone.Render("✓ built")
+	}
+	return ""
+}
+
+// vetChip reports the go vet verdict with the same silent-success rule as
+// buildChip: vet prints nothing when clean and file:line diagnostics when
+// not. Gated on the vet verb (go vet ./...).
+func vetChip(arg, result string, th theme) string {
+	words := shellWords(arg)
+	vet := false
+	for i, w := range words {
+		if w == "vet" {
+			// vet heads the command (vet ./...) or rides its toolchain (go
+			// vet ./...) — never a bare argument of another verb.
+			vet = i == 0 || words[i-1] == "go"
+			break
+		}
+	}
+	if !vet {
+		return ""
+	}
+	if vetFailRe.MatchString(result) {
+		return th.stepErr.Render("vet failed")
+	}
+	if silentBuildOutput(result) {
+		return th.stepDone.Render("✓ vet")
+	}
+	return ""
+}
+
+// lintChip reports the linter outcome: "✓ lint" or a red issue count. Gated on linter-sounding commands, so ruff's "All checks passed"
 // cannot leak into arbitrary output.
 func lintChip(arg, result string, th theme) string {
 	words := shellWords(arg)
@@ -1194,18 +1296,18 @@ func lintChip(arg, result string, th theme) string {
 		t := strings.TrimSpace(ln)
 		if m := lintIssuesRe.FindStringSubmatch(t); m != nil {
 			if n, _ := strconv.Atoi(m[1]); n == 0 {
-				return th.stepDone.Render("✓ lint clean")
+				return th.stepDone.Render("✓ lint")
 			}
-			return th.stepErr.Render(m[1] + " issues")
+			return th.stepErr.Render("lint " + m[1])
 		}
 		if strings.HasPrefix(t, "All checks passed") {
-			return th.stepDone.Render("✓ lint clean")
+			return th.stepDone.Render("✓ lint")
 		}
 		if m := eslintProblemsRe.FindStringSubmatch(t); m != nil {
 			if n, _ := strconv.Atoi(m[1]); n == 0 {
-				return th.stepDone.Render("✓ lint clean")
+				return th.stepDone.Render("✓ lint")
 			}
-			return th.stepErr.Render(m[1] + " issues")
+			return th.stepErr.Render("lint " + m[1])
 		}
 	}
 	return ""

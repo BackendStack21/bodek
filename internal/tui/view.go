@@ -870,7 +870,13 @@ func (m *Model) collapseSummary(msg message) string {
 	}
 	parts := []string{"⋯ collapsed"}
 	if n := len(msg.steps); n > 0 {
-		parts = append(parts, fmt.Sprintf("%d tool steps", n))
+		plural := "steps"
+		if n == 1 {
+			plural = "step"
+		}
+		// Compact dot tally (· per step, ✗ failed) rides the numeric count —
+		// the count stays for screen readers / copy, the dots for scanning.
+		parts = append(parts, fmt.Sprintf("%d tool %s · %s", n, plural, stepTally(msg)))
 	}
 	if strings.TrimSpace(msg.thinking) != "" {
 		parts = append(parts, "reasoning")
@@ -879,6 +885,34 @@ func (m *Model) collapseSummary(msg message) string {
 		parts = append(parts, "reply: "+truncate(collapse(c), 60))
 	}
 	return strings.Join(parts, " · ")
+}
+
+// stepTallyMax caps the collapsed dot tally's width: 23 glyphs plus the
+// ellipsis head that stands for the steps cut off the front.
+const stepTallyMax = 24
+
+// stepTally renders the collapsed-turn dot tally — one glyph per step, ✗ for
+// failed steps, · otherwise. Model-owned constants, sanitized like every
+// other rendered string; long turns keep the tail and lead with ….
+func stepTally(msg message) string {
+	n := len(msg.steps)
+	if n == 0 {
+		return ""
+	}
+	var b strings.Builder
+	steps := msg.steps
+	if n > stepTallyMax {
+		b.WriteString("…")
+		steps = steps[n-(stepTallyMax-1):]
+	}
+	for i := range steps {
+		if steps[i].isErr {
+			b.WriteString("✗")
+		} else {
+			b.WriteString("·")
+		}
+	}
+	return sanitize(b.String())
 }
 
 // foldTally builds the sealed-turn head tally 'N tools · M agents · T':
@@ -1366,7 +1400,9 @@ func (m *Model) renderChipStrip(chips []agentChip, focus, width, msgIdx, stepIdx
 			txt := cell.text()
 			w := lipgloss.Width(txt)
 			styled := th.stepArg.Render(txt)
-			if c.failed {
+			if c.dim {
+				styled = th.statsDim.Render(txt) // lost card: muted ✗, distinct from a hard failure
+			} else if c.failed {
 				styled = th.stepErr.Render(txt)
 			} else if !c.pending && c.glyph == "✓" {
 				styled = th.stepDone.Render(txt)

@@ -74,7 +74,7 @@ func TestQueuedPhase(t *testing.T) {
 
 	m.handleEvent(client.Event{Type: "subagent_state", TaskID: "a", TaskIdx: 0, Phase: "started", Status: "running", Step: 1})
 	s = stateStep(t, m)
-	if s.agents[0].glyph() != "⟳" {
+	if s.agents[0].glyph() != "▸" {
 		t.Errorf("started card still queued glyph: %q", s.agents[0].glyph())
 	}
 	if r := agentRollup(s); r != "0/3 agents · 2 queued" {

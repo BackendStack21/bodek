@@ -83,7 +83,7 @@ func TestTurnReceipt(t *testing.T) {
 		t.Errorf("tests = %q, want ✓", r.tests)
 	}
 	got := formatReceipt(r)
-	for _, want := range []string{"touched 2", "+", "−", "tests ✓"} {
+	for _, want := range []string{"✎ 2", "+", "−", "✓ tests"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("receipt %q missing %q", got, want)
 		}
@@ -97,7 +97,7 @@ func TestCollapseSummaryPrefersReceipt(t *testing.T) {
 		steps: []step{{name: "write_file", arg: "events.go", done: true, result: "ok"}},
 	}
 	got := m.collapseSummary(msg)
-	if !strings.Contains(got, "touched 1") {
+	if !strings.Contains(got, "✎ 1") {
 		t.Errorf("folded card should use the receipt: %q", got)
 	}
 	if strings.Contains(got, "reply:") {
@@ -239,7 +239,7 @@ func TestReceiptRidesTurnHead(t *testing.T) {
 	}
 	out := plain(func() string { s, _ := m.renderMessage(msg, 0, 0); return s }())
 	head := strings.Split(out, "\n")[0]
-	if !strings.Contains(head, "touched 1") {
+	if !strings.Contains(head, "✎ 1") {
 		t.Errorf("turn head missing receipt: %q", head)
 	}
 }

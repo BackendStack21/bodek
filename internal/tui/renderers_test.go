@@ -189,9 +189,9 @@ func TestStepHeadSuffix(t *testing.T) {
 			"* [new branch]      feat/x -> feat/x", "↑ feat/x"},
 		{"push up to date", "shell", "git push", "Everything up-to-date", "↑ up to date"},
 		{"push needs git arg", "shell", "echo pushing", "   7c0a0dc..8cefa19  main -> main", ""},
-		{"lint clean", "shell", "golangci-lint run", "0 issues.", "✓ lint clean"},
-		{"lint issues", "shell", "make lint", "2 issues.", "2 issues"},
-		{"lint ruff", "shell", "ruff check .", "All checks passed!", "✓ lint clean"},
+		{"lint clean", "shell", "golangci-lint run", "0 issues.", "✓ lint"},
+		{"lint issues", "shell", "make lint", "2 issues.", "lint 2"},
+		{"lint ruff", "shell", "ruff check .", "All checks passed!", "✓ lint"},
 		{"lint needs lint arg", "shell", "go build ./...", "0 issues.", ""},
 		{"warnings emitted", "shell", "cargo build", "warning: unused variable\nwarning: 2 warnings emitted", "⚠ 2 warnings"},
 		{"warnings generated", "shell", "make", "lib.c:3:5: warning: unused var\n3 warnings generated.", "⚠ 3 warnings"},
@@ -212,14 +212,14 @@ func TestStepHeadSuffix(t *testing.T) {
 		{"pytest default fail", "shell", "pytest",
 			"================================= FAILURES ==========================\n======= 1 failed, 2 passed in 0.3s ========" +
 				"====", "1 failing"},
-		{"golangci colon issues", "shell", "golangci-lint run", "2 issues:\n- x.go:1:1: boom", "2 issues"},
+		{"golangci colon issues", "shell", "golangci-lint run", "2 issues:\n- x.go:1:1: boom", "lint 2"},
 		{"prose counts stay silent", "shell", "./validate.sh", "10 files failed validation, 5 passed", ""},
 		{"prose counts stay silent 2", "shell", "./validate.sh", "5 passed, 10 failed validation", ""},
 		{"lint word gate", "shell", "git commit -m fix-lint", "0 issues.", ""},
 		{"warnings prose anchored", "shell", "grep -rn TODO .", "42 warnings generated during the scan", ""},
 		{"warnings singular", "shell", "cargo build", "warning: 1 warning emitted", "⚠ 1 warning"},
-		{"eslint issues red", "shell", "eslint .", "✖ 2 problems (2 errors, 0 warnings)", "2 issues"},
-		{"eslint zero", "shell", "eslint .", "✖ 0 problems", "✓ lint clean"},
+		{"eslint issues red", "shell", "eslint .", "✖ 2 problems (2 errors, 0 warnings)", "lint 2"},
+		{"eslint zero", "shell", "eslint .", "✖ 0 problems", "✓ lint"},
 		{"jest duplicated summaries", "shell", "npm test",
 			"Test Suites: 1 passed, 1 total\nTests: 3 passed, 3 total\nTests: 3 passed, 3 total", "✓ 3 passed"},
 		{"jest suites only", "shell", "npm test", "Test Suites: 1 passed, 1 total", "✓ 1 passed"},
@@ -234,7 +234,7 @@ func TestStepHeadSuffix(t *testing.T) {
 		}
 	}
 	// Severity styling: lint issues and 5xx run red, warnings run amber.
-	if got := stepHeadSuffix("shell", "make lint", "2 issues.", th); got != th.stepErr.Render("2 issues") {
+	if got := stepHeadSuffix("shell", "make lint", "2 issues.", th); got != th.stepErr.Render("lint 2") {
 		t.Errorf("lint issues style = %q", plain(got))
 	}
 	if got := stepHeadSuffix("shell", "cargo build", "warning: 2 warnings emitted", th); got != th.badgeWarn.Render("⚠ 2 warnings") {

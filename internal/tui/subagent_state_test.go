@@ -80,8 +80,8 @@ func TestSubagentStateGlyphs(t *testing.T) {
 		{"success", "✓", false},
 		{"partial", "◐", false},
 		{"error", "✗", true},
-		{"cancelled", "⊘", true},
-		{"timeout", "⏱", true},
+		{"cancelled", "✗", true},
+		{"timeout", "✗", true},
 	}
 	for _, tc := range cases {
 		a := &agentCard{taskID: "t", phase: "finished", status: tc.status}
@@ -92,7 +92,7 @@ func TestSubagentStateGlyphs(t *testing.T) {
 			t.Errorf("status %q failed = %v", tc.status, a.failed())
 		}
 	}
-	if got := (&agentCard{phase: "active", status: "running"}).glyph(); got != "⟳" {
+	if got := (&agentCard{phase: "active", status: "running"}).glyph(); got != "▸" {
 		t.Errorf("live glyph = %q", got)
 	}
 }
@@ -132,7 +132,7 @@ func TestSubagentStateRollup(t *testing.T) {
 	}
 	s.expanded = true
 	out, _ := renderStepsForTest(m, m.msgs[0], 0, 0)
-	if !strings.Contains(out, "1/2 agents") || !strings.Contains(out, "⟳ SA2") {
+	if !strings.Contains(out, "1/2 agents") || !strings.Contains(out, "▸ SA2") {
 		t.Errorf("render missing rollup or live card: %q", out)
 	}
 }

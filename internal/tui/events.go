@@ -58,6 +58,7 @@ func (m *Model) ingestWireEvent(ev client.Event) (tea.Model, tea.Cmd) {
 // listen inside another Batch left execBatchMsg waiting on a nested listen
 // and the header's ready badge never came back after Hi.
 func (m *Model) ingestWireBatch(events []client.Event) (tea.Model, tea.Cmd) {
+	m.lastEvent = time.Now() // (R5) the head's last-event age resets on each batch
 	var model tea.Model = m
 	for _, ev := range events {
 		var cmd tea.Cmd

@@ -137,7 +137,7 @@ func TestSessionHomeAfterClear(t *testing.T) {
 	if strings.Contains(out, "fix the flaky test") == false {
 		t.Errorf("session home missing last prompt:\n%s", out)
 	}
-	if !strings.Contains(out, "touched") {
+	if !strings.Contains(out, "✎") {
 		t.Errorf("session home missing receipt:\n%s", out)
 	}
 	if !strings.Contains(out, "session") {

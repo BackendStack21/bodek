@@ -210,6 +210,7 @@ type Model struct {
 	busy      bool
 	wakeArmed bool // bg_wake seen but its turn not carded yet: arms the lazy wake marker
 	runStart  time.Time
+	lastEvent time.Time // (R5) last eventBatchMsg arrival; drives the stale-age head segment
 	lastTool  string
 	lastArg   string
 
@@ -1448,10 +1449,37 @@ func (m *Model) elapsed() string {
 		return ""
 	}
 	d := time.Since(m.runStart)
+	var s string
 	if d < time.Minute {
-		return fmt.Sprintf("running %ds", int(d.Seconds()))
+		s = fmt.Sprintf("running %ds", int(d.Seconds()))
+	} else {
+		s = fmt.Sprintf("running %dm%02ds", int(d.Minutes()), int(d.Seconds())%60)
 	}
-	return fmt.Sprintf("running %dm%02ds", int(d.Minutes()), int(d.Seconds())%60)
+	// (R5) the last-event age rides the same segment: whole seconds since
+	// the last event batch, only while busy and past the staleness threshold.
+	// Rides the slow tail-clock lane with the elapsed counter (no extra row).
+	if a := m.staleAge(); a != "" {
+		s += " " + a
+	}
+	return s
+}
+
+// staleEventThreshold is how long a busy turn may stay silent before the
+// head admits it: below this the stream reads as merely between tokens.
+const staleEventThreshold = 5 * time.Second
+
+// staleAge renders the '· Ns' last-event age for the streaming head: the
+// whole seconds since the last eventBatchMsg landed, only when the turn is
+// busy and the gap exceeds staleEventThreshold. Empty otherwise.
+func (m *Model) staleAge() string {
+	if !m.busy || m.lastEvent.IsZero() {
+		return ""
+	}
+	d := time.Since(m.lastEvent)
+	if d < staleEventThreshold {
+		return ""
+	}
+	return fmt.Sprintf("· %ds", int(d.Seconds()))
 }
 
 // sanitize strips terminal-hostile content from untrusted text before it is

@@ -115,7 +115,7 @@ func TestSelectAgentChipToggles(t *testing.T) {
 
 func TestPackChipRowsNeverSplitsAChip(t *testing.T) {
 	chips := []agentChip{
-		{idx: 0, glyph: "⟳", label: "SA1 explore"},
+		{idx: 0, glyph: "▸", label: "SA1 explore"},
 		{idx: 1, glyph: "✓", label: "SA2 a-very-long-goal-label"},
 	}
 	rows := packChipRows(chips, 20)
