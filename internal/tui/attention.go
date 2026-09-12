@@ -15,6 +15,7 @@ const (
 	attentionApproval                       // an approval is waiting (approval_request)
 	attentionJobDone                        // a background job exited cleanly (jobs watcher)
 	attentionJobFailed                      // a background job failed / timed out / was killed
+	attentionFailed                         // a turn ended in error (error event)
 )
 
 // attention is the plan of terminal-attention effects for one state change.
@@ -64,6 +65,8 @@ func (m *Model) attentionFor(kind attentionKind) attention {
 		prefix, note = "✓ bg job done", "bodek: background job finished"
 	case attentionJobFailed:
 		prefix, note = "✗ bg job failed", "bodek: background job failed"
+	case attentionFailed:
+		prefix, note = "✗ turn failed", "bodek: turn failed"
 	default:
 		return attention{}
 	}

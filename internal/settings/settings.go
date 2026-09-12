@@ -26,6 +26,9 @@ type Settings struct {
 	Verbosity string `json:"verbosity,omitempty"`
 	Thinking  string `json:"thinking,omitempty"`
 	Resume    *bool  `json:"resume,omitempty"`
+	// ReduceMotion dials the transcript's live-motion cadence down
+	// (clock lane >= 2s, no accent pulse on the new-output row).
+	ReduceMotion *bool `json:"reduceMotion,omitempty"`
 }
 
 // Path returns the settings file location: $BODEK_CONFIG if set, else

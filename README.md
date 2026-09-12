@@ -122,6 +122,7 @@ bodek --notify                                    # desktop notifications (OSC 9
 bodek --theme ember-light                         # start with a theme (/theme switches live)
 bodek --verbosity quiet                           # calmer start: info notes hidden
 bodek --plain                                     # linear mode: transcript to scrollback (a11y, pipes)
+bodek --reduce-motion                             # calmer transcript: clock lane at 2s, no accent pulses
 bodek -- --prompt-caching                         # pass extra flags through to `odek serve`
 bodek version                                     # print the bodek version
 bodek upgrade                                     # download and install the latest release

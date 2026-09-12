@@ -383,6 +383,12 @@ func (m *Model) handleEvent(ev client.Event) (tea.Model, tea.Cmd) {
 				// turn's only content. No side-note degradation.
 				setTurnMarker(&m.msgs[i], m.errorCard(ev.Message))
 				m.msgs[i].failed = true // ✗ marks the head, in history too
+				// (A3) one BEL per failed turn: the guard latches until the next
+				// turn opens, so trailing retries cannot re-ring it.
+				if !m.failBellFired {
+					m.failBellFired = true
+					attn = m.attentionCmd(m.attentionFor(attentionFailed))
+				}
 			}
 		} else if !cancelled {
 			m.addNote("error: " + ev.Message)
@@ -652,9 +658,10 @@ func (m *Model) beginWireTurn(wake bool) {
 	m.msgs = append(m.msgs, message{role: roleAsst, streaming: true, systemWake: wake})
 	m.curIdx = len(m.msgs) - 1
 	m.busy = true
-	m.cancelAck = false  // a wake run's errors are real errors again
-	m.skillSuggest = nil // the suggestion's window closed with the last turn
-	m.wakeArmed = false  // consumed: the marker lives on the card now
+	m.cancelAck = false     // a wake run's errors are real errors again
+	m.failBellFired = false // a fresh turn re-arms the failure BEL
+	m.skillSuggest = nil    // the suggestion's window closed with the last turn
+	m.wakeArmed = false     // consumed: the marker lives on the card now
 	if wake {
 		m.status = "waking for bg job"
 	} else {

@@ -399,6 +399,20 @@ const streamRenderInterval = 80 * time.Millisecond
 // refreshes running step clocks without rebuilding on every spinner frame.
 const tailClockInterval = 250 * time.Millisecond
 
+// reduceMotionClockInterval is the calmer cadence for --reduce-motion:
+// transcript clock repaints (head counter, step timers) drop to one per
+// 2s so live numbers barely move.
+const reduceMotionClockInterval = 2 * time.Second
+
+// tailClockTick resolves the transcript clock lane's interval for the
+// current motion mode.
+func (m *Model) tailClockTick() time.Duration {
+	if m.reduceMotion {
+		return reduceMotionClockInterval
+	}
+	return tailClockInterval
+}
+
 // renderFlushMsg fires streamRenderInterval after the first coalesced
 // streaming event; a stale seq means a newer flush superseded it.
 type renderFlushMsg struct {
@@ -448,7 +462,7 @@ func (m *Model) queueTailClock() tea.Cmd {
 	m.tailClockPending = true
 	m.tailClockSeq++
 	seq := m.tailClockSeq
-	return tea.Tick(tailClockInterval, func(time.Time) tea.Msg {
+	return tea.Tick(m.tailClockTick(), func(time.Time) tea.Msg {
 		return tailClockFlushMsg{seq: seq}
 	})
 }
@@ -670,6 +684,17 @@ func (m *Model) renderMessage(msg message, msgIdx, lineOffset int) (string, []st
 				label += "  " + th.statsDim.Render(truncate(rec, room))
 			}
 		}
+		if !msg.streaming {
+			// (A2) Sealed-turn tally on the head: 'N tools · M agents · Ts' in
+			// the same dim secondary style and width budget as the receipt —
+			// model-owned counts only, never wire text.
+			if tal := foldTally(msg); tal != "" {
+				room := m.vp.Width - lipgloss.Width(label) - 4
+				if room > 8 {
+					label += "  " + th.statsDim.Render(truncate(tal, room))
+				}
+			}
+		}
 		if msg.collapsed {
 			summary := th.statsDim.Render(m.collapseSummary(msg))
 			start := lineOffset + turnHeadGap
@@ -854,6 +879,51 @@ func (m *Model) collapseSummary(msg message) string {
 		parts = append(parts, "reply: "+truncate(collapse(c), 60))
 	}
 	return strings.Join(parts, " · ")
+}
+
+// foldTally builds the sealed-turn head tally 'N tools · M agents · T':
+// N counts the chronological tool steps on items[], M the sub-agent
+// children across steps, and T the sealed duration — the sum of per-step
+// durs (parallel steps make wall time under-report the work). '<1s' when
+// the total is under a second; empty pieces stay off the string, and a
+// zero-step turn yields no tool segment at all.
+func foldTally(msg message) string {
+	n := 0
+	for _, it := range msg.items {
+		if !it.thinking && !it.reply {
+			n++
+		}
+	}
+	if n == 0 {
+		return "" // a reply-only turn keeps a quiet head
+	}
+	agents := 0
+	var total time.Duration
+	for i := range msg.steps {
+		agents += len(msg.steps[i].agents)
+		total += msg.steps[i].dur
+	}
+	parts := []string{fmt.Sprintf("%d tools", n)}
+	if agents > 0 {
+		plural := "agents"
+		if agents == 1 {
+			plural = "agent"
+		}
+		parts = append(parts, fmt.Sprintf("%d %s", agents, plural))
+	}
+	d := "<1s"
+	if total >= time.Second {
+		d = formatDuration(total)
+	}
+	parts = append(parts, d)
+	return strings.Join(parts, " · ")
+}
+
+// outputRowAccent reports whether the new-output row carries its busy
+// accent (scroll style). Reduced motion keeps the steady dim render —
+// color pulses are exactly what the mode strips.
+func (m *Model) outputRowAccent() bool {
+	return m.busy && !m.reduceMotion
 }
 
 // renderIntentRail paints a reasoning block as a whispered plan: a faint
@@ -1824,7 +1894,7 @@ func (m *Model) footerContent() string {
 		// accent while a run streams fresh output, a dim placeholder otherwise,
 		// so the layout never reflows on the toggle.
 		seg := ""
-		if m.busy {
+		if m.outputRowAccent() {
 			seg = th.scroll.Render("↓ new output") + th.footerSep.Render(" · ")
 		} else {
 			seg = th.footer.Render("↓ new output") + th.footerSep.Render(" · ")

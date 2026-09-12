@@ -39,6 +39,7 @@ func approvalTTL(ev client.Event) time.Duration {
 // the closest client-side approximation (single-digit ms skew locally).
 func (m *Model) stampApprovalDeadline(ev client.Event) {
 	m.apprDeadlines = append(m.apprDeadlines, time.Now().Add(approvalTTL(ev)))
+	m.apprBellFired = false // a fresh request re-arms the urgent-window BEL
 }
 
 // apprSecondsLeft is the queue head's remaining lifetime in whole seconds
@@ -100,14 +101,31 @@ func (m *Model) handleApprovalExpiry(now time.Time) tea.Cmd {
 	m.approvals = kept
 	m.apprDeadlines = keptDL
 
+	// (A3) the countdown entering its urgent window (< 10s left) rings the
+	// bell exactly once per request — a tick inside the window must not
+	// re-fire, and expiry pruning below stays silent.
+	var cmds []tea.Cmd
+	if !m.apprBellFired && len(m.approvals) > 0 {
+		if secs := m.apprSecondsLeft(); secs > 0 && secs <= approvalUrgentSecs {
+			m.apprBellFired = true
+			if a := m.attentionFor(attentionApproval); !a.empty() {
+				a.title, a.notify = "", "" // the card is already on screen — bell only
+				cmds = append(cmds, m.attentionCmd(a))
+			}
+		}
+	}
+
 	if dropped == 0 {
-		return nil
+		if len(cmds) == 0 {
+			return nil
+		}
+		return tea.Batch(cmds...)
 	}
 	// Operator-facing: the card they were staring at just vanished. Use
 	// transientNoteCmd so quiet does not swallow it and so the sweep
 	// arms from Update (addTransientNote would leave a sticky idle note).
 	const note = "approval expired · odek will find an alternative"
-	cmds := []tea.Cmd{m.transientNoteCmd(note)}
+	cmds = append(cmds, m.transientNoteCmd(note))
 	if len(m.approvals) > 0 {
 		m.setRunStatus("approval required")
 	} else if m.busy {

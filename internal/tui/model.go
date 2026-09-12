@@ -138,6 +138,10 @@ type Options struct {
 	Bell   bool
 	Notify bool
 
+	// ReduceMotion slows the transcript's live-motion surfaces (clock lane
+	// cadence, accent pulses) for motion-sensitive readers (--reduce-motion).
+	ReduceMotion bool
+
 	// Theme names the startup palette (ember-dark, ember-light,
 	// high-contrast, classic). Empty defers to BODEK_THEME, then the
 	// settings file — the same order /theme persists into.
@@ -183,14 +187,15 @@ type Options struct {
 
 // Model is the Bubble Tea model for bodek.
 type Model struct {
-	cl     *client.Client
-	events <-chan client.Event
-	opts   Options
-	th     theme
-	tokens *tokens.Store
-	bell   bool // terminal bell on done / approval (--bel)
-	notify bool // OSC 9 desktop notifications (--notify)
-	plain  bool // linear mode: scrollback transcript, minimal chrome (--plain)
+	cl           *client.Client
+	events       <-chan client.Event
+	opts         Options
+	th           theme
+	tokens       *tokens.Store
+	bell         bool // terminal bell on done / approval (--bel)
+	notify       bool // OSC 9 desktop notifications (--notify)
+	plain        bool // linear mode: scrollback transcript, minimal chrome (--plain)
+	reduceMotion bool // calmer transcript: slower clock lane, no accent pulses
 
 	width, height int
 	ready         bool
@@ -207,6 +212,9 @@ type Model struct {
 	runStart  time.Time
 	lastTool  string
 	lastArg   string
+
+	failBellFired bool // (A3) the failure BEL rang for this turn — guard against double-fire
+	apprBellFired bool // (A3) the urgent-window BEL rang for this approval head
 
 	approvals     []client.Event   // pending approval queue — odek runs parallel tools, so requests FIFO
 	apprDeadlines []time.Time      // per-approval expiry, stamped on arrival (parallel to approvals)
@@ -454,6 +462,7 @@ func New(cl *client.Client, opts Options) *Model {
 		bodekVersion: opts.Version,
 		bell:         opts.Bell,
 		notify:       opts.Notify,
+		reduceMotion: opts.ReduceMotion,
 		plain:        opts.Plain,
 	}
 	m.restoreWorkspace()
