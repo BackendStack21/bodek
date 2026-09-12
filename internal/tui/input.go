@@ -118,22 +118,38 @@ func FilterShiftEnter(_ tea.Model, msg tea.Msg) tea.Msg {
 	return msg
 }
 
-// Some terminal stacks split an SGR mouse report after ESC. Bubble Tea then
-// delivers the printable tail as text, which would otherwise land in the
-// composer. Remove only complete report tails from non-paste rune messages;
-// adjacent typed text and deliberate pasted text remain intact.
-var leakedMouseReportRe = regexp.MustCompile(`(?:\[<\d{1,3};\d{1,5};\d{1,5}[Mm])|(?:^(?:\d{1,3};\d{1,5};\d{1,5}[Mm])+)`)
+// Some terminal stacks split an SGR mouse report after ESC — a fast wheel
+// burst splits mid-report and after the head's digits, so what reaches the
+// model are tails like ";1;1M" or "64;5;13M", plain or carrying the Alt bit
+// from the consumed ESC head. Bubble Tea delivers those as text, which would
+// otherwise land in the composer. Remove only complete mouse-shaped tails
+// from non-paste rune messages; adjacent typed text and deliberate pasted
+// text remain intact (the unbracketed forms must cover the whole message,
+// so typed text with a similar shape is never rewritten).
+var (
+	bracketedMouseReportRe = regexp.MustCompile(`\[<\d{1,3};\d{1,5};\d{1,5}[Mm]`)
+	bareMouseReportRe      = regexp.MustCompile(`\A(?:\d{0,3};\d{1,5};\d{1,5}[Mm])+\z`)
+)
 
 func stripLeakedMouseReports(msg tea.KeyMsg) (tea.KeyMsg, bool) {
-	if msg.Type != tea.KeyRunes || msg.Alt || msg.Paste || len(msg.Runes) == 0 {
+	if msg.Type != tea.KeyRunes || msg.Paste || len(msg.Runes) == 0 {
 		return msg, false
 	}
+	// Bracketed forms are never typed mid-text; strip them wherever they
+	// appear. What remains must be entirely bare report tails — a fragment
+	// sharing space with anything else (typed text) is left alone.
 	before := string(msg.Runes)
-	after := leakedMouseReportRe.ReplaceAllString(before, "")
-	if after == before {
-		return msg, false
+	rest := bracketedMouseReportRe.ReplaceAllString(before, "")
+	if rest == before {
+		// Nothing bracketed: the whole message must be bare tails to strip.
+		if rest == "" || !bareMouseReportRe.MatchString(rest) {
+			return msg, false
+		}
+		rest = ""
+	} else if rest != "" && bareMouseReportRe.MatchString(rest) {
+		rest = "" // bracketed tails plus bare remainder — all report
 	}
-	msg.Runes = []rune(after)
+	msg.Runes = []rune(rest)
 	return msg, true
 }
 
