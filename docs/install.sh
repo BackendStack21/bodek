@@ -3,7 +3,10 @@
 #
 # Usage:
 #   curl -fsSL https://bodek.21no.de/install.sh | sh
+#   curl -fsSL https://bodek.21no.de/install.sh | sh -s -- --with-odek
 #   sh install.sh [--with-odek]     # install odek without asking
+#
+# macOS and Linux. Windows users: grab a binary from the releases page.
 #
 # Installs bodek (and optionally odek) for the current platform into
 # ~/.local/bin (or /usr/local/bin when writable). Verifies every download
@@ -100,7 +103,9 @@ install_asset() { # install_asset <repo> <tag> <asset-file> <binary-name>
     checksum "$TMP/$asset" "$digest"
     say "Checksum verified."
   else
-    warn "no checksum entry for $asset — skipping verification."
+    # Fail closed: a missing/unfetchable checksum line is suspicious, not a
+    # reason to install unverified code.
+    die "no checksum entry for $asset — refusing to install unverified."
   fi
   case "$asset" in
     *.tar.gz) tar -xzf "$TMP/$asset" -C "$TMP" "$bin" 2>/dev/null \
@@ -116,7 +121,7 @@ install_asset() { # install_asset <repo> <tag> <asset-file> <binary-name>
 # ---------------------------------------------------------------- odek
 install_odek() {
   tag=$(latest_tag "$ODEK_REPO")
-  [ -n "$tag" ] || die "cannot resolve the latest odek release (network or GitHub problem)."
+  [ -n "$tag" ] || die "cannot resolve the latest odek release (network or GitHub problem — install curl if it is missing)."
   install_asset "$ODEK_REPO" "$tag" "odek-$os-$arch" odek
   cat <<EOF
 
@@ -140,10 +145,18 @@ maybe_install_odek() {
     return
   fi
   printf 'Install it now from prebuilt binaries? [y/N] '
-  read -r answer || read -r answer </dev/tty
+  # Never read the script's own stdin: under `curl | sh` that would swallow
+  # the rest of the script. Use the terminal, else default to No.
+  answer=""
+  if [ -t 0 ]; then
+    read -r answer
+  elif [ -t 1 ] && [ -r /dev/tty ]; then
+    read -r answer </dev/tty || answer=""
+  fi
   case "$answer" in
     y|Y|yes|YES) install_odek ;;
-    *) warn "skipping odek — bodek needs a running 'odek serve' to connect to." ;;
+    *) warn "skipping odek — bodek needs a running 'odek serve' to connect to.
+To install it later, rerun with: sh install.sh --with-odek" ;;
   esac
 }
 
@@ -162,7 +175,7 @@ done
 pick_install_dir
 
 tag=$(latest_tag "$BODEK_REPO")
-[ -n "$tag" ] || die "cannot resolve the latest bodek release (network or GitHub problem)."
+[ -n "$tag" ] || die "cannot resolve the latest bodek release (network or GitHub problem — install curl if it is missing)."
 ver=$(printf '%s\n' "$tag" | sed 's/^v//')
 install_asset "$BODEK_REPO" "$tag" "bodek_${ver}_${os}_${arch}.tar.gz" bodek
 
