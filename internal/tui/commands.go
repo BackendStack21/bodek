@@ -552,7 +552,7 @@ func (m *Model) statsBody() string {
 				link += th.statsDim.Render(fmt.Sprintf(" · %d ws", m.srvConns))
 			}
 			if m.serverStream {
-				link += th.statsDim.Render(" · ⚡ stream")
+				link += th.statsDim.Render(" · » stream")
 			}
 			rows = append(rows, row{"⇄", th.statsLabel, "link", link})
 		}

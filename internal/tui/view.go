@@ -82,10 +82,13 @@ func (m *Model) header() string {
 	if modelName == "" {
 		modelName = "default"
 	}
-	// The ⚡ badge marks a server streaming token/thinking deltas live (the
-	// same marker the WebUI's top bar carries).
+	// The » badge marks a server streaming token/thinking deltas live (the
+	// same marker the WebUI's top bar carries). "»" replaces the earlier ⚡
+	// (U+26A1): that glyph is East-Asian-ambiguous and emoji-presentation-
+	// capable, so several terminals mis-width or mis-paint it inside styled
+	// runs — plain "»" is single-cell everywhere.
 	if m.serverStream {
-		modelName = "⚡ " + modelName
+		modelName = "» " + modelName
 	}
 
 	// The left cluster, split around the model name: its truncation budget is
