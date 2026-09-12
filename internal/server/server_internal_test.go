@@ -14,6 +14,13 @@ import (
 	"time"
 )
 
+// TestMain disables the orphan watchdog for the whole package: without
+// this, spawn() would re-exec the test binary itself as the guard.
+func TestMain(m *testing.M) {
+	watchdogBin = func() (string, error) { return "", os.ErrNotExist }
+	os.Exit(m.Run())
+}
+
 // TestSpawnAndStop exercises the spawn + Stop lifecycle using a harmless
 // short-lived binary in place of odek.
 func TestSpawnAndStop(t *testing.T) {
