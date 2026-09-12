@@ -65,6 +65,42 @@ func TestRunKillsTargetWhenParentDies(t *testing.T) {
 	}
 }
 
+// TestRunExitsWhenTargetDiesWhileParentLives pins the self-termination
+// contract: once the server is gone there is nothing to guard, so the
+// watchdog must not linger for the rest of the parent's session.
+func TestRunExitsWhenTargetDiesWhileParentLives(t *testing.T) {
+	skipWindows(t)
+	bin, err := exec.LookPath("sleep")
+	if err != nil {
+		t.Skip("no 'sleep' binary")
+	}
+	parent := exec.Command(bin, "30")
+	if err := parent.Start(); err != nil {
+		t.Fatalf("start parent: %v", err)
+	}
+	defer func() { _ = parent.Process.Kill() }()
+	target := exec.Command(bin, "1")
+	if err := target.Start(); err != nil {
+		t.Fatalf("start target: %v", err)
+	}
+
+	done := make(chan struct{})
+	go func() {
+		Run(context.Background(), parent.Process.Pid, target.Process.Pid, 100*time.Millisecond, time.Second)
+		close(done)
+	}()
+	// Target dies within ~1s while the parent lives: Run must return soon
+	// after, not hang until the parent exits.
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("Run lingered after target death while parent alive")
+	}
+	if !alive(t, parent.Process.Pid) {
+		t.Fatal("parent must be untouched")
+	}
+}
+
 // TestRunLeavesTargetWhileParentLives: no kill while bodek is healthy.
 func TestRunLeavesTargetWhileParentLives(t *testing.T) {
 	skipWindows(t)

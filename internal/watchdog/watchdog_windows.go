@@ -2,7 +2,6 @@
 
 package watchdog
 
-import "context"
 import "time"
 
 const supported = false
@@ -13,6 +12,7 @@ const (
 )
 
 func processAlive(int) bool { return false }
+func startToken(int) int64  { return 0 }
 func signalGroup(int, int)  {}
 
 var _ = time.Second

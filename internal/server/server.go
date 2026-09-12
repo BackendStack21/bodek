@@ -16,6 +16,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/BackendStack21/bodek/internal/watchdog"
@@ -241,14 +242,16 @@ func (c *Conn) Stop() {
 	}
 	c.watchMu.Unlock()
 	// SIGINT triggers odek serve's graceful shutdown (closes sockets, removes
-	// sandbox containers). Fall back to Kill if it lingers.
-	_ = c.proc.Process.Signal(os.Interrupt)
+	// sandbox containers), delivered to the server's whole process group so
+	// its own subprocesses follow. SIGKILL escalation likewise targets the
+	// group. Fall back to Kill if it lingers.
+	c.signalServer(syscall.SIGINT)
 	done := make(chan struct{})
 	go func() { _ = c.proc.Wait(); close(done) }()
 	select {
 	case <-done:
 	case <-time.After(stopTimeout):
-		_ = c.proc.Process.Kill()
+		c.signalServer(syscall.SIGKILL)
 	}
 }
 

@@ -9,6 +9,30 @@ import (
 	"syscall"
 )
 
+// startToken returns a start-time identity for pid (0 when unavailable):
+// field 22 of /proc/<pid>/stat (clock ticks since boot). A recycled PID
+// reports a different value.
+func startToken(pid int) int64 {
+	stat, err := os.ReadFile("/proc/" + strconv.Itoa(pid) + "/stat")
+	if err != nil {
+		return 0
+	}
+	i := bytes.LastIndexByte(stat, ')')
+	if i < 0 || i+2 > len(stat) {
+		return 0
+	}
+	fields := bytes.Fields(stat[i+2:])
+	// Remainder starts at field 3 (state); starttime is field 22.
+	if len(fields) < 20 {
+		return 0
+	}
+	n, err := strconv.ParseInt(string(fields[19]), 10, 64)
+	if err != nil {
+		return 0
+	}
+	return n
+}
+
 // processAlive reports whether pid is still a live process. kill -0 also
 // succeeds on unreaped zombies, so the /proc stat state is checked: a
 // zombie is dead.
