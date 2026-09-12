@@ -112,7 +112,7 @@ func (m *Model) cockpitServerSection() string {
 	// — rendering it here too duplicated it inside the same cockpit.
 	rows := [][2]string{
 		{"model", orDash(m.model)},
-		{"stream", boolDash(m.serverStream, "⚡ live deltas", "buffered")},
+		{"stream", boolDash(m.serverStream, "» live deltas", "buffered")},
 		{"sandbox", boolDash(m.sandbox, "isolated", "host access")},
 	}
 	if m.srvUptime > 0 {

@@ -29,7 +29,7 @@ func TestCockpitPopover(t *testing.T) {
 	}
 	out := plain(m.View())
 	for _, want := range []string{"cockpit", "server", "1.24.0", "glm-5.3",
-		"⚡ live deltas", "1m30s", "2", "34ms", "cost cap", "session"} {
+		"» live deltas", "1m30s", "2", "34ms", "cost cap", "session"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("cockpit missing %q:\n%s", want, out)
 		}

@@ -342,7 +342,7 @@ own front-end settings are separate; see [Configuration](#configuration).
   `/stats` adds the `max_cost_usd` cap when set; hidden entirely otherwise.
 - **Live server snapshot** — a 20s heartbeat measures WebSocket round-trip
   latency and refreshes server uptime, connection count, and streaming state
-  (the ⚡ badge beside the model); `/server` opens the full cockpit card.
+  (the » badge beside the model); `/server` opens the full cockpit card.
   odek ≥ v2.1.0 also pushes `keepalive` so a thinking turn silent for
   minutes does not lose the socket to an idle proxy.
 

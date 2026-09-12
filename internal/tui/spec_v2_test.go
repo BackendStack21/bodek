@@ -89,8 +89,8 @@ func TestServerInfoAndPong(t *testing.T) {
 	if !m.pingSentAt.IsZero() {
 		t.Error("ping clock not reset")
 	}
-	// The ⚡ badge marks a streaming server in the header.
-	if !strings.Contains(plain(m.header()), "⚡") {
+	// The » badge marks a streaming server in the header.
+	if !strings.Contains(plain(m.header()), "»") {
 		t.Error("header missing stream badge")
 	}
 }
