@@ -148,6 +148,10 @@ func applyNoColor() {
 func run() error {
 	// Bare subcommands (`bodek version`, `bodek upgrade`) bypass the TUI
 	// entirely, so they run before flag parsing.
+	if len(os.Args) > 1 && os.Args[1] == watchdogSubcommandName {
+		runWatchdog(os.Args[2:])
+		os.Exit(0)
+	}
 	if handled, err := handleSubcommand(os.Args[1:], os.Stdout); handled {
 		return err
 	}

@@ -13,9 +13,13 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
+
+	"github.com/BackendStack21/bodek/internal/watchdog"
 )
 
 const wsTokenCookie = "odek_ws_token"
@@ -36,8 +40,18 @@ type Conn struct {
 	Token   string // per-instance CSRF token
 	Version string // engine version as printed by `<bin> version` (e.g. "v0.2.0"); spawn mode only
 
-	proc *exec.Cmd        // non-nil when bodek spawned the server
-	scan *tokenScanWriter // non-nil when bodek spawned the server
+	proc    *exec.Cmd        // non-nil when bodek spawned the server
+	scan    *tokenScanWriter // non-nil when bodek spawned the server
+	watch   func()           // cancels the orphan watchdog (nil when none)
+	watchMu sync.Mutex
+}
+
+// watchdogBin is the executable the orphan watchdog re-execs as. It is a
+// variable so tests can substitute a harmless stand-in.
+var watchdogBin func() (string, error)
+
+func init() {
+	watchdogBin = func() (string, error) { return os.Executable() }
 }
 
 // Options configures how the odek serve instance is obtained.
@@ -150,11 +164,45 @@ func (c *Conn) spawn(opts Options, addr string) error {
 	cmd := exec.Command(bin, args...)
 	cmd.Stderr = c.scan
 	cmd.Env = os.Environ()
+	// Own process group so the watchdog (and Stop) can signal the server
+	// and any of its subprocesses as a unit, without touching bodek itself.
+	setPgroup(cmd)
 	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("start odek serve: %w", err)
 	}
 	c.proc = cmd
+	c.startWatchdog()
 	return nil
+}
+
+// startWatchdog launches the orphan guard as a separate process: a re-exec
+// of the bodek binary that kills the spawned server's process group if this
+// process dies without stopping it (SIGKILL, crash, lost terminal). The
+// guard is self-terminating — it exits once the server does — and is a
+// no-op on platforms without process-group signalling.
+func (c *Conn) startWatchdog() {
+	if !watchdog.Supported() {
+		return
+	}
+	self, err := watchdogBin()
+	if err != nil {
+		return // best effort: graceful Stop remains the primary path
+	}
+	wd := exec.Command(self, watchdogArg,
+		strconv.Itoa(os.Getpid()), strconv.Itoa(c.proc.Process.Pid))
+	wd.Stdout = io.Discard
+	wd.Stderr = io.Discard
+	setPgroup(wd) // detached: not in bodek's group, immune to group signals
+	if err := wd.Start(); err != nil {
+		return // best effort: graceful Stop remains the primary path
+	}
+	c.watchMu.Lock()
+	c.watch = func() {
+		// Kill and reap: an unreaped guard reads as alive to kill -0 probes.
+		_ = wd.Process.Kill()
+		go func() { _ = wd.Wait() }()
+	}
+	c.watchMu.Unlock()
 }
 
 // versionTimeout bounds the `<bin> version` probe so a hung binary never
@@ -186,15 +234,24 @@ func (c *Conn) Stop() {
 	if c == nil || c.proc == nil || c.proc.Process == nil {
 		return
 	}
+	// Graceful shutdown owns the exit — retire the orphan watchdog first.
+	c.watchMu.Lock()
+	if c.watch != nil {
+		c.watch()
+		c.watch = nil
+	}
+	c.watchMu.Unlock()
 	// SIGINT triggers odek serve's graceful shutdown (closes sockets, removes
-	// sandbox containers). Fall back to Kill if it lingers.
-	_ = c.proc.Process.Signal(os.Interrupt)
+	// sandbox containers), delivered to the server's whole process group so
+	// its own subprocesses follow. SIGKILL escalation likewise targets the
+	// group. Fall back to Kill if it lingers.
+	c.signalServer(syscall.SIGINT)
 	done := make(chan struct{})
 	go func() { _ = c.proc.Wait(); close(done) }()
 	select {
 	case <-done:
 	case <-time.After(stopTimeout):
-		_ = c.proc.Process.Kill()
+		c.signalServer(syscall.SIGKILL)
 	}
 }
 
