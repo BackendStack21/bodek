@@ -18,7 +18,9 @@ func setPgroup(cmd *exec.Cmd) {
 }
 
 // signalServer sends sig to the spawned server's whole process group (the
-// server's own subprocesses follow it down), falling back to the leader.
+// server's own subprocesses follow it down), falling back to the leader
+// when the group is gone. Safe because Stop holds a live Process handle
+// for this pid — no recycled-PID window.
 func (c *Conn) signalServer(sig syscall.Signal) {
 	if c.proc == nil || c.proc.Process == nil {
 		return

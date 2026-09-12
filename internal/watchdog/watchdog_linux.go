@@ -33,16 +33,23 @@ func startToken(pid int) int64 {
 	return n
 }
 
-// processAlive reports whether pid is still a live process. kill -0 also
-// succeeds on unreaped zombies, so the /proc stat state is checked: a
-// zombie is dead.
+// processAlive reports whether pid is still a live process. It fails
+// SAFE (alive) when observation is degraded: EPERM from kill means the
+// process exists but is not ours to probe; an unreadable /proc entry
+// (hidepid) is likewise treated as alive — a false-alive at worst delays
+// the guard, a false-dead kills a healthy server. Only a definitive
+// no-such-process or zombie state counts as dead.
 func processAlive(pid int) bool {
-	if err := syscall.Kill(pid, 0); err != nil {
-		return false
+	err := syscall.Kill(pid, 0)
+	if err == syscall.EPERM {
+		return true // exists, but not ours to probe
+	}
+	if err != nil {
+		return false // ESRCH: no such process
 	}
 	stat, err := os.ReadFile("/proc/" + strconv.Itoa(pid) + "/stat")
 	if err != nil {
-		return false // no /proc entry: dead
+		return true // unreadable ≠ dead (hidepid): fail safe
 	}
 	// Field 3 is the state, after "(comm)" — comm may contain spaces.
 	if i := bytes.LastIndexByte(stat, ')'); i >= 0 && i+2 < len(stat) {
@@ -52,7 +59,9 @@ func processAlive(pid int) bool {
 }
 
 // signalGroup signals the target's process group when the target leads one
-// (bodek spawns the server with Setpgid), falling back to the bare pid.
+// (bodek spawns the server with Setpgid), falling back to the bare pid
+// when it does not (ESRCH on the group). Safe because every caller has
+// just verified the pid's identity — a recycled PID never reaches here.
 func signalGroup(pid int, sig syscall.Signal) {
 	if err := syscall.Kill(-pid, sig); err != nil {
 		_ = syscall.Kill(pid, sig)
