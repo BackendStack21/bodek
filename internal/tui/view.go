@@ -848,7 +848,10 @@ func (m *Model) renderMessage(msg message, msgIdx, lineOffset int) (string, []st
 // still fits; high-contrast skips the surface entirely. Returns the styled
 // card and its line count.
 func (m *Model) answerCardBody(body string) (string, int) {
-	if m.th.answerCard.GetBackground() == nil {
+	// lipgloss GetBackground returns NoColor{}, never nil, so the empty
+	// surface (high-contrast) is detected by value — profile-independent,
+	// unlike the rendered SGR, which is also empty in low-color profiles.
+	if _, none := m.th.answerCard.GetBackground().(lipgloss.NoColor); none {
 		return body, lineCount(body)
 	}
 	// Glamour resets styling after each span; without re-asserting the

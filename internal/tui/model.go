@@ -117,6 +117,7 @@ type message struct {
 	streaming  bool
 	stats      *turnStats // finalized-turn telemetry; nil while streaming / for history
 	raw        bool       // content is pre-styled; render verbatim, never re-render
+	help       bool       // raw /help card: regenerated (not glamour) on theme switch
 	sentAt     time.Time  // user turns: when the prompt was submitted (drives the head's age)
 	collapsed  bool       // turn card folded to its head + summary line (c)
 	systemWake bool       // server-initiated turn (background-job wake): marker on the card
