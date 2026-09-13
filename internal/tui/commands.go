@@ -324,6 +324,7 @@ func (m *Model) buildHelpCard() string {
 		{"^K", "command palette"},
 		{"^T", "cycle reasoning depth"},
 		{"^S", "stop the running sub-agent"},
+		{"^X", "arm turn cancellation from any state (y confirms)"},
 		{"^L", "clear the conversation"},
 		{"^E", "toggle details (reasoning + tool output)"},
 		{"alt+f", "find in the transcript"},
