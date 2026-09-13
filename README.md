@@ -258,7 +258,8 @@ own front-end settings are separate; see [Configuration](#configuration).
 - **Auto-fitting composer** — the input box rests at three rows and grows
   with your prompt (multi-line or a single long line, wide-char aware) up to
   twelve rows or what the terminal can spare; `⇧⏎` inserts a newline
-  (`^J` on terminals that cannot tell Shift+Enter from Enter). It shrinks
+  (`ctrl+enter`, `alt+enter`, or `^J` on terminals that cannot tell
+  Shift+Enter from Enter). It shrinks
   back after send, history recall, and `/`-commands. A one-row shelf above it carries staged
   files, the folded queue count (`^Q` unfolds the strip), a `↓ new output`
   hint, and a pending skill chip. Prompts wrap in the transcript at the
@@ -414,7 +415,7 @@ own front-end settings are separate; see [Configuration](#configuration).
 | `^Q` | Unfold the queue strip from the composer shelf (`↑↓`/`jk` select · `←→`/`hl` move · `d d` two-step delete · `esc`/`⏎` folds it back; full manager: `/queue`) |
 | `^S` | Stop the running sub-agent (two-step confirm: `y` stops, any other key continues) |
 | `^T` | Cycle reasoning depth (`disabled` → `low` → `medium` → `high`) |
-| `⇧⏎` | Insert a newline in the input (`^J` and `Ctrl+Enter` still work on terminals that cannot tell Shift+Enter from Enter) |
+| `⇧⏎` | Insert a newline in the input (`ctrl+enter`, `alt+enter`, and `^J` still work on terminals that cannot tell Shift+Enter from Enter) |
 | `s` / `x` | Save / skip a pending skill-suggestion chip while the composer is empty (`alt+s`/`alt+x` work everywhere) |
 | `1`–`3` | Resume a recent session from the home screen |
 | `^L` | Clear the conversation (two-step confirm: `y` clears, any other key cancels) |
