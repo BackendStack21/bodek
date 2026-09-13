@@ -127,7 +127,7 @@ install_odek() {
 
 Odek is installed. Next, set up your provider:
 
-  1. odek init                      # creates ~/.odek/config.json
+  1. odek init --global             # creates ~/.odek/config.json
   2. Add your provider API key, e.g.:
        "providers": { "openai": { "apiKey": "sk-..." } }
      Full guide: https://github.com/BackendStack21/odek/blob/main/GETTING_STARTED.md
@@ -156,7 +156,8 @@ maybe_install_odek() {
   case "$answer" in
     y|Y|yes|YES) install_odek ;;
     *) warn "skipping odek — bodek needs a running 'odek serve' to connect to.
-To install it later, rerun with: sh install.sh --with-odek" ;;
+To install it later: curl -fsSL https://odek.21no.de/install.sh | sh
+       (or rerun this installer with: sh install.sh --with-odek)" ;;
   esac
 }
 

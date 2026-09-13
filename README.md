@@ -17,8 +17,8 @@ behaviour (tools, danger gating, sandbox, skills, memory, sessions) comes from
 
 ```bash
 # 1 · Install the engine and the TUI
-go install github.com/BackendStack21/odek/cmd/odek@latest
-go install github.com/BackendStack21/bodek/cmd/bodek@latest
+curl -fsSL https://odek.21no.de/install.sh | sh
+curl -fsSL https://bodek.21no.de/install.sh | sh
 
 # 2 · Provide an LLM key (odek v2: provider env key)
 export DEEPSEEK_API_KEY=<your-key>
@@ -76,15 +76,11 @@ Download the latest compiled binary from the
 are published for Linux, macOS, and Windows (amd64 & arm64), with
 `checksums.txt` for verification.
 
-One-liner for Linux / macOS (resolves the latest asset for your platform and
-installs into `~/.local/bin`):
+One-liner for Linux / macOS (checksum-verified, installs into `~/.local/bin`):
+
 
 ```bash
-OS=$(uname -s | tr '[:upper:]' '[:lower:]')
-ARCH=$(uname -m); [ "$ARCH" = "x86_64" ] && ARCH=amd64
-URL=$(curl -fsSL https://api.github.com/repos/BackendStack21/bodek/releases/latest \
-  | grep browser_download_url | grep "${OS}_${ARCH}" | cut -d '"' -f 4)
-curl -fsSL "$URL" | tar -xz bodek && install -m 755 bodek ~/.local/bin/
+curl -fsSL https://bodek.21no.de/install.sh | sh
 ```
 
 On Windows, download the `windows_amd64` (or `arm64`) `.zip` from the
@@ -93,8 +89,9 @@ releases page and put `bodek.exe` on your `PATH`.
 ### From source
 
 ```bash
-# Install odek (the engine) and bodek (the TUI)
-go install github.com/BackendStack21/odek/cmd/odek@latest
+# odek from source: clone the latest release tag and build — never
+# 'go install ...odek@latest' (Go ignores v2 tags there; stale v1 result).
+# bodek from source (v0 module, @latest is fine):
 go install github.com/BackendStack21/bodek/cmd/bodek@latest
 
 # Provide an LLM key (odek v2: provider env key)
