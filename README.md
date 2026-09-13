@@ -419,7 +419,8 @@ own front-end settings are separate; see [Configuration](#configuration).
 | `^E` | Toggle details — reasoning previews and every step's full output/logs (hidden in the calm default) |
 | `^Y` | Copy the last reply to the clipboard (local helper — `pbcopy`/`wl-copy`/`clip` — with OSC 52 fallback) |
 | `Esc` | Close the topmost window or leave item inspection. Bare composer: dismiss details, then arm cancellation (`y` confirms). Approvals: fold details or leave confirmation editing; use `Alt+D` to deny. |
-| `↑` / `↓` / `PgUp` / `PgDn` / `^U` / `^D` | Scroll the transcript (arrows at the input's edge lines) |
+| `^U` | Clear the whole input draft (`⇧⌦`/Shift+Delete works too on enhanced-key terminals — kitty CSI-u, modifyOtherKeys; elsewhere it degrades to plain single-char Delete) |
+| `↑` / `↓` / `PgUp` / `PgDn` / `^D` | Scroll the transcript (arrows at the input's edge lines) |
 | `^P` / `^N` | Recall previous prompts (prompt history) |
 | `^G` / `End` (empty input) | Jump to the latest output |
 | `F1` | Show the help card |
@@ -583,7 +584,7 @@ can encode them:
 | `Alt+PgUp` / `Alt+PgDn` | Page expanded approval details |
 | `Esc` | Return from confirmation editing, or fold details; otherwise arm turn cancellation when busy |
 | `^X` | Arm turn cancellation from any state; `y` confirms |
-| `PgUp` / `PgDn` / `^U` / `^D` | Scroll the transcript |
+| `PgUp` / `PgDn` / `^U` / `^D` | Scroll the transcript (approval/clarify cards still own `^U` for paging) |
 
 After three same-class approvals inside a minute the server engages
 **friction mode**. The card shows the recent count and withdraws trust.

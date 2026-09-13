@@ -82,6 +82,17 @@ func (m *Model) insertNewline() tea.Cmd {
 	return cmd
 }
 
+// clearComposer wipes the whole multi-line draft — the ctrl+u / shift+delete
+// whole-line kill. History recall (histDraft) is untouched, so ↑ after a
+// clear still recalls the previous prompt.
+func (m *Model) clearComposer() tea.Cmd {
+	var cmd tea.Cmd
+	m.ta.Reset()
+	m.syncComposer()
+	m.closeAC()
+	return tea.Batch(cmd, m.schedulePersist())
+}
+
 // FilterShiftEnter rewrites terminal CSI that Bubble Tea v1 does not map:
 // Shift+Enter, disambiguated Esc, and modifyOtherKeys / kitty CSI-u
 // chords (so ^C, ^K, and esc still reach the model after we ask xterm.js
@@ -250,6 +261,20 @@ func keyMsgFromCode(key, mod int) (tea.KeyMsg, bool) {
 		return tea.KeyMsg{Type: tea.KeyEnter}, true
 	case 27:
 		return tea.KeyMsg{Type: tea.KeyEscape}, true
+	case 3:
+		// Delete uses its legacy CSI-~ code in kitty CSI-u and
+		// modifyOtherKeys. Shift+Delete (enhanced-key terminals only — a
+		// degraded terminal sends plain Delete, which stays single-char)
+		// is an alias of ctrl+u, the whole-draft clear. A rune sentinel
+		// like shift+enter so no capture surface mistakes it for typed
+		// text. Key code 51 is the digit '3', never Delete.
+		// ...Key code 3's C0 meaning (ETX → ctrl+c) stays: hosts encode
+		// ctrl+c here, and plain CSI 3u already reads as ctrl+c — only
+		// the explicit shift form becomes the sentinel.
+		if shift && !ctrl && !alt {
+			return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("shift+delete")}, true
+		}
+		return tea.KeyMsg{Type: tea.KeyType(key)}, true
 	case 9:
 		if shift {
 			return tea.KeyMsg{Type: tea.KeyShiftTab}, true

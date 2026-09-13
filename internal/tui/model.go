@@ -1037,6 +1037,12 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "f1":
 		m.showHelp()
 		return m, nil
+	case "ctrl+u", "shift+delete":
+		// Whole-draft clear — readline's ^U, plus the enhanced-key alias
+		// (see keyMsgFromCode). Reached only when no capture surface
+		// (approval, clarify, panels) holds the keyboard, so the gates
+		// come for free from handleKey's ordering.
+		return m, m.clearComposer()
 	case "ctrl+r":
 		return m, m.openSessions()
 	case "ctrl+o":
@@ -1157,7 +1163,7 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.vp.GotoBottom()
 			return m, nil
 		}
-	case "pgup", "pgdown", "ctrl+u", "ctrl+d":
+	case "pgup", "pgdown", "ctrl+d":
 		var cmd tea.Cmd
 		m.vp, cmd = m.vp.Update(msg)
 		m.relayout()
