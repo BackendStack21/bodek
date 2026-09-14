@@ -180,9 +180,23 @@ feat(tui): compact tool steps with Ctrl+E details toggle
   Ctrl+C as CSI once those modes are on. `RestoreEnhancedKeys` clears
   leftovers on startup and shutdown. A terminal read can end mid-sequence:
   `AssembleInput` (wired in `buildProgramOptions`, non-Windows) reassembles
-  it before Bubble Tea parses each read. Partial `ESC [ < …` heads wait for
-  their tail; a mouse-shaped head whose tail never arrives is dropped — never
-  echoed into the composer. Only the SGR form is disposable: the legacy X10
+  it before Bubble Tea parses each read, under two invariants: a read from
+  the terminal never fetches more than the room its caller offers, and a
+  release never ends inside an escape sequence. Bubble Tea parses every read
+  on its own, so a chunk that stops inside a mouse report turns the head into
+  a finished CSI and the coordinate bytes behind it into typed runes — exactly
+  what a wheel burst from a terminal without mode 1006 produces, since
+  Terminal.app's `xterm-256color` advertises `kmous=\E[M` and answers with
+  legacy 6-byte `ESC [ M` reports that any burst past Bubble Tea's 256-byte
+  read cuts mid-report. Bounding the read (not the release) is what keeps
+  input flowing: bytes read ahead but not released are invisible to the
+  kqueue/epoll readiness wait that gates the next `Read`, so holding one back
+  stalls the rest of the burst until the next keystroke. The release clamp
+  covers what the read bound cannot — a non-file source (tests) reading its
+  full window, and a caller whose buffer shrinks mid-stream.
+  Partial `ESC [ < …` heads wait for their tail; a mouse-shaped head whose
+  tail never arrives is dropped — never echoed into the composer. Only the SGR
+  form is disposable: the legacy X10
   form is joined but never dropped, because its coordinate bytes are
   indistinguishable from typed text. Bracket-paste bodies are user data and
   are never dropped, whatever they contain. A mouse head a fresh read cannot

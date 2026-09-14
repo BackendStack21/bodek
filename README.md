@@ -667,10 +667,11 @@ never become the weakest link:
   reports the mouse so the wheel can scroll. Click a reply card to copy
   it, or use `^Y` / `alt+y`. `--plain` keeps the terminal's own scrollback.
 - **Garbage like `65;75;25M[<65;75;25M` appears in the composer while
-  scrolling** — the terminal split a mouse report across reads. bodek
-  reassembles the input stream before Bubble Tea parses it, so every split
-  point is covered: press `^U` to clear any text from an older build, and
-  `bodek upgrade` if you are not on the latest release.
+  scrolling** — the terminal split a mouse report across reads. bodek now keeps
+  every read on a report boundary, so no split point can splice a report into
+  the draft; the old builds showed this most on terminals that never negotiate
+  SGR mouse mode (Terminal.app). Press `^U` to clear text left by an older
+  build, and `bodek upgrade`.
 - **Colors look wrong** — try `/theme classic`, check `TERM`; `NO_COLOR=1`
   forces a colorless render everywhere.
 - **Connection dropped mid-turn** — bodek retries with backoff (5 attempts)

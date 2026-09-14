@@ -22,8 +22,9 @@ const inputSettle = 10 * time.Millisecond
 // text would type garbage into the composer.
 const mouseAbandon = 250 * time.Millisecond
 
-// inputReadLen sizes each source read. Large enough that a whole wheel
-// burst lands in one read, small enough to bound memory.
+// inputReadLen caps one source read: a whole wheel burst lands in one read,
+// while memory stays bounded. A read from the watched terminal is further
+// bounded by the caller's room (see readNext).
 const inputReadLen = 4096
 
 // stringSeqCap bounds how much of a string sequence (OSC / DCS / APC) is held
@@ -195,8 +196,22 @@ func (r *inputReassembler) isClosed() bool {
 // kqueue/epoll wakeups coherent: a pre-draining pump goroutine would strand
 // already-read bytes where a kevent can never see them, freezing input until
 // an unrelated later keystroke lands.
+//
+// For the same reason a read from the terminal never fetches more than the
+// room in p: whatever is read but not released in this call sits here where the
+// reader's own readiness wait — it waits on the descriptor before every Read —
+// cannot see it. Holding a byte back would stall every remaining byte of the
+// burst until the next keystroke. With the read bounded by p, a release is
+// either the whole buffer or everything up to a held head, and the only bytes
+// left behind are an incomplete sequence whose tail is still arriving. A
+// non-file source has no readiness wait to strand bytes behind (the wrapper is
+// only ever attached to terminals) and reads its full window instead.
 func (r *inputReassembler) Read(p []byte) (int, error) {
+	if len(p) == 0 {
+		return 0, nil
+	}
 	for {
+		room := len(p) - len(r.buf)
 		if r.headAt > 0 {
 			return r.emit(p, r.headAt), nil
 		}
@@ -207,7 +222,20 @@ func (r *inputReassembler) Read(p []byte) (int, error) {
 			if r.srcDone {
 				return r.finish(p)
 			}
-			if n, ok := r.held(p); ok {
+			if room <= 0 {
+				// The head fills the caller's whole buffer. A head that can only
+				// be a mouse report is noise even here: streaming a truncated
+				// report as text is the bug being fixed, so drop it.
+				if r.droppable() {
+					r.drop()
+					continue
+				}
+				// A real sequence longer than the caller's buffer (a long string
+				// sequence) is streamed rather than held for a tail that could
+				// never fit.
+				return r.emit(p, len(r.buf)), nil
+			}
+			if n, ok := r.held(p, room); ok {
 				return n, nil
 			}
 			continue
@@ -215,15 +243,15 @@ func (r *inputReassembler) Read(p []byte) (int, error) {
 		if r.srcDone || r.isClosed() {
 			return r.finish(p)
 		}
-		c, _ := r.readNext(-1)
+		c, _ := r.readNext(-1, room)
 		r.take(c)
 	}
 }
 
 // held waits for the tail of the head that occupies the whole buffer. It
 // reports false when the head was resolved (dropped or flushed), in which case
-// the caller re-plans.
-func (r *inputReassembler) held(p []byte) (int, bool) {
+// the caller re-plans. room is how many bytes the caller can still take.
+func (r *inputReassembler) held(p []byte, room int) (int, bool) {
 	if !r.holding {
 		r.holding, r.since, r.heldLen = true, time.Now(), len(r.buf)
 	}
@@ -241,7 +269,7 @@ func (r *inputReassembler) held(p []byte) (int, bool) {
 		budget = r.abandon - time.Since(r.since)
 	}
 	if budget > 0 {
-		if c, ok := r.readNext(budget); ok {
+		if c, ok := r.readNext(budget, room); ok {
 			r.take(c)
 			if r.srcDone {
 				n, err := r.finish(p)
@@ -269,21 +297,37 @@ func (r *inputReassembler) take(c inputChunk) {
 }
 
 // readNext performs one read from the source, waiting no longer than budget
-// for input to arrive. A negative budget blocks until input or the source
-// ends. It reports false only when the budget lapsed without any data —
-// nothing was consumed, so the caller may retry or give up on the head.
+// for input to arrive. A read from the watched descriptor never fetches more
+// than room bytes; a non-file source (tests only) reads its full window. A
+// negative budget blocks until input or the source ends. It reports false only
+// when the budget lapsed without any data — nothing was consumed, so the
+// caller may retry or give up on the head.
 //
 // For a file source the wait is poll(2) on the descriptor followed by the read
 // itself, so unread bytes stay in the kernel buffer and kqueue/epoll wakeups
 // remain coherent. Non-file sources only occur in unit tests (the wrapper
 // itself is attached to terminals only); for those, a single buffered read
 // goroutine provides the bounded wait without ever losing a read.
-func (r *inputReassembler) readNext(budget time.Duration) (inputChunk, bool) {
+func (r *inputReassembler) readNext(budget time.Duration, room int) (inputChunk, bool) {
+	if room <= 0 && r.file != nil {
+		return inputChunk{}, false
+	}
+	// A read from the watched descriptor never exceeds the caller's room:
+	// bytes read ahead of an unfilled buffer sit where the readiness wait that
+	// gates every Read (kqueue/epoll, see waitReadable) cannot see them, which
+	// would stall the rest of the burst until the next keystroke. A non-file
+	// source has no such wait — the wrapper is only ever attached to terminals,
+	// so that path exists for tests — and reads its full window instead; the
+	// release clamp in emit is what keeps its sequences whole.
+	size := inputReadLen
+	if r.file != nil {
+		size = min(inputReadLen, room)
+	}
 	if r.file != nil {
 		if budget >= 0 && !r.waitReadable(budget) {
 			return inputChunk{}, false
 		}
-		b := make([]byte, inputReadLen)
+		b := make([]byte, size)
 		n, err := r.file.Read(b)
 		return inputChunk{data: b[:n], err: err}, true
 	}
@@ -291,7 +335,7 @@ func (r *inputReassembler) readNext(budget time.Duration) (inputChunk, bool) {
 		ch := make(chan inputChunk, 1)
 		r.pending = ch
 		go func() {
-			b := make([]byte, inputReadLen)
+			b := make([]byte, size)
 			n, err := r.src.Read(b)
 			ch <- inputChunk{data: b[:n], err: err}
 		}()
@@ -346,22 +390,50 @@ func (r *inputReassembler) absorb(c inputChunk) {
 }
 
 // emit copies n buffered bytes into p, tracks paste state across them, and
-// never ends a release inside a bracketed-paste marker: a marker torn by the
-// caller's buffer size would be released as text and desync paste tracking.
+// never ends a release inside an escape sequence or a bracketed-paste marker.
+//
+// The caller's buffer is what forces the cut: Bubble Tea reads input 256 bytes
+// at a time and parses every read on its own, so a chunk that stops inside a
+// mouse report is not "incomplete" from its side. The head in front of the cut
+// is a finished CSI (ESC [ M is the legacy form's final byte) and the bytes
+// behind it are decoded as typed runes — one stray character per boundary,
+// repeated through a wheel burst. A torn marker would likewise desync paste
+// tracking.
 func (r *inputReassembler) emit(p []byte, n int) int {
 	if n > len(r.buf) {
 		n = len(r.buf)
 	}
+	// The caller's buffer is the hard cut, and it is applied before the
+	// sequence rules below: a clamp inside copy would silently tear whatever
+	// sequence happens to sit at the boundary.
+	if n > len(p) {
+		n = len(p)
+	}
 	if len(p) >= len(pasteStart) {
-		if cut := cutBeforeMarker(r.buf, n); cut > 0 {
+		if cut := cutBeforeMarker(r.buf, n); cut > 0 && cut < n {
 			n = cut
 		}
+	}
+	if cut := cutBeforeSequence(r.buf, n); cut > 0 && cut < n {
+		n = cut
 	}
 	written := copy(p, r.buf[:n])
 	r.trackPaste(r.buf[:written])
 	r.buf = r.buf[written:]
 	if r.headAt >= 0 {
-		r.headAt -= written
+		// A release can stop short of the head's start — the rules above cut
+		// it back — and the remainder is then the head's own tail, so the
+		// head begins at offset 0. It must never go negative: a negative
+		// offset reads as "no head", and the tail would be released unheld
+		// on the next call.
+		if r.headAt >= written {
+			r.headAt -= written
+		} else {
+			r.headAt = 0
+		}
+	}
+	if len(r.buf) == 0 {
+		r.headAt = -1
 	}
 	r.holding = false
 	return written
@@ -571,4 +643,40 @@ func cutBeforeMarker(b []byte, n int) int {
 		}
 	}
 	return n
+}
+
+// cutBeforeSequence shortens n so a release never ends inside an escape
+// sequence. It returns the offset the release must stop at, or 0 when no
+// sequence straddles n.
+//
+// The room-bounded read (see Read) already lands releases from a watched
+// descriptor on sequence boundaries; this is the release-side guarantee, and
+// it is load-bearing wherever the buffer can hold more than the caller asked
+// for — a non-file source reading its full window, and a caller that hands a
+// smaller buffer than the read that filled the buffer. Bubble Tea cannot
+// recover from the split itself: ESC [ M is a valid final byte on its own, so
+// it consumes a torn legacy X10 report's head as an unknown CSI and decodes
+// the coordinate bytes behind it as text, while a torn SGR report leaves
+// ESC [ < … with no final byte and is reported as an Alt+[ keypress with the
+// digits behind it as text. Either way the bytes reach the composer. The tail
+// is held here instead and released with the next read.
+//
+// Only the last escape before n can straddle it, so that is the one examined.
+// An escape at offset 0 is left alone: stopping there would return an empty
+// read and stall the caller — a sequence longer than the caller's buffer (a
+// long OSC string) is streamed instead, which Bubble Tea already handles by
+// waiting for its terminator.
+func cutBeforeSequence(b []byte, n int) int {
+	if n <= 1 || n >= len(b) {
+		return 0
+	}
+	i := bytes.LastIndexByte(b[:n], 0x1b)
+	if i <= 0 {
+		return 0
+	}
+	length, complete := escapeLen(b[i:])
+	if !complete || i+length > n {
+		return i
+	}
+	return 0
 }
