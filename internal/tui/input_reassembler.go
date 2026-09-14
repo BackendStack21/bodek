@@ -197,13 +197,15 @@ func (r *inputReassembler) isClosed() bool {
 // already-read bytes where a kevent can never see them, freezing input until
 // an unrelated later keystroke lands.
 //
-// For the same reason a read never fetches more than the room in p: whatever
-// is read but not released in this call sits here where the reader's own
-// readiness wait — it waits on the descriptor before every Read — cannot see
-// it. Holding a byte back would stall every remaining byte of the burst until
-// the next keystroke. With the read bounded by p, a release is either the
-// whole buffer or everything up to a held head, and the only bytes left behind
-// are an incomplete sequence whose tail is still arriving.
+// For the same reason a read from the terminal never fetches more than the
+// room in p: whatever is read but not released in this call sits here where the
+// reader's own readiness wait — it waits on the descriptor before every Read —
+// cannot see it. Holding a byte back would stall every remaining byte of the
+// burst until the next keystroke. With the read bounded by p, a release is
+// either the whole buffer or everything up to a held head, and the only bytes
+// left behind are an incomplete sequence whose tail is still arriving. A
+// non-file source has no readiness wait to strand bytes behind (the wrapper is
+// only ever attached to terminals) and reads its full window instead.
 func (r *inputReassembler) Read(p []byte) (int, error) {
 	if len(p) == 0 {
 		return 0, nil
@@ -295,10 +297,11 @@ func (r *inputReassembler) take(c inputChunk) {
 }
 
 // readNext performs one read from the source, waiting no longer than budget
-// for input to arrive, and never fetching more than room bytes. A negative
-// budget blocks until input or the source ends. It reports false only when the
-// budget lapsed without any data — nothing was consumed, so the caller may
-// retry or give up on the head.
+// for input to arrive. A read from the watched descriptor never fetches more
+// than room bytes; a non-file source (tests only) reads its full window. A
+// negative budget blocks until input or the source ends. It reports false only
+// when the budget lapsed without any data — nothing was consumed, so the
+// caller may retry or give up on the head.
 //
 // For a file source the wait is poll(2) on the descriptor followed by the read
 // itself, so unread bytes stay in the kernel buffer and kqueue/epoll wakeups
