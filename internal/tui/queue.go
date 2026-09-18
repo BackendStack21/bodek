@@ -205,9 +205,9 @@ func (m *Model) queueStripClick(y, x int) bool {
 		}
 		cell += lipgloss.Width(string(r))
 	}
-	// Check right-to-left: the controls trail the row, so a hit test claims
-	// the rightmost control whose column the click reached.
-	if delC >= 0 && x >= delC {
+	// Check right-to-left: each control owns only its own cell — a click
+	// on the row body or the gaps between controls selects instead.
+	if delC >= 0 && x >= delC && x < delC+lipgloss.Width("✕") {
 		if m.qarm == rel { // second ✕ on the same row confirms
 			m.queueDeleteAt(rel)
 			return true
@@ -216,11 +216,11 @@ func (m *Model) queueStripClick(y, x int) bool {
 		m.refresh()
 		return true
 	}
-	if downC >= 0 && x >= downC {
+	if downC >= 0 && x >= downC && x < downC+lipgloss.Width("▼") {
 		m.queueMove(rel, 1)
 		return true
 	}
-	if upC >= 0 && x >= upC {
+	if upC >= 0 && x >= upC && x < upC+lipgloss.Width("▲") {
 		m.queueMove(rel, -1)
 		return true
 	}

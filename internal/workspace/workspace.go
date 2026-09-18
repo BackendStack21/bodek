@@ -59,6 +59,12 @@ func Open() *Store {
 	}
 	var f fileFormat
 	if json.Unmarshal(data, &f) != nil || f.Workspaces == nil {
+		// Corrupt on disk: quarantine instead of silently resetting, so a
+		// torn write never destroys every draft/queue/session undiagnosably
+		// (mirrors tokens.go).
+		if qerr := os.Rename(s.path, s.path+".corrupt"); qerr == nil {
+			fmt.Fprintf(os.Stderr, "bodek: warning: corrupt %s quarantined as %s.corrupt\n", s.path, s.path)
+		}
 		return s
 	}
 	s.all = f.Workspaces
@@ -158,12 +164,30 @@ func persist(path string, all map[string]State) error {
 	if err != nil {
 		return fmt.Errorf("encode workspace: %w", err)
 	}
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, data, 0o600); err != nil {
+	// A per-call staged name: callers persist after releasing the store
+	// mutex, so a shared path+'.tmp' let two interleaved writes tear the
+	// file (A.Write → B.Write truncates → A.Rename) — the same tear
+	// tokens.go already fixed.
+	tmp, err := os.CreateTemp(filepath.Dir(path), filepath.Base(path)+".*.tmp")
+	if err != nil {
+		return fmt.Errorf("stage workspace: %w", err)
+	}
+	tmpName := tmp.Name()
+	if _, err := tmp.Write(data); err != nil {
+		_ = tmp.Close()
+		_ = os.Remove(tmpName)
 		return fmt.Errorf("write workspace: %w", err)
 	}
-	if err := os.Rename(tmp, path); err != nil {
-		_ = os.Remove(tmp)
+	if err := tmp.Close(); err != nil {
+		_ = os.Remove(tmpName)
+		return fmt.Errorf("write workspace: %w", err)
+	}
+	if err := os.Chmod(tmpName, 0o600); err != nil {
+		_ = os.Remove(tmpName)
+		return fmt.Errorf("protect workspace: %w", err)
+	}
+	if err := os.Rename(tmpName, path); err != nil {
+		_ = os.Remove(tmpName)
 		return fmt.Errorf("replace workspace: %w", err)
 	}
 	return nil

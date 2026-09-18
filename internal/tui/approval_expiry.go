@@ -39,7 +39,7 @@ func approvalTTL(ev client.Event) time.Duration {
 // the closest client-side approximation (single-digit ms skew locally).
 func (m *Model) stampApprovalDeadline(ev client.Event) {
 	m.apprDeadlines = append(m.apprDeadlines, time.Now().Add(approvalTTL(ev)))
-	m.apprBellFired = false // a fresh request re-arms the urgent-window BEL
+	m.apprBells = append(m.apprBells, false) // a fresh request re-arms its own urgent-window BEL
 }
 
 // apprSecondsLeft is the queue head's remaining lifetime in whole seconds
@@ -85,6 +85,7 @@ func (m *Model) handleApprovalExpiry(now time.Time) tea.Cmd {
 
 	kept := m.approvals[:0]
 	keptDL := m.apprDeadlines[:0]
+	keptBell := m.apprBells[:0]
 	dropped := 0
 	for i, a := range m.approvals {
 		var dl time.Time
@@ -97,17 +98,20 @@ func (m *Model) handleApprovalExpiry(now time.Time) tea.Cmd {
 		}
 		kept = append(kept, a)
 		keptDL = append(keptDL, dl)
+		keptBell = append(keptBell, i < len(m.apprBells) && m.apprBells[i])
 	}
 	m.approvals = kept
 	m.apprDeadlines = keptDL
+	m.apprBells = keptBell
 
 	// (A3) the countdown entering its urgent window (< 10s left) rings the
 	// bell exactly once per request — a tick inside the window must not
-	// re-fire, and expiry pruning below stays silent.
+	// re-fire, and expiry pruning below stays silent. The latch is
+	// per-entry: a mid-queue expiry must not silence the survivor.
 	var cmds []tea.Cmd
-	if !m.apprBellFired && len(m.approvals) > 0 {
+	if len(m.apprBells) > 0 && !m.apprBells[0] && len(m.approvals) > 0 {
 		if secs := m.apprSecondsLeft(); secs > 0 && secs <= approvalUrgentSecs {
-			m.apprBellFired = true
+			m.apprBells[0] = true
 			if a := m.attentionFor(attentionApproval); !a.empty() {
 				a.title, a.notify = "", "" // the card is already on screen — bell only
 				cmds = append(cmds, m.attentionCmd(a))

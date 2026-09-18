@@ -16,6 +16,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -61,10 +62,12 @@ type Conn struct {
 	Token   string // per-instance CSRF token
 	Version string // engine version as printed by `<bin> version` (e.g. "v0.2.0"); spawn mode only
 
-	proc    *exec.Cmd        // non-nil when bodek spawned the server
-	scan    *tokenScanWriter // non-nil when bodek spawned the server
-	watch   func()           // cancels the orphan watchdog (nil when none)
-	watchMu sync.Mutex
+	proc     *exec.Cmd        // non-nil when bodek spawned the server
+	scan     *tokenScanWriter // non-nil when bodek spawned the server
+	reaped   atomic.Bool      // the reaper observed the child exit
+	reapDone chan struct{}    // closed when the reaper's Wait returns
+	watch    func()           // cancels the orphan watchdog (nil when none)
+	watchMu  sync.Mutex
 
 	// OnStopEvent, when set, receives shutdown progress from Stop.
 	OnStopEvent func(StopEvent)
@@ -195,6 +198,7 @@ func (c *Conn) spawn(opts Options, addr string) error {
 		return fmt.Errorf("start odek serve: %w", err)
 	}
 	c.proc = cmd
+	c.startReaper()
 	c.startWatchdog()
 	return nil
 }
@@ -273,8 +277,13 @@ func (c *Conn) Stop() {
 		c.OnStopEvent(StopStopping)
 	}
 	c.signalServer(syscall.SIGINT)
-	done := make(chan struct{})
-	go func() { _ = c.proc.Wait(); close(done) }()
+	// The reaper owns Wait (started at spawn); select on its completion
+	// instead of a second Wait, which exec.Cmd forbids.
+	done := c.reapDone
+	if done == nil {
+		done = make(chan struct{})
+		go func() { _ = c.proc.Wait(); close(done) }()
+	}
 	select {
 	case <-done:
 	case <-time.After(stopTimeout):
@@ -306,11 +315,15 @@ func splitTokenURL(raw string) (base, token string) {
 //	  WebSocket: ws://127.0.0.1:8080/ws
 //	  WS token:  <hex>
 type tokenScanWriter struct {
-	w   io.Writer
-	mu  sync.Mutex
-	buf []byte // partial line not yet terminated by '\n'
-	tok string
+	w    io.Writer
+	mu   sync.Mutex
+	buf  []byte // partial line not yet terminated by '\n'
+	tok  string
+	tail []string // last complete lines, bounded, for failure diagnostics
 }
+
+// maxTailLines bounds the stderr tail kept for error reporting.
+const maxTailLines = 4
 
 func (s *tokenScanWriter) Write(p []byte) (int, error) {
 	s.scan(p)
@@ -322,6 +335,16 @@ func (s *tokenScanWriter) Token() string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.tok
+}
+
+// Tail returns the last n complete stderr lines, joined for error text.
+func (s *tokenScanWriter) Tail(n int) string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if len(s.tail) > n {
+		s.tail = s.tail[len(s.tail)-n:]
+	}
+	return strings.Join(s.tail, "; ")
 }
 
 func (s *tokenScanWriter) scan(p []byte) {
@@ -338,6 +361,10 @@ func (s *tokenScanWriter) scan(p []byte) {
 		}
 		line := string(s.buf[:i])
 		s.buf = s.buf[i+1:]
+		s.tail = append(s.tail, line)
+		if len(s.tail) > maxTailLines {
+			s.tail = s.tail[len(s.tail)-maxTailLines:]
+		}
 		if tok := parseTokenLine(line); tok != "" {
 			s.tok = tok
 			return
@@ -384,12 +411,32 @@ func waitReady(baseURL string, timeout time.Duration) error {
 }
 
 // procAlive reports whether the spawned child is still running. Signal(0)
-// probes liveness without waiting: ProcessState stays nil until Wait is
-// called (Stop's job, after Connect returns), so it can never report death
-// here.
+// alone cannot tell an exited-but-unreaped child (zombie) from a live one —
+// the ProcessState stays nil until Wait is reaped — so startReaper reaps in
+// the background and procAlive consults that result first.
 func (c *Conn) procAlive() bool {
+	if c.reaped.Load() {
+		return false
+	}
 	return c.proc != nil && c.proc.Process != nil &&
 		c.proc.Process.Signal(syscall.Signal(0)) == nil
+}
+
+// startReaper waits for the spawned child in the background so its exit is
+// observed immediately (no zombie) and procAlive can report death. The
+// result feeds Stop's Wait — Stop must never Wait the same Cmd twice.
+func (c *Conn) startReaper() {
+	if c.proc == nil {
+		return
+	}
+	proc := c.proc
+	done := make(chan struct{})
+	c.reapDone = done
+	go func() {
+		_ = proc.Wait()
+		c.reaped.Store(true)
+		close(done)
+	}()
 }
 
 // waitSpawned waits until a spawned server answers HTTP or prints its token
@@ -415,12 +462,30 @@ func waitSpawned(baseURL string, scan *tokenScanWriter, alive func() bool, timeo
 		} else if !readyAt.IsZero() {
 			readyAt = time.Time{} // flapping: restart the grace clock
 		}
+		// Re-check the token before declaring death: a fast-exiting
+		// (or token-print-and-exit) server can flush its banner after
+		// this iteration's top-of-loop check — the token wins.
 		if alive != nil && !alive() {
-			return fmt.Errorf("odek serve exited before becoming ready")
+			if scan == nil || scan.Token() == "" {
+				return fmt.Errorf("odek serve exited before becoming ready%w", stderrTail(scan))
+			}
+			return nil
 		}
 		time.Sleep(150 * time.Millisecond)
 	}
-	return fmt.Errorf("timed out after %s", timeout)
+	return fmt.Errorf("timed out after %s%w", timeout, stderrTail(scan))
+}
+
+// stderrTail returns the captured server stderr tail for inclusion in a
+// waitSpawned error (bind failures, config errors), or nil when empty.
+func stderrTail(scan *tokenScanWriter) error {
+	if scan == nil {
+		return nil
+	}
+	if tail := scan.Tail(maxTailLines); tail != "" {
+		return fmt.Errorf(": %s", tail)
+	}
+	return nil
 }
 
 // spawnedTokenGrace is how long a ready-but-tokenless spawned server is

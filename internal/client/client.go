@@ -10,8 +10,10 @@ package client
 import (
 	"encoding/json"
 	"fmt"
+	"net"
 	"net/http"
 	"net/url"
+	"strings"
 	"sync"
 	"time"
 
@@ -260,7 +262,7 @@ func Dial(wsURL, origin, baseURL, token string) (*Client, error) {
 	}
 	cfg.Header.Set("X-Odek-Ws-Token", token)
 
-	conn, err := ws.DialConfig(cfg)
+	conn, err := dialWS(cfg)
 	if err != nil {
 		return nil, fmt.Errorf("ws dial: %w", err)
 	}
@@ -282,6 +284,45 @@ func Dial(wsURL, origin, baseURL, token string) (*Client, error) {
 	}
 	go c.readLoop()
 	return c, nil
+}
+
+// wsDialTimeout bounds the TCP dial and the WS handshake: ws.DialConfig has
+// no timeout of its own, so a black-holed remote blocked Dial until the OS
+// TCP timeout.
+var wsDialTimeout = 10 * time.Second
+
+// dialWS dials the server under an explicit deadline and runs the WS
+// handshake over the same (deadline-carrying) connection, then clears the
+// deadline so the live stream is unbounded.
+func dialWS(cfg *ws.Config) (*ws.Conn, error) {
+	raw, err := net.DialTimeout("tcp", hostPortAddr(cfg.Location), wsDialTimeout)
+	if err != nil {
+		return nil, err
+	}
+	if err := raw.SetDeadline(time.Now().Add(wsDialTimeout)); err != nil {
+		_ = raw.Close()
+		return nil, err
+	}
+	conn, err := ws.NewClient(cfg, raw)
+	if err != nil {
+		_ = raw.Close()
+		return nil, err
+	}
+	_ = raw.SetDeadline(time.Time{}) // live stream: no deadline
+	return conn, nil
+}
+
+// hostPortAddr extracts host:port from a ws/wss URL, defaulting to the
+// scheme's standard port when absent (odek serve always prints one, but a
+// hand-typed ws://host URL should still dial).
+func hostPortAddr(u *url.URL) string {
+	if u.Host != "" && !strings.Contains(u.Host, ":") {
+		if u.Scheme == "wss" || u.Scheme == "https" {
+			return u.Host + ":443"
+		}
+		return u.Host + ":80"
+	}
+	return u.Host
 }
 
 // Resources queries the server's @-reference completion endpoint.
@@ -315,7 +356,7 @@ var readIdleTimeout = 45 * time.Second
 
 func (c *Client) readLoop() {
 	defer close(c.Events)
-	defer c.conn.Close() // release the fd even when the sender never closes (reconnect swap)
+	defer func() { _ = c.conn.Close() }() // release the fd even when the sender never closes (reconnect swap)
 	var pending *Event
 	n := 0
 	flush := func() {

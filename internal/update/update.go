@@ -5,6 +5,7 @@ package update
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -160,19 +161,31 @@ func githubToken() string {
 	return os.Getenv("GH_TOKEN")
 }
 
-func statusError(code int, status string) error {
-	if code == http.StatusUnauthorized || code == http.StatusForbidden || code == http.StatusTooManyRequests {
-		return fmt.Errorf("query latest release: unexpected status %s (GitHub rate limit or anonymous block — set GITHUB_TOKEN)", status)
+// statusErr is the typed carrier of a non-200 API response. Classification
+// goes through errors.As — never substring matching on error text, which any
+// transport error message can accidentally satisfy.
+type statusErr struct {
+	code   int
+	status string
+}
+
+func (e *statusErr) Error() string {
+	if e.code == http.StatusUnauthorized || e.code == http.StatusForbidden || e.code == http.StatusTooManyRequests {
+		return fmt.Sprintf("query latest release: unexpected status %s (GitHub rate limit or anonymous block — set GITHUB_TOKEN)", e.status)
 	}
-	return fmt.Errorf("query latest release: unexpected status %s", status)
+	return fmt.Sprintf("query latest release: unexpected status %s", e.status)
+}
+
+func statusError(code int, status string) error {
+	return &statusErr{code: code, status: status}
 }
 
 func statusRetryable(err error) bool {
-	if err == nil {
+	var se *statusErr
+	if !errors.As(err, &se) {
 		return false
 	}
-	s := err.Error()
-	return strings.Contains(s, "401") || strings.Contains(s, "403") || strings.Contains(s, "429")
+	return se.code == http.StatusUnauthorized || se.code == http.StatusForbidden || se.code == http.StatusTooManyRequests
 }
 
 // Newer reports whether latest is a higher version than current. Both may
