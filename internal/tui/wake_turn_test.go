@@ -141,12 +141,25 @@ func TestBgJobFrameKicksJobsFetch(t *testing.T) {
 	}
 }
 
-// handleEvent routes bg_job frames through the kick.
+// handleEvent routes bg_job frames through the kick flag; the fetch itself
+// rides flushKicks. In batch ingestion the per-event cmds are dropped, so
+// the flag must survive until the batch-level flushKicks — a bg_job
+// arriving inside a listen-drained batch must still produce exactly one
+// fetch.
 func TestBgJobFrameRoutesThroughKick(t *testing.T) {
-	m := newJobsTestModel(t, nil)
-	m.applyJobs(jobsFixture(), nil)
-	if _, cmd := m.handleEvent(client.Event{Type: "bg_job", SessionID: "s1"}); cmd == nil {
-		t.Error("bg_job frame produced no cmd")
+	m, seen := jobsMux(t, `{"jobs":[]}`, nil)
+	m.applyJobs(jobsFixture(), nil) // watcher live
+
+	// The frame arms the kickJobs flag; the fetch rides the returned
+	// batch's flushKicks member. A per-event fetch cmd would be dropped by
+	// ingestWireBatch's per-event loop — the defect this test guards.
+	_, cmd := m.handleEvent(client.Event{Type: "bg_job", SessionID: "s1"})
+	applyQuick(m, cmd) // drive the batch; the fetch is immediate HTTP
+	if len(*seen) == 0 {
+		t.Fatal("bg_job kick never reached the jobs endpoint")
+	}
+	if m.kickJobs {
+		t.Error("flushKicks left the kickJobs flag armed")
 	}
 }
 

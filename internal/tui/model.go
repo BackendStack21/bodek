@@ -290,6 +290,7 @@ type Model struct {
 	agentsSeq         int                    // agents-tab poll generation; stale ticks drop
 	eventsTabSeq      int                    // events-tab poll generation; stale ticks drop
 	kickAgents        bool                   // pending agents-tab refresh (flushKicks)
+	kickJobs          bool                   // pending jobs-tab refresh (flushKicks)
 	kickMemory        bool                   // pending memory-tab refresh (flushKicks)
 	planConfirmIssued bool                   // tool_result debounce fired a confirm fetch
 

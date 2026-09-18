@@ -533,11 +533,11 @@ func (m *Model) handleEvent(ev client.Event) (tea.Model, tea.Cmd) {
 		// Push notification of a job start/exit (≥ v1.40): refresh the
 		// snapshot now instead of waiting for the next watcher tick. The
 		// REST watcher stays as the fallback; applyJobs diffs the
-		// transition into notes/attention as before.
-		if cmd := m.kickJobsFetch(); cmd != nil {
-			m.refresh()
-			return m, tea.Batch(listen(m.events), m.noticeSweep(), cmd)
-		}
+		// transition into notes/attention as before. The kick rides the
+		// flushKicks flag — a per-event cmd is dropped when the frame
+		// arrives inside a listen-drained batch.
+		m.kickJobs = true
+		m.refresh()
 
 	case client.EventDisconnected:
 		m.disconn = true
@@ -615,6 +615,12 @@ func (m *Model) flushKicks() tea.Cmd {
 	if m.kickAgents {
 		m.kickAgents = false
 		if cmd := m.kickAgentsFetch(); cmd != nil {
+			cmds = append(cmds, cmd)
+		}
+	}
+	if m.kickJobs {
+		m.kickJobs = false
+		if cmd := m.kickJobsFetch(); cmd != nil {
 			cmds = append(cmds, cmd)
 		}
 	}
