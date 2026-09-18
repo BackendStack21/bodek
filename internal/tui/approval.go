@@ -325,11 +325,13 @@ func (m *Model) answer(action string) tea.Cmd {
 	id := a.ID
 	head := *a
 	var dl time.Time
+	bell := false
 	if len(m.apprDeadlines) > 0 {
 		dl = m.apprDeadlines[0]
 		m.apprDeadlines = m.apprDeadlines[1:] // keep the parallel expiry queue in lockstep
 	}
 	if len(m.apprBells) > 0 {
+		bell = m.apprBells[0]
 		m.apprBells = m.apprBells[1:]
 	}
 	m.approvals = m.approvals[1:]
@@ -344,7 +346,7 @@ func (m *Model) answer(action string) tea.Cmd {
 	cl := m.cl
 	return func() tea.Msg {
 		if err := cl.SendApproval(id, action); err != nil {
-			return approvalSendErrMsg{ev: head, dl: dl, err: err}
+			return approvalSendErrMsg{ev: head, dl: dl, bell: bell, err: err}
 		}
 		return nil
 	}

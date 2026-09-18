@@ -299,6 +299,7 @@ type Model struct {
 	jobs          []client.Job
 	jobsPrev      map[string]string // watcher diff state: id → last status
 	jobsSeq       int               // tab poll generation
+	reconnGen     int               // reconnect chain generation (manual retry guard)
 	jobsWatchSeq  int               // 10s watcher generation
 	jobsOff       bool              // server predates /api/jobs — stop watching
 	jobsOut       string            // detail: fetched output (sanitized at render)
@@ -600,6 +601,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.approvals = append([]client.Event{msg.ev}, m.approvals...)
 		m.apprDeadlines = append([]time.Time{msg.dl}, m.apprDeadlines...)
+		m.apprBells = append([]bool{msg.bell}, m.apprBells...)
 		m.setRunStatus("approval required")
 		m.resetApprovalInput()
 		m.addNote("approval send failed — " + reason)

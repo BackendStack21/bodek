@@ -15,6 +15,7 @@ const maxReconnectAttempts = 5
 // reconnectMsg carries the outcome of one redial attempt.
 type reconnectMsg struct {
 	attempt int
+	gen     int // scheduleReconnect chain that produced this result
 	cl      *client.Client
 	err     error
 }
@@ -30,15 +31,21 @@ func reconnectBackoff(attempt int) time.Duration {
 
 // scheduleReconnect runs one redial (via the Reconnect hook main wires in)
 // after the attempt's backoff tick. Nil hook means reconnects are disabled.
+// reconnGen counts reconnect chains. A manual ⏎ retry must not race a
+// pending backoff tick into two concurrent hook dials: every schedule
+// bumps the generation, and a reconnectMsg from a superseded chain is
+// dropped (and its socket closed).
 func (m *Model) scheduleReconnect(attempt int) tea.Cmd {
 	hook := m.opts.Reconnect
 	if hook == nil {
 		return nil
 	}
+	m.reconnGen++
+	gen := m.reconnGen
 	m.reconnAttempt = attempt // the status line's backoff readout follows the chain
 	return tea.Tick(reconnectBackoff(attempt), func(time.Time) tea.Msg {
 		cl, err := hook()
-		return reconnectMsg{attempt: attempt, cl: cl, err: err}
+		return reconnectMsg{attempt: attempt, gen: gen, cl: cl, err: err}
 	})
 }
 
@@ -46,9 +53,9 @@ func (m *Model) scheduleReconnect(attempt int) tea.Cmd {
 // re-arms the event stream; failure retries with backoff until the attempt
 // budget is spent, then keeps the terminal disconnected state.
 func (m *Model) handleReconnect(msg reconnectMsg) (tea.Model, tea.Cmd) {
-	if !m.disconn {
-		// Stale result (e.g. the user quit and restarted): a successful dial
-		// nobody adopted would leak its socket — close it.
+	if !m.disconn || msg.gen != m.reconnGen {
+		// Stale result (superseded chain, or the user quit and restarted):
+		// a successful dial nobody adopted would leak its socket — close it.
 		if msg.cl != nil {
 			_ = msg.cl.Close()
 		}
