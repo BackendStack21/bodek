@@ -215,8 +215,8 @@ type Model struct {
 	lastTool  string
 	lastArg   string
 
-	failBellFired bool // (A3) the failure BEL rang for this turn — guard against double-fire
-	apprBellFired bool // (A3) the urgent-window BEL rang for this approval head
+	failBellFired bool   // (A3) the failure BEL rang for this turn — guard against double-fire
+	apprBells     []bool // per-approval urgent-window BEL latch, parallel to apprDeadlines
 
 	approvals     []client.Event   // pending approval queue — odek runs parallel tools, so requests FIFO
 	apprDeadlines []time.Time      // per-approval expiry, stamped on arrival (parallel to approvals)

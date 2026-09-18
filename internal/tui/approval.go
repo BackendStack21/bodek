@@ -105,7 +105,7 @@ func (m *Model) handleApprovalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, m.armConfirm(confirmQuit, "bodek")
 	case "enter":
 		return m, m.submit()
-	case "shift+enter", "alt+enter", "ctrl+j":
+	case "shift+enter", "ctrl+enter", "alt+enter", "ctrl+j":
 		return m, m.insertNewline()
 	}
 	return m, m.updateApprovalComposer(msg)
@@ -328,6 +328,9 @@ func (m *Model) answer(action string) tea.Cmd {
 	if len(m.apprDeadlines) > 0 {
 		dl = m.apprDeadlines[0]
 		m.apprDeadlines = m.apprDeadlines[1:] // keep the parallel expiry queue in lockstep
+	}
+	if len(m.apprBells) > 0 {
+		m.apprBells = m.apprBells[1:]
 	}
 	m.approvals = m.approvals[1:]
 	m.resetApprovalInput()

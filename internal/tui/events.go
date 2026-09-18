@@ -302,6 +302,7 @@ func (m *Model) handleEvent(ev client.Event) (tea.Model, tea.Cmd) {
 		// engine has moved on, so ⏎ never sends the next prompt.
 		m.approvals = nil
 		m.apprDeadlines = nil
+		m.apprBells = nil
 		m.resetApprovalInput()
 		m.clearClarify()
 		m.status = "ready"
@@ -405,6 +406,7 @@ func (m *Model) handleEvent(ev client.Event) (tea.Model, tea.Cmd) {
 		m.lastArg = ""
 		m.approvals = nil
 		m.apprDeadlines = nil
+		m.apprBells = nil
 		m.resetApprovalInput()
 		m.clearClarify()
 		if cancelled {
@@ -548,6 +550,7 @@ func (m *Model) handleEvent(ev client.Event) (tea.Model, tea.Cmd) {
 		// footer) so ⏎ retry never runs.
 		m.approvals = nil
 		m.apprDeadlines = nil
+		m.apprBells = nil
 		m.resetApprovalInput()
 		m.clearClarify()
 		if m.shutdownReq {

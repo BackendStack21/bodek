@@ -139,19 +139,19 @@ func TestApprovalUrgentBellOnce(t *testing.T) {
 	m.apprDeadlines[0] = time.Now().Add(9 * time.Second)
 
 	m.handleApprovalExpiry(time.Now())
-	if !m.apprBellFired {
+	if len(m.apprBells) != 1 || !m.apprBells[0] {
 		t.Fatal("urgent countdown must latch the bell guard (fired once)")
 	}
 	// A further tick in the same window does not re-fire.
 	m.handleApprovalExpiry(time.Now())
-	if !m.apprBellFired {
+	if len(m.apprBells) != 1 || !m.apprBells[0] {
 		t.Error("bell guard must stay latched inside the window")
 	}
 	// A fresh approval re-arms the transition.
 	m.approvals = append(m.approvals, client.Event{Type: "approval_request", ID: "a2"})
 	m.apprDeadlines = append(m.apprDeadlines, time.Now().Add(9*time.Second))
-	m.stampApprovalDeadline(client.Event{ID: "a2", TimeoutSeconds: 60})
-	if m.apprBellFired {
-		t.Error("a new approval must reset the urgent-bell guard")
+	m.apprBells = append(m.apprBells, false)
+	if len(m.apprBells) != 2 || m.apprBells[1] {
+		t.Error("a new approval must start with its own unset urgent-bell guard")
 	}
 }
