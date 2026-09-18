@@ -32,6 +32,27 @@ var readyTimeout = 30 * time.Second
 // shutdown before killing it. It is a variable so tests can shorten it.
 var stopTimeout = 8 * time.Second
 
+// StopEvent reports progress of Conn.Stop so callers can show the user what
+// the shutdown wait is doing.
+type StopEvent int
+
+const (
+	StopStopping  StopEvent = iota // graceful SIGINT sent; waiting for exit
+	StopEscalated                  // graceful window expired; SIGKILL sent
+)
+
+// String renders the event for status lines.
+func (e StopEvent) String() string {
+	switch e {
+	case StopStopping:
+		return "stopping"
+	case StopEscalated:
+		return "escalated"
+	default:
+		return fmt.Sprintf("StopEvent(%d)", int(e))
+	}
+}
+
 // Conn holds everything needed to talk to an odek serve instance.
 type Conn struct {
 	BaseURL string // http://127.0.0.1:port
@@ -44,6 +65,9 @@ type Conn struct {
 	scan    *tokenScanWriter // non-nil when bodek spawned the server
 	watch   func()           // cancels the orphan watchdog (nil when none)
 	watchMu sync.Mutex
+
+	// OnStopEvent, when set, receives shutdown progress from Stop.
+	OnStopEvent func(StopEvent)
 }
 
 // watchdogBin is the executable the orphan watchdog re-execs as. It is a
@@ -245,13 +269,20 @@ func (c *Conn) Stop() {
 	// sandbox containers), delivered to the server's whole process group so
 	// its own subprocesses follow. SIGKILL escalation likewise targets the
 	// group. Fall back to Kill if it lingers.
+	if c.OnStopEvent != nil {
+		c.OnStopEvent(StopStopping)
+	}
 	c.signalServer(syscall.SIGINT)
 	done := make(chan struct{})
 	go func() { _ = c.proc.Wait(); close(done) }()
 	select {
 	case <-done:
 	case <-time.After(stopTimeout):
+		if c.OnStopEvent != nil {
+			c.OnStopEvent(StopEscalated)
+		}
 		c.signalServer(syscall.SIGKILL)
+		<-done // the kill always lands; never return with a live child
 	}
 }
 
