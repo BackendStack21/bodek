@@ -112,12 +112,30 @@ func persist(path string, m map[string]string) error {
 	if err != nil {
 		return fmt.Errorf("encode store: %w", err)
 	}
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, data, 0o600); err != nil {
+	// A per-call staged name: callers persist after releasing the store
+	// mutex, so a shared path+'.tmp' let two interleaved writes tear the
+	// file (A.Write → B.Write truncates → A.Rename) and silently wipe
+	// the token store on next Open.
+	tmp, err := os.CreateTemp(filepath.Dir(path), filepath.Base(path)+".*.tmp")
+	if err != nil {
+		return fmt.Errorf("stage store: %w", err)
+	}
+	tmpName := tmp.Name()
+	if _, err := tmp.Write(data); err != nil {
+		_ = tmp.Close()
+		_ = os.Remove(tmpName)
 		return fmt.Errorf("write store: %w", err)
 	}
-	if err := os.Rename(tmp, path); err != nil {
-		_ = os.Remove(tmp) // don't leave the staged copy behind
+	if err := tmp.Close(); err != nil {
+		_ = os.Remove(tmpName)
+		return fmt.Errorf("write store: %w", err)
+	}
+	if err := os.Chmod(tmpName, 0o600); err != nil {
+		_ = os.Remove(tmpName)
+		return fmt.Errorf("protect store: %w", err)
+	}
+	if err := os.Rename(tmpName, path); err != nil {
+		_ = os.Remove(tmpName) // don't leave the staged copy behind
 		return fmt.Errorf("replace store: %w", err)
 	}
 	return nil

@@ -65,6 +65,29 @@ func Open() *Store {
 	return s
 }
 
+// reloadLocked re-reads the on-disk store and merges FOREIGN cwds over the
+// in-memory map (our own cwd entries win — the caller is about to overwrite
+// one). Another bodek instance may have persisted since Open; republishing
+// the stale whole map erased its drafts, queues, and session ids.
+func (s *Store) reloadLocked() {
+	if s.path == "" {
+		return
+	}
+	data, err := os.ReadFile(s.path)
+	if err != nil {
+		return // missing or unreadable: keep what we have
+	}
+	var f fileFormat
+	if json.Unmarshal(data, &f) != nil || f.Workspaces == nil {
+		return
+	}
+	for cwd, st := range f.Workspaces {
+		if _, ours := s.all[cwd]; !ours {
+			s.all[cwd] = st
+		}
+	}
+}
+
 // Load returns the snapshot for cwd, or a zero State.
 func (s *Store) Load(cwd string) State {
 	if s == nil || cwd == "" {
@@ -81,6 +104,7 @@ func (s *Store) Save(cwd string, st State) error {
 		return nil
 	}
 	s.mu.Lock()
+	s.reloadLocked()
 	s.all[cwd] = cloneState(st)
 	path := s.path
 	snap := cloneAll(s.all)
@@ -94,6 +118,7 @@ func (s *Store) Patch(cwd string, fn func(*State)) {
 		return
 	}
 	s.mu.Lock()
+	s.reloadLocked()
 	st := cloneState(s.all[cwd])
 	fn(&st)
 	s.all[cwd] = st

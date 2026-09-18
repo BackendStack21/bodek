@@ -197,7 +197,11 @@ func (m *Model) handleEvent(ev client.Event) (tea.Model, tea.Cmd) {
 		nm := collapse(ev.Name) // same collapse() tool_call stored the step under
 		if i := m.cur(); i >= 0 {
 			steps := m.msgs[i].steps
-			for j := len(steps) - 1; j >= 0; j-- {
+			// FIFO: seal the OLDEST undone step with this name. Parallel same-name
+			// calls stream results in call order; a backward scan sealed the
+			// newest call with the first result, swapping bodies, durations, and
+			// error auto-expands between the two steps.
+			for j := range steps {
 				if steps[j].name == nm && !steps[j].done {
 					steps[j].done = true
 					steps[j].result = resultPreview(ev.Data)

@@ -1185,6 +1185,7 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 // reset done when resuming a session).
 func (m *Model) clearConversation() tea.Cmd {
 	m.inspect = nil
+	m.focusIdx = -1 // stale anchor would copy/move against the regrown transcript
 	captureHome(m)
 	m.msgs = nil
 	m.curIdx = -1
