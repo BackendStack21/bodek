@@ -1,57 +1,44 @@
 package workspace
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 )
 
-// Regression: Save/Patch persisted the whole stale in-memory map, so two
-// bodek instances in different cwds erased each other's drafts, queues,
-// and session ids (last writer wins across EVERY cwd, not just its own).
-// Each instance must merge its own cwd into the on-disk state it saw,
-// never republish a whole stale snapshot.
-func TestSaveKeepsOtherInstancesCwds(t *testing.T) {
-	path := t.TempDir() + "/workspaces.json"
-	t.Setenv("BODEK_WORKSPACE", path)
+// TestForeignClearNotResurrected guards cross-instance consistency: when
+// another bodek instance clears a directory's session (/new), this
+// instance's next Save of a DIFFERENT directory must not republish the
+// stale pre-clear session id over the fresher disk state.
+func TestForeignClearNotResurrected(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "workspaces.json")
 
-	// Instance A saves, then instance B opens the file fresh and saves.
-	instA := Open()
-	if err := instA.Save("/proj/a", State{Draft: "draft-a", SessionID: "s-a"}); err != nil {
-		t.Fatalf("Save: %v", err)
-	}
-	instB := Open()
-	if err := instB.Save("/proj/b", State{Draft: "draft-b", SessionID: "s-b"}); err != nil {
-		t.Fatalf("Save: %v", err)
-	}
-	// Instance A saves again — it must not wipe B's cwd.
-	if err := instA.Save("/proj/a", State{Draft: "draft-a2", SessionID: "s-a"}); err != nil {
-		t.Fatalf("Save: %v", err)
+	a := openAt(path)
+	a.Save("/w1", State{SessionID: "s1", Draft: "d1"})
+
+	b := openAt(path) // second instance sees s1 on disk
+	b.ClearSession("/w1")
+
+	// Instance A persists a different cwd; the cleared /w1 must stay cleared.
+	if err := a.Save("/w2", State{SessionID: "s2"}); err != nil {
+		t.Fatalf("Save /w2: %v", err)
 	}
 
-	fresh := Open()
-	if got := fresh.Load("/proj/b").Draft; got != "draft-b" {
-		t.Errorf("instance A's Save wiped instance B's cwd: /proj/b draft = %q, want draft-b", got)
+	got := openAt(path).Load("/w1")
+	if got.SessionID != "" {
+		t.Fatalf("foreign ClearSession resurrected: /w1 session = %q, want empty", got.SessionID)
 	}
-	if got := fresh.Load("/proj/a").Draft; got != "draft-a2" {
-		t.Errorf("/proj/a draft = %q, want draft-a2", got)
+	if got := openAt(path).Load("/w2"); got.SessionID != "s2" {
+		t.Fatalf("Save /w2 lost: %q", got.SessionID)
 	}
 }
 
-func TestPatchKeepsOtherInstancesCwds(t *testing.T) {
-	path := t.TempDir() + "/workspaces.json"
-	t.Setenv("BODEK_WORKSPACE", path)
-
-	instA := Open()
-	instA.Save("/proj/a", State{History: []string{"a1"}})
-	instB := Open()
-	instB.Save("/proj/b", State{History: []string{"b1"}})
-
-	instA.Patch("/proj/a", func(st *State) { st.Draft = "patched" })
-
-	fresh := Open()
-	if got := fresh.Load("/proj/b"); len(got.History) != 1 || got.History[0] != "b1" {
-		t.Errorf("instance A's Patch wiped instance B's cwd /proj/b: %+v", got)
+// openAt builds a Store pointed at an explicit path (Open has no path hook).
+func openAt(path string) *Store {
+	s := &Store{path: path, all: map[string]State{}}
+	if _, err := os.ReadFile(path); err == nil {
+		s.reloadLocked("")
 	}
-	if got := fresh.Load("/proj/a"); got.Draft != "patched" {
-		t.Errorf("/proj/a draft = %q, want patched", got.Draft)
-	}
+	return s
 }

@@ -71,11 +71,14 @@ func Open() *Store {
 	return s
 }
 
-// reloadLocked re-reads the on-disk store and merges FOREIGN cwds over the
-// in-memory map (our own cwd entries win — the caller is about to overwrite
-// one). Another bodek instance may have persisted since Open; republishing
-// the stale whole map erased its drafts, queues, and session ids.
-func (s *Store) reloadLocked() {
+// reloadLocked re-reads the on-disk store and adopts the on-disk state for
+// every cwd EXCEPT `except` (the caller is about to overwrite that one —
+// its in-memory value is the newest). Another bodek instance may have
+// persisted since Open: merging only foreign additions let our stale
+// copies of other directories republish dead drafts, queues, and session
+// ids over the fresher disk state (e.g. a /new in another instance
+// resurrected here).
+func (s *Store) reloadLocked(except string) {
 	if s.path == "" {
 		return
 	}
@@ -88,7 +91,7 @@ func (s *Store) reloadLocked() {
 		return
 	}
 	for cwd, st := range f.Workspaces {
-		if _, ours := s.all[cwd]; !ours {
+		if cwd != except {
 			s.all[cwd] = st
 		}
 	}
@@ -110,7 +113,7 @@ func (s *Store) Save(cwd string, st State) error {
 		return nil
 	}
 	s.mu.Lock()
-	s.reloadLocked()
+	s.reloadLocked(cwd)
 	s.all[cwd] = cloneState(st)
 	path := s.path
 	snap := cloneAll(s.all)
@@ -124,7 +127,7 @@ func (s *Store) Patch(cwd string, fn func(*State)) {
 		return
 	}
 	s.mu.Lock()
-	s.reloadLocked()
+	s.reloadLocked(cwd)
 	st := cloneState(s.all[cwd])
 	fn(&st)
 	s.all[cwd] = st
