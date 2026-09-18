@@ -462,8 +462,14 @@ func waitSpawned(baseURL string, scan *tokenScanWriter, alive func() bool, timeo
 		} else if !readyAt.IsZero() {
 			readyAt = time.Time{} // flapping: restart the grace clock
 		}
+		// Re-check the token before declaring death: a fast-exiting
+		// (or token-print-and-exit) server can flush its banner after
+		// this iteration's top-of-loop check — the token wins.
 		if alive != nil && !alive() {
-			return fmt.Errorf("odek serve exited before becoming ready%w", stderrTail(scan))
+			if scan == nil || scan.Token() == "" {
+				return fmt.Errorf("odek serve exited before becoming ready%w", stderrTail(scan))
+			}
+			return nil
 		}
 		time.Sleep(150 * time.Millisecond)
 	}
