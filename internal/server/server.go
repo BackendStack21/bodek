@@ -139,7 +139,7 @@ func Connect(opts Options) (*Conn, error) {
 		}
 		// A current odek prints its token to stderr at startup; an older one
 		// prints nothing, so stop waiting as soon as the server answers.
-		if err := waitSpawned(c.BaseURL, c.scan, readyTimeout); err != nil {
+		if err := waitSpawned(c.BaseURL, c.scan, c.procAlive, readyTimeout); err != nil {
 			c.Stop()
 			return nil, fmt.Errorf("odek serve did not become ready: %w", err)
 		}
@@ -383,19 +383,49 @@ func waitReady(baseURL string, timeout time.Duration) error {
 	return fmt.Errorf("timed out after %s", timeout)
 }
 
-// waitSpawned waits until a spawned server prints its token line or answers
-// HTTP, whichever comes first. Old odek versions print no token line, so
-// readiness alone also ends the wait (the legacy token path handles those).
-func waitSpawned(baseURL string, scan *tokenScanWriter, timeout time.Duration) error {
+// procAlive reports whether the spawned child is still running. Signal(0)
+// probes liveness without waiting: ProcessState stays nil until Wait is
+// called (Stop's job, after Connect returns), so it can never report death
+// here.
+func (c *Conn) procAlive() bool {
+	return c.proc != nil && c.proc.Process != nil &&
+		c.proc.Process.Signal(syscall.Signal(0)) == nil
+}
+
+// waitSpawned waits until a spawned server answers HTTP or prints its token
+// line. Old odek versions print no token, so readiness alone eventually ends
+// the wait (the legacy token path handles those) — but only after a short
+// grace poll for the token: the HTTP listener can answer before the stderr
+// token line flushes, and falling to the legacy probe in that window makes
+// /api/models 403 hard-fail a server bodek itself just spawned. A child that
+// dies mid-wait fails immediately instead of burning the full timeout.
+func waitSpawned(baseURL string, scan *tokenScanWriter, alive func() bool, timeout time.Duration) error {
 	deadline := time.Now().Add(timeout)
+	readyAt := time.Time{}
 	for time.Now().Before(deadline) {
-		if scan.Token() != "" || probeReady(baseURL) {
+		if scan.Token() != "" {
 			return nil
+		}
+		if probeReady(baseURL) {
+			if readyAt.IsZero() {
+				readyAt = time.Now()
+			} else if time.Since(readyAt) >= spawnedTokenGrace {
+				return nil // genuinely a tokenless (old) server
+			}
+		} else if !readyAt.IsZero() {
+			readyAt = time.Time{} // flapping: restart the grace clock
+		}
+		if alive != nil && !alive() {
+			return fmt.Errorf("odek serve exited before becoming ready")
 		}
 		time.Sleep(150 * time.Millisecond)
 	}
 	return fmt.Errorf("timed out after %s", timeout)
 }
+
+// spawnedTokenGrace is how long a ready-but-tokenless spawned server is
+// polled for the stderr token line before the legacy path takes over.
+const spawnedTokenGrace = 2 * time.Second
 
 // probeReady reports whether the server root answers without a server error.
 func probeReady(baseURL string) bool {

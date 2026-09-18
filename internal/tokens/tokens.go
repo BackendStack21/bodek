@@ -24,23 +24,38 @@ type Store struct {
 	path string
 }
 
-// Open loads the token store from ~/.bodek/sessions.json. It never fails: on
-// any error it returns an in-memory-only store.
+// Open loads the token store from ~/.bodek/sessions.json. It never fails:
+// any problem yields an in-memory-only store.
 func Open() *Store {
-	s := &Store{m: map[string]string{}}
 	home, err := os.UserHomeDir()
 	if err != nil {
+		return &Store{m: map[string]string{}}
+	}
+	return openAt(filepath.Join(home, ".bodek", "sessions.json"))
+}
+
+// openAt loads a store from an explicit path (test seam). A corrupt store is
+// quarantined as <path>.corrupt instead of being silently overwritten —
+// silently dropping every saved token on one bad write made resume loss
+// undiagnosable.
+func openAt(path string) *Store {
+	s := &Store{m: map[string]string{}, path: path}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return s // missing store: fresh start
+	}
+	if err := json.Unmarshal(data, &s.m); err != nil {
+		if qErr := os.Rename(path, path+".corrupt"); qErr == nil {
+			warnPersist(fmt.Errorf("corrupt store quarantined as %s.corrupt: %w", path, err))
+		} else {
+			warnPersist(fmt.Errorf("corrupt store kept in place: %w", err))
+			s.path = "" // never overwrite bytes we could not parse
+		}
+		s.m = map[string]string{}
 		return s
 	}
-	s.path = filepath.Join(home, ".bodek", "sessions.json")
-	if data, err := os.ReadFile(s.path); err == nil {
-		_ = json.Unmarshal(data, &s.m)
-		// JSON null unmarshals into a nil map; keep an empty map so Set
-		// cannot panic on assignment. Corrupt JSON still leaves the
-		// in-memory-empty store Open already constructed.
-		if s.m == nil {
-			s.m = map[string]string{}
-		}
+	if s.m == nil { // JSON null unmarshals into a nil map
+		s.m = map[string]string{}
 	}
 	return s
 }
@@ -61,20 +76,12 @@ func (s *Store) Set(id, token string) {
 		return
 	}
 	s.mu.Lock()
+	defer s.mu.Unlock()
 	if s.m[id] == token {
-		s.mu.Unlock()
 		return // no change; skip the disk write
 	}
 	s.m[id] = token
-	snapshot := make(map[string]string, len(s.m))
-	for k, v := range s.m {
-		snapshot[k] = v
-	}
-	path := s.path
-	s.mu.Unlock()
-	if err := persist(path, snapshot); err != nil {
-		warnPersist(err)
-	}
+	s.persistLocked()
 }
 
 // Delete removes a session's token and persists the store (best-effort).
@@ -83,18 +90,24 @@ func (s *Store) Delete(id string) {
 		return
 	}
 	s.mu.Lock()
+	defer s.mu.Unlock()
 	if _, ok := s.m[id]; !ok {
-		s.mu.Unlock()
 		return
 	}
 	delete(s.m, id)
+	s.persistLocked()
+}
+
+// persistLocked writes the store while the mutex is held. Snapshot-then-
+// persist-outside-the-lock let interleaved Set/Delete writes reorder on
+// disk: an older snapshot landing last resurrected deleted tokens and
+// dropped minted ones, silently breaking session resume.
+func (s *Store) persistLocked() {
 	snapshot := make(map[string]string, len(s.m))
 	for k, v := range s.m {
 		snapshot[k] = v
 	}
-	path := s.path
-	s.mu.Unlock()
-	if err := persist(path, snapshot); err != nil {
+	if err := persist(s.path, snapshot); err != nil {
 		warnPersist(err)
 	}
 }

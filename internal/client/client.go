@@ -245,6 +245,7 @@ type Client struct {
 
 	stopOnce   sync.Once    // lazy: only jobs-stop pays the longer timeout budget
 	stopClient *http.Client // 12s — odek's stop endpoint blocks stopGrace+4s
+	slowHTTP   *http.Client // 30s — bulk payload reads (session detail, export)
 }
 
 // Dial connects to an odek serve WebSocket. wsURL is the ws:// endpoint,
@@ -273,6 +274,11 @@ func Dial(wsURL, origin, baseURL, token string) (*Client, error) {
 		// batch-drains this channel, but a deep buffer keeps readLoop from
 		// blocking (which trips odek's 30s write watchdog and drops the socket).
 		Events: make(chan Event, eventBuffer),
+		// Large transcript payloads (SessionDetail of a long session, full
+		// exports) legitimately take longer than interactive REST calls; a
+		// dedicated 30s client serves them so the 3s interactive budget does
+		// not cut their body reads.
+		slowHTTP: &http.Client{Timeout: 30 * time.Second},
 	}
 	go c.readLoop()
 	return c, nil
@@ -309,6 +315,7 @@ var readIdleTimeout = 45 * time.Second
 
 func (c *Client) readLoop() {
 	defer close(c.Events)
+	defer c.conn.Close() // release the fd even when the sender never closes (reconnect swap)
 	var pending *Event
 	n := 0
 	flush := func() {

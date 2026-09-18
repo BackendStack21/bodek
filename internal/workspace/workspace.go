@@ -125,7 +125,11 @@ func (s *Store) Patch(cwd string, fn func(*State)) {
 	path := s.path
 	snap := cloneAll(s.all)
 	s.mu.Unlock()
-	_ = persist(path, snap)
+	// A failed persist is not silent: draft/queue loss on a full disk or a
+	// read-only directory must be diagnosable, like tokens' warnPersist.
+	if err := persist(path, snap); err != nil {
+		fmt.Fprintf(os.Stderr, "bodek: warning: workspace not saved: %v\n", err)
+	}
 }
 
 // ClearSession drops the resume mapping and any unsent draft/queue for
