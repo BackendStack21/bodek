@@ -298,6 +298,15 @@ func (c *Client) Resources(query string, limit int) ([]Resource, error) {
 }
 
 // readLoop decodes frames into Events until the socket closes.
+
+// readIdleTimeout is the inbound-silence budget before readLoop declares
+// the socket dead (half-open TCP — laptop sleep, NAT reset — otherwise
+// never yields an error or EventDisconnected, stranding the TUI on a dead
+// link with reconnect bypassed). Live sessions carry the server's inline
+// heartbeat answers every pingEvery (20s), so 45s of true inbound silence
+// only happens on a dead link. A test hook; do not shrink further.
+var readIdleTimeout = 45 * time.Second
+
 func (c *Client) readLoop() {
 	defer close(c.Events)
 	var pending *Event
@@ -312,11 +321,13 @@ func (c *Client) readLoop() {
 	}
 	for {
 		var data []byte
+		_ = c.conn.SetReadDeadline(time.Now().Add(readIdleTimeout))
 		if err := ws.Message.Receive(c.conn, &data); err != nil {
 			flush()
 			c.Events <- Event{Type: EventDisconnected}
 			return
 		}
+		_ = c.conn.SetReadDeadline(time.Time{}) // received: drop the deadline while decoding
 		var ev Event
 		if err := json.Unmarshal(data, &ev); err != nil {
 			continue // ignore malformed frames
