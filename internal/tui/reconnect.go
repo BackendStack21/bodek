@@ -47,9 +47,19 @@ func (m *Model) scheduleReconnect(attempt int) tea.Cmd {
 // budget is spent, then keeps the terminal disconnected state.
 func (m *Model) handleReconnect(msg reconnectMsg) (tea.Model, tea.Cmd) {
 	if !m.disconn {
-		return m, nil // stale result (e.g. the user quit and restarted)
+		// Stale result (e.g. the user quit and restarted): a successful dial
+		// nobody adopted would leak its socket — close it.
+		if msg.cl != nil {
+			_ = msg.cl.Close()
+		}
+		return m, nil
 	}
 	if msg.err == nil && msg.cl != nil {
+		if old := m.cl; old != nil && old != msg.cl {
+			// The dead client's readLoop exits on its own, but nothing closed
+			// its socket — every drop leaked an fd and a live server slot.
+			_ = old.Close()
+		}
 		m.cl = msg.cl
 		m.events = msg.cl.Events
 		m.disconn = false

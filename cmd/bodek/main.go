@@ -228,9 +228,6 @@ func run() error {
 		cwd = "."
 	}
 
-	// Gracefully shutdown on SIGINT/SIGTERM so the server gets a clean exit.
-	setupSignalHandler(srv, cl)
-
 	model := tui.New(cl, tui.Options{
 		Sandbox:      cfg.sandbox,
 		CWD:          cwd,
@@ -268,20 +265,25 @@ func run() error {
 	tui.RestoreEnhancedKeys()
 	p := tea.NewProgram(model, buildProgramOptions(cfg.plain)...)
 	defer tui.RestoreEnhancedKeys()
+
+	// SIGINT/SIGTERM must not hard-exit from a side goroutine: racing Bubble
+	// Tea's own signal handling leaves the alt screen up and raw mode on
+	// (RestoreEnhancedKeys and the deferred restores never run), corrupting
+	// the terminal. Quit the program instead — Run returns cleanly, so the
+	// deferred srv.Stop() and cl.Close() still execute with terminal state
+	// intact.
+	setupSignalHandler(p)
 	if _, err := p.Run(); err != nil {
 		return fmt.Errorf("TUI exited: %w", err)
 	}
 	return nil
 }
 
-func setupSignalHandler(srv *server.Conn, cl *client.Client) {
+func setupSignalHandler(p *tea.Program) {
 	ch := make(chan os.Signal, 1)
 	signal.Notify(ch, os.Interrupt, syscall.SIGTERM)
 	go func() {
 		<-ch
-		_ = cl.Close()
-		srv.Stop()
-		tui.RestoreEnhancedKeys()
-		os.Exit(0)
+		p.Quit()
 	}()
 }

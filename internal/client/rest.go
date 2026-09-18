@@ -116,7 +116,7 @@ func (c *Client) UpdateSession(id, token string, name *string, pinned *bool) err
 func (c *Client) ExportSession(id, token, format string) ([]byte, error) {
 	u := fmt.Sprintf("%s/api/sessions/%s/export?format=%s",
 		c.baseURL, url.PathEscape(id), url.QueryEscape(format))
-	resp, err := c.do(http.MethodGet, u, token)
+	resp, err := c.doWith(c.slowHTTP, http.MethodGet, u, token)
 	if err != nil {
 		return nil, err
 	}
@@ -124,7 +124,16 @@ func (c *Client) ExportSession(id, token, format string) ([]byte, error) {
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("export: status %s", resp.Status)
 	}
-	return io.ReadAll(io.LimitReader(resp.Body, maxExportBytes))
+	data, err := io.ReadAll(io.LimitReader(resp.Body, maxExportBytes+1))
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(data)) > maxExportBytes {
+		// Read one byte past the bound so an oversized export fails loudly
+		// instead of returning a silently clipped transcript.
+		return nil, fmt.Errorf("export too large (exceeds %d bytes)", maxExportBytes)
+	}
+	return data, nil
 }
 
 // maxExportBytes bounds an exported transcript read into memory.
@@ -157,7 +166,7 @@ func (c *Client) Health() (Health, error) {
 // back to the token passed in.
 func (c *Client) SessionDetail(id, token string) (Session, string, error) {
 	var s Session
-	resp, err := c.do(http.MethodGet, c.baseURL+"/api/sessions/"+url.PathEscape(id), token)
+	resp, err := c.doWith(c.slowHTTP, http.MethodGet, c.baseURL+"/api/sessions/"+url.PathEscape(id), token)
 	if err != nil {
 		return s, "", err
 	}
@@ -327,6 +336,13 @@ func (c *Client) Subagents(runKey string) ([]SubagentEntry, error) {
 }
 
 func (c *Client) do(method, u, sessionToken string) (*http.Response, error) {
+	return c.doWith(c.http, method, u, sessionToken)
+}
+
+func (c *Client) doWith(h *http.Client, method, u, sessionToken string) (*http.Response, error) {
+	if h == nil {
+		h = c.http // zero-value Clients fall back to the interactive budget
+	}
 	req, err := http.NewRequest(method, u, nil)
 	if err != nil {
 		return nil, err
@@ -337,7 +353,7 @@ func (c *Client) do(method, u, sessionToken string) (*http.Response, error) {
 	if sessionToken != "" {
 		req.Header.Set("X-Session-Token", sessionToken)
 	}
-	return c.http.Do(req)
+	return h.Do(req)
 }
 
 // postJSON issues a JSON POST with the standard token headers attached.
