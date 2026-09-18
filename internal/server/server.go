@@ -351,7 +351,10 @@ func (s *tokenScanWriter) scan(p []byte) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.tok != "" {
-		return // already found; keep passing bytes through
+		// Token already found: stop parsing, but keep the tail following the
+		// server's output so a post-banner failure reaches the error card.
+		s.appendTail(p)
+		return
 	}
 	s.buf = append(s.buf, p...)
 	for {
@@ -361,14 +364,49 @@ func (s *tokenScanWriter) scan(p []byte) {
 		}
 		line := string(s.buf[:i])
 		s.buf = s.buf[i+1:]
-		s.tail = append(s.tail, line)
-		if len(s.tail) > maxTailLines {
-			s.tail = s.tail[len(s.tail)-maxTailLines:]
-		}
+		s.appendTailLine(line)
 		if tok := parseTokenLine(line); tok != "" {
 			s.tok = tok
 			return
 		}
+	}
+}
+
+// appendTail splits p into complete lines and keeps the last maxTailLines
+// of them in the diagnostics tail. Callers hold s.mu.
+func (s *tokenScanWriter) appendTail(p []byte) {
+	rest := p
+	for {
+		i := bytes.IndexByte(rest, '\n')
+		if i < 0 {
+			s.partialTail(rest)
+			return
+		}
+		s.appendTailLine(string(rest[:i]))
+		rest = rest[i+1:]
+	}
+}
+
+// partialTail buffers a trailing chunk without a newline so a failure line
+// split across Write calls still lands whole in the tail.
+func (s *tokenScanWriter) partialTail(chunk []byte) {
+	if len(chunk) == 0 {
+		return
+	}
+	s.buf = append(s.buf, chunk...)
+	// Only remember it as a line if it eventually terminates; the next
+	// appendTail call re-reads s.buf from the start.
+	if i := bytes.IndexByte(s.buf, '\n'); i >= 0 {
+		line := string(s.buf[:i])
+		s.buf = s.buf[i+1:]
+		s.appendTailLine(line)
+	}
+}
+
+func (s *tokenScanWriter) appendTailLine(line string) {
+	s.tail = append(s.tail, line)
+	if len(s.tail) > maxTailLines {
+		s.tail = s.tail[len(s.tail)-maxTailLines:]
 	}
 }
 
@@ -450,7 +488,7 @@ func waitSpawned(baseURL string, scan *tokenScanWriter, alive func() bool, timeo
 	deadline := time.Now().Add(timeout)
 	readyAt := time.Time{}
 	for time.Now().Before(deadline) {
-		if scan.Token() != "" {
+		if scan != nil && scan.Token() != "" {
 			return nil
 		}
 		if probeReady(baseURL) {
@@ -467,13 +505,21 @@ func waitSpawned(baseURL string, scan *tokenScanWriter, alive func() bool, timeo
 		// this iteration's top-of-loop check — the token wins.
 		if alive != nil && !alive() {
 			if scan == nil || scan.Token() == "" {
-				return fmt.Errorf("odek serve exited before becoming ready%w", stderrTail(scan))
+				err := fmt.Errorf("odek serve exited before becoming ready")
+				if tail := stderrTail(scan); tail != nil {
+					return fmt.Errorf("%w%w", err, tail)
+				}
+				return err
 			}
 			return nil
 		}
 		time.Sleep(150 * time.Millisecond)
 	}
-	return fmt.Errorf("timed out after %s%w", timeout, stderrTail(scan))
+	err := fmt.Errorf("timed out after %s", timeout)
+	if tail := stderrTail(scan); tail != nil {
+		return fmt.Errorf("%w%w", err, tail)
+	}
+	return err
 }
 
 // stderrTail returns the captured server stderr tail for inclusion in a

@@ -36,9 +36,10 @@ func errText(err error) string {
 // must not end the turn: the engine is still waiting on the request, so the
 // popped head is restored and remaining queue items stay armed.
 type approvalSendErrMsg struct {
-	ev  client.Event
-	dl  time.Time
-	err error
+	ev   client.Event
+	dl   time.Time
+	bell bool // the popped head's urgent-window BEL latch, restored with it
+	err  error
 }
 
 // skillSendErrMsg is a failed skill_prompt_response write. Unlike errMsg it

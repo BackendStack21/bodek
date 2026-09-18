@@ -55,7 +55,7 @@ func TestReconnectSuccess(t *testing.T) {
 
 	ch := make(chan client.Event, 1)
 	cl := &client.Client{Events: ch}
-	_, cmd := m.Update(reconnectMsg{attempt: 0, cl: cl})
+	_, cmd := m.Update(reconnectMsg{attempt: 0, gen: m.reconnGen, cl: cl})
 
 	if m.disconn {
 		t.Error("should be connected again")
@@ -87,12 +87,12 @@ func TestReconnectRetriesThenGivesUp(t *testing.T) {
 	m.disconn = true
 	m.opts.Reconnect = func() (*client.Client, error) { return nil, errors.New("down") }
 
-	_, cmd := m.Update(reconnectMsg{attempt: 0, err: errors.New("down")})
+	_, cmd := m.Update(reconnectMsg{attempt: 0, gen: m.reconnGen, err: errors.New("down")})
 	if cmd == nil {
 		t.Fatal("an early failure should schedule the next attempt")
 	}
 
-	_, cmd = m.Update(reconnectMsg{attempt: maxReconnectAttempts - 1, err: errors.New("down")})
+	_, cmd = m.Update(reconnectMsg{attempt: maxReconnectAttempts - 1, gen: m.reconnGen, err: errors.New("down")})
 	if cmd != nil {
 		t.Error("no more attempts once the budget is spent")
 	}
@@ -117,7 +117,7 @@ func TestReconnectNilClientNoPanic(t *testing.T) {
 			t.Fatalf("reconnect (nil, nil) panicked: %v", r)
 		}
 	}()
-	_, cmd := m.Update(reconnectMsg{attempt: maxReconnectAttempts - 1})
+	_, cmd := m.Update(reconnectMsg{attempt: maxReconnectAttempts - 1, gen: m.reconnGen})
 	if cmd != nil {
 		t.Error("no more attempts once the budget is spent")
 	}
@@ -144,7 +144,7 @@ func TestReconnectNilClientNoPanic(t *testing.T) {
 func TestReconnectStaleResultIgnored(t *testing.T) {
 	m := newTestModel() // disconn == false
 
-	_, cmd := m.Update(reconnectMsg{attempt: 0, cl: &client.Client{Events: make(chan client.Event)}})
+	_, cmd := m.Update(reconnectMsg{attempt: 0, gen: m.reconnGen, cl: &client.Client{Events: make(chan client.Event)}})
 	if cmd != nil {
 		t.Error("stale reconnect result must not re-arm the listener")
 	}

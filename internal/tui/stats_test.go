@@ -686,16 +686,23 @@ func TestUsageAppliesLiveSpeed(t *testing.T) {
 	}
 }
 
-func TestUsageFirstRemoteTurnResetsThenApplies(t *testing.T) {
+func TestUsageWhileIdleAppliesMetricsWithoutCard(t *testing.T) {
+	// usage is telemetry, not turn evidence: a straggler usage frame after
+	// finalize (done/usage batch order) must not open an orphan turn card
+	// or wedge the model busy — the lazy fallback exists for thinking/
+	// token frames, which always precede usage in a genuine turn.
 	m := newTestModel()
 	m.tokPerSec = 40
 	m.tokPerSecKind = client.TokPerSecGeneration
 	m.handleEvent(client.Event{Type: "usage", TokensPerSecond: 9.6})
-	if m.cur() < 0 {
-		t.Fatal("usage-first remote turn must open a card")
+	if m.cur() >= 0 {
+		t.Fatal("idle usage must not open a turn card")
+	}
+	if m.busy {
+		t.Fatal("idle usage must not arm busy")
 	}
 	if m.tokPerSec != 9.6 || m.tokPerSecKind != client.TokPerSecE2E {
-		t.Fatalf("usage-first applied after reset: %v %q", m.tokPerSec, m.tokPerSecKind)
+		t.Fatalf("usage metrics not applied: %v %q", m.tokPerSec, m.tokPerSecKind)
 	}
 }
 

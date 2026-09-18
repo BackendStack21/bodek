@@ -141,6 +141,11 @@ func (m *Model) handleApprovalExpiry(now time.Time) tea.Cmd {
 		m.resetApprovalInput()
 		m.relayout()
 	}
+	if dropped > 0 {
+		// A mid-queue expiry changes the card's "N queued" hint without
+		// touching the head — the rendered form must repaint anyway.
+		m.refresh()
+	}
 	if len(m.approvals) == 0 {
 		// The card is gone — jump to the latest transcript message so the
 		// operator lands on the turn the engine continues, not the scroll

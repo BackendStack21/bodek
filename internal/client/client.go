@@ -248,6 +248,12 @@ type Client struct {
 	stopOnce   sync.Once    // lazy: only jobs-stop pays the longer timeout budget
 	stopClient *http.Client // 12s — odek's stop endpoint blocks stopGrace+4s
 	slowHTTP   *http.Client // 30s — bulk payload reads (session detail, export)
+
+	// done is closed by Close. Every Events send selects on it: when a
+	// reconnect abandons a full Events channel, readLoop must exit instead of
+	// parking forever on a send nobody will ever receive.
+	done      chan struct{}
+	closeOnce sync.Once
 }
 
 // Dial connects to an odek serve WebSocket. wsURL is the ws:// endpoint,
@@ -281,6 +287,7 @@ func Dial(wsURL, origin, baseURL, token string) (*Client, error) {
 		// dedicated 30s client serves them so the 3s interactive budget does
 		// not cut their body reads.
 		slowHTTP: &http.Client{Timeout: 30 * time.Second},
+		done:     make(chan struct{}),
 	}
 	go c.readLoop()
 	return c, nil
@@ -363,7 +370,7 @@ func (c *Client) readLoop() {
 		if pending == nil {
 			return
 		}
-		c.Events <- *pending
+		c.emit(*pending)
 		pending = nil
 		n = 0
 	}
@@ -372,7 +379,7 @@ func (c *Client) readLoop() {
 		_ = c.conn.SetReadDeadline(time.Now().Add(readIdleTimeout))
 		if err := ws.Message.Receive(c.conn, &data); err != nil {
 			flush()
-			c.Events <- Event{Type: EventDisconnected}
+			c.emit(Event{Type: EventDisconnected})
 			return
 		}
 		_ = c.conn.SetReadDeadline(time.Time{}) // received: drop the deadline while decoding
@@ -397,7 +404,7 @@ func (c *Client) readLoop() {
 			continue
 		}
 		flush()
-		c.Events <- ev
+		c.emit(ev)
 	}
 }
 
@@ -524,10 +531,24 @@ func (c *Client) send(v any) error {
 	return ws.JSON.Send(c.conn, v)
 }
 
-// Close shuts the connection.
+// Close shuts the connection and releases a readLoop parked on Events.
 func (c *Client) Close() error {
+	c.closeOnce.Do(func() {
+		if c.done != nil {
+			close(c.done)
+		}
+	})
 	if c.conn == nil {
 		return nil
 	}
 	return c.conn.Close()
+}
+
+// emit delivers ev to Events unless the client is closed. A send to an
+// abandoned full channel would otherwise park readLoop forever.
+func (c *Client) emit(ev Event) {
+	select {
+	case c.Events <- ev:
+	case <-c.done:
+	}
 }

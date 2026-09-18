@@ -8,6 +8,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -101,15 +102,27 @@ func archiveName(tag, goos, goarch string) string {
 	return fmt.Sprintf("bodek_%s_%s_%s.%s", tag, goos, goarch, ext)
 }
 
+// downloadTimeout bounds a single release-asset body read. It must be a
+// per-request deadline, not Client.Timeout: the timeout bounds the WHOLE
+// transfer including the body, so a multi-MB archive over a slow link would
+// fail every time under the short API budget.
+const downloadTimeout = 10 * time.Minute
+
 // download fetches url into memory. Release archives are a few MB, so a
 // buffered read is fine and keeps checksum verification straightforward.
 func download(ctx context.Context, client *http.Client, url string) ([]byte, error) {
+	// A copy without the overall Timeout: the deadline below bounds the
+	// read instead. The transport (TLS cache, dialer) is shared.
+	dl := *client
+	dl.Timeout = 0
+	ctx, cancel := context.WithTimeout(ctx, downloadTimeout)
+	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("build download request: %w", err)
 	}
 	req.Header.Set("User-Agent", "bodek-updater")
-	resp, err := client.Do(req)
+	resp, err := dl.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("download %s: %w", url, err)
 	}
@@ -210,10 +223,18 @@ func extractZip(archive []byte) ([]byte, error) {
 	return nil, fmt.Errorf("archive contains no bodek binary")
 }
 
+// renameFn and syncFile are test hooks over os.Rename and (*os.File).Sync
+// so the swap sequence is injectable.
+var (
+	renameFn = os.Rename
+	syncFile = (*os.File).Sync
+)
+
 // replaceExecutable atomically swaps the binary at target with data: the new
-// file is written next to the target and renamed over it, so a crash
-// mid-upgrade never leaves a truncated binary. target is resolved through
-// symlinks first so `go install` shims and PATH links are not clobbered.
+// file is written next to the target, fsynced, and renamed over the old one,
+// so a crash mid-upgrade never leaves a truncated binary. target is resolved
+// through symlinks first so `go install` shims and PATH links are not
+// clobbered.
 func replaceExecutable(data []byte, target string) error {
 	resolved, err := filepath.EvalSymlinks(target)
 	if err != nil {
@@ -224,8 +245,15 @@ func replaceExecutable(data []byte, target string) error {
 		return fmt.Errorf("create temp file next to %s: %w", resolved, err)
 	}
 	tmpName := tmp.Name()
-	// No-op once the rename below has moved the temp file into place.
-	defer func() { _ = os.Remove(tmpName) }()
+	// No-op once the rename below has moved the temp file into place — but
+	// only the success path: the Windows rollback-fail path leaves the new
+	// binary at tmpName on purpose, so installFailed keeps it alive.
+	installFailed := false
+	defer func() {
+		if !installFailed {
+			_ = os.Remove(tmpName)
+		}
+	}()
 	if _, err := tmp.Write(data); err != nil {
 		_ = tmp.Close()
 		return fmt.Errorf("write new binary: %w", err)
@@ -237,21 +265,54 @@ func replaceExecutable(data []byte, target string) error {
 	if err := tmp.Close(); err != nil {
 		return fmt.Errorf("flush new binary: %w", err)
 	}
-	if err := os.Rename(tmpName, resolved); err != nil {
+	reopened, err := os.Open(tmpName)
+	if err == nil {
+		err = syncFile(reopened)
+		_ = reopened.Close()
+	}
+	if err != nil {
+		return fmt.Errorf("sync new binary: %w", err)
+	}
+	if err := renameFn(tmpName, resolved); err != nil {
 		if runtime.GOOS != "windows" {
 			return fmt.Errorf("replace %s: %w", resolved, err)
 		}
-		// Windows refuses to rename over a running executable; move the old
-		// one aside first, then drop the new binary into place.
-		old := resolved + ".old"
-		_ = os.Remove(old)
-		if rerr := os.Rename(resolved, old); rerr != nil {
-			return fmt.Errorf("move current executable aside: %w", rerr)
+		// Windows refuses to rename over a running executable: swap the old
+		// one aside, then drop the new binary into place (with rollback).
+		if serr := swapAsideWindows(resolved, tmpName); serr != nil {
+			// On the double-failure path the new binary deliberately
+			// survives at tmpName — keep the deferred cleanup off it.
+			var kept tmpKeptError
+			installFailed = errors.As(serr, &kept)
+			return serr
 		}
-		if rerr := os.Rename(tmpName, resolved); rerr != nil {
-			return fmt.Errorf("install new binary: %w", rerr)
-		}
-		_ = os.Remove(old) // best effort: a locked .old goes away on a later run
+		return nil
 	}
+	return nil
+}
+
+// tmpKeptError marks a failure where the staged new binary intentionally
+// survives at its temp path (both Windows renames failed) — the deferred
+// cleanup in replaceExecutable must not delete it.
+type tmpKeptError struct{ error }
+
+// swapAsideWindows installs tmpName over resolved on Windows, moving the
+// running binary to resolved+".old" first. A failed install rename rolls
+// the old binary back — the swap must never strand the executable as .old.
+func swapAsideWindows(resolved, tmpName string) error {
+	old := resolved + ".old"
+	_ = os.Remove(old)
+	if rerr := renameFn(resolved, old); rerr != nil {
+		return fmt.Errorf("move current executable aside: %w", rerr)
+	}
+	if rerr := renameFn(tmpName, resolved); rerr != nil {
+		if rberr := renameFn(old, resolved); rberr != nil {
+			// Both renames failed: the new binary stays at tmpName on
+			// purpose — tell the operator where both halves live.
+			return tmpKeptError{fmt.Errorf("install new binary: %w (rollback also failed: %v — old binary is at %s, new binary is at %s)", rerr, rberr, old, tmpName)}
+		}
+		return fmt.Errorf("install new binary: %w", rerr)
+	}
+	_ = os.Remove(old) // best effort: a locked .old goes away on a later run
 	return nil
 }

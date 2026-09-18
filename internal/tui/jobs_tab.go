@@ -61,6 +61,8 @@ func (m *Model) openJobs() tea.Cmd {
 	m.panelSel = 0
 	m.panelEdit = panelEditNone
 	m.jobsWatchSeq++ // a pending watcher tick would double-fetch
+	m.jobsSeq++      // a pending TAB tick would too: it would pass the seq
+	// check after reopen and arm a second watcher chain
 	m.relayout()
 	m.refresh()
 	if m.jobsOff {
