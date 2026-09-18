@@ -322,9 +322,10 @@ func (m *Model) handleEvent(ev client.Event) (tea.Model, tea.Cmd) {
 		// (applyCtxWindow). Absent/zero holds the last fill. This-call
 		// tok/s is the same contract: a missing rate is held, never
 		// invented from cumulative outputTokens / wall latency.
-		// Open a card first so a usage-first remote/wake turn (missed
-		// turn_started) resets the previous chip before this frame lands.
-		m.ensureWireTurn()
+		// No ensureWireTurn here: a usage frame trailing a finalized turn
+		// (done/usage batching order) must not open an orphan card — the
+		// lazy fallback exists for thinking/token frames, which always
+		// precede usage in a genuine turn.
 		m.applyCtxWindow(ev)
 		m.applyCallMetrics(ev)
 		stream = true
@@ -414,6 +415,7 @@ func (m *Model) handleEvent(ev client.Event) (tea.Model, tea.Cmd) {
 		} else {
 			m.status = "error"
 		}
+		m.runCtxCum = 0 // same contract as done: the failed run's cumulative is spent
 		m.restoreComposerPrompt()
 		m.relayout() // the busy status line releases its row
 
