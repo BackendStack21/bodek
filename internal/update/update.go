@@ -211,11 +211,13 @@ func Newer(latest, current string) bool {
 
 // parseSemver splits an optional-"v"-prefixed version into its numeric
 // components, zero-padding to 3. Non-numeric components fail the parse.
-// pseudoBase strips a Go pseudo-version suffix: "v0.1.3-0.20260901abcdef12-
-// abc1234" (a commit-installed build) keeps the release prefix "v0.1.3",
-// so it compares as that release rather than failing the parse entirely.
+// pseudoBase reduces a version string to its release core by cutting at
+// the first "-": a Go pseudo-version (v0.1.3-0.20260901000000-abc1234,
+// a commit-installed build) keeps "v0.1.3", and a genuine semver
+// prerelease (v1.2.0-0.1) keeps "v1.2.0" — both compare as their release
+// rather than failing the numeric parse entirely.
 func pseudoBase(v string) string {
-	if i := strings.Index(v, "-0."); i >= 0 {
+	if i := strings.Index(v, "-"); i >= 0 {
 		return v[:i]
 	}
 	return v

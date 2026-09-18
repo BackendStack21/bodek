@@ -8,6 +8,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -244,8 +245,15 @@ func replaceExecutable(data []byte, target string) error {
 		return fmt.Errorf("create temp file next to %s: %w", resolved, err)
 	}
 	tmpName := tmp.Name()
-	// No-op once the rename below has moved the temp file into place.
-	defer func() { _ = os.Remove(tmpName) }()
+	// No-op once the rename below has moved the temp file into place — but
+	// only the success path: the Windows rollback-fail path leaves the new
+	// binary at tmpName on purpose, so installFailed keeps it alive.
+	installFailed := false
+	defer func() {
+		if !installFailed {
+			_ = os.Remove(tmpName)
+		}
+	}()
 	if _, err := tmp.Write(data); err != nil {
 		_ = tmp.Close()
 		return fmt.Errorf("write new binary: %w", err)
@@ -271,10 +279,22 @@ func replaceExecutable(data []byte, target string) error {
 		}
 		// Windows refuses to rename over a running executable: swap the old
 		// one aside, then drop the new binary into place (with rollback).
-		return swapAsideWindows(resolved, tmpName)
+		if serr := swapAsideWindows(resolved, tmpName); serr != nil {
+			// On the double-failure path the new binary deliberately
+			// survives at tmpName — keep the deferred cleanup off it.
+			var kept tmpKeptError
+			installFailed = errors.As(serr, &kept)
+			return serr
+		}
+		return nil
 	}
 	return nil
 }
+
+// tmpKeptError marks a failure where the staged new binary intentionally
+// survives at its temp path (both Windows renames failed) — the deferred
+// cleanup in replaceExecutable must not delete it.
+type tmpKeptError struct{ error }
 
 // swapAsideWindows installs tmpName over resolved on Windows, moving the
 // running binary to resolved+".old" first. A failed install rename rolls
@@ -287,7 +307,9 @@ func swapAsideWindows(resolved, tmpName string) error {
 	}
 	if rerr := renameFn(tmpName, resolved); rerr != nil {
 		if rberr := renameFn(old, resolved); rberr != nil {
-			return fmt.Errorf("install new binary: %w (rollback also failed: %v — old binary is at %s)", rerr, rberr, old)
+			// Both renames failed: the new binary stays at tmpName on
+			// purpose — tell the operator where both halves live.
+			return tmpKeptError{fmt.Errorf("install new binary: %w (rollback also failed: %v — old binary is at %s, new binary is at %s)", rerr, rberr, old, tmpName)}
 		}
 		return fmt.Errorf("install new binary: %w", rerr)
 	}

@@ -83,14 +83,14 @@ func TestReplaceExecutableSyncsBeforeRename(t *testing.T) {
 func TestUpgradeSlowLinkDownloads(t *testing.T) {
 	archive := buildTarGz(t, "bodek", []byte("slow-payload"))
 	slow := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		time.Sleep(1200 * time.Millisecond)
+		time.Sleep(2 * time.Second)
 		_, _ = w.Write(archive)
 	}))
 	defer slow.Close()
 
-	// A 500ms overall client budget vs a 1.2s drip: the old code's body
-	// read dies mid-transfer.
-	c := &http.Client{Timeout: 500 * time.Millisecond}
+	// A 300ms overall client budget vs a 2s drip — margins wide enough to
+	// be CI-stable in both directions.
+	c := &http.Client{Timeout: 300 * time.Millisecond}
 	data, err := download(context.Background(), c, slow.URL+"/bodek.tar.gz")
 	if err != nil {
 		t.Fatalf("download on a slow link failed: %v", err)
@@ -104,10 +104,14 @@ func TestUpgradeSlowLinkDownloads(t *testing.T) {
 // stamp (v0.1.3-0.20260901abcdef12-abc1234) must compare by its release
 // prefix, not report "already up to date" against every future release.
 func TestNewerPseudoVersion(t *testing.T) {
-	if !update.Newer("v9.9.9", "v0.1.3-0.20260901abcdef12-abc1234") {
+	if !update.Newer("v9.9.9", "v0.1.3-0.20260901000000-abc1234") {
 		t.Fatal("v9.9.9 must be newer than a v0.1.3 pseudo-version stamp")
 	}
-	if update.Newer("v0.1.3", "v0.1.3-0.20260901abcdef12-abc1234") {
+	if update.Newer("v0.1.3", "v0.1.3-0.20260901000000-abc1234") {
 		t.Fatal("v0.1.3 must not upgrade over a v0.1.3 pseudo-version")
+	}
+	// A genuine semver prerelease must not be misparsed as a pseudo-version.
+	if !update.Newer("v1.3.0", "v1.2.0-0.1") {
+		t.Fatal("v1.3.0 must be newer than prerelease v1.2.0-0.1")
 	}
 }
