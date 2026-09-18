@@ -4,7 +4,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"syscall"
 	"testing"
 	"time"
 
@@ -58,12 +57,8 @@ func fakeIgnoreINTScript(t *testing.T) *exec.Cmd {
 	cmd := exec.Command(bin)
 	// Match spawn(): own process group, so signalServer's group-signalled
 	// SIGINT actually targets the fixture alone.
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-	t.Cleanup(func() {
-		if cmd.Process != nil {
-			_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
-		}
-	})
+	fixturePgroup(cmd)
+	t.Cleanup(func() { fixtureGroupKill(cmd) })
 	if err := cmd.Start(); err != nil {
 		t.Fatalf("start fixture: %v", err)
 	}
