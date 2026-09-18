@@ -212,6 +212,17 @@ func run() error {
 	}
 	defer func() { _ = cl.Close() }()
 
+	// Surface the shutdown wait on stderr: Stop blocks up to 8s while odek
+	// serve runs its graceful teardown, and silence reads as a hang.
+	srv.OnStopEvent = func(e server.StopEvent) {
+		switch e {
+		case server.StopStopping:
+			fmt.Fprintln(os.Stderr, "⏻ shutting down odek serve (graceful exit — sandbox teardown and memory flush may take a few seconds)…")
+		case server.StopEscalated:
+			fmt.Fprintln(os.Stderr, "⏻ odek serve did not exit in time — force killing")
+		}
+	}
+
 	cwd, err := os.Getwd()
 	if err != nil {
 		cwd = "."
