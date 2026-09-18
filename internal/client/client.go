@@ -315,7 +315,7 @@ var readIdleTimeout = 45 * time.Second
 
 func (c *Client) readLoop() {
 	defer close(c.Events)
-	defer c.conn.Close() // release the fd even when the sender never closes (reconnect swap)
+	defer func() { _ = c.conn.Close() }() // release the fd even when the sender never closes (reconnect swap)
 	var pending *Event
 	n := 0
 	flush := func() {
