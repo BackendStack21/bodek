@@ -30,8 +30,17 @@ const wsTokenCookie = "odek_ws_token"
 var readyTimeout = 30 * time.Second
 
 // stopTimeout bounds how long Stop waits for the spawned server's graceful
-// shutdown before killing it. It is a variable so tests can shorten it.
-var stopTimeout = 8 * time.Second
+// shutdown before killing it regardless of activity. It is a variable so
+// tests can shorten it.
+var stopTimeout = 30 * time.Second
+
+// activityGrace bounds how long Stop waits for stderr silence before
+// declaring the graceful window dead. It must stay comfortably above the
+// old uniform 8s wait: a silent-but-working teardown (fsync, DB flush)
+// writes nothing while it works, so a short grace would kill progress
+// faster than the code this replaces. It is a variable so tests can
+// shorten it.
+var activityGrace = 12 * time.Second
 
 // StopEvent reports progress of Conn.Stop so callers can show the user what
 // the shutdown wait is doing.
@@ -39,8 +48,18 @@ type StopEvent int
 
 const (
 	StopStopping  StopEvent = iota // graceful SIGINT sent; waiting for exit
-	StopEscalated                  // graceful window expired; SIGKILL sent
+	StopEscalated                  // graceful window expired or silent; SIGKILL sent
+	StopStopped                    // child exited gracefully within the window
 )
+
+// StopProgress reports the countdown while Stop waits for the child to
+// exit: Elapsed since SIGINT, Max the hard deadline, Idle how long the
+// child's stderr has been silent (the escalation trigger).
+type StopProgress struct {
+	Elapsed time.Duration
+	Max     time.Duration
+	Idle    time.Duration
+}
 
 // String renders the event for status lines.
 func (e StopEvent) String() string {
@@ -49,6 +68,8 @@ func (e StopEvent) String() string {
 		return "stopping"
 	case StopEscalated:
 		return "escalated"
+	case StopStopped:
+		return "stopped"
 	default:
 		return fmt.Sprintf("StopEvent(%d)", int(e))
 	}
@@ -68,9 +89,15 @@ type Conn struct {
 	reapDone chan struct{}    // closed when the reaper's Wait returns
 	watch    func()           // cancels the orphan watchdog (nil when none)
 	watchMu  sync.Mutex
+	lastAct  atomic.Int64 // last child stderr write, unix nanos (0 = never)
+	stopping atomic.Bool  // Stop reentrancy guard
 
 	// OnStopEvent, when set, receives shutdown progress from Stop.
 	OnStopEvent func(StopEvent)
+
+	// OnStopProgress, when set, receives ~1s-granularity countdown ticks
+	// during Stop's graceful wait, for live countdown rendering.
+	OnStopProgress func(StopProgress)
 }
 
 // watchdogBin is the executable the orphan watchdog re-execs as. It is a
@@ -186,7 +213,7 @@ func (c *Conn) spawn(opts Options, addr string) error {
 	if stderr == nil {
 		stderr = io.Discard
 	}
-	c.scan = &tokenScanWriter{w: stderr}
+	c.scan = &tokenScanWriter{w: stderr, act: &c.lastAct}
 
 	cmd := exec.Command(bin, args...)
 	cmd.Stderr = c.scan
@@ -262,6 +289,11 @@ func (c *Conn) Stop() {
 	if c == nil || c.proc == nil || c.proc.Process == nil {
 		return
 	}
+	// Reentrancy guard: two concurrent Stops would interleave events and
+	// double-signal. The first caller owns the shutdown.
+	if !c.stopping.CompareAndSwap(false, true) {
+		return
+	}
 	// Graceful shutdown owns the exit — retire the orphan watchdog first.
 	c.watchMu.Lock()
 	if c.watch != nil {
@@ -284,14 +316,55 @@ func (c *Conn) Stop() {
 		done = make(chan struct{})
 		go func() { _ = c.proc.Wait(); close(done) }()
 	}
-	select {
-	case <-done:
-	case <-time.After(stopTimeout):
-		if c.OnStopEvent != nil {
-			c.OnStopEvent(StopEscalated)
+	// Progress-aware escalation (Stop): the idle clock starts at the SIGINT,
+	// and every child stderr write through the scan writer resets it. A
+	// silent child is declared dead after activityGrace — long before the
+	// hard deadline — while an active teardown (memory flush writing output)
+	// earns the full stopTimeout window.
+	c.lastAct.Store(time.Now().UnixNano())
+	start := time.Now()
+	tick := time.NewTicker(250 * time.Millisecond)
+	defer tick.Stop()
+	lastTick := time.Duration(-1)
+	for {
+		select {
+		case <-done:
+			if c.OnStopEvent != nil {
+				c.OnStopEvent(StopStopped)
+			}
+			return
+		case <-tick.C:
+			now := time.Now()
+			if c.OnStopProgress != nil {
+				if s := now.Sub(start).Truncate(time.Second); s != lastTick {
+					lastTick = s
+					c.OnStopProgress(StopProgress{
+						Elapsed: now.Sub(start),
+						Max:     stopTimeout,
+						Idle:    now.Sub(time.Unix(0, c.lastAct.Load())),
+					})
+				}
+			}
+			if now.Sub(time.Unix(0, c.lastAct.Load())) >= activityGrace || now.Sub(start) >= stopTimeout {
+				// Re-check completion first: a child exiting exactly at the
+				// deadline must not be labelled "forcefully" and SIGKILLed
+				// into the void within the 250ms tick window.
+				select {
+				case <-done:
+					if c.OnStopEvent != nil {
+						c.OnStopEvent(StopStopped)
+					}
+					return
+				default:
+				}
+				if c.OnStopEvent != nil {
+					c.OnStopEvent(StopEscalated)
+				}
+				c.signalServer(syscall.SIGKILL)
+				<-done // the kill always lands; never return with a live child
+				return
+			}
 		}
-		c.signalServer(syscall.SIGKILL)
-		<-done // the kill always lands; never return with a live child
 	}
 }
 
@@ -319,7 +392,8 @@ type tokenScanWriter struct {
 	mu   sync.Mutex
 	buf  []byte // partial line not yet terminated by '\n'
 	tok  string
-	tail []string // last complete lines, bounded, for failure diagnostics
+	tail []string      // last complete lines, bounded, for failure diagnostics
+	act  *atomic.Int64 // when set, stamped on every write (shutdown activity clock)
 }
 
 // maxTailLines bounds the stderr tail kept for error reporting.
@@ -327,6 +401,9 @@ const maxTailLines = 4
 
 func (s *tokenScanWriter) Write(p []byte) (int, error) {
 	s.scan(p)
+	if s.act != nil {
+		s.act.Store(time.Now().UnixNano())
+	}
 	return s.w.Write(p)
 }
 

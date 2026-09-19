@@ -12,6 +12,7 @@ import (
 	"runtime"
 	"strings"
 	"syscall"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -212,14 +213,38 @@ func run() error {
 	}
 	defer func() { _ = cl.Close() }()
 
-	// Surface the shutdown wait on stderr: Stop blocks up to 8s while odek
-	// serve runs its graceful teardown, and silence reads as a hang.
+	// Surface the shutdown wait on stderr: Stop blocks up to 30s while odek
+	// serve runs its graceful teardown, and silence reads as a hang. A live
+	// countdown rewrites one line in place (\r — the TUI has already left
+	// the alt screen, so stderr is ours). The \r rewrite only makes sense
+	// on a terminal; pipes and logs get single newline-terminated lines.
+	// Escalation fires only after the child went silent (or the 30s hard
+	// deadline), and the message states the consequence, not a blame: a
+	// force kill may cut a memory flush.
+	interactive := false
+	if st, err := os.Stderr.Stat(); err == nil {
+		interactive = st.Mode()&os.ModeCharDevice != 0
+	}
+	clearTail := ""
+	if interactive {
+		clearTail = "            "
+	}
+	var sElapsed string
 	srv.OnStopEvent = func(e server.StopEvent) {
 		switch e {
 		case server.StopStopping:
-			fmt.Fprintln(os.Stderr, "⏻ shutting down odek serve (graceful exit — sandbox teardown and memory flush may take a few seconds)…")
+			sElapsed = "0s"
+			fmt.Fprintln(os.Stderr, "⏻ shutting down odek serve…")
 		case server.StopEscalated:
-			fmt.Fprintln(os.Stderr, "⏻ odek serve did not exit in time — force killing")
+			fmt.Fprintf(os.Stderr, "\r⏻ odek serve stopped forcefully after %s — memory flush may be incomplete.%s\n", sElapsed, clearTail)
+		case server.StopStopped:
+			fmt.Fprintf(os.Stderr, "\r✓ odek shut down cleanly in %s.%s\n", sElapsed, clearTail)
+		}
+	}
+	srv.OnStopProgress = func(p server.StopProgress) {
+		sElapsed = p.Elapsed.Truncate(time.Second).String()
+		if interactive {
+			fmt.Fprintf(os.Stderr, "\r⏻ shutting down odek serve… %s / %s   ", sElapsed, p.Max)
 		}
 	}
 
