@@ -8,8 +8,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
-// W1 hardening — sanitize coverage, width-discipline, and wire-field hygiene.
-// Regression tests for the judge-5 robustness audit (see .ux-review/).
+// Hardening — sanitize coverage, width-discipline, and wire-field hygiene.
 
 func TestSanitizeStripsInvisibleClasses(t *testing.T) {
 	cases := []struct{ name, in, want string }{

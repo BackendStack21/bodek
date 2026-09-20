@@ -6,7 +6,7 @@ import (
 	"github.com/BackendStack21/bodek/internal/client"
 )
 
-// Round-4 wave-1 regressions: runCtxCum reset on error, usage straggler
+// Telemetry event regressions: runCtxCum reset on error, usage straggler
 // must not open an orphan turn, stale wakeArmed must not mislabel.
 
 func TestErrorResetsRunCtxCum(t *testing.T) {
