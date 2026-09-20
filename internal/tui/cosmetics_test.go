@@ -10,8 +10,7 @@ import (
 	"github.com/muesli/termenv"
 )
 
-// ── C2: the first-run home signposts the core interactions ────────────────
-
+// the first-run home signposts the core interactions ───────────────
 // TestWelcomeTipSignpostsCoreInteractions: the welcome tip must name the
 // core composer interactions and command discovery.
 func TestWelcomeTipSignpostsCoreInteractions(t *testing.T) {
@@ -21,7 +20,7 @@ func TestWelcomeTipSignpostsCoreInteractions(t *testing.T) {
 			t.Errorf("welcome tip missing %q:\n%s", want, out)
 		}
 	}
-	// C11: the ^K microcopy reads as a verb, not jargon.
+	// the ^K microcopy reads as a verb, not jargon.
 	if !strings.Contains(out, "^K commands") {
 		t.Errorf("welcome tip should identify the command palette:\n%s", out)
 	}
@@ -30,8 +29,7 @@ func TestWelcomeTipSignpostsCoreInteractions(t *testing.T) {
 	}
 }
 
-// ── C4: one failure glyph ──────────────────────────────────────────────────
-
+// one failure glyph ─────────────────────────────────────────────────
 // TestFailureGlyphStandardized: ✗ is the single failure glyph; the lamp
 // set must not carry the stray ✕.
 func TestFailureGlyphStandardized(t *testing.T) {
@@ -40,8 +38,7 @@ func TestFailureGlyphStandardized(t *testing.T) {
 	}
 }
 
-// ── C5: lamp glyphs belong to the connection state alone ──────────────────
-
+// lamp glyphs belong to the connection state alone ─────────────────
 // TestLampGlyphsReserved: no other surface may reuse ● ◉ ◌ ○ — those four
 // cells are the connection lamp's vocabulary.
 func TestLampGlyphsReserved(t *testing.T) {
@@ -61,8 +58,7 @@ func TestLampGlyphsReserved(t *testing.T) {
 	}
 }
 
-// ── C3: header instruments get a first-turn decoder ───────────────────────
-
+// header instruments get a first-turn decoder ──────────────────────
 // TestCtxHintOnFirstPrompt: the first real prompt teaches what the ctx
 // gauge and the connection lamp mean.
 func TestCtxHintOnFirstPrompt(t *testing.T) {
@@ -88,8 +84,7 @@ func TestCtxHintOnFirstPrompt(t *testing.T) {
 	}
 }
 
-// ── C11: microcopy ────────────────────────────────────────────────────────
-
+// microcopy ───────────────────────────────────────────────────────
 // TestSwarmHintMicrocopy: the swarm tip speaks in plain verbs.
 func TestSwarmHintMicrocopy(t *testing.T) {
 	if strings.Contains(hintSwarmText, "registry") || strings.Contains(hintSwarmText, "chips") {
@@ -113,8 +108,7 @@ func TestElapsedCarriesLabel(t *testing.T) {
 	}
 }
 
-// ── C1: the faint contract — body text never renders in faint ────────────
-
+// the faint contract — body text never renders in faint ───────────
 // TestStepArgNotFaint: step arguments are machine-voice secondary text and
 // must take muted, not the chrome-only faint token.
 func TestStepArgNotFaint(t *testing.T) {
@@ -127,8 +121,7 @@ func TestStepArgNotFaint(t *testing.T) {
 	}
 }
 
-// ── C9: the queued count lives in the footer alone ────────────────────────
-
+// the queued count lives in the footer alone ───────────────────────
 // TestApprovalHeadDropsQueuedChip: with a queue behind the head approval,
 // the card head no longer repeats the count the footer already carries.
 func TestApprovalHeadDropsQueuedChip(t *testing.T) {
@@ -138,7 +131,7 @@ func TestApprovalHeadDropsQueuedChip(t *testing.T) {
 	if strings.Contains(body, "queued") {
 		t.Errorf("approval card head still carries the queued count:\n%s", body)
 	}
-	// F1: the shelf chip is the single owner of the PROMPT-queue count — the
+	// the shelf chip is the single owner of the PROMPT-queue count — the
 	// footer must not repeat it (the approval head's own queue hint stays).
 	foot := plain(m.footer())
 	if strings.Contains(foot, "▸") && strings.Contains(foot, "queued") {

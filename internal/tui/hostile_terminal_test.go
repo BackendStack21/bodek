@@ -7,10 +7,9 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
-// W6 — hostile terminals (contained items). Regression tests for the
-// judge-5 audit E1 and the statusLine clamp.
+// Hostile terminals (contained items), plus the statusLine clamp.
 
-// E1: below the old 3-row viewport floor the View was taller than the
+// below the old 3-row viewport floor the View was taller than the
 // terminal — permanent scroll jitter in alt-screen. The View must fit at
 // any height ≥ the minimum layout.
 func TestViewFitsShortTerminals(t *testing.T) {

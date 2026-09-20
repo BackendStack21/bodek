@@ -1389,7 +1389,7 @@ func (m *Model) relayout() {
 	vpH := m.height - headerHeight - footerHeight - m.inputAreaHeight() - sheet
 	// Degradation ladder, step 1: when the layout doesn't fit, give the
 	// transcript rows back by shrinking the composer first — a one-visible-
-	// row terminal beats a View that never fits (judge-5 E1).
+	// row terminal beats a View that never fits.
 	if vpH < 1 && m.ta.Height() > 1 {
 		over := 1 - vpH
 		m.ta.SetHeight(max(1, m.ta.Height()-over))

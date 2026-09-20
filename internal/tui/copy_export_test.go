@@ -9,10 +9,9 @@ import (
 	"github.com/BackendStack21/bodek/internal/client"
 )
 
-// W3 — clipboard & export. Regression tests for the judge-2 audit
-// (see .ux-review/judge2_copy_export.md).
+// Clipboard & export.
 
-// F3/P1: raw cards (help/stats) carry styled ANSI — ^Y after /help must
+// raw cards (help/stats) carry styled ANSI — ^Y after /help must
 // copy the last real reply, never the card.
 func TestLastReplySkipsRawCards(t *testing.T) {
 	m := newTestModel()
@@ -30,7 +29,7 @@ func TestLastReplySkipsRawCards(t *testing.T) {
 	}
 }
 
-// F1/F8: exports never silently overwrite — same base gets -1, -2… suffixes.
+// Exports never silently overwrite — same base gets -1, -2… suffixes.
 func TestWriteExportNeverOverwrites(t *testing.T) {
 	dir := t.TempDir()
 	p1, err := writeExport(dir, "sess-abc123", "md", []byte("one"))
@@ -56,7 +55,7 @@ func TestWriteExportNeverOverwrites(t *testing.T) {
 	}
 }
 
-// F1/P0: /export exists in the registry with an honest format guard.
+// /export exists in the registry with an honest format guard.
 func TestExportCommandRegistered(t *testing.T) {
 	found := false
 	for _, c := range slashCommands() {
@@ -77,7 +76,7 @@ func TestExportCommandRegistered(t *testing.T) {
 	}
 }
 
-// F2/P0: remote sessions skip exec helpers — the clipboard that matters is
+// remote sessions skip exec helpers — the clipboard that matters is
 // on the machine running the terminal.
 func TestClipboardToolRemotePrefersOSC52(t *testing.T) {
 	t.Setenv("SSH_TTY", "/dev/ttys004")

@@ -59,8 +59,7 @@ func (m *Model) plainView() string {
 	return strings.Join(parts, "\n")
 }
 
-// ── header ─────────────────────────────────────────────────────────────────
-
+// ── header ────────────────────────────────────────────────────────────────
 func (m *Model) header() string {
 	th := m.th
 	// The logo gradient is width-independent, so render it once and cache it
@@ -334,7 +333,7 @@ func (m *Model) statusLine() string {
 		return ""
 	}
 	th := m.th
-	// F2: a dropped socket is exactly when the reader needs this row —
+	// a dropped socket is exactly when the reader needs this row —
 	// instead of hiding, the status line owns the reconnect state in-place.
 	if m.disconn {
 		label := "◌ disconnected · ⏎ retry"
@@ -390,8 +389,7 @@ func (m *Model) statusLineVisible() bool {
 	return (m.busy || m.disconn) && m.curApproval() == nil
 }
 
-// ── transcript ───────────────────────────────────────────────────────────
-
+// ── transcript ──────────────────────────────────────────────────────────
 // streamRenderInterval is the coalescing window for high-frequency streaming
 // events (tokens, thinking): instead of rebuilding the viewport — which
 // re-runs glamour on the streaming tail — per event, they share one rebuild.
@@ -1486,8 +1484,7 @@ func (m *Model) renderNotices() string {
 	return line
 }
 
-// ── input / approval area ──────────────────────────────────────────────────
-
+// ── input / approval area ─────────────────────────────────────────────────
 func (m *Model) inputArea() string {
 	box := m.th.inputBox.Width(m.cardWidth()).Render(m.ta.View())
 	var above []string
@@ -1643,8 +1640,7 @@ func (m *Model) approvalBody() string {
 	return strings.Join(lines, "\n")
 }
 
-// ── footer ─────────────────────────────────────────────────────────────────
-
+// ── footer ────────────────────────────────────────────────────────────────
 func (m *Model) footer() string {
 	return ansi.Truncate(m.footerContent(), max(1, m.width), "")
 }
@@ -2025,8 +2021,7 @@ func (m *Model) panelFooter(hints ...string) string {
 	return ansi.Truncate(out+last, max(1, m.width), "")
 }
 
-// ── small helpers ──────────────────────────────────────────────────────────
-
+// ── small helpers ─────────────────────────────────────────────────────────
 // plural renders a count with its noun inflected: plural(1, "match",
 // "matches"), plural(3, "approval", "approvals"). Every "%d <noun>" surface
 // goes through this so a single hit can never read as "1 matches" again.

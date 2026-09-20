@@ -7,10 +7,9 @@ import (
 	"github.com/BackendStack21/bodek/internal/client"
 )
 
-// W2 — visible state & the escape stack. Regression tests for the
-// judge-3 interaction audit (see .ux-review/judge3_interaction.md).
+// Visible state & the escape stack.
 
-// F1/P0: an armed stop-agent gate must be visible when armed from the
+// an armed stop-agent gate must be visible when armed from the
 // composer (panel == none) — footer carries the headline and the y confirm.
 func TestStopAgentGateVisibleFromComposer(t *testing.T) {
 	m := newTestModel()
@@ -22,7 +21,7 @@ func TestStopAgentGateVisibleFromComposer(t *testing.T) {
 	}
 }
 
-// F2/P1: a disarmed printable rune falls through to the composer — the gate
+// a disarmed printable rune falls through to the composer — the gate
 // eats exactly one decision key, never the user's first keystroke.
 func TestDisarmedRuneFallsThroughToComposer(t *testing.T) {
 	m := newTestModel()
@@ -41,7 +40,7 @@ func TestDisarmedRuneFallsThroughToComposer(t *testing.T) {
 	}
 }
 
-// F4/P1: lowercase n is next (vim/less reflex), never query corruption.
+// lowercase n is next (vim/less reflex), never query corruption.
 func TestFindNextBinding(t *testing.T) {
 	m := newTestModel()
 	m.msgs = append(m.msgs,
@@ -65,7 +64,7 @@ func TestFindNextBinding(t *testing.T) {
 	}
 }
 
-// F10/P2: queue deletes are two-step — first d arms, second d deletes.
+// queue deletes are two-step — first d arms, second d deletes.
 func TestQueueDeleteTwoStep(t *testing.T) {
 	m := newTestModel()
 	m.queue = []string{"alpha", "beta"}
@@ -108,7 +107,7 @@ func TestEventsSelectionRendered(t *testing.T) {
 	}
 }
 
-// F3/P1: /help teaches only real keys — no phantom r, and the marquee
+// /help teaches only real keys — no phantom r, and the marquee
 // features (^S stop sub-agent, alt+f find, ^K palette) are listed.
 func TestHelpTeachesRealKeys(t *testing.T) {
 	m := newTestModel()
@@ -124,7 +123,7 @@ func TestHelpTeachesRealKeys(t *testing.T) {
 	}
 }
 
-// F7/P2: turn jumps name their landing spot — the copy target (alt+y) is
+// turn jumps name their landing spot — the copy target (alt+y) is
 // verifiable on screen.
 func TestJumpTurnReportsLanding(t *testing.T) {
 	m := newTestModel()

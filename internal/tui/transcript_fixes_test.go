@@ -8,8 +8,7 @@ import (
 	"github.com/BackendStack21/bodek/internal/client"
 )
 
-// ── F1: the queue count has a single owner — the shelf chip ────────────────
-
+// the queue count has a single owner — the shelf chip ───────────────
 // TestQueueCountSingleOwner: with prompts queued mid-turn, the shelf chip is
 // the ONLY surface carrying the count — the status line and the footer must
 // not repeat it.
@@ -31,8 +30,7 @@ func TestQueueCountSingleOwner(t *testing.T) {
 	}
 }
 
-// ── F2: the status line never hides on disconnect ──────────────────────────
-
+// the status line never hides on disconnect ─────────────────────────
 // TestStatusLineReconnectState: while disconnected the status line renders
 // the reconnect state in-place instead of vanishing — and never shows the
 // normal busy spinner label.
@@ -67,8 +65,7 @@ func TestStatusLineReconnectState(t *testing.T) {
 	}
 }
 
-// ── F3: one steady new-output row — no insert/remove reflow ────────────────
-
+// one steady new-output row — no insert/remove reflow ───────────────
 // TestNewOutputRowSteady: the new-output indicator lives on ONE footer row
 // that never inserts or removes a line — the layout height must not change
 // when the busy state toggles while scrolled up.
@@ -101,8 +98,7 @@ func TestNewOutputRowSteady(t *testing.T) {
 	}
 }
 
-// ── F4: a failed turn marks its head ───────────────────────────────────────
-
+// a failed turn marks its head ──────────────────────────────────────
 // TestFailedTurnHeadMarked: an error event on the streaming turn sets a
 // sanitized failed flag that paints ✗ on the turn head and survives
 // finalization within this session. (Replay does not restore it: the
@@ -143,8 +139,7 @@ func TestFailedTurnHeadMarked(t *testing.T) {
 	}
 }
 
-// ── F5: visible notices are capped to one line ─────────────────────────────
-
+// visible notices are capped to one line ────────────────────────────
 // TestNoticeCapOneLine: only the latest unexpired notice renders, folded into
 // a single line; older ones collapse into a count instead of stacking.
 func TestNoticeCapOneLine(t *testing.T) {

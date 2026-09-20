@@ -88,7 +88,7 @@ func TestQuitGateOtherKeyDisarms(t *testing.T) {
 	}
 	// The gate eats exactly one decision key: the disarming printable rune
 	// falls through to the composer, so "esc/^C, keep typing" never loses a
-	// character (judge-3 F2).
+	// character.
 	if got := m.ta.Value(); got != "n" {
 		t.Errorf("disarm keypress did not reach the input: %q", got)
 	}
