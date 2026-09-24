@@ -330,7 +330,7 @@ type Model struct {
 	usageSnap  *client.Usage
 
 	sessCtxTok     int
-	subCosts       map[string]float64 // finished sub-agent final costs by task id (wire v2 P6)
+	subCosts       map[string]float64 // finished sub-agent final costs by task id
 	sessOutTok     int
 	winCtxTok      int // live context-window fill: last parent prompt (windowTokens)
 	runCtxCum      int // pre-v2.3: last cumulative contextTokens (fill = delta)

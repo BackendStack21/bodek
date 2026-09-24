@@ -111,7 +111,7 @@ func TestBuildProgramOptionsDefault(t *testing.T) {
 	if len(opts) != want {
 		t.Fatalf("expected %d default program options (filter, assembler, alt-screen, mouse), got %d", want, len(opts))
 	}
-	// Sanity check: the option is callable like a real tea.ProgramOption.
+	// The option is callable like a real tea.ProgramOption.
 	var p tea.Program
 	_ = p
 	_ = opts[0]

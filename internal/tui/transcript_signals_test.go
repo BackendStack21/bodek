@@ -1,7 +1,7 @@
 package tui
 
-// R1–R5 transcript-signal refinements, written RED-first. Each test pins one
-// refinement: generalized verdict chips (build/vet/race), collapsed dot
+// Transcript-signal refinements. Each test pins one
+// behavior: generalized verdict chips (build/vet/race), collapsed dot
 // tallies, per-child agent state glyphs, chip-style receipts, and the
 // last-event age stamp on the streaming head.
 
@@ -15,7 +15,7 @@ import (
 	"github.com/BackendStack21/bodek/internal/client"
 )
 
-// ── R1: verdict chips for build / vet / lint / race ─────────────────────────
+// ── verdict chips for build / vet / lint / race ─────────────────────────────
 
 func TestBuildVerdictChips(t *testing.T) {
 	th := newTheme()
@@ -77,7 +77,7 @@ func TestLintChipVocabulary(t *testing.T) {
 	}
 }
 
-// ── R2: collapsed dot tallies ───────────────────────────────────────────────
+// ── collapsed dot tallies ───────────────────────────────────────────────────
 
 func TestCollapseTallyDots(t *testing.T) {
 	m := newTestModel()
@@ -93,7 +93,7 @@ func TestCollapseTallyDots(t *testing.T) {
 	if !strings.Contains(got, "3 tool steps · ··✗") {
 		t.Errorf("collapsed summary missing dot tally: %q", got)
 	}
-	// Sanity: all-fine turn shows no ✗.
+	// All-fine turn shows no ✗.
 	ok := message{role: roleAsst, collapsed: true,
 		steps: []step{{name: "read_file", arg: "a.go", done: true, result: "ok"}}}
 	if !strings.Contains(m.collapseSummary(ok), "1 tool step · ·") {
@@ -113,7 +113,7 @@ func TestCollapseTallyDots(t *testing.T) {
 	}
 }
 
-// ── R3: per-child agent state glyphs ────────────────────────────────────────
+// ── per-child agent state glyphs ────────────────────────────────────────────
 
 func TestAgentStateGlyphVocabulary(t *testing.T) {
 	cases := []struct {
@@ -144,7 +144,7 @@ func TestAgentStateGlyphVocabulary(t *testing.T) {
 	}
 }
 
-// ── R4: chip-style turn receipt ─────────────────────────────────────────────
+// ── chip-style turn receipt ─────────────────────────────────────────────────
 
 func TestReceiptChips(t *testing.T) {
 	r := receipt{files: 2, adds: 3, dels: 1, hasDiff: true, tests: "✓"}
@@ -157,7 +157,7 @@ func TestReceiptChips(t *testing.T) {
 	}
 }
 
-// ── R5: last-event age on the streaming head ────────────────────────────────
+// ── last-event age on the streaming head ────────────────────────────────
 
 func staleFixture() (*Model, func(time.Time)) {
 	m := newTestModel()

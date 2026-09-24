@@ -5,11 +5,11 @@
 [![Go Reference](https://pkg.go.dev/badge/github.com/BackendStack21/bodek.svg)](https://pkg.go.dev/github.com/BackendStack21/bodek)
 [![Go Report Card](https://goreportcard.com/badge/github.com/BackendStack21/bodek)](https://goreportcard.com/report/github.com/BackendStack21/bodek)
 
-**A beautiful [Bubble Tea](https://github.com/charmbracelet/bubbletea) terminal interface for the [odek](https://github.com/BackendStack21/odek) agent.**
+**A [Bubble Tea](https://github.com/charmbracelet/bubbletea) terminal interface for the [odek](https://github.com/BackendStack21/odek) agent.**
 
 bodek is a **pure front-end**. It launches (or attaches to) an `odek serve`
 instance and renders the agent's live stream — reasoning, tokens, tool calls,
-approvals, skills, and memory — as a polished TUI. Every bit of agent
+approvals, skills, and memory — in a full-featured TUI. Every bit of agent
 behaviour (tools, danger gating, sandbox, skills, memory, sessions) comes from
 **odek itself**; bodek never re-implements any of it.
 
@@ -439,7 +439,7 @@ prompt can start with `?`, `[`, or any other character.
 Click a tool header or reasoning block to inspect it; while inspecting, `↑`/
 `↓` move between items and Enter expands the focused one. Tool responses
 display at most eight body rows plus a paging indicator, with fewer
-rows in short terminals. Use `PgUp`/`PgDn` to page, `Alt+Y` to copy the
+rows in short terminals. Use `PgUp`/`PgDn` to page, `alt+y` to copy the
 retained response, and Escape to return to typing. The global `^E`
 details toggle uses the same page limits.
 

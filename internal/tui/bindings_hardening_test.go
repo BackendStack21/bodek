@@ -11,7 +11,7 @@ import (
 
 // ── adversarial-review hardening (R1/R2/R3 findings) ────────────────────────
 
-// R1-F2/R1-F4: shift+digit and shift+punctuation chords must NOT decode to
+// Shift+digit and shift+punctuation chords must NOT decode to
 // the unshifted glyph (keyboard-layout-dependent) — they surface as the
 // unmapped sentinel; unmodified CSI-u printables pass through as typed text.
 func TestShiftDigitBecomesSentinelNotGlyph(t *testing.T) {
@@ -29,7 +29,7 @@ func TestShiftDigitBecomesSentinelNotGlyph(t *testing.T) {
 	}
 }
 
-// R1-F6: kitty key-release reports (event types 2/3) must never decode as a
+// Kitty key-release reports (event types 2/3) must never decode as a
 // fresh keypress — a release of Enter must not submit twice.
 func TestKittyReleaseEventsIgnored(t *testing.T) {
 	for _, seq := range []string{"\x1b[13;1;2u", "\x1b[13;1;3u", "\x1b[13;5;3u"} {
@@ -45,7 +45,7 @@ func TestKittyReleaseEventsIgnored(t *testing.T) {
 	}
 }
 
-// R2-F1: the sentinel must never type into any capture surface. It is
+// The sentinel must never type into any capture surface. It is
 // intercepted at the top of handleKey — verify for the AC popup path.
 func TestUnmappedChordNeverTypesAnywhere(t *testing.T) {
 	m := newTestModel()
@@ -73,7 +73,7 @@ func TestUnmappedChordNeverTypesAnywhere(t *testing.T) {
 	}
 }
 
-// R2-F2: a newline chord on the AC popup must insert a newline but NOT
+// A newline chord on the AC popup must insert a newline but NOT
 // auto-accept the completion (no expanded completion text splices in) —
 // Enter alone accepts. The popup may close naturally when the newline
 // ends the completion token, same as typing a space.
@@ -89,7 +89,7 @@ func TestACNewlineChordDoesNotAccept(t *testing.T) {
 	}
 }
 
-// R3-G5: the ^K gate must also hold while a clarify card is head.
+// The ^K gate must also hold while a clarify card is head.
 func TestCtrlKGatedDuringClarify(t *testing.T) {
 	m := newTestModel()
 	m.handleEvent(client.Event{Type: "clarify_request", ID: "clr", Question: "which one?"})
@@ -107,7 +107,7 @@ func TestCtrlKGatedDuringClarify(t *testing.T) {
 	}
 }
 
-// R3-G4: bare s/x must not answer a suggestion while the queue strip holds
+// Bare s/x must not answer a suggestion while the queue strip holds
 // focus — the strip owns the keyboard until esc/⏎/^Q.
 func TestQFocusBlocksPlainSuggestKeys(t *testing.T) {
 	m := newTestModel()

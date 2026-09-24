@@ -73,7 +73,7 @@ func jobsMux(t *testing.T, jobsJSON string, extra map[string]http.HandlerFunc) (
 	return m, &seen
 }
 
-// ── M2: jobs drawer tab ──────────────────────────────────────────────────────
+// ── jobs drawer tab ──────────────────────────────────────────────────────────
 
 func TestJobsTabRowsAndSelection(t *testing.T) {
 	m := newJobsTestModel(t, nil)
@@ -243,7 +243,7 @@ func TestJobsSlashCommandAndPalette(t *testing.T) {
 	}
 }
 
-// ── M3: lifecycle watcher ────────────────────────────────────────────────────
+// ── lifecycle watcher ────────────────────────────────────────────────────────
 
 func TestJobsWatcherBaselineAndDiffNotes(t *testing.T) {
 	m := newJobsTestModel(t, nil)

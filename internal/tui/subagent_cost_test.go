@@ -8,8 +8,8 @@ import (
 )
 
 // Sub-agent LLM calls cost real money, and odek reports each finished
-// task's final spend (cost_usd on the finished subagent_state frame —
-// wire v2 P6). The session-cost surfaces — header, /stats, and the
+// task's final spend (cost_usd on the finished subagent_state frame).
+// The session-cost surfaces — header, /stats, and the
 // cockpit cap row — must add that spend on top of the main-loop token
 // estimate, summed once per task id so replayed frames never double-count.
 
