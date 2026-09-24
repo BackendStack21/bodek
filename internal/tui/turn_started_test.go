@@ -51,7 +51,7 @@ func TestTurnStartedOperatorOpensPlainRemoteCard(t *testing.T) {
 	}
 }
 
-// R2 idempotency: a replayed turn_started must not stack a second card.
+// A replayed turn_started must not stack a second card.
 func TestTurnStartedIdempotent(t *testing.T) {
 	m := newTestModel()
 	m.handleEvent(client.Event{Type: "turn_started", TurnID: "t_ab12", Initiated: "system"})

@@ -37,7 +37,7 @@ func TestTurnStartedDecode(t *testing.T) {
 	}
 }
 
-// R3: streamed frames carry turn_id while a turn is live.
+// Streamed frames carry turn_id while a turn is live.
 func TestTurnIDOnStreamedFrames(t *testing.T) {
 	var ev Event
 	if err := json.Unmarshal([]byte(`{"type":"tool_call","name":"shell","data":"{}","turn_id":"t_0123abcd"}`), &ev); err != nil {

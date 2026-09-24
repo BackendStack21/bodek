@@ -8,10 +8,9 @@ import (
 	"github.com/BackendStack21/bodek/internal/client"
 )
 
-// ── enhanced-key chord fixes (plan: .plans/KEY_BINDINGS_FIX_PLAN.md) ────────
-// RED-first: ctrl+enter must be distinguishable from plain enter, shifted
-// CSI letter chords must reach the composer, and the shift+enter sentinel
-// must not leak into the friction confirmation buffer.
+// Enhanced-key chord contract: ctrl+enter must be distinguishable from plain
+// enter, shifted CSI letter chords must reach the composer, and the
+// shift+enter sentinel must not leak into the friction confirmation buffer.
 
 // TestFilterRewritesCtrlEnterCSI pins the decode of Ctrl+Enter from kitty
 // CSI-u and xterm modifyOtherKeys encodings: today the ctrl modifier is
