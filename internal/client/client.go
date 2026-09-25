@@ -13,7 +13,6 @@ import (
 	"net"
 	"net/http"
 	"net/url"
-	"strings"
 	"sync"
 	"time"
 
@@ -323,11 +322,13 @@ func dialWS(cfg *ws.Config) (*ws.Conn, error) {
 // scheme's standard port when absent (odek serve always prints one, but a
 // hand-typed ws://host URL should still dial).
 func hostPortAddr(u *url.URL) string {
-	if u.Host != "" && !strings.Contains(u.Host, ":") {
+	if u.Host != "" && u.Port() == "" {
+		// u.Port() is empty for bare hosts AND bracketed IPv6 literals
+		// ("[::1]" contains ':' but no port) — both get the scheme default.
 		if u.Scheme == "wss" || u.Scheme == "https" {
-			return u.Host + ":443"
+			return net.JoinHostPort(u.Hostname(), "443")
 		}
-		return u.Host + ":80"
+		return net.JoinHostPort(u.Hostname(), "80")
 	}
 	return u.Host
 }

@@ -294,6 +294,11 @@ func (c *Conn) Stop() {
 	if !c.stopping.CompareAndSwap(false, true) {
 		return
 	}
+	// An already-reaped child must not be signalled: the PID may have been
+	// recycled and the group kill would hit an innocent process.
+	if c.reaped.Load() {
+		return
+	}
 	// Graceful shutdown owns the exit — retire the orphan watchdog first.
 	c.watchMu.Lock()
 	if c.watch != nil {
@@ -375,8 +380,10 @@ func splitTokenURL(raw string) (base, token string) {
 	if err != nil {
 		return raw, ""
 	}
-	token = u.Query().Get("token")
-	u.RawQuery = ""
+	q := u.Query()
+	token = q.Get("token")
+	q.Del("token") // strip only the token; other params must survive
+	u.RawQuery = q.Encode()
 	u.Fragment = ""
 	return u.String(), token
 }
@@ -452,6 +459,13 @@ func (s *tokenScanWriter) scan(p []byte) {
 // appendTail splits p into complete lines and keeps the last maxTailLines
 // of them in the diagnostics tail. Callers hold s.mu.
 func (s *tokenScanWriter) appendTail(p []byte) {
+	// A chunk may start with the tail of a line whose head was buffered by
+	// a previous partialTail call — merge before splitting, or the line
+	// lands severed in the diagnostics tail.
+	if len(s.buf) > 0 {
+		p = append(s.buf, p...)
+		s.buf = nil
+	}
 	rest := p
 	for {
 		i := bytes.IndexByte(rest, '\n')

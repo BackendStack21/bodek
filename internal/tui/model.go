@@ -578,6 +578,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// the keyboard after busy is already false.
 		m.approvals = nil
 		m.apprDeadlines = nil
+		m.apprBells = nil // lockstep with apprDeadlines — a stale latch must not leak
 		m.resetApprovalInput()
 		m.clearClarify()
 		m.relayout() // the busy status line releases its row
@@ -1189,6 +1190,14 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (m *Model) clearConversation() tea.Cmd {
 	m.inspect = nil
 	m.focusIdx = -1 // stale anchor would copy/move against the regrown transcript
+	// Pending approvals and clarify die with the conversation — leaving them
+	// armed captures the keyboard over a request with no turn behind it
+	// (the same contract done/error/disconnect document).
+	m.approvals = nil
+	m.apprDeadlines = nil
+	m.apprBells = nil
+	m.resetApprovalInput()
+	m.clearClarify()
 	captureHome(m)
 	m.msgs = nil
 	m.curIdx = -1

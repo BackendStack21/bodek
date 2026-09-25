@@ -63,6 +63,11 @@ type ModelInfo struct {
 	Current     bool   `json:"current"`
 }
 
+// maxJSONBytes bounds any single REST JSON decode (sessions, models, jobs…).
+// Transcripts can be large, but a broken server streaming unbounded bytes
+// must not OOM the client.
+const maxJSONBytes = 256 << 20
+
 // Sessions lists recent saved sessions (auth tokens are not included).
 func (c *Client) Sessions() ([]Session, error) {
 	var out []Session
@@ -391,5 +396,7 @@ func (c *Client) getJSON(u, sessionToken string, dst interface{}) error {
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("status %s", resp.Status)
 	}
-	return json.NewDecoder(resp.Body).Decode(dst)
+	// Bound the decode: a broken or hostile server streaming unbounded
+	// bytes must not OOM bodek (ExportSession already does this).
+	return json.NewDecoder(io.LimitReader(resp.Body, maxJSONBytes)).Decode(dst)
 }

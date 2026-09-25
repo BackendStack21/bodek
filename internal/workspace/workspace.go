@@ -61,14 +61,31 @@ func Open() *Store {
 	if json.Unmarshal(data, &f) != nil || f.Workspaces == nil {
 		// Corrupt on disk: quarantine instead of silently resetting, so a
 		// torn write never destroys every draft/queue/session undiagnosably
-		// (mirrors tokens.go).
-		if qerr := os.Rename(s.path, s.path+".corrupt"); qerr == nil {
+		// (mirrors tokens.go, including backup rotation).
+		if qerr := quarantine(s.path); qerr == nil {
 			fmt.Fprintf(os.Stderr, "bodek: warning: corrupt %s quarantined as %s.corrupt\n", s.path, s.path)
+		} else {
+			// Quarantine failed: never overwrite bytes we could not parse.
+			fmt.Fprintf(os.Stderr, "bodek: warning: corrupt %s kept in place: %v\n", s.path, qerr)
+			s.path = ""
 		}
 		return s
 	}
 	s.all = f.Workspaces
 	return s
+}
+
+// quarantine sets a corrupt store aside as <path>.corrupt, rotating any
+// earlier backup to .corrupt.1 so repeat corruption never destroys the
+// previous quarantined evidence (POSIX rename replaces its destination).
+func quarantine(path string) error {
+	dst := path + ".corrupt"
+	if _, err := os.Stat(dst); err == nil {
+		if err := os.Rename(dst, dst+".1"); err != nil {
+			return err
+		}
+	}
+	return os.Rename(path, dst)
 }
 
 // reloadLocked re-reads the on-disk store and adopts the on-disk state for
