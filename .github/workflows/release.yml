@@ -31,3 +31,76 @@ jobs:
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  sign:
+    name: Sign artifacts
+    needs: goreleaser
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write # OIDC identity for Sigstore keyless signing / attestation
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - name: download release assets
+        run: |
+          mkdir dist
+          gh release download "${GITHUB_REF_NAME}" --repo "${GITHUB_REPOSITORY}" --dir dist
+
+      - name: verify checksums
+        working-directory: dist
+        run: sha256sum -c checksums.txt
+
+      # SPDX SBOM so the SBOM ships signed like every other asset.
+      - name: SBOM
+        uses: anchore/sbom-action@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2
+        with:
+          format: spdx-json
+          output-file: dist/bodek-${{ github.ref_name }}-sbom.spdx.json
+          upload-artifact: false
+          upload-release-assets: false
+
+      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+        with:
+          cosign-release: v3.1.3 # pinned: a future cosign major must not break a tagged release mid-flight
+
+      # Keyless signing: Fulcio cert bound to this workflow's OIDC identity,
+      # logged in Rekor. Explicit file list (not a glob of everything) so
+      # generated .bundle outputs can never be re-signed.
+      - name: sign artifacts
+        working-directory: dist
+        run: |
+          FILES="checksums.txt"
+          for f in bodek_*.tar.gz bodek_*.zip; do
+            FILES="$FILES $f"
+          done
+          for f in $FILES bodek-*-sbom.spdx.json; do
+            cosign sign-blob --yes --bundle "${f}.bundle" "$f"
+          done
+
+      # in-toto attestation naming the exact source commit each artifact was
+      # built from. Predicate type "custom" keeps the step free of cosign's
+      # SLSA schema validation; the content is SLSA-provenance-shaped.
+      - name: provenance attestation
+        working-directory: dist
+        env:
+          GIT_REF: ${{ github.ref }}
+          GIT_SHA: ${{ github.sha }}
+        run: |
+          printf '{
+            "builder": {"id": "https://github.com/BackendStack21/bodek/.github/workflows/release.yml@%s"},
+            "buildType": "https://github.com/BackendStack21/bodek/.github/workflows/release.yml",
+            "invocation": {"configSource": {"uri": "git+https://github.com/BackendStack21/bodek", "digest": {"sha1": "%s"}}},
+            "metadata": {"completeness": {"parameters": true, "environment": false}, "reproducible": false},
+            "materials": [{"uri": "git+https://github.com/BackendStack21/bodek", "digest": {"sha1": "%s"}}]
+          }' "${GIT_REF}" "${GIT_SHA}" "${GIT_SHA}" > provenance.json
+          FILES="checksums.txt"
+          for f in bodek_*.tar.gz bodek_*.zip; do
+            FILES="$FILES $f"
+          done
+          for f in $FILES bodek-*-sbom.spdx.json; do
+            cosign attest-blob --yes --type custom --predicate provenance.json --bundle "${f}.attestation.bundle" "$f"
+          done
+
+      - name: upload signatures
+        run: gh release upload "${GITHUB_REF_NAME}" --repo "${GITHUB_REPOSITORY}" --clobber dist/*.bundle
