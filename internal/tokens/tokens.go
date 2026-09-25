@@ -45,7 +45,7 @@ func openAt(path string) *Store {
 		return s // missing store: fresh start
 	}
 	if err := json.Unmarshal(data, &s.m); err != nil {
-		if qErr := os.Rename(path, path+".corrupt"); qErr == nil {
+		if qErr := quarantine(path); qErr == nil {
 			warnPersist(fmt.Errorf("corrupt store quarantined as %s.corrupt: %w", path, err))
 		} else {
 			warnPersist(fmt.Errorf("corrupt store kept in place: %w", err))
@@ -80,6 +80,7 @@ func (s *Store) Set(id, token string) {
 	if s.m[id] == token {
 		return // no change; skip the disk write
 	}
+	s.mergeLocked()
 	s.m[id] = token
 	s.persistLocked()
 }
@@ -94,8 +95,32 @@ func (s *Store) Delete(id string) {
 	if _, ok := s.m[id]; !ok {
 		return
 	}
+	s.mergeLocked()
 	delete(s.m, id)
 	s.persistLocked()
+}
+
+// mergeLocked adopts the on-disk map wholesale so deletions by a peer
+// converge (a plain add-only merge let a stale peer rewrite every token
+// another instance had deleted on its next unrelated persist). The caller
+// re-applies its own mutation right after — that id wins. Mirrors
+// workspace's reloadLocked.
+func (s *Store) mergeLocked() {
+	if s.path == "" {
+		return
+	}
+	data, err := os.ReadFile(s.path)
+	if err != nil {
+		return // missing or unreadable: keep what we have
+	}
+	var disk map[string]string
+	if json.Unmarshal(data, &disk) != nil {
+		return // corrupt: Open's quarantine owns the diagnosis
+	}
+	if disk == nil {
+		disk = map[string]string{}
+	}
+	s.m = disk
 }
 
 // persistLocked writes the store while the mutex is held. Snapshot-then-
@@ -152,6 +177,19 @@ func persist(path string, m map[string]string) error {
 		return fmt.Errorf("replace store: %w", err)
 	}
 	return nil
+}
+
+// quarantine sets a corrupt store aside as <path>.corrupt, rotating any
+// earlier backup to .corrupt.1 so repeat corruption never destroys the
+// previous quarantined evidence (POSIX rename replaces its destination).
+func quarantine(path string) error {
+	dst := path + ".corrupt"
+	if _, err := os.Stat(dst); err == nil {
+		if err := os.Rename(dst, dst+".1"); err != nil {
+			return err
+		}
+	}
+	return os.Rename(path, dst)
 }
 
 // warnPersist reports a failed best-effort save without aborting the
