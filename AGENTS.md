@@ -9,11 +9,13 @@ Keep it that way.
 
 | Path | Responsibility |
 |------|----------------|
-| `cmd/bodek` | CLI entry point: flags, lifecycle, `version` / `upgrade` subcommands |
-| `internal/server` | Launch / attach to `odek serve`, resolve the auth token |
+| `cmd/bodek` | CLI entry point: flags, lifecycle, `version` / `upgrade` subcommands, connection `diagnose`, and orphan-watchdog re-exec |
+| `internal/server` | Launch / attach to `odek serve`, resolve the auth token, progress-aware shutdown with escalation countdown |
 | `internal/client` | odek serve WebSocket protocol (transport + REST + decoding) |
 | `internal/tokens` | Local persistence of per-session auth tokens |
 | `internal/workspace` | Per-cwd draft, queue, history, and last-session id |
+| `internal/settings` | Persisted front-end preferences (theme, bell, notify, plain, verbosity, thinking, resume, reduce-motion) at `~/.bodek/config.json`; flag > file > default resolution with a theme-only `BODEK_THEME` env override (`BODEK_CONFIG` relocates the file); odek's config is untouched |
+| `internal/watchdog` | Orphan guard: re-execs a tiny watchdog that terminates `odek serve` when the bodek parent dies for any reason (per-platform impls) |
 | `internal/tui` | The Bubble Tea model, update loop, panels, and view |
 | `internal/update` | Self-upgrade: fetch and swap in the latest GitHub release binary |
 
@@ -170,8 +172,9 @@ feat(tui): compact tool steps with Ctrl+E details toggle
   an approval or clarify card is head, and queue-strip focus outranks the
   skill-suggestion chip (its chords never answer a passive card while
   `qfocus` is set). Bare `s`/`x` save/skip a pending suggestion only on an
-  empty draft — the same modifier-free fallback approvals use for
-  terminals that cannot deliver Alt chords (macOS Option-as-UTF-8).
+  empty draft — see the approval empty-draft rule for the same
+  modifier-free fallback on terminals that cannot deliver Alt chords
+  (macOS Option-as-UTF-8); one rule, two surfaces, keep them in sync.
   Enable kitty disambiguate (flag 1) and xterm `modifyOtherKeys=2` from
   `Init` — after alt-screen — so Cursor/xterm.js encodes Shift+Enter
   (`CSI 27 ; 2 ; 13 ~`) instead of CR. Never enable kitty "report all
@@ -207,7 +210,8 @@ feat(tui): compact tool steps with Ctrl+E details toggle
   input it recognises as a file (`tty_unix.go` `initInput`) — a plain wrapper
   would leave the program in cooked mode. One pump goroutine per program
   instance; `Close` stops it without closing stdin, which the program does not
-  own. Alt-screen always enables mouse
+  own. Alt-screen enables mouse cell-motion by default (`--plain` is the
+  documented opt-out, skipping mouse reporting)
   cell-motion so the wheel scrolls (and clicks hit turn heads / answer
   cards / steps / the queue). A left-click on an answer card (or a
   collapsed summary) copies that turn's `msg.content` — final or the
@@ -227,7 +231,9 @@ feat(tui): compact tool steps with Ctrl+E details toggle
   stays. Approvals render above a live composer: bare `a`/`d`/`t` decide
 only while the composer draft is empty (a non-empty draft, paste, or any
 modifier routes to the composer), and `Alt+A`/`Alt+D`/`Alt+T`
-  decide. Text, paste, cursor keys, and Enter retain composer behavior. Friction
+  decide. On Alt-less terminals (macOS Option-as-UTF-8), `^U` clears the
+  whole draft first, restoring the bare-key path — never leave such a
+  terminal with no reachable approval binding. Text, paste, cursor keys, and Enter retain composer behavior. Friction
   captures `apprTyped` only after explicit `Alt+A`; Escape returns to the draft
   without deciding. Keep the editor rune/row bounded and reset it on head changes. Clarify questions capture the
   keyboard into `clarifyBuf`: the spacebar is Bubble Tea `KeySpace` (not
@@ -253,15 +259,16 @@ modifier routes to the composer), and `Alt+A`/`Alt+D`/`Alt+T`
 - The slash-completion popup holds key capture while open; typed keys
   must keep flowing to the input. Route keys through the popup first,
   then fall through to normal input handling.
-- ESC closes the topmost window, then inspect chrome, then (if busy)
-  arms cancel. Order: confirm disarm → palette → drawer edit/detail/tab
+- ESC closes the topmost window, then (if busy) arms cancel. The chain
+  below is the authoritative order: confirm disarm → palette → drawer edit/detail/tab
   → cockpit → find → `@`/`/` popup → queue strip → approval (collapse
   details, then arm cancellation; `Alt+D` denies) → clarify (arm cancel while busy; the card stays)
   → skill chip / `^E` / open thinking / agent
   focus / expanded step / help card → cancel gate. Do not let a leftover
   overlay swallow ESC without dismissing. `Ctrl+X` independently arms turn
   cancellation before modal routing; the confirmation footer must remain visible
-  above every panel and approval. Inspect Escape returns to the composer first.
+  above every panel and approval. While inspecting, ESC leaves inspection
+  per the chain above (inspect items sit near its tail) rather than arming cancel.
 - Management drawer tabs (memory/skills/tools/config — and jobs) have a detail
   submode: `⏎` expands the selected row (skill description, full fact
   text, MCP args, raw config JSON — everything through `sanitize()`),
@@ -322,6 +329,10 @@ modifier routes to the composer), and `Alt+A`/`Alt+D`/`Alt+T`
   sync when you change user-visible behaviour.
 - CI (`.github/workflows`) runs build, vet, lint, and race tests on every
   push — a red pipeline means the commit checklist above was skipped.
+- Process lifecycle: bodek owns the `odek serve` child end to end — normal
+  Stop shuts it down gracefully (with progress and a live escalation
+  countdown), and the watchdog covers abnormal parent death. Never break
+  either path by assuming the child outlives the parent, or vice versa.
 
 ## Terminal polish regression bar
 
