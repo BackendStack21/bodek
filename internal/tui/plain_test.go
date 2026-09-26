@@ -57,10 +57,17 @@ func TestPlainEventLinesApproval(t *testing.T) {
 	if len(got) != 1 {
 		t.Fatalf("got %d lines, want 1", len(got))
 	}
-	for _, want := range []string{"⚠ approval", "shell_exec", "rm -rf x", "Esc"} {
+	for _, want := range []string{"⚠ approval", "shell_exec", "rm -rf x", "Alt+D"} {
 		if !strings.Contains(got[0], want) {
 			t.Errorf("approval line %q missing %q", got[0], want)
 		}
+	}
+	if strings.Contains(got[0], "Esc denies") || strings.Contains(got[0], "↑/↓ then ⏎") {
+		t.Fatalf("plain approval still gives incorrect decision keys: %q", got[0])
+	}
+	long := m.plainEventLines(client.Event{Type: "approval_request", Command: strings.Repeat("x", 200)})
+	if len(long) != 1 || !strings.Contains(long[0], "Alt+D") {
+		t.Fatalf("long command hid approval controls: %v", long)
 	}
 }
 

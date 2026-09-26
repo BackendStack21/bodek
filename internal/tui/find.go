@@ -121,7 +121,7 @@ func findMsgMatch(msg message, q string) bool {
 		}
 	}
 	for _, s := range msg.steps {
-		if strings.Contains(strings.ToLower(s.name+" "+s.arg+" "+s.result), q) {
+		if strings.Contains(strings.ToLower(s.name+" "+s.arg+" "+s.callArgs+" "+s.result), q) {
 			return true
 		}
 		for _, l := range s.logs {
@@ -151,7 +151,7 @@ func (m *Model) revealFindHit(msgIdx int) {
 	}
 	for i := range msg.steps {
 		s := &msg.steps[i]
-		blob := strings.ToLower(s.name + " " + s.arg + " " + s.result + " " + strings.Join(s.logs, " "))
+		blob := strings.ToLower(s.name + " " + s.arg + " " + s.callArgs + " " + s.result + " " + strings.Join(s.logs, " "))
 		if strings.Contains(blob, q) {
 			s.expanded = true
 			clearStepBlockCache(s)

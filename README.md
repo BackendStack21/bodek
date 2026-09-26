@@ -175,7 +175,10 @@ own front-end settings are separate; see [Configuration](#configuration).
   ([glamour](https://github.com/charmbracelet/glamour)).
 - **Tool activity** — every `tool_call`/`tool_result` shown live with a glyph
   per tool and a static live mark (`▸`); result bodies wait behind `^E` or a
-  click so a finished step reads as one calm line. The
+  click so a finished step reads as one calm line. An opened step shows its
+  invocation before its result, including while the tool is running. Tool
+  arguments are retained up to 256 KiB, with an explicit omission marker if
+  larger. The
   status line is the only spinner. Running steps speak the same progress
   copy as the status line (`🧪 running tests`) and tick their own elapsed
   clock — and the sealed duration stays on the head after the call
@@ -183,7 +186,7 @@ own front-end settings are separate; see [Configuration](#configuration).
   answers “how long did this take”. Two
   or more in-flight calls wrap in a parallel swarm band that
   shrinks as members finish and dissolves on the last leftover. Full
-  output stays behind expand.
+  retained output stays behind expand.
 - **Fluent by default** — gradient wordmark, smooth braille spinner, smart
   autoscroll that never yanks you while you read history, a
   scroll-position indicator, and a mouse wheel that always scrolls the
@@ -272,7 +275,7 @@ own front-end settings are separate; see [Configuration](#configuration).
   trims, tool execution times) stays silent. Info traces fade after 3s;
   errors, warnings, and disconnect notes autoclose after 10s.
 - **Just-in-time hints** — the first time a state appears (a held prompt,
-  a sub-agent swarm, a multi-step turn), a one-time 💡 tip teaches its key
+  a sub-agent swarm, a tool call), a one-time 💡 tip teaches its key
   and dwells 8s (5s longer than info traces), then stays silent for the
   run. Features surface the moment they matter; no keybinding table
   required.
@@ -400,12 +403,13 @@ own front-end settings are separate; see [Configuration](#configuration).
 | `@` | Attach a file (see below) |
 | `alt+↑` / `alt+↓` | Jump to the previous / next turn |
 | `alt+y` | Copy the **focused** surface — reply, expanded step, or open reasoning (falls back to the latest reply) |
+| `alt+i` (inspecting a tool) | Copy the displayed invocation, including any omission marker |
 | `alt+m` | Mark a copy span; the next `alt+y` yanks sanitized replies from the mark through the focus |
 | `alt+r` | Re-send the last prompt (`/retry`) |
 | `alt+f` | Search the transcript (`⏎`/`n` next match · `N` previous · a hit expands the hidden step or reasoning block) |
 | `^F` | Fold/unfold the most recent turn card (or click any turn head) |
 | `↑`/`↓` (inspecting) | Select the previous / next tool or reasoning item; `Enter` expands it, `Esc` returns to the composer |
-| `PgUp`/`PgDn` (inspecting a tool) | Previous / next response page; `Right` cycles sub-agent chips when present |
+| `PgUp`/`PgDn` (inspecting a tool) | Previous / next invocation or response page; `Right` cycles sub-agent chips when present |
 | `^X` | Stop the running turn from any panel or inspection state (`y` confirms); unrelated expanded items stay open |
 | `^R` | Browse & resume saved sessions |
 | `^O` | Switch the model |
@@ -416,7 +420,7 @@ own front-end settings are separate; see [Configuration](#configuration).
 | `s` / `x` | Save / skip a pending skill-suggestion chip while the composer is empty (`alt+s`/`alt+x` work everywhere) |
 | `1`–`3` | Resume a recent session from the home screen |
 | `^L` | Clear the conversation (two-step confirm: `y` clears, any other key cancels) |
-| `^E` | Toggle details — reasoning previews and every step's full output/logs (hidden in the calm default) |
+| `^E` | Toggle details — reasoning previews and every step's invocation and retained output/logs (hidden in the calm default) |
 | `^Y` | Copy the last reply to the clipboard (local helper — `pbcopy`/`wl-copy`/`clip` — with OSC 52 fallback) |
 | `Esc` | Close the topmost window or leave item inspection. Bare composer: dismiss details, then arm cancellation (`y` confirms). Approvals: fold details or leave confirmation editing; use `Alt+D` to deny. |
 | `^U` | Clear the whole input draft (`⇧⌦`/Shift+Delete works too on enhanced-key terminals — kitty CSI-u, modifyOtherKeys; elsewhere it degrades to plain single-char Delete) |
@@ -434,14 +438,17 @@ when an approval arrives. No bare letter, digit, or punctuation key is bound in 
 non-character keys (`^K` palette, `alt+↑↓` turn jumps, `F1` help), so a
 prompt can start with `?`, `[`, or any other character.
 
-### Inspecting tool responses
+### Inspecting tool calls
 
 Click a tool header or reasoning block to inspect it; while inspecting, `↑`/
-`↓` move between items and Enter expands the focused one. Tool responses
-display at most eight body rows plus a paging indicator, with fewer
-rows in short terminals. Use `PgUp`/`PgDn` to page, `alt+y` to copy the
-retained response, and Escape to return to typing. The global `^E`
-details toggle uses the same page limits.
+`↓` move between items and Enter expands the focused one. The invocation
+appears first, even while a tool is running; the result follows when it
+arrives. Long invocation lines wrap by display cells. Details display at
+most eight rows plus a paging indicator, with fewer rows in short terminals.
+Use `PgUp`/`PgDn` to page, `alt+i` to copy the displayed invocation,
+`alt+y` to copy the retained response, and Escape to return to typing.
+The global `^E` details toggle uses the same page limits. Control and
+invisible characters in invocations appear as safe escape text.
 
 Batch results retain command/file labels and original item counts; bracketed
 log lines are never treated as extra commands. Plans render creation, updates,

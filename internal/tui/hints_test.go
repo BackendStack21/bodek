@@ -95,8 +95,8 @@ func TestStepsHintFiresOnce(t *testing.T) {
 	m := liveTurnModel()
 	runMiniTurn(t, m, "read_file", "contents")
 	m.handleEvent(client.Event{Type: "done"})
-	if countNotices(m, "tip: click any step") != 1 {
-		t.Fatalf("first stepped turn must teach expansion once, notices: %q", m.notices)
+	if countNotices(m, "tip: click a step to inspect") != 1 {
+		t.Fatalf("first tool call must teach inspection once, notices: %q", m.notices)
 	}
 	// A second stepped turn must not repeat the tip.
 	m.busy = true
@@ -106,7 +106,7 @@ func TestStepsHintFiresOnce(t *testing.T) {
 	m.curIdx = len(m.msgs) - 1
 	runMiniTurn(t, m, "read_file", "more")
 	m.handleEvent(client.Event{Type: "done"})
-	if countNotices(m, "tip: click any step") != 1 {
+	if countNotices(m, "tip: click a step to inspect") != 1 {
 		t.Fatalf("hint repeated on the second stepped turn: %q", m.notices)
 	}
 }

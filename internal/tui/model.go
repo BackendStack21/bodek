@@ -32,6 +32,8 @@ const (
 type step struct {
 	name         string
 	arg          string
+	callArgs     string // retained tool-call arguments for deliberate inspection
+	argsOmitted  bool   // callArgs exceeded the bounded inspection limit
 	result       string // sanitized tool output (multi-line); excerpted at render
 	detailResult string // bounded structured display data; normalized result remains copyable
 	detailOffset int    // first visible line in the expanded response
@@ -1134,6 +1136,8 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// Copy the focused surface — the one alt+↑/↓ last jumped to (falls
 		// back to the latest reply). After alt+m this yanks the span.
 		return m, m.copyFocusedTurn()
+	case "alt+i":
+		return m, m.copyFocusedInvocation()
 	case "alt+m":
 		return m, m.markCopySpan()
 	case "alt+r":

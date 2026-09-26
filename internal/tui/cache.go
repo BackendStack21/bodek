@@ -64,7 +64,8 @@ func stepBlockCacheValid(s step, st *step, m *Model, expanded bool) bool {
 	if !s.done || s.blockCache == "" || st == nil {
 		return false
 	}
-	if st.name != s.name || st.done != s.done || st.result != s.result || st.expanded != s.expanded {
+	if st.name != s.name || st.done != s.done || st.result != s.result || st.expanded != s.expanded ||
+		st.callArgs != s.callArgs || st.argsOmitted != s.argsOmitted {
 		return false
 	}
 	if st.dur != s.dur {

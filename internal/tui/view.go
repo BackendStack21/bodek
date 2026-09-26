@@ -1166,7 +1166,7 @@ func replyRefAt(msgIdx, start, n int) stepRef {
 }
 
 // renderStep renders one tool step: live progress + clock while it runs,
-// a typed peek under a finished head, and the full inspect tree on expand.
+// and the invocation plus retained result on expand.
 // Sub-agent steps always paint a chip strip; a focused chip opens the
 // mini-card. Returns the block, hit refs (head + chips), and line count.
 func (m *Model) renderStep(s step, streaming bool, msgIdx, stepIdx, startLine int) (string, []stepRef, int) {
@@ -1292,6 +1292,11 @@ func (m *Model) renderStep(s step, streaming bool, msgIdx, stepIdx, startLine in
 				details = append(details, th.stepArg.Render(truncate(pendingChipLine(focus, s.manifest[focus]), detailBudget)))
 			}
 		}
+		if showAll {
+			// Keep the focused agent and the result card first. The parent
+			// invocation remains available on later pages of the full tree.
+			details = append(details, invocationDetailLines(s, detailBudget, th)...)
+		}
 		for i, d := range m.toolDetailPage(&s, details, detailBudget) {
 			conn := "    "
 			if i == 0 {
@@ -1301,7 +1306,10 @@ func (m *Model) renderStep(s step, streaming bool, msgIdx, stepIdx, startLine in
 				lipgloss.NewStyle().MaxWidth(detailBudget).Render(d))
 		}
 	} else if expanded {
-		var details []string
+		details := invocationDetailLines(s, detailBudget, th)
+		if len(details) > 0 && s.done {
+			details = append(details, th.stepArg.Render("result"))
+		}
 		if s.resultCard != nil {
 			details = append(details, agentResultLines(m, s.resultCard, detailBudget)...)
 		} else {
@@ -1604,9 +1612,9 @@ func (m *Model) approvalBody() string {
 	lines := []string{ansi.Truncate(head, budget, "…")}
 	var body []string
 	if m.apprExpanded {
-		body = append(body, wrapText(sanitize(target), budget)...)
+		body = append(body, strings.Split(ansi.Hardwrap(sanitize(target), budget, true), "\n")...)
 		if a.Description != "" {
-			body = append(body, wrapText(sanitize(a.Description), budget)...)
+			body = append(body, strings.Split(ansi.Hardwrap(sanitize(a.Description), budget, true), "\n")...)
 		}
 	} else {
 		body = append(body, truncate(collapse(target), budget))

@@ -1155,10 +1155,13 @@ func (m *Model) replayTranscript(msgs []client.SessionMessage) {
 			}
 			for _, tc := range mm.ToolCalls {
 				name := collapse(tc.Function.Name)
+				callArgs, argsOmitted := retainToolArgs(tc.Function.Arguments)
 				cur.steps = append(cur.steps, step{
-					name:     name,
-					arg:      argPreview(tc.Function.Arguments),
-					subagent: isSubagent(name),
+					name:        name,
+					arg:         argPreview(tc.Function.Arguments),
+					callArgs:    callArgs,
+					argsOmitted: argsOmitted,
+					subagent:    isSubagent(name),
 				})
 				stepByCallID[tc.ID] = len(cur.steps) - 1
 				cur.items = append(cur.items, turnItem{stepIdx: len(cur.steps) - 1})
