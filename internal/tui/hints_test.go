@@ -157,7 +157,7 @@ func TestArrowsSelectToolsAndReasoning(t *testing.T) {
 	if !m.msgs[last].items[ti].open {
 		t.Fatal("reasoning must remain individually reachable")
 	}
-	if !m.msgs[last].steps[1].expanded {
-		t.Fatal("opening reasoning must preserve existing tool state")
+	if m.msgs[last].steps[1].expanded {
+		t.Fatal("moving to reasoning must close the previously inspected tool")
 	}
 }

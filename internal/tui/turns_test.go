@@ -41,9 +41,14 @@ func TestTurnFootCarriesTelemetry(t *testing.T) {
 		t.Errorf("turn head missing identity:\n%s", head)
 	}
 	foot := lines[len(lines)-1]
-	for _, want := range []string{"⚡", "2.0s", "900", "120", "⚒"} {
+	for _, want := range []string{"2.0s", "2 tools"} {
 		if !strings.Contains(foot, want) {
 			t.Errorf("turn foot missing %q:\n%s", want, foot)
+		}
+	}
+	for _, hidden := range []string{"⚡", "⌂", "↳", "⚒"} {
+		if strings.Contains(foot, hidden) {
+			t.Errorf("default turn foot contains dense telemetry %q:\n%s", hidden, foot)
 		}
 	}
 }

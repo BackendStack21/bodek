@@ -154,12 +154,13 @@ own front-end settings are separate; see [Configuration](#configuration).
   and the first-run hints wrap by display cells (including wide characters).
 - **The palette (`^K`)** — every command, session, model, and drawer tab one
   fuzzy search away; every row teaches its chord.
-- **Turn cards** — telemetry sits under the assistant reply, a coding receipt
+- **Turn cards** — a short outcome/elapsed/tool/cost line sits under the assistant reply, a coding receipt
   (`touched 4 · +82 −19 · tests ✓`) scans what the turn changed, `^F`
   folds noisy turns to that receipt, `alt+↑`/`alt+↓` jump turn-to-turn,
   and the calm default keeps the transcript still: reasoning previews and
-  tool responses stay hidden until `^E` (details) reveals the intent rail
-  (with its `beat N/M` labels) and every step's full output. While the
+  tool responses stay hidden until deliberate inspection or `^E` (details)
+  reveals the intent rail (with its `beat N/M` labels) and every step's
+  full output and turn telemetry. While the
   turn streams, its head line carries the run's elapsed counter at the
   right edge — the one live clock in the transcript.
 - **Typed tool renderers** — diffs tint with a `+N −M` chip, file reads get
@@ -178,7 +179,9 @@ own front-end settings are separate; see [Configuration](#configuration).
   click so a finished step reads as one calm line. An opened step shows its
   invocation before its result, including while the tool is running. Tool
   arguments are retained up to 256 KiB, with an explicit omission marker if
-  larger. The
+  larger. Selecting one step opens a focused inspection path that gives the
+  transcript the composer rows on short terminals; the draft returns unchanged
+  on Escape. The
   status line is the only spinner. Running steps speak the same progress
   copy as the status line (`🧪 running tests`) and tick their own elapsed
   clock — and the sealed duration stays on the head after the call
@@ -327,11 +330,10 @@ own front-end settings are separate; see [Configuration](#configuration).
   count. `▶ N jobs` / `✗ job` instruments ride the same bar when a
   background job is active; plan progress rides the busy line while a
   turn runs and the `/plan` tab otherwise.
-- **Per-turn footers & `/stats`** — token counts and latency ride every turn
-  head (`⚡` latency, `⌂` context, `↳` output tokens, `↗` tok/s, `⚒` tools);
-  `/stats` opens a sheet that rolls up the session (speed, TTFT, LLM time,
-  cost, cache, context). The `⎇` glyph is reserved for git commits in the
-  transcript.
+- **Per-turn footers & `/stats`** — a right-aligned row under the reply shows turn outcome, elapsed time,
+  tool count, and cost when prices are known. `^E` reveals full per-turn
+  telemetry; `/stats` rolls up the session (speed, TTFT, LLM time, cost,
+  cache, context). The `⎇` glyph is reserved for git commits in the transcript.
 - **Generation speed** — live `↗ tok/s` in the cockpit stats sheet
   (`/server`) from `usage` frames
   (prefers `generationTokensPerSecond` when the stream measured TTFT;
@@ -445,6 +447,8 @@ Click a tool header or reasoning block to inspect it; while inspecting, `↑`/
 appears first, even while a tool is running; the result follows when it
 arrives. Long invocation lines wrap by display cells. Details display at
 most eight rows plus a paging indicator, with fewer rows in short terminals.
+The pager names the visible section, and a compact inspection line keeps the
+selected tool identifiable when a long sub-agent chip strip scrolls above it.
 Use `PgUp`/`PgDn` to page, `alt+i` to copy the displayed invocation,
 `alt+y` to copy the retained response, and Escape to return to typing.
 The global `^E` details toggle uses the same page limits. Control and
@@ -584,9 +588,9 @@ can encode them:
 
 | Key | Action |
 |-----|--------|
-| `a` / `Alt+A` | Approve (plain key: empty composer only); in friction mode, first open the confirmation editor |
+| `a` / `Alt+A` | Allow once (plain key: empty composer only); in friction mode, first open the confirmation editor |
 | `d` / `Alt+D` | Deny (plain key: empty composer only) |
-| `t` / `Alt+T` | Trust the class, only when the server offers it and friction is off (plain key: empty composer only) |
+| `t` / `Alt+T` | Trust this risk class until the current connection ends, only when the server offers it and friction is off (plain key: empty composer only) |
 | `Tab` | Expand/collapse command and description details |
 | `Alt+PgUp` / `Alt+PgDn` | Page expanded approval details |
 | `Esc` | Return from confirmation editing, or fold details; otherwise arm turn cancellation when busy |
@@ -606,6 +610,12 @@ seconds) and autocloses expired requests with an expiry notice, jumping
 focus to the latest transcript message (a still-queued successor keeps
 scrollback), so a stale form can never collect an approval for a prompt
 the engine already abandoned.
+
+The card leads with the exact command (or operation resource) or an explicit
+note if odek did not supply one. Expanded details visibly escape control and invisible characters,
+show the engine's action class and reason, and say when odek did not supply a
+working directory. Trust's duration is tied to the current WebSocket
+connection; reconnecting resets it.
 
 ---
 

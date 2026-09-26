@@ -35,5 +35,24 @@ func (m *Model) teach(key, text string) {
 		return
 	}
 	m.hintsShown[key] = true
-	m.pushNote("💡 "+text, time.Now().Add(hintTTL))
+	if m.width < 50 {
+		switch key {
+		case hintQueue:
+			text = "tip: ^Q opens the queue"
+		case hintSwarm:
+			text = "tip: /agents shows all agents"
+		case hintSteps:
+			text = "tip: click a step to inspect"
+		case hintCtx:
+			text = "tip: ctx = context in use"
+		}
+	}
+	if m.width < 24 {
+		text = "tip: F1 help"
+	}
+	label := "💡 " + text
+	if m.width > 4 {
+		label = truncate(label, m.width-4) // note rail adds its own prefix
+	}
+	m.pushNote(label, time.Now().Add(hintTTL))
 }

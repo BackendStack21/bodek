@@ -887,11 +887,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					return m, nil
 				}
 				if msgIdx, stepIdx, ok := m.stepAtLine(line); ok {
-					m.invalidateInspect()
-					m.inspect = &inspectTarget{msgIdx: msgIdx, stepIdx: stepIdx, itemIdx: -1}
-					m.focusIdx = msgIdx
-					m.toggleStep(msgIdx, stepIdx)
-					m.refresh()
+					m.openInspectStep(msgIdx, stepIdx)
 					return m, nil
 				}
 				// Answer cards (and collapsed summaries) copy the turn's
@@ -1442,6 +1438,13 @@ func (m *Model) relayout() {
 // input area plus the busy status line when it shows — so the viewport
 // shrinks by exactly the right amount and the footer never moves.
 func (m *Model) inputAreaHeight() int {
+	if m.inspectChrome() {
+		h := 1 // one-row return hint in place of the composer box
+		if m.statusLineVisible() {
+			h += 2
+		}
+		return h
+	}
 	h := m.ta.Height() + 2 // composer box: text rows + top/bottom border
 	if m.curApproval() != nil && !m.pal.open {
 		h += lineCount(m.approvalPanel()) // boxed card sits above the composer

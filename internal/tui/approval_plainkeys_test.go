@@ -152,7 +152,7 @@ func TestApprovalFooterShowsPlainHints(t *testing.T) {
 	busyTurn(m)
 	m.handleEvent(client.Event{Type: "approval_request", ID: "apr", AllowTrust: true})
 	foot := plain(m.footer())
-	for _, want := range []string{"a approve", "d deny", "t trust"} {
+	for _, want := range []string{"a allow once", "d deny", "t trust class"} {
 		if !strings.Contains(foot, want) {
 			t.Errorf("approval footer missing %q: %q", want, foot)
 		}

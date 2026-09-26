@@ -48,6 +48,15 @@ func (m *Model) validInspect() bool {
 	return p.itemIdx >= 0 && p.itemIdx < len(msg.items) && msg.items[p.itemIdx].thinking
 }
 
+// Inspection borrows the composer rows so a short terminal can show the
+// selected step's heading, details, and pager together. The draft is kept in
+// the textarea and returns unchanged on Escape.
+func (m *Model) inspectChrome() bool {
+	return m.validInspect() && m.curApproval() == nil && m.clarify == nil &&
+		m.panel == panelNone && !m.pal.open && !m.find.open && !m.ac.open &&
+		!m.qfocus && !m.popover
+}
+
 func (m *Model) invalidateInspect() {
 	if !m.validInspect() {
 		return
@@ -62,7 +71,40 @@ func (m *Model) invalidateInspect() {
 func (m *Model) clearInspect() {
 	m.invalidateInspect()
 	m.inspect = nil
+	m.relayout()
 	m.refresh()
+}
+
+// openInspectStep makes deliberate inspection a single-step view. Global
+// details remain available with ^E after leaving inspection.
+func (m *Model) openInspectStep(msgIdx, stepIdx int) {
+	if msgIdx < 0 || msgIdx >= len(m.msgs) || stepIdx < 0 || stepIdx >= len(m.msgs[msgIdx].steps) {
+		return
+	}
+	m.invalidateInspect()
+	if m.expandAll {
+		m.expandAll = false
+		m.invalidateAllMsgBlocks()
+	}
+	for i := range m.msgs {
+		for j := range m.msgs[i].steps {
+			s := &m.msgs[i].steps[j]
+			open := i == msgIdx && j == stepIdx
+			focusChanged := open && s.clearAgentFocus()
+			if s.expanded != open || (open && s.detailOffset != 0) || focusChanged {
+				s.expanded = open
+				s.detailOffset = 0
+				clearStepBlockCache(s)
+				m.invalidateMsgBlock(i)
+			}
+		}
+	}
+	m.inspect = &inspectTarget{msgIdx: msgIdx, stepIdx: stepIdx, itemIdx: -1}
+	m.focusIdx = msgIdx
+	m.msgs[msgIdx].collapsed = false
+	m.relayout()
+	m.refresh()
+	m.revealInspect()
 }
 
 func (m *Model) moveInspect(back bool) {
@@ -109,12 +151,22 @@ func (m *Model) moveInspect(back bool) {
 	} else {
 		index = (index + 1) % len(targets)
 	}
+	if m.validInspect() && m.inspect.stepIdx >= 0 && !m.expandAll {
+		old := &m.msgs[m.inspect.msgIdx].steps[m.inspect.stepIdx]
+		if old.expanded {
+			old.expanded = false
+			old.detailOffset = 0
+			clearStepBlockCache(old)
+			m.invalidateMsgBlock(m.inspect.msgIdx)
+		}
+	}
 	m.invalidateInspect()
 	p := targets[index]
 	m.inspect = &p
 	m.focusIdx = p.msgIdx
 	m.msgs[p.msgIdx].collapsed = false
 	m.invalidateInspect()
+	m.relayout()
 	m.refresh()
 	m.revealInspect()
 }
@@ -127,7 +179,16 @@ func (m *Model) revealInspect() {
 	if p.stepIdx >= 0 {
 		for _, r := range m.stepLineIndex {
 			if r.msgIdx == p.msgIdx && r.stepIdx == p.stepIdx && r.x1 <= r.x0 {
-				m.vp.SetYOffset(max(0, r.line-1))
+				top := r.line - 1
+				if m.inspectChrome() {
+					top = r.line
+					s := &m.msgs[p.msgIdx].steps[p.stepIdx]
+					chips := len(packChipRows(s.agentChips(), max(m.cardInner()-2, 8)))
+					if s.expanded && 1+chips+m.toolDetailRows()+1 > m.vp.Height {
+						top += 1 + chips // keep the active detail page visible
+					}
+				}
+				m.vp.SetYOffset(max(0, top))
 				m.relayout()
 				return
 			}
@@ -151,16 +212,11 @@ func (m *Model) handleInspectKey(msg tea.KeyMsg) bool {
 		if p.stepIdx >= 0 {
 			s := &m.msgs[p.msgIdx].steps[p.stepIdx]
 			wasExpanded := s.expanded || m.expandAll
-			if m.expandAll {
-				m.expandAll = false
-				m.invalidateAllMsgBlocks()
-				for i := range m.msgs {
-					for j := range m.msgs[i].steps {
-						clearStepBlockCache(&m.msgs[i].steps[j])
-					}
-				}
+			if !wasExpanded || m.expandAll {
+				m.openInspectStep(p.msgIdx, p.stepIdx)
+				return true
 			}
-			s.expanded = !wasExpanded
+			s.expanded = false
 			s.detailOffset = 0
 		} else {
 			it := &m.msgs[p.msgIdx].items[p.itemIdx]
@@ -216,15 +272,37 @@ func (m *Model) handleInspectKey(msg tea.KeyMsg) bool {
 	return true
 }
 
-func (m *Model) toolDetailRows() int { return max(1, min(8, (m.height-12)/2)) }
+func (m *Model) toolDetailRows() int {
+	if m.inspectChrome() {
+		room := m.vp.Height - 2 // heading and pager
+		if m.inspect.stepIdx >= 0 {
+			s := &m.msgs[m.inspect.msgIdx].steps[m.inspect.stepIdx]
+			if len(s.agentChips()) > 0 {
+				// The chip strip remains in the transcript. When it pushes the
+				// detail page below the viewport, revealInspect scrolls to the
+				// page and the compact input line keeps the tool identity visible.
+				room = m.vp.Height - 1
+			}
+		}
+		return max(1, min(8, room))
+	}
+	return max(1, min(8, (m.height-12)/2))
+}
 
 // toolDetailPage bounds every detail body by display rows, including embedded
-// newlines from renderers. Paging changes the slice, never the screen geometry.
-func (m *Model) toolDetailPage(s *step, details []string, width int) []string {
+// newlines from renderers. The pager names the visible section, so even a
+// one-row page has context when its section heading has scrolled away.
+func (m *Model) toolDetailPage(s *step, details []string, width, sectionBreak int, firstSection, nextSection string) []string {
 	var rows []string
-	for _, d := range details {
+	var sections []string
+	for i, d := range details {
+		section := nextSection
+		if i < sectionBreak {
+			section = firstSection
+		}
 		for _, line := range strings.Split(d, "\n") {
 			rows = append(rows, ansi.Truncate(line, max(1, width), ""))
+			sections = append(sections, section)
 		}
 	}
 	limit := m.toolDetailRows()
@@ -235,7 +313,11 @@ func (m *Model) toolDetailPage(s *step, details []string, width int) []string {
 	s.detailOffset = offset
 	end := min(len(rows), offset+limit)
 	out := append([]string(nil), rows[offset:end]...)
-	label := fmt.Sprintf("%d–%d/%d · PgUp PgDn page", offset+1, end, len(rows))
+	section := sections[offset]
+	if sections[end-1] != section {
+		section += " → " + sections[end-1]
+	}
+	label := fmt.Sprintf("%s · %d–%d/%d · PgUp PgDn page", section, offset+1, end, len(rows))
 	out = append(out, m.th.stepArg.Render(ansi.Truncate(label, max(1, width), "")))
 	return out
 }

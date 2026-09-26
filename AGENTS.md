@@ -352,6 +352,19 @@ modifier routes to the composer), and `Alt+A`/`Alt+D`/`Alt+T`
   Wrap invocation lines by display cells before paging. Escape control and
   invisible characters visibly, and label any argument retention limit.
   Replay must offer the same inspection path as live ingestion.
+- Deliberate step inspection shows one expanded tool at a time and borrows the
+  composer rows on short terminals without losing the draft. Keep the selected
+  tool identifiable and the active detail page visible while paging; sub-agent
+  children remain chips in the transcript. The pager names whether it shows
+  invocation or result. Global `^E` still expands all details after leaving
+  inspection. At 40 columns, a one-time hint must fit completely and the
+  inspect footer must teach `Alt+I`.
+- Approval cards put the exact display-safe command or operation resource first, visibly escape
+  controls and invisible characters, and state when odek supplied no command
+  or working directory. Explain that class trust lasts until the current
+  connection ends; keep allow-once and deny visible at narrow widths. Default
+  turn footers right-align outcome, elapsed time, tool count, and known cost; full
+  telemetry remains under `^E` and `/stats`.
 - Keep normalized `step.result` for copying/error compatibility and bounded
   `step.detailResult` for structured display. Preserve sanitized command/path
   identity through live and history ingestion; never infer item boundaries from

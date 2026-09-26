@@ -91,7 +91,7 @@ func TestTurnFooterShowsCost(t *testing.T) {
 		SessionContextTokens: 10_000, SessionOutputTokens: 2_000,
 	})
 	out := plain(drive.View())
-	if !strings.Contains(out, "$ $0.016") {
+	if !strings.Contains(out, "3.0s · 1 tool · $0.016") {
 		t.Errorf("footer missing turn cost in:\n%s", out)
 	}
 }
@@ -112,7 +112,7 @@ func TestTurnFooterUsesModelOverride(t *testing.T) {
 	})
 	out := plain(drive.View())
 	// 10k input @ $2/M + 2k output @ $3/M = $0.02 + $0.006.
-	if !strings.Contains(out, "$ $0.026") {
+	if !strings.Contains(out, "3.0s · 1 tool · $0.026") {
 		t.Errorf("footer missing override cost in:\n%s", out)
 	}
 }
