@@ -227,6 +227,19 @@ func (m *Model) copyFocusedTurn() tea.Cmd {
 	return m.copyText(m.focusedCopyText())
 }
 
+// copyFocusedInvocation copies the display-safe arguments of the selected
+// tool call. It never copies an output body or a truncated header as a command.
+func (m *Model) copyFocusedInvocation() tea.Cmd {
+	if !m.validInspect() || m.inspect.stepIdx < 0 {
+		return m.transientNoteCmd("select a tool step to copy its invocation")
+	}
+	s := m.msgs[m.inspect.msgIdx].steps[m.inspect.stepIdx]
+	if text := invocationText(s); text != "" {
+		return m.copyText(text)
+	}
+	return m.transientNoteCmd("this step has no retained invocation")
+}
+
 // focusedCopyText is the sanitized payload for the current inspect surface.
 func (m *Model) focusedCopyText() string {
 	if m.validInspect() {

@@ -17,7 +17,7 @@ import "time"
 const (
 	hintQueue = "queue" // first prompt held while a turn runs
 	hintSwarm = "swarm" // first sub-agent swarm frame on screen
-	hintSteps = "steps" // first finished turn that carried tool steps
+	hintSteps = "steps" // first tool call, while its invocation can be inspected live
 	hintCtx   = "ctx"   // first real prompt: decode the header instruments
 )
 

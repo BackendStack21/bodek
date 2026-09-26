@@ -163,6 +163,7 @@ func (m *Model) handleEvent(ev client.Event) (tea.Model, tea.Cmd) {
 
 	case "tool_call":
 		arg := argPreview(ev.Data)
+		callArgs, argsOmitted := retainToolArgs(ev.Data)
 		if ev.Name == "plan" {
 			if s := planArgSummary(ev.Data); s != "" {
 				arg = s // semantic one-liner replaces the JSON blob (docs §4A)
@@ -173,7 +174,8 @@ func (m *Model) handleEvent(ev client.Event) (tea.Model, tea.Cmd) {
 		if i := m.cur(); i >= 0 {
 			sealThinking(&m.msgs[i])
 			m.msgs[i].steps = append(m.msgs[i].steps,
-				step{name: nm, arg: arg, subagent: isSubagent(nm), started: time.Now()})
+				step{name: nm, arg: arg, callArgs: callArgs, argsOmitted: argsOmitted,
+					subagent: isSubagent(nm), started: time.Now()})
 			last := len(m.msgs[i].steps) - 1
 			if m.msgs[i].steps[last].subagent {
 				// Per-task identity (goals, profiles) lives in the parent's
@@ -181,6 +183,7 @@ func (m *Model) handleEvent(ev client.Event) (tea.Model, tea.Cmd) {
 				m.msgs[i].steps[last].manifest = parseDelegateManifest(ev.Data)
 			}
 			m.msgs[i].items = append(m.msgs[i].items, turnItem{stepIdx: last})
+			m.teach(hintSteps, "tip: click a step to inspect its invocation and result · ^E expands all")
 		}
 		m.lastTool = nm
 		m.lastArg = arg
@@ -288,9 +291,6 @@ func (m *Model) handleEvent(ev client.Event) (tea.Model, tea.Cmd) {
 			m.msgs[i].stats = &ts
 			m.turnStats = append(m.turnStats, ts)
 			m.toolTotal += ts.toolCount
-			if ts.toolCount > 0 {
-				m.teach(hintSteps, "tip: click any step to expand its output · ^E expands all · /verbosity dials detail")
-			}
 		}
 		m.renderPending = false // the turn's final state renders now, not on a flush
 		m.finalize()

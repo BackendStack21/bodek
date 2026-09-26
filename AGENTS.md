@@ -346,6 +346,12 @@ modifier routes to the composer), and `Alt+A`/`Alt+D`/`Alt+T`
   plus one pager row, shrinking with terminal height. Split embedded newlines
   before counting and clamp ANSI display widths. Clamp paging at both ends;
   invalidate per-step caches when selection, offset, height, or theme changes.
+- A tool step keeps its short header preview separate from the retained call
+  arguments. Deliberate expansion shows the invocation before the result,
+  including while the call runs; `alt+i` copies the display-safe invocation.
+  Wrap invocation lines by display cells before paging. Escape control and
+  invisible characters visibly, and label any argument retention limit.
+  Replay must offer the same inspection path as live ingestion.
 - Keep normalized `step.result` for copying/error compatibility and bounded
   `step.detailResult` for structured display. Preserve sanitized command/path
   identity through live and history ingestion; never infer item boundaries from

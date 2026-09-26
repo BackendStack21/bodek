@@ -74,7 +74,7 @@ func (m *Model) plainEventLines(ev client.Event) []string {
 		if what != "" {
 			what = " · " + what
 		}
-		return []string{plainClip("⚠ approval" + what + " — ↑/↓ then ⏎ (Esc denies)")}
+		return []string{plainClip("⚠ approval — a approve · d deny (empty draft); Alt+A/Alt+D always" + what)}
 
 	case "skill_event":
 		return []string{"· skill · " + strings.TrimSpace(collapse(ev.SubType+" "+ev.SkillName)) + eventTail(ev)}
