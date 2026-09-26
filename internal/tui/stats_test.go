@@ -67,13 +67,22 @@ func TestTurnStatLine(t *testing.T) {
 	}
 
 	out := plain(m.View())
-	for _, want := range []string{"⚡ 2.5s", "⌂ 1.2k", "↳ 340", "⚒ 1", "✳"} {
+	for _, want := range []string{"3.0s · 1 tool"} {
 		if !strings.Contains(out, want) {
-			t.Errorf("stat line missing %q in:\n%s", want, out)
+			t.Errorf("concise turn foot missing %q in:\n%s", want, out)
 		}
 	}
 	if strings.Contains(out, "↗") || strings.Contains(out, "tok/s") {
 		t.Errorf("stat line invented tok/s from cumulative output/latency:\n%s", out)
+	}
+	m.expandAll = true
+	m.invalidateAllMsgBlocks()
+	m.refresh()
+	out = plain(m.View())
+	for _, want := range []string{"⚡ 2.5s", "⌂ 1.2k", "↳ 340", "⚒ 1", "✳"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("expanded telemetry missing %q in:\n%s", want, out)
+		}
 	}
 }
 
@@ -616,8 +625,12 @@ func TestTurnStatLineShowsTokPerSec(t *testing.T) {
 		t.Fatalf("timing = ttft %d call %d llm %d", ts.ttftMs, ts.callDurMs, ts.llmDurMs)
 	}
 	foot := plain(m.turnStatFoot(m.msgs[1]))
-	if !strings.Contains(foot, "↗") || !strings.Contains(foot, "25.2 tok/s") {
-		t.Errorf("turn foot missing generation tok/s: %q", foot)
+	if strings.Contains(foot, "tok/s") {
+		t.Errorf("default turn foot should keep rate in diagnostics: %q", foot)
+	}
+	m.expandAll = true
+	if detailed := plain(m.turnStatFoot(m.msgs[1])); !strings.Contains(detailed, "25.2 tok/s") {
+		t.Errorf("expanded turn telemetry missing generation tok/s: %q", detailed)
 	}
 	// The header no longer carries tok/s — the cockpit owns the live rate.
 	if strings.Contains(plain(m.header()), "tok/s") {
@@ -634,7 +647,7 @@ func TestChromeFooterOmitsTokPerSec(t *testing.T) {
 	m.sendPrompt("next")
 	m.handleEvent(client.Event{Type: "usage", TokensPerSecond: 9.6})
 	// The header no longer carries the in-flight rate — the cockpit owns it;
-	// the sealed turn foot keeps the last sealed rate.
+	// expanded per-turn telemetry keeps the last sealed rate.
 	if strings.Contains(plain(m.header()), "tok/s") {
 		t.Errorf("header must not show tok/s:\n%s", plain(m.header()))
 	}
@@ -642,8 +655,12 @@ func TestChromeFooterOmitsTokPerSec(t *testing.T) {
 	if strings.Contains(foot, "tok/s") {
 		t.Errorf("chrome footer must not carry tok/s (header + turn foot own it): %q", foot)
 	}
+	if got := plain(m.turnStatFoot(m.msgs[1])); strings.Contains(got, "tok/s") {
+		t.Errorf("default turn foot should stay concise: %q", got)
+	}
+	m.expandAll = true
 	if got := plain(m.turnStatFoot(m.msgs[1])); !strings.Contains(got, "25.2 tok/s") {
-		t.Errorf("sealed turn foot missing previous rate: %q", got)
+		t.Errorf("expanded turn telemetry missing previous rate: %q", got)
 	}
 }
 

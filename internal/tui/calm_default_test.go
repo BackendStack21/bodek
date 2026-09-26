@@ -175,7 +175,7 @@ func TestTurnHeadElapsedCounter(t *testing.T) {
 	if strings.Contains(head, "⚡") {
 		t.Errorf("finalized head must not carry sealed telemetry:\n%s", head)
 	}
-	if !strings.Contains(lines[len(lines)-1], "⚡") {
-		t.Errorf("finalized turn missing telemetry foot:\n%s", plainOut)
+	if !strings.Contains(lines[len(lines)-1], "3.0s") {
+		t.Errorf("finalized turn missing concise elapsed foot:\n%s", plainOut)
 	}
 }

@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -20,13 +21,31 @@ type approvalOption struct {
 // class-trust shortcut (mirrors the TTY approver policy).
 func (m *Model) approvalOptions() []approvalOption {
 	opts := []approvalOption{
-		{"approve", "approve"},
+		{"allow once", "approve"},
 		{"deny", "deny"},
 	}
 	if a := m.curApproval(); a != nil && a.AllowTrust && !a.Friction {
-		opts = append(opts, approvalOption{"always allow", "trust"})
+		opts = append(opts, approvalOption{"allow class until disconnect", "trust"})
 	}
 	return opts
+}
+
+func approvalRiskLabel(risk string) string {
+	switch risk {
+	case "shell_exec":
+		return "shell commands"
+	case "network_egress":
+		return "network access"
+	case "local_write":
+		return "local writes"
+	case "low", "medium", "high":
+		return risk + "-risk tool action"
+	case "":
+		return "this tool action"
+	default:
+		label := visibleInvocation(strings.ReplaceAll(risk, "_", " "))
+		return strings.ReplaceAll(label, "\n", `\n`)
+	}
 }
 
 // handleApprovalKey keeps an approval card from hijacking the composer. Only

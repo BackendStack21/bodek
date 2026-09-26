@@ -69,6 +69,7 @@ func TestFoldedTurnTally(t *testing.T) {
 		turnItem{stepIdx: 0},
 		turnItem{stepIdx: 1},
 	)
+	msg.collapsed = true
 
 	rendered, _ := m.renderMessage(m.msgs[i], i, 0)
 	head := plain(rendered)

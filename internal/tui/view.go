@@ -679,27 +679,34 @@ func (m *Model) renderMessage(msg message, msgIdx, lineOffset int) (string, []st
 			// state, never wire text — and persists through finalization.
 			label += " " + th.badgeDanger.Render(lampError)
 		}
-		if rec := formatReceipt(scanReceipt(msg)); rec != "" {
+		rec := formatReceipt(scanReceipt(msg))
+		tallyShown := false
+		if msg.collapsed && !msg.streaming {
+			// (A2) Sealed-turn tally on a folded head: 'N tools · M agents · Ts' in
+			// the right margin. The folded summary already carries the receipt,
+			// so keep the head clear for the tally.
+			if tal := foldTally(msg); tal != "" {
+				room := m.vp.Width - lipgloss.Width(label) - 1
+				if lipgloss.Width(tal) <= room {
+					label += strings.Repeat(" ", room-lipgloss.Width(tal)+1) + th.statsDim.Render(tal)
+					tallyShown = true
+				}
+			}
+		}
+		if !tallyShown && rec != "" {
 			room := m.vp.Width - lipgloss.Width(label) - 4
 			if room > 8 {
 				label += "  " + th.statsDim.Render(truncate(rec, room))
 			}
 		}
-		if !msg.streaming {
-			// (A2) Sealed-turn tally on the head: 'N tools · M agents · Ts' in
-			// the same dim secondary style and width budget as the receipt —
-			// model-owned counts only, never wire text.
-			if tal := foldTally(msg); tal != "" {
-				room := m.vp.Width - lipgloss.Width(label) - 4
-				if room > 8 {
-					label += "  " + th.statsDim.Render(truncate(tal, room))
-				}
-			}
-		}
 		if msg.collapsed {
 			summary := th.statsDim.Render(m.collapseSummary(msg))
 			start := lineOffset + turnHeadGap
-			return stackTurn(label, summary, m.turnStatFoot(msg)), []stepRef{replyRefAt(msgIdx, start, lineCount(summary))}
+			foot := m.turnStatFoot(msg)
+			if tallyShown && !m.expandAll {
+				foot = ""
+			}
+			return stackTurn(label, summary, foot), []stepRef{replyRefAt(msgIdx, start, lineCount(summary))}
 		}
 		// Live turn clock: a streaming head carries the run's elapsed
 		// counter at the right edge — the calm default hides the rail and
@@ -941,7 +948,7 @@ func foldTally(msg message) string {
 		agents += len(msg.steps[i].agents)
 		total += msg.steps[i].dur
 	}
-	parts := []string{fmt.Sprintf("%d tools", n)}
+	parts := []string{plural(n, "tool", "tools")}
 	if agents > 0 {
 		plural := "agents"
 		if agents == 1 {
@@ -1032,13 +1039,37 @@ func (m *Model) clampLines(s string) string {
 	return strings.Join(lines, "\n")
 }
 
-// turnStatFoot is the sealed telemetry row under a finalized assistant
-// reply. Empty while the turn is still streaming.
+// turnStatFoot is the right-aligned sealed telemetry row under a finalized
+// assistant reply. Empty while the turn is still streaming.
 func (m *Model) turnStatFoot(msg message) string {
 	if msg.stats == nil || msg.streaming {
 		return ""
 	}
-	return m.statLine(*msg.stats)
+	if m.expandAll {
+		return m.alignTurnStat(m.statLine(*msg.stats))
+	}
+	ts := *msg.stats
+	outcome := "✓ done"
+	if msg.failed {
+		outcome = "✗ failed"
+	}
+	parts := []string{outcome}
+	if ts.wall > 0 {
+		parts = append(parts, formatDuration(ts.wall))
+	} else if ts.latency > 0 {
+		parts = append(parts, fmt.Sprintf("%.1fs", ts.latency))
+	}
+	if ts.toolCount > 0 {
+		parts = append(parts, plural(ts.toolCount, "tool", "tools"))
+	}
+	if inPrice, outPrice := m.prices(); inPrice > 0 && outPrice > 0 {
+		parts = append(parts, formatUSD(costUSD(ts.ctxTok, ts.outTok, inPrice, outPrice)))
+	}
+	return m.alignTurnStat(m.th.statsDim.Render(truncate(strings.Join(parts, " · "), m.vp.Width-2)))
+}
+
+func (m *Model) alignTurnStat(line string) string {
+	return strings.Repeat(" ", max(0, m.vp.Width-lipgloss.Width(line))) + line
 }
 
 // statSeg is one telemetry segment of the turn foot; drop orders which
@@ -1263,7 +1294,16 @@ func (m *Model) renderStep(s step, streaming bool, msgIdx, stepIdx, startLine in
 	showFocus := focus >= 0
 	if s.subagent && (showFocus || showAll || expanded) {
 		var details []string
+		sectionBreak := 0
+		firstSection, nextSection := "agent / result", "invocation"
 		if showAll || (expanded && m.expandAll) {
+			invocation := invocationDetailLines(s, detailBudget, th)
+			focusedParent := m.inspectChrome() && m.inspect.msgIdx == msgIdx && m.inspect.stepIdx == stepIdx
+			if focusedParent {
+				details = append(details, invocation...)
+				sectionBreak = len(details)
+				firstSection, nextSection = "invocation", "agent / result"
+			}
 			for _, a := range s.agents {
 				details = append(details, m.agentCardDetails(a, &s, true, detailBudget)...)
 			}
@@ -1282,6 +1322,10 @@ func (m *Model) renderStep(s step, streaming bool, msgIdx, stepIdx, startLine in
 			} else if s.result != "" {
 				details = append(details, stepDetail(s.name, stepDetailResult(s), m.vp.Width, th)...)
 			}
+			if !focusedParent {
+				sectionBreak = len(details)
+				details = append(details, invocation...)
+			}
 		} else if showFocus {
 			if a := s.cardByIdx(focus); a != nil {
 				details = append(details, m.agentCardDetails(a, &s, expanded, detailBudget)...)
@@ -1292,12 +1336,7 @@ func (m *Model) renderStep(s step, streaming bool, msgIdx, stepIdx, startLine in
 				details = append(details, th.stepArg.Render(truncate(pendingChipLine(focus, s.manifest[focus]), detailBudget)))
 			}
 		}
-		if showAll {
-			// Keep the focused agent and the result card first. The parent
-			// invocation remains available on later pages of the full tree.
-			details = append(details, invocationDetailLines(s, detailBudget, th)...)
-		}
-		for i, d := range m.toolDetailPage(&s, details, detailBudget) {
+		for i, d := range m.toolDetailPage(&s, details, detailBudget, sectionBreak, firstSection, nextSection) {
 			conn := "    "
 			if i == 0 {
 				conn = "  ⎿ "
@@ -1307,6 +1346,7 @@ func (m *Model) renderStep(s step, streaming bool, msgIdx, stepIdx, startLine in
 		}
 	} else if expanded {
 		details := invocationDetailLines(s, detailBudget, th)
+		invocationRows := len(details)
 		if len(details) > 0 && s.done {
 			details = append(details, th.stepArg.Render("result"))
 		}
@@ -1315,7 +1355,7 @@ func (m *Model) renderStep(s step, streaming bool, msgIdx, stepIdx, startLine in
 		} else {
 			details = append(details, stepDetail(s.name, stepDetailResult(s), m.vp.Width, th)...)
 		}
-		for i, d := range m.toolDetailPage(&s, details, detailBudget) {
+		for i, d := range m.toolDetailPage(&s, details, detailBudget, invocationRows, "invocation", "result") {
 			conn := "    "
 			if i == 0 {
 				conn = "  ⎿ "
@@ -1494,6 +1534,17 @@ func (m *Model) renderNotices() string {
 
 // ── input / approval area ─────────────────────────────────────────────────
 func (m *Model) inputArea() string {
+	if m.inspectChrome() {
+		label := "reasoning"
+		if m.inspect.stepIdx >= 0 {
+			s := m.msgs[m.inspect.msgIdx].steps[m.inspect.stepIdx]
+			label = sanitize(s.name)
+			if s.arg != "" {
+				label += " · " + sanitize(s.arg)
+			}
+		}
+		return m.th.footer.Render(truncate("  inspect "+label+" · Esc draft", m.width))
+	}
 	box := m.th.inputBox.Width(m.cardWidth()).Render(m.ta.View())
 	var above []string
 	if m.curApproval() != nil && !m.pal.open {
@@ -1584,7 +1635,7 @@ func (m *Model) approvalBody() string {
 	if a == nil {
 		return ""
 	}
-	head := th.apprHead.Render(fmt.Sprintf("⚠ approval required · risk: %s", orDash(collapse(a.Risk))))
+	head := th.apprHead.Render("⚠ approval required")
 	// The queue count lives in the footer alone ("N more queued") — the
 	// card head does not repeat it.
 	if a.IsOperation {
@@ -1604,22 +1655,38 @@ func (m *Model) approvalBody() string {
 	}
 
 	target := a.Command
-	if a.Name != "" {
-		target = a.Name + ": " + target
-	}
 
 	budget := max(1, m.cardInner())
 	lines := []string{ansi.Truncate(head, budget, "…")}
+	action := "Action: " + approvalRiskLabel(a.Risk)
+	targetLabel := "Command"
+	if a.IsOperation {
+		targetLabel = "Resource"
+	}
+	command := targetLabel + ": " + visibleInvocation(target)
+	if target == "" {
+		command = targetLabel + " not supplied by odek"
+	}
 	var body []string
 	if m.apprExpanded {
-		body = append(body, strings.Split(ansi.Hardwrap(sanitize(target), budget, true), "\n")...)
+		appendWrapped := func(line string) {
+			body = append(body, strings.Split(ansi.Hardwrap(line, budget, true), "\n")...)
+		}
+		appendWrapped(command)
+		appendWrapped(action)
+		appendWrapped("Working directory: not supplied by odek")
 		if a.Description != "" {
-			body = append(body, strings.Split(ansi.Hardwrap(sanitize(a.Description), budget, true), "\n")...)
+			appendWrapped("Reason: " + visibleInvocation(a.Description))
+		}
+		if a.AllowTrust && !a.Friction {
+			appendWrapped("Trust: allow " + approvalRiskLabel(a.Risk) + " until this connection ends")
 		}
 	} else {
-		body = append(body, truncate(collapse(target), budget))
+		preview := strings.ReplaceAll(command, "\n", "↵")
+		body = append(body, truncate(collapse(preview), budget))
+		body = append(body, truncate(action, budget))
 		if a.Description != "" {
-			body = append(body, truncate(collapse(a.Description), budget))
+			body = append(body, truncate("Reason: "+collapse(visibleInvocation(a.Description)), budget))
 		}
 	}
 	limit := max(1, min(8, m.height-m.desiredComposerHeight()-headerHeight-footerHeight-8))
@@ -1679,9 +1746,18 @@ func (m *Model) footerContent() string {
 		if a.Friction && m.apprEditing {
 			return m.panelFooter("approve + ⏎", "Alt+D deny", "esc compose")
 		}
-		hints := []string{"a approve", "d deny"}
+		if m.width < 56 {
+			if m.width < 35 {
+				return ansi.Truncate("  a once · d deny · Tab", max(1, m.width), "")
+			}
+			if a.AllowTrust && !a.Friction {
+				return ansi.Truncate("a once · d deny · t trust class · Tab", max(1, m.width), "")
+			}
+			return ansi.Truncate("  a allow once · d deny · Tab details", max(1, m.width), "")
+		}
+		hints := []string{"a allow once", "d deny"}
 		if a.AllowTrust && !a.Friction {
-			hints = append(hints, "t trust")
+			hints = append(hints, "t trust class")
 		}
 		if len(m.approvals) > 1 {
 			hints = append(hints, fmt.Sprintf("%d queued", len(m.approvals)-1))
@@ -1915,7 +1991,16 @@ func (m *Model) footerContent() string {
 		)
 	}
 	if m.validInspect() {
-		return m.panelFooter("inspect", "↑↓ next", "⏎ expand", "Pg↑↓ page", "esc compose")
+		if m.inspect.stepIdx >= 0 {
+			if m.width < 56 {
+				if m.msgs[m.inspect.msgIdx].steps[m.inspect.stepIdx].expanded || m.expandAll {
+					return ansi.Truncate("  Alt+I copy · PgUp/Dn page · Esc", max(1, m.width), "")
+				}
+				return ansi.Truncate("  Alt+I copy · Enter open · Esc", max(1, m.width), "")
+			}
+			return m.panelFooter("↑↓ next", "⏎ expand", "Pg↑↓ page", "Alt+I copy call", "esc compose")
+		}
+		return m.panelFooter("↑↓ next", "⏎ expand", "esc compose")
 	}
 	// The status bar carries no static key cheatsheet (the welcome splash and
 	// /help cover that) — only the live run state: a cancel hint while busy on
@@ -2018,7 +2103,7 @@ func (m *Model) panelFooter(hints ...string) string {
 		if out != "" {
 			next = out + sep + hint
 		}
-		if lipgloss.Width(next+sep+last) > m.width {
+		if lipgloss.Width(prefix+next+sep+last) > m.width {
 			continue
 		}
 		out = next
