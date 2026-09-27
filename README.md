@@ -65,26 +65,21 @@ bodek reuses that exact protocol from the terminal, which means:
 
 ## Install
 
-**Prerequisite:** bodek is only the front-end — you also need the `odek`
-engine. See [odek's install instructions](https://github.com/BackendStack21/odek)
-(provider env key such as `DEEPSEEK_API_KEY` / `ZAI_API_KEY` — see odek's [PROVIDERS.md](https://github.com/BackendStack21/odek/blob/main/docs/PROVIDERS.md)).
-
-### Prebuilt binaries
-
-Download the latest compiled binary from the
-[releases page](https://github.com/BackendStack21/bodek/releases) — archives
-are published for Linux, macOS, and Windows (amd64 & arm64), with
-`checksums.txt` for verification.
-
-One-liner for Linux / macOS (checksum-verified, installs into `~/.local/bin`):
-
+One-liner for macOS & Linux (checksum-verified, installs into `~/.local/bin`).
+It also sets up the `odek` engine, which bodek needs on `PATH`:
 
 ```bash
 curl -fsSL https://bodek.21no.de/install.sh | sh
 ```
 
+You still need a provider API key for the engine (`DEEPSEEK_API_KEY` /
+`ZAI_API_KEY` — see odek's [PROVIDERS.md](https://github.com/BackendStack21/odek/blob/main/docs/PROVIDERS.md)
+and its [install instructions](https://github.com/BackendStack21/odek)).
+Later, `bodek upgrade` downloads and installs the latest release the same way.
+
 On Windows, download the `windows_amd64` (or `arm64`) `.zip` from the
-releases page and put `bodek.exe` on your `PATH`.
+[releases page](https://github.com/BackendStack21/bodek/releases) and put
+`bodek.exe` on your `PATH`.
 
 ### From source
 
