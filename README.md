@@ -65,8 +65,11 @@ bodek reuses that exact protocol from the terminal, which means:
 
 ## Install
 
-One-liner for macOS & Linux (checksum-verified, installs into `~/.local/bin`).
-It also sets up the `odek` engine, which bodek needs on `PATH`:
+One-liner for macOS & Linux (checksum-verified, installs into `/usr/local/bin`
+or `~/.local/bin` when that is not writable).
+It offers to set up the `odek` engine, which bodek needs on `PATH` (piped
+installs default to No — rerun with `--with-odek` to install it
+unconditionally):
 
 ```bash
 curl -fsSL https://bodek.21no.de/install.sh | sh
