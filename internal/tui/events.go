@@ -674,6 +674,7 @@ func (m *Model) beginWireTurn(wake bool) {
 	m.msgs = append(m.msgs, message{role: roleAsst, streaming: true, systemWake: wake})
 	m.curIdx = len(m.msgs) - 1
 	m.busy = true
+	m.sessionLive = true    // a wire turn runs inside a real session
 	m.cancelAck = false     // a wake run's errors are real errors again
 	m.failBellFired = false // a fresh turn re-arms the failure BEL
 	m.skillSuggest = nil    // the suggestion's window closed with the last turn

@@ -262,13 +262,14 @@ type Model struct {
 	histIdx   int      // index into history while navigating
 	histDraft string   // input stashed while navigating history
 
-	model     string
-	sandbox   bool
-	sessionID string
-	authToken string // session-scoped token (for cancel / resume)
-	pendModel string // model to apply on the next prompt
-	thinking  string // canonical: "" inherit, or disabled|low|medium|high
-	expandAll bool   // Ctrl+E: render every step's full output/logs
+	model       string
+	sandbox     bool
+	sessionID   string
+	sessionLive bool   // a prompt created/adopted this session — copy-session-id's gate
+	authToken   string // session-scoped token (for cancel / resume)
+	pendModel   string // model to apply on the next prompt
+	thinking    string // canonical: "" inherit, or disabled|low|medium|high
+	expandAll   bool   // Ctrl+E: render every step's full output/logs
 
 	odekVersion  string // engine version, shown in the cockpit stats sheet ("" hides it)
 	bodekVersion string // bodek's own version, for the startup update check
@@ -1243,6 +1244,7 @@ func (m *Model) clearConversation() tea.Cmd {
 func (m *Model) startFreshSession() tea.Cmd {
 	homeFetch := m.clearConversation()
 	m.sessionID = ""
+	m.sessionLive = false // /new: no session until the next prompt creates one
 	m.authToken = ""
 	m.pendModel = m.model // the new session re-asserts the active model
 	m.resetPlanState()

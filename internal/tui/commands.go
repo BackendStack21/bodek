@@ -19,6 +19,17 @@ type command struct {
 	run  func(m *Model, args string) tea.Cmd
 }
 
+// commandOffered gates discoverability (slash popup + /help). A command
+// with no gate is always offered; /copy-session-id stays hidden until a
+// session actually exists — the connect-time session frame stamps an id
+// before any prompt, and that placeholder must not be copied.
+func commandOffered(m *Model, c command) bool {
+	if c.name == "copy-session-id" {
+		return m.sessionLive
+	}
+	return true
+}
+
 // slashCommands is the registry. Keeping it a function keeps the closures
 // simple and avoids package-init ordering concerns.
 func slashCommands() []command {
@@ -205,6 +216,9 @@ func (m *Model) runSelectedCommand() tea.Cmd {
 func (m *Model) openCmdAC(query string) {
 	var items []client.Resource
 	for _, c := range slashCommands() {
+		if !commandOffered(m, c) {
+			continue
+		}
 		if strings.HasPrefix(c.name, query) {
 			items = append(items, client.Resource{
 				ID: "/" + c.name, Type: "command", Label: "/" + c.name, Detail: c.desc,
@@ -301,6 +315,9 @@ func (m *Model) buildHelpCard() string {
 	b.WriteString("\n" + th.statsLabel.Render("commands"))
 	const cmdW = 10 // longest name is "/thinking"
 	for _, c := range slashCommands() {
+		if !commandOffered(m, c) {
+			continue
+		}
 		b.WriteString("\n" + th.tipKey.Render(padRight("/"+c.name, cmdW)) + " " + th.tipText.Render(c.desc))
 	}
 	b.WriteString(rule)
