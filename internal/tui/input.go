@@ -515,7 +515,15 @@ func (m *Model) sendPrompt(text string) tea.Cmd {
 	m.ta.Reset()
 	m.closeAC()
 	m.busy = true
-	m.sessionLive = true    // the first prompt creates the session
+	// The id stays a placeholder until a session frame confirms it — but
+	// odek does not re-emit a session frame per turn, so only a
+	// still-unconfirmed id (re)arms the gate; a confirmed one must keep
+	// copying across later prompts. Evaluated before sessionLive flips:
+	// the first prompt finds it false and arms; later prompts of an
+	// already-confirmed session do not.
+	armSessionConfirm := !m.sessionLive || m.awaitSessionConfirm
+	m.sessionLive = true // the first prompt creates the session
+	m.awaitSessionConfirm = armSessionConfirm
 	m.cancelAck = false     // a fresh run's errors are real errors again
 	m.failBellFired = false // a fresh local turn re-arms the failure BEL
 	m.skillSuggest = nil    // the suggestion's window closed with the turn

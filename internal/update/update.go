@@ -189,14 +189,20 @@ func statusRetryable(err error) bool {
 }
 
 // Newer reports whether latest is a higher version than current. Both may
-// carry a "v" prefix; comparison is numeric over up to 3 dot-separated
-// components, with missing components treated as 0. A Go pseudo-version
+// carry a "v" prefix; both sides are reduced to their release core by
+// pseudoBase before comparison — including the latest side, so a
+// prerelease tag like "v1.2.0-rc1" no longer fails the numeric parse and
+// reads as "already up to date" forever. Consequence of the release-core
+// rule: "v1.2.0-rc1" against current "v1.2.0" compares equal and reports
+// false — this simple comparator ignores prerelease ordering. Comparison
+// is numeric over up to 3 dot-separated components, with missing
+// components treated as 0. A Go pseudo-version
 // current (v0.1.3-0.20260901abcdef12-abc1234) compares by its release
 // prefix, so a commit-installed build still sees newer releases. Anything
 // unparsable — including a dev build's "dev" or an empty string — reports
 // false, so a failed or skipped check never nags.
 func Newer(latest, current string) bool {
-	l, lok := parseSemver(latest)
+	l, lok := parseSemver(pseudoBase(latest))
 	c, cok := parseSemver(pseudoBase(current))
 	if !lok || !cok {
 		return false
