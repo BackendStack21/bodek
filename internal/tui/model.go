@@ -332,6 +332,8 @@ type Model struct {
 	memTarget   string // add-fact editor target ("user" | "env")
 	skills      []client.Skill
 	toolRows    []toolRow
+	mcpJump     bool   // a /mcp invocation armed a one-shot focus
+	mcpFocus    string // /mcp <name> focus target, consumed on fetch
 	cfgRows     []cfgRow
 	shutdownReq bool // shutdown sent — the socket drop is expected, not a failure
 

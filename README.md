@@ -509,6 +509,7 @@ full command and press `⏎`.
 | `/memory` | Facts by target, pending-episode promote, consolidate |
 | `/skills` | Skill provenance badges & promote |
 | `/tools` | Tool registry with enabled state & MCP servers |
+| `/mcp` | MCP servers — `/mcp [name]` jumps to one in the tools drawer |
 | `/config` | Sanitized config, lifetime usage, connections (kick) |
 | `/model [name]` | Switch model (opens a picker with no argument) |
 | `/thinking [disabled\|low\|medium\|high]` | Set reasoning depth (`on` → `medium`, `off` → `disabled`, `inherit` restores the odek serve default; bare `/thinking` opens a picker) |
@@ -522,7 +523,7 @@ full command and press `⏎`.
 ### The management drawer
 
 `/sessions`, `/runs`, `/agents`, `/jobs`, `/events`, `/plan`, `/memory`,
-`/skills`, `/tools`, and `/config` all open tabs of **one drawer** that
+`/skills`, `/tools`, `/mcp`, and `/config` all open tabs of **one drawer** that
 sits as a **bottom sheet** — about eight transcript rows stay visible
 above it (full-bleed only when the terminal is too short) — with a
 shared grammar:

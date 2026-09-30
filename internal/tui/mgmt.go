@@ -187,6 +187,10 @@ func (m *Model) handleMgmtMsg(msg mgmtMsg) {
 		return
 	}
 	if msg.err != nil {
+		// A failed fetch consumes the one-shot /mcp focus like a
+		// successful one — it must not leak into the next Tools load.
+		m.mcpJump = false
+		m.mcpFocus = ""
 		m.panelMsg = "error: " + msg.err.Error()
 		return
 	}
@@ -219,6 +223,36 @@ func (m *Model) handleMgmtMsg(msg mgmtMsg) {
 			m.panelMsg = "no tools registered"
 		} else {
 			m.panelMsg = fmt.Sprintf("%d built-ins · %d MCP servers", len(msg.tls), msg.mcpN)
+		}
+		// One-shot /mcp focus: land on the first MCP row (bare) or the
+		// named server (case-insensitive). Consumed exactly once.
+		notFound := false
+		if m.mcpJump {
+			m.mcpJump = false
+			focus := m.mcpFocus
+			m.mcpFocus = ""
+			if focus != "" {
+				for i, r := range m.toolRows {
+					if r.kind == "mcp" && strings.EqualFold(r.id, focus) {
+						m.panelSel = i
+						break
+					}
+				}
+				if r := m.toolSelected(); r == nil || r.kind != "mcp" || !strings.EqualFold(r.id, focus) {
+					m.panelMsg = fmt.Sprintf("no MCP server named %q — /mcp lists all", focus)
+					notFound = true
+				}
+			} else {
+				for i, r := range m.toolRows {
+					if r.kind == "mcp" {
+						m.panelSel = i
+						break
+					}
+				}
+			}
+		}
+		if msg.mcpN == 0 && len(m.toolRows) > 0 && !notFound {
+			m.panelMsg = fmt.Sprintf("%d built-ins · no MCP servers configured", len(msg.tls))
 		}
 	case panelConfig:
 		m.cfgRows = buildCfgRows(msg.cfg, msg.usr, msg.con)

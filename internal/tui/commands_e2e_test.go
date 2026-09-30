@@ -242,6 +242,24 @@ func TestE2EAllCommands(t *testing.T) {
 				t.Error("/tools fetched no rows")
 			}
 		},
+		"/mcp": func(t *testing.T, m *Model) {
+			if m.panel != panelTools {
+				t.Fatalf("panel = %d, want tools", m.panel)
+			}
+			if r := m.toolSelected(); r == nil || r.kind != "mcp" {
+				t.Fatalf("/mcp selection = %+v, want the mcp row", r)
+			}
+		},
+		"/mcp fs": func(t *testing.T, m *Model) {
+			if r := m.toolSelected(); r == nil || r.kind != "mcp" || r.text != "fs" {
+				t.Fatalf("/mcp fs selection = %+v, want the fs row", r)
+			}
+		},
+		"/mcp nope": func(t *testing.T, m *Model) {
+			if !strings.Contains(m.panelMsg, "no MCP server named") {
+				t.Errorf("/mcp nope panelMsg = %q, want a not-found note", m.panelMsg)
+			}
+		},
 		"/config": func(t *testing.T, m *Model) {
 			if m.panel != panelConfig {
 				t.Fatalf("panel = %d, want config", m.panel)
