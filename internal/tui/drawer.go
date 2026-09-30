@@ -250,6 +250,8 @@ func (m *Model) switchDrawerTab(mode panelMode) tea.Cmd {
 	m.confirm = confirmNone // a gate never survives a tab change
 	m.panelDetail = false   // nor does an open detail view
 	m.detailScroll = 0
+	m.mcpJump = false // nor does the /mcp one-shot focus
+	m.mcpFocus = ""
 	for _, t := range drawerTabs() {
 		if t.mode == mode {
 			return t.open(m)

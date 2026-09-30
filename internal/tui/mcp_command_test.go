@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"errors"
 	"strings"
 	"testing"
 
@@ -111,6 +112,61 @@ func TestMCPUnknownName(t *testing.T) {
 	}
 	if !strings.Contains(m.panelMsg, "no MCP server named") {
 		t.Errorf("panelMsg = %q, want a not-found note", m.panelMsg)
+	}
+}
+
+// TestMCPOneShotSemantics pins the one-shot focus contract: a /mcp jump
+// consumed by one fetch never re-applies, and a tab switch before the fetch
+// lands disarms it entirely.
+func TestMCPOneShotSemantics(t *testing.T) {
+	// /mcp fs, fetch lands → focus applied once. A later plain /tools
+	// fetch must NOT re-apply the focus.
+	m := wired(t)
+	runSlash(t, m, "/mcp fs")
+	if r := m.toolSelected(); r == nil || r.text != "fs" {
+		t.Fatalf("focus not applied: %+v", r)
+	}
+	m.Update(exec(m.openTools())) // plain /tools re-fetch
+	if r := m.toolSelected(); r != nil && r.kind == "mcp" {
+		t.Fatalf("stale focus re-applied on a plain /tools fetch: %+v", r)
+	}
+
+	// /mcp fs then a tab switch before the fetch lands: the late tools
+	// result is dropped by the cross-tab guard AND the jump is disarmed,
+	// so a subsequent Tools load must not apply the stale focus.
+	m2 := wired(t)
+	runSlash(t, m2, "/mcp fs")
+	m2.Update(exec(m2.switchDrawerTab(panelMemory))) // tab switch disarms
+	m2.Update(exec(m2.openTools()))
+	if r := m2.toolSelected(); r != nil && r.kind == "mcp" {
+		t.Fatalf("disarmed jump re-applied after tab switch: %+v", r)
+	}
+}
+
+// TestMCPErrorConsumesFocus verifies a failed tools fetch consumes the
+// one-shot focus instead of leaking it into the next successful load.
+func TestMCPErrorConsumesFocus(t *testing.T) {
+	m := wired(t)
+	runSlash(t, m, "/mcp fs")
+	m.handleMgmtMsg(mgmtMsg{tab: panelTools, err: errors.New("boom")})
+	if m.mcpJump || m.mcpFocus != "" {
+		t.Fatalf("error left the jump armed: jump=%v focus=%q", m.mcpJump, m.mcpFocus)
+	}
+	m.handleMgmtMsg(mgmtMsg{tab: panelTools, mcpN: 1, tls: []client.Tool{{Name: "shell", Enabled: true}}})
+	if r := m.toolSelected(); r != nil && r.kind == "mcp" {
+		t.Fatalf("stale focus applied after an error recovery load: %+v", r)
+	}
+}
+
+// TestMCPUnknownNotClobbered verifies the not-found note survives the
+// zero-MCP-server note on the same frame.
+func TestMCPUnknownNotClobbered(t *testing.T) {
+	m := wired(t)
+	m.panel = panelTools
+	m.mcpJump, m.mcpFocus = true, "gone"
+	m.handleMgmtMsg(mgmtMsg{tab: panelTools, mcpN: 0, tls: []client.Tool{{Name: "shell", Enabled: true}}})
+	if !strings.Contains(m.panelMsg, "no MCP server named") {
+		t.Errorf("not-found note clobbered: %q", m.panelMsg)
 	}
 }
 
