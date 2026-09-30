@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/BackendStack21/bodek/internal/workspace"
@@ -46,6 +47,13 @@ func TestCopySessionIDWithoutSession(t *testing.T) {
 	}
 	if m.copyFlashing() {
 		t.Error("nothing was copied — the flash must stay off")
+	}
+	// The note must warn and teach: the id only exists once a session is
+	// created (first prompt), so the operator knows to send a prompt first.
+	if n := len(m.notices); n == 0 {
+		t.Fatal("no-session copy must record a visible note")
+	} else if got := m.notices[n-1]; !strings.Contains(got, "no session") || !strings.Contains(got, "prompt") {
+		t.Errorf("note = %q, want a warning naming the session and a prompt hint", got)
 	}
 }
 
