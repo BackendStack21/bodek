@@ -170,6 +170,50 @@ func TestMCPUnknownNotClobbered(t *testing.T) {
 	}
 }
 
+// TestMCPEnabledStateVisible verifies MCP rows and the detail view surface
+// the enabled/disabled state odek sends on /api/mcp.
+func TestMCPEnabledStateVisible(t *testing.T) {
+	m := newTestModel()
+	m.panel = panelTools
+	m.handleMgmtMsg(mgmtMsg{tab: panelTools, mcpN: 2, tls: []client.Tool{{Name: "shell", Enabled: true}},
+		mcp: []client.MCPServer{
+			{Name: "fs", Command: "bun", Enabled: true},
+			{Name: "vault", Command: "node", Enabled: false},
+		}})
+	if len(m.toolRows) != 3 {
+		t.Fatalf("toolRows = %d, want 3", len(m.toolRows))
+	}
+	var fsRow, vaultRow *toolRow
+	for i := range m.toolRows {
+		switch r := &m.toolRows[i]; r.id {
+		case "fs":
+			fsRow = r
+		case "vault":
+			vaultRow = r
+		}
+	}
+	if fsRow == nil || vaultRow == nil {
+		t.Fatalf("missing mcp rows: %+v", m.toolRows)
+	}
+	if !strings.Contains(fsRow.dim, "enabled") || strings.Contains(fsRow.dim, "disabled") {
+		t.Errorf("fs row dim = %q, want an \"enabled\" marker", fsRow.dim)
+	}
+	if !strings.Contains(vaultRow.dim, "disabled") {
+		t.Errorf("vault row dim = %q, want \"disabled\" marker", vaultRow.dim)
+	}
+	// Detail view of the disabled server states the fact explicitly.
+	for i := range m.toolRows {
+		if m.toolRows[i].id == "vault" {
+			m.panelSel = i
+		}
+	}
+	m.panelDetail = true
+	out := plain(m.View())
+	if !strings.Contains(out, "disabled") {
+		t.Errorf("mcp detail view missing \"disabled\":\n%s", out)
+	}
+}
+
 // TestMCPZeroServers verifies the zero-server empty state: the Tools tab
 // still opens (it has native tools) with a "no MCP servers configured" note.
 func TestMCPZeroServers(t *testing.T) {

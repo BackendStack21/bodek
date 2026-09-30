@@ -320,6 +320,11 @@ func buildToolRows(tools []client.Tool, servers []client.MCPServer) []toolRow {
 	}
 	for _, s := range servers {
 		detail := s.Command
+		if s.Enabled {
+			detail += " · enabled"
+		} else {
+			detail += " · disabled"
+		}
 		if s.Project {
 			detail += " · project"
 		}
@@ -935,6 +940,11 @@ func (m *Model) mgmtDetailLines(w int) []string {
 			}
 			out = append(out, th.acDetail.Render(cmd))
 			var meta []string
+			if srv.Enabled {
+				meta = append(meta, "enabled")
+			} else {
+				meta = append(meta, "disabled")
+			}
 			if srv.Project {
 				meta = append(meta, "project-scoped")
 			}

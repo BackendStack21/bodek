@@ -509,7 +509,7 @@ full command and press `⏎`.
 | `/memory` | Facts by target, pending-episode promote, consolidate |
 | `/skills` | Skill provenance badges & promote |
 | `/tools` | Tool registry with enabled state & MCP servers |
-| `/mcp` | MCP servers — `/mcp [name]` jumps to one in the tools drawer |
+| `/mcp` | MCP servers with enabled/disabled state — `/mcp [name]` jumps to one in the tools drawer |
 | `/config` | Sanitized config, lifetime usage, connections (kick) |
 | `/model [name]` | Switch model (opens a picker with no argument) |
 | `/thinking [disabled\|low\|medium\|high]` | Set reasoning depth (`on` → `medium`, `off` → `disabled`, `inherit` restores the odek serve default; bare `/thinking` opens a picker) |

@@ -130,6 +130,7 @@ type MCPServer struct {
 	Args             []string `json:"args,omitempty"`
 	Project          bool     `json:"project,omitempty"`
 	AutoApprove      bool     `json:"auto_approve,omitempty"`
+	Enabled          bool     `json:"enabled"`
 	TimeoutSeconds   int      `json:"timeout_seconds,omitempty"`
 	MaxResponseBytes int64    `json:"max_response_bytes,omitempty"`
 	MaxResultChars   int      `json:"max_result_chars,omitempty"`
