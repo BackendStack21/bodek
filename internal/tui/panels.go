@@ -1175,7 +1175,6 @@ func (m *Model) replayTranscript(msgs []client.SessionMessage) {
 			// live tool_result events carry the raw output — strip it so both
 			// render identically. resultPreview sanitizes the unwrapped output.
 			rawResult := stripToolResultFrame(mm.Content)
-			result := resultPreview(rawResult)
 			// Match by tool_call_id first; fall back to the live tool_result
 			// behavior of scanning backwards by name for an unfinished step.
 			idx, ok := stepByCallID[mm.ToolCallID]
@@ -1193,10 +1192,10 @@ func (m *Model) replayTranscript(msgs []client.SessionMessage) {
 			if !ok {
 				continue
 			}
+			result := toolResultPreview(cur.steps[idx].name, rawResult)
 			cur.steps[idx].done = true
 			cur.steps[idx].result = result
-			cur.steps[idx].detailResult = boundedStructuredDetail(cur.steps[idx].name, rawResult)
-			cur.steps[idx].isErr = looksLikeError(result) || hasFailedExit(rawResult) || structuredResultFailed(cur.steps[idx].name, rawResult)
+			cur.steps[idx].isErr = looksLikeError(result) || hasFailedExit(rawResult)
 		}
 	}
 	flush()

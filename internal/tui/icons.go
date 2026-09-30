@@ -16,6 +16,9 @@ const (
 // feed reads at a glance. Matching is by substring to cover odek's native
 // tools, MCP tools (server__tool), and sub-agent variants.
 func toolGlyph(name string) string {
+	if retiredTool(name) {
+		return "✦"
+	}
 	n := strings.ToLower(name)
 	switch {
 	case strings.Contains(n, "shell"), strings.Contains(n, "bash"), strings.Contains(n, "exec"):
@@ -52,5 +55,16 @@ func resourceGlyph(typ string) string {
 		return "✦"
 	default: // file
 		return "≡"
+	}
+}
+
+// retiredTool keeps historical tool names on the generic display path instead
+// of matching the substring-based renderers for supported tools and MCP names.
+func retiredTool(name string) bool {
+	switch strings.ToLower(strings.TrimSpace(name)) {
+	case "parallel_shell", "batch_patch", "batch_read", "multi_grep", "http_batch":
+		return true
+	default:
+		return false
 	}
 }

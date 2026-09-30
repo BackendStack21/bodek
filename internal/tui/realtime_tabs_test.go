@@ -32,9 +32,9 @@ func TestSubagentStateKicksAgentsFetch(t *testing.T) {
 // telemetry (tool/step, elapsed) — not just the REST snapshot's coarse data.
 func TestAgentsRowsPreferLiveCard(t *testing.T) {
 	m := stateFixture(t)
-	// Live card: the agent is on step 3 running "multi_grep", 40s elapsed.
+	// Live card: the agent is on step 3 running "search_files", 40s elapsed.
 	m.handleEvent(client.Event{Type: "subagent_state", TaskID: "t1", TaskIdx: 0,
-		Phase: "active", Status: "running", Step: 3, Tool: "multi_grep"})
+		Phase: "active", Status: "running", Step: 3, Tool: "search_files"})
 	// REST row is stale: server snapshot still says step 1 / shell, 2s.
 	m.panel = panelAgents // handleMgmtMsg drops cross-tab results
 	m.handleMgmtMsg(mgmtMsg{tab: panelAgents, sag: []client.SubagentEntry{
@@ -45,7 +45,7 @@ func TestAgentsRowsPreferLiveCard(t *testing.T) {
 		t.Fatal("no rows rendered")
 	}
 	joined := strings.Join(rows, " ")
-	if !strings.Contains(joined, "multi_grep") {
+	if !strings.Contains(joined, "search_files") {
 		t.Errorf("row ignores the live card's tool: %q", joined)
 	}
 	if strings.Contains(joined, "shell") {

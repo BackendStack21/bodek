@@ -127,12 +127,12 @@ func TestInvocationDisplaysUnsafeCharactersAndLimit(t *testing.T) {
 		t.Fatalf("invalid UTF-8 byte was hidden: %q", got)
 	}
 
-	raw := `{"commands":["first","second"],"note":"` + strings.Repeat("x", toolArgsLimit) + `"}`
+	raw := `{"tasks":["first","second"],"note":"` + strings.Repeat("x", toolArgsLimit) + `"}`
 	retained, omitted := retainToolArgs(raw)
 	if !omitted || len(retained) > toolArgsLimit {
 		t.Fatal("tool arguments were not bounded")
 	}
-	limited := invocationText(step{name: "parallel_shell", callArgs: retained, argsOmitted: omitted})
+	limited := invocationText(step{name: "delegate_tasks", callArgs: retained, argsOmitted: omitted})
 	if !strings.Contains(limited, "limited to 256 KiB") || !strings.Contains(limited, "remaining invocation arguments omitted") {
 		t.Fatal("bounded invocation has no visible limit marker")
 	}
@@ -154,7 +154,7 @@ func TestExpandedApprovalCommandWrapsWideCharacters(t *testing.T) {
 }
 
 func TestNestedInvocationAndCopyTarget(t *testing.T) {
-	s := step{name: "parallel_shell", callArgs: `{"commands":[{"command":"go test ./..."},{"command":"go vet ./..."}]}`}
+	s := step{name: "delegate_tasks", callArgs: `{"tasks":[{"prompt":"go test ./..."},{"prompt":"go vet ./..."}]}`}
 	got := invocationText(s)
 	for _, want := range []string{"go test ./...", "go vet ./..."} {
 		if !strings.Contains(got, want) {

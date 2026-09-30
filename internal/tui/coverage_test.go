@@ -41,7 +41,7 @@ func TestListenDrainsPendingBatch(t *testing.T) {
 }
 
 func TestGlyphsAllBranches(t *testing.T) {
-	for _, n := range []string{"shell", "bash", "write_file", "patch", "read_file", "list_dir", "search_files", "web_search", "browser", "http_batch", "delegate_tasks", "memory", "vision", "transcribe", "unknown_x"} {
+	for _, n := range []string{"shell", "bash", "write_file", "patch", "read_file", "list_dir", "search_files", "web_search", "browser", "http_request", "delegate_tasks", "memory", "vision", "transcribe", "unknown_x"} {
 		if toolGlyph(n) == "" {
 			t.Errorf("empty glyph for %q", n)
 		}

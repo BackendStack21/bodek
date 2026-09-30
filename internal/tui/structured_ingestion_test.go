@@ -7,114 +7,64 @@ import (
 	"github.com/BackendStack21/bodek/internal/client"
 )
 
-func TestStructuredBatchBoundsAreHonest(t *testing.T) {
-	rows := make([]string, 300)
-	for i := range rows {
-		body := strings.Repeat("x", 3000)
-		rows[i] = `{"path":"file-` + string(rune('a'+i%26)) + `.go","content":"` + body + `","stdout":"` + body + `"}`
-	}
-	raw := `{"results":[` + strings.Join(rows, ",") + `]}`
-	detail := boundedStructuredDetail("batch_read", raw)
-	th := newTheme()
-	if got := plain(structuredHeadSuffix("batch_read", detail, th)); got != "256/300 files shown" {
-		t.Fatalf("bounded batch summary = %q", got)
-	}
-	details := plain(strings.Join(stepDetail("batch_read", detail, 80, th), "\n"))
-	if !strings.Contains(details, "44 more items omitted") {
-		t.Fatalf("missing item omission marker:\n%s", details[:min(len(details), 1000)])
-	}
-	if !strings.Contains(details, "item output omitted") {
-		t.Fatalf("missing body omission marker:\n%s", details[:min(len(details), 1000)])
+// Retired names remain here deliberately: old sessions must be inspectable
+// without restoring tool-specific renderers or normalizing away JSON fields.
+func TestRetiredToolsUseGenericLiveAndReplayRendering(t *testing.T) {
+	for _, name := range retiredToolNames {
+		t.Run(name, func(t *testing.T) {
+			args := `{"command":"echo historical","paths":["a.go"],"requests":[{"url":"https://example.test"}]}`
+			raw := `{"results":[{"path":"a.go","command":"echo historical","stdout":"old output","exit_code":0,"duration_ms":12,"success":true,"status":200}],"metadata":{"keep":"unknown fields"}}`
+			live := newTestModel()
+			live.handleEvent(client.Event{Type: "tool_call", Name: name, Data: args})
+			live.handleEvent(client.Event{Type: "tool_result", Name: name, Data: raw})
+			live.handleEvent(client.Event{Type: "done"})
+
+			call := client.SessionToolCall{ID: "call-1"}
+			call.Function.Name, call.Function.Arguments = name, args
+			replay := newTestModel()
+			replay.replayTranscript([]client.SessionMessage{
+				{Role: "assistant", ToolCalls: []client.SessionToolCall{call}},
+				{Role: "tool", Name: name, ToolCallID: "call-1", Content: "┌── TOOL RESULT: " + name + "\n" + raw + "\n└── END TOOL RESULT: " + name},
+			})
+			for _, m := range []*Model{live, replay} {
+				if len(m.msgs) != 1 || len(m.msgs[0].steps) != 1 {
+					t.Fatalf("unexpected transcript: %#v", m.msgs)
+				}
+				s := m.msgs[0].steps[0]
+				if !s.done || s.result != raw || s.callArgs != args || s.subagent || s.resultCard != nil {
+					t.Fatalf("historical step lost generic data: %+v", s)
+				}
+				if got := stepHeadSuffix(s.name, s.arg, s.result, m.th); got != "" {
+					t.Fatalf("retired tool received a typed summary: %q", plain(got))
+				}
+				// Page the real expanded view through both invocation and JSON result.
+				m.msgs[0].steps[0].expanded = true
+				m.inspect = &inspectTarget{msgIdx: 0, stepIdx: 0, itemIdx: -1}
+				m.invalidateInspect()
+				var rendered strings.Builder
+				for page := 0; page < 6; page++ {
+					out, _, _ := m.renderStep(m.msgs[0].steps[0], false, 0, 0, 0)
+					rendered.WriteString(plain(out))
+					m.Update(key("pgdown"))
+				}
+				for _, want := range []string{"invocation · arguments", `"results"`, `"duration_ms"`, `"metadata"`, "unknown fields"} {
+					if !strings.Contains(rendered.String(), want) {
+						t.Errorf("generic expanded view missing %q: %s", want, rendered.String()[:min(rendered.Len(), 1500)])
+					}
+				}
+			}
+		})
 	}
 }
 
-func TestStructuredUnknownFallbackStaysGeneric(t *testing.T) {
-	raw := `{"results":[{"stdout":"known"},{"metadata":{"nested":true}}]}`
-	detail := boundedStructuredDetail("parallel_shell", raw)
-	if _, ok := structuredJSONItems("parallel_shell", detail); ok {
-		t.Fatal("unknown mixed results unexpectedly became structured items")
-	}
-	if got := structuredHeadSuffix("parallel_shell", detail, newTheme()); got != "" {
-		t.Fatalf("unknown fallback inferred batch summary: %q", plain(got))
-	}
-}
-
-func TestStructuredBatchDetailSurvivesLiveIngestion(t *testing.T) {
-	m := newTestModel()
-	m.msgs = append(m.msgs, message{role: roleAsst, streaming: true})
-	m.curIdx = 0
-	m.busy = true
-	m.handleEvent(client.Event{Type: "tool_call", Name: "batch_read", Data: `{"paths":["a.go","b.go"]}`})
-	raw := `{"results":[{"path":"a.go","content":"1|package main","total_lines":9},{"path":"b.go","content":"1|package test","total_lines":4}]}`
-	m.handleEvent(client.Event{Type: "tool_result", Name: "batch_read", Data: raw})
-
-	s := m.msgs[0].steps[0]
-	if s.detailResult == "" {
-		t.Fatal("structured detail was discarded during live ingestion")
-	}
-	details := plain(strings.Join(stepDetail(s.name, stepDetailResult(s), 60, newTheme()), "\n"))
-	if !strings.Contains(details, "a.go") || !strings.Contains(details, "b.go") {
-		t.Fatalf("batch labels missing from detail:\n%s", details)
-	}
-	if s.result == s.detailResult {
-		t.Fatal("normalized result and structured detail should remain separate")
-	}
-}
-
-func TestStructuredBatchLogBracketDoesNotChangeItemCount(t *testing.T) {
-	m := newTestModel()
-	m.msgs = append(m.msgs, message{role: roleAsst, streaming: true})
-	m.curIdx = 0
-	m.busy = true
-	m.handleEvent(client.Event{Type: "tool_call", Name: "parallel_shell", Data: `{}`})
-	raw := `{"results":[{"command":"first","stdout":"start\n[2] warning","exit_code":0},{"command":"second","stdout":"done","exit_code":0}]}`
-	m.handleEvent(client.Event{Type: "tool_result", Name: "parallel_shell", Data: raw})
-
-	s := m.msgs[0].steps[0]
-	if got := plain(stepHeadSuffix(s.name, s.arg, stepDetailResult(s), newTheme())); got != "✓ 2 commands" {
-		t.Fatalf("bracketed log changed batch count: %q", got)
-	}
-}
-
-func TestStructuredBatchDetailPreservesFailureAfterLiveAndReplay(t *testing.T) {
-	raw := `{"results":[{"path":"missing.go","error":"file not found","success":false}]}`
-
-	m := newTestModel()
-	m.msgs = append(m.msgs, message{role: roleAsst, streaming: true})
-	m.curIdx = 0
-	m.busy = true
-	m.handleEvent(client.Event{Type: "tool_call", Name: "batch_patch", Data: `{"patches":[]}`})
-	m.handleEvent(client.Event{Type: "tool_result", Name: "batch_patch", Data: raw})
-	live := m.msgs[0].steps[0]
-	if !live.isErr || !live.expanded {
-		t.Fatalf("live structured failure not retained: %+v", live)
-	}
-
-	replay := newTestModel()
-	call := client.SessionToolCall{ID: "call-1"}
-	call.Function.Name = "batch_patch"
-	call.Function.Arguments = `{"patches":[]}`
-	replay.replayTranscript([]client.SessionMessage{
-		{Role: "user", Content: "patch it"},
-		{Role: "assistant", ToolCalls: []client.SessionToolCall{call}},
-		{Role: "tool", Name: "batch_patch", ToolCallID: "call-1", Content: "┌── TOOL RESULT: batch_patch\n" + raw + "\n└── END TOOL RESULT: batch_patch"},
-	})
-	if len(replay.msgs) != 2 || !replay.msgs[1].steps[0].isErr {
-		t.Fatalf("restored structured failure not retained: %#v", replay.msgs)
-	}
-	step := replay.msgs[1].steps[0]
-	if got := plain(strings.Join(stepDetail(step.name, stepDetailResult(step), 60, newTheme()), "\n")); !strings.Contains(got, "missing.go") {
-		t.Fatalf("restored batch label missing from detail: %s", got)
-	}
-}
-
-func TestStructuredTextDoesNotInventBatchGrouping(t *testing.T) {
-	th := newTheme()
-	if got := structuredHeadSuffix("parallel_shell", "[2] warning", th); got != "" {
-		t.Fatalf("legacy bracketed text inferred a batch: %q", plain(got))
-	}
-	if got := stepDetail("parallel_shell", "[2] warning", 60, th); len(got) != 1 || !strings.Contains(plain(got[0]), "[2] warning") {
-		t.Fatalf("legacy bracketed text was not kept plain: %#v", got)
+func TestRetiredToolFallbackRemainsBounded(t *testing.T) {
+	for _, name := range retiredToolNames {
+		for _, raw := range []string{strings.Repeat("界", 100000), strings.Repeat("line\n", 1000)} {
+			got := toolResultPreview(name, raw)
+			if len(got) > 128*1024+100 || len(strings.Split(got, "\n")) > 201 || !strings.Contains(got, "…") {
+				t.Fatalf("%s fallback is unbounded or lacks an omission marker", name)
+			}
+		}
 	}
 }
 

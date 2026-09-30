@@ -35,7 +35,6 @@ type step struct {
 	callArgs     string // retained tool-call arguments for deliberate inspection
 	argsOmitted  bool   // callArgs exceeded the bounded inspection limit
 	result       string // sanitized tool output (multi-line); excerpted at render
-	detailResult string // bounded structured display data; normalized result remains copyable
 	detailOffset int    // first visible line in the expanded response
 	done         bool
 	isErr        bool          // the result reads as a failure (tints the status glyph red)

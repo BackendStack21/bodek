@@ -8,6 +8,9 @@ import (
 // toolProgress returns a playful, context-aware status line for a running tool,
 // derived from the tool name and its argument preview.
 func toolProgress(name, arg string) string {
+	if retiredTool(name) {
+		return "🔧 running " + name
+	}
 	n := strings.ToLower(name)
 	switch {
 	case strings.Contains(n, "shell"), strings.Contains(n, "bash"), strings.Contains(n, "exec"):

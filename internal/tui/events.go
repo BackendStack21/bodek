@@ -207,9 +207,8 @@ func (m *Model) handleEvent(ev client.Event) (tea.Model, tea.Cmd) {
 			for j := range steps {
 				if steps[j].name == nm && !steps[j].done {
 					steps[j].done = true
-					steps[j].result = resultPreview(ev.Data)
-					steps[j].detailResult = boundedStructuredDetail(nm, ev.Data)
-					steps[j].isErr = looksLikeError(steps[j].result) || hasFailedExit(ev.Data) || structuredResultFailed(nm, ev.Data)
+					steps[j].result = toolResultPreview(nm, ev.Data)
+					steps[j].isErr = looksLikeError(steps[j].result) || hasFailedExit(ev.Data)
 					if steps[j].isErr && !steps[j].expanded {
 						// A failing step is why anyone expands anything —
 						// unfold it once so the diagnosis is on screen
@@ -745,10 +744,9 @@ func eventTail(ev client.Event) string {
 //     wrapper shows up as <untrusted_content_… — the envelope is
 //     decoded and the real content rendered, with remaining scalar metadata
 //     as a one-line footer.
-//  2. parallel-tool envelopes (parallel_shell, delegate_tasks): a top-level
-//     "results" array is extracted item by item — each item renders only its
-//     display body (stdout, stderr, non-zero exit codes); command echoes,
-//     indexes, and durations stay hidden.
+//  2. results arrays (including delegate_tasks): each item renders its display
+//     body, stderr, and non-zero exit code; command echoes and durations stay
+//     hidden. Retired tools bypass normalization in toolResultPreview.
 //  3. untrusted_content wrappers, folded away entirely
 //     body renders. Both the literal tag form (live stream events) and the
 //     < escaped form (undecoded JSON envelopes) are recognized.
@@ -815,10 +813,9 @@ var resultsItemFields = []string{
 }
 
 // decodeResultsArray unwraps a parallel-tool envelope: a JSON object whose
-// "results" field is an array of per-call objects (odek parallel_shell and
-// delegate_tasks shapes). Each item renders as its display body plus stderr
-// and non-zero exit-code lines; items are labelled [1], [2], … only when
-// there are several. Metadata beside "results" is ignored — the items are
+// "results" field is an array of per-call objects from delegate_tasks. Each
+// item renders as its display body plus stderr and non-zero exit-code lines;
+// items are labelled [1], [2], … only when there are several. Metadata beside "results" is ignored — the items are
 // the payload. Any foreign shape — empty arrays, non-object items, items
 // without a known display field — is returned unchanged: never lossy.
 func decodeResultsArray(data string) string {
@@ -1276,11 +1273,23 @@ func argPreview(data string) string {
 	return truncate(collapse(strings.Join(parts, " ")), 72)
 }
 
-// resultPreview sanitizes tool output and caps it to a generous number of
-// lines, so the transcript can show a useful excerpt (rendered by renderSteps)
-// without retaining the unbounded output of a chatty tool.
+// toolResultPreview preserves retired results as generic data while supported
+// tools keep normal envelope decoding. Every path sanitizes and bounds output.
+func toolResultPreview(name, data string) string {
+	if retiredTool(name) {
+		return boundedResultPreview(foldUntrustedWrappers(data))
+	}
+	return resultPreview(data)
+}
+
+// resultPreview sanitizes normalized output and caps it so the transcript does
+// not retain the unbounded output of a chatty tool.
 func resultPreview(data string) string {
-	s := sanitize(normalizeToolResult(data))
+	return boundedResultPreview(normalizeToolResult(data))
+}
+
+func boundedResultPreview(data string) string {
+	s := sanitize(data)
 	const byteLimit = 128 * 1024
 	if len(s) > byteLimit {
 		cut := byteLimit
