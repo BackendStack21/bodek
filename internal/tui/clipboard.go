@@ -244,8 +244,13 @@ func (m *Model) copySessionID() tea.Cmd {
 	// sessionLive, not just a non-empty id: the connect-time session event
 	// stamps an id before any prompt — that placeholder is never the
 	// operator's session, so the command stays dormant until a prompt (or
-	// a resume) makes the session real.
-	if !m.sessionLive || !validSessionID(m.sessionID) {
+	// a resume) makes the session real. Even then the id is still the
+	// placeholder until the confirming session frame lands: sendPrompt arms
+	// awaitSessionConfirm and any session frame clears it, so the gate holds
+	// exactly for the window between the prompt and its confirmation — and
+	// never blocks a confirmed id again on later prompts (odek does not
+	// re-emit a session frame per turn).
+	if !m.sessionLive || !validSessionID(m.sessionID) || m.awaitSessionConfirm {
 		return m.transientNoteCmd("no session yet — the id exists once a session is created; send a prompt first")
 	}
 	return m.copyText(m.sessionID)

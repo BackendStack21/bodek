@@ -70,6 +70,7 @@ func (m *Model) handleReconnect(msg reconnectMsg) (tea.Model, tea.Cmd) {
 		m.cl = msg.cl
 		m.events = msg.cl.Events
 		m.disconn = false
+		m.pingSentAt = time.Time{} // a pre-swap send must not pair with a post-swap pong
 		m.status = "ready"
 		// Session continuity survives the drop: session_switch adopts the
 		// session on the fresh connection (restoring the server-side memory

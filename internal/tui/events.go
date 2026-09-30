@@ -88,12 +88,15 @@ func (m *Model) handleEvent(ev client.Event) (tea.Model, tea.Cmd) {
 	case "session":
 		prevSession := m.sessionID
 		m.sessionID = ev.SessionID
+		m.awaitSessionConfirm = false // any session frame confirms the current id
+		if m.suppressRemember {
+			m.suppressRemember = false // /new: the placeholder frame must not re-persist
+		} else if !m.freshStart {
+			m.rememberSession(m.homePrompt)
+		}
 		if ev.AuthToken != "" {
 			m.authToken = ev.AuthToken
 			m.tokens.Set(ev.SessionID, ev.AuthToken)
-		}
-		if !m.freshStart {
-			m.rememberSession(m.homePrompt)
 		}
 		if prevSession != "" && ev.SessionID != prevSession {
 			m.planResetPending = true // switch/attach: drop + refetch at the tail

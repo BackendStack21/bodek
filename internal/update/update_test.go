@@ -27,6 +27,11 @@ func TestNewer(t *testing.T) {
 		{"v0.0.12", "0.0", true},     // two-component current pads to 0
 		{"v0.0.1.2", "0.0.1", false}, // four components: unparsable
 		{"v0.0.x", "0.0.1", false},   // non-numeric component
+		// Prerelease latest: both sides compare by release core, so
+		// "v1.2.0-rc1" must not fail the numeric parse of the latest side.
+		{"v1.2.0-rc1", "v1.1.9", true},
+		{"v1.2.0-rc1", "v1.2.0", false}, // release core equal → not newer
+		{"1.3.0-rc1", "v1.2.0", true},
 	}
 	for _, tc := range cases {
 		if got := Newer(tc.latest, tc.current); got != tc.want {

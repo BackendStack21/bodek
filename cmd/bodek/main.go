@@ -50,6 +50,24 @@ type config struct {
 	extraArgs []string
 
 	persist settings.Settings // the loaded file, re-saved when /theme switches
+	// persistDisabled is set when the settings file could not be read;
+	// a full-replace Save would then overwrite the (unparsed) file with
+	// a near-empty struct, so all persistence is refused for the run.
+	persistDisabled bool
+}
+
+// save persists the current preference set. When the settings file was
+// unreadable at startup it refuses to write — the user's hand-written
+// file must never be clobbered with a partially-populated struct — and
+// reports the refusal as an error (a silent no-op success would hide
+// that /theme etc. are not being persisted). Startup already printed a
+// one-time warning via parseConfig, so callers surface this at most once
+// per action.
+func (c *config) save() error {
+	if c.persistDisabled {
+		return fmt.Errorf("settings file could not be parsed; changes are not saved this run")
+	}
+	return settings.Save(c.persist)
 }
 
 func parseConfig(args []string, output io.Writer) (config, error) {
@@ -63,6 +81,12 @@ func parseConfig(args []string, output io.Writer) (config, error) {
 			_, _ = fmt.Fprintf(output, "bodek: ignoring settings file: %v\n", err)
 		}
 		st = settings.Settings{}
+		// The file stays untouched on disk; refusing to save protects
+		// every unparsed key from the full-replace write.
+		cfg.persistDisabled = true
+	}
+	if output != nil && cfg.persistDisabled {
+		_, _ = fmt.Fprintln(output, "bodek: settings changes will not be saved this run (file could not be parsed)")
 	}
 	cfg.persist = st
 	fs := flag.NewFlagSet("bodek", flag.ContinueOnError)
@@ -275,15 +299,15 @@ func run() error {
 		ResumeSession: cfg.sessionID,
 		OnThemeChange: func(name string) error {
 			cfg.persist.Theme = name
-			return settings.Save(cfg.persist)
+			return cfg.save()
 		},
 		OnVerbosityChange: func(name string) error {
 			cfg.persist.Verbosity = name
-			return settings.Save(cfg.persist)
+			return cfg.save()
 		},
 		OnThinkingChange: func(level string) error {
 			cfg.persist.Thinking = level
-			return settings.Save(cfg.persist)
+			return cfg.save()
 		},
 		Reconnect: func() (*client.Client, error) {
 			return client.Dial(srv.WSURL, srv.Origin, srv.BaseURL, srv.Token)

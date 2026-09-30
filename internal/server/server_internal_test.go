@@ -179,8 +179,12 @@ func fakeOdekScript(t *testing.T, stderrLines ...string) string {
 func TestConnectSpawnTokenFromStderr(t *testing.T) {
 	// A current odek serve prints its token to stderr; Connect must pick it up
 	// from the "WS token:" line while passing stderr through verbatim.
+	// No ?token= in the banner: the wait must end on the "WS token:" line,
+	// which also guarantees every earlier stderr line has been copied
+	// through before Stop closes the pipe (a token-bearing banner let
+	// Connect return after line 1 and race the copier on lines 2-3).
 	bin := fakeOdekScript(t,
-		"odek serve ⚡  http://127.0.0.1:9999/?token=cafef00d",
+		"odek serve ⚡  http://127.0.0.1:9999",
 		"  WebSocket: ws://127.0.0.1:9999/ws",
 		"  WS token:  cafef00d",
 	)
