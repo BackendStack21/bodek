@@ -178,6 +178,12 @@ type Options struct {
 	// Fresh skips last-session resume (--new / after /new).
 	Fresh bool
 
+	// ResumeSession names one exact session id to resume on start
+	// (--session <id>). It beats the cwd's last-session id from the
+	// workspace store; Fresh (--new) still wins. Empty keeps the
+	// workspace-driven default.
+	ResumeSession string
+
 	// Plain selects the linear rendering mode: no alt-screen, append-only
 	// scrollback transcript, severity prefixes instead of color (--plain).
 	Plain bool

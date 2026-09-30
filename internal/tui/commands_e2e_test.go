@@ -136,6 +136,15 @@ func TestE2EAllCommands(t *testing.T) {
 				t.Fatal("/copy returned nil cmd with a reply on record")
 			}
 		},
+		"/copy-session-id": func(t *testing.T, m *Model) {
+			m.sessionID = "sess-e2e"
+			if cmd := m.copySessionID(); cmd == nil {
+				t.Fatal("/copy-session-id returned nil cmd with a session on record")
+			}
+			if !m.copyFlashing() {
+				t.Error("copying the session id must arm the ✓ Copied flash")
+			}
+		},
 		"/export": func(t *testing.T, m *Model) {
 			// The e2e model has no live server: with no session on record
 			// the command degrades to an honest note, never a panic.
