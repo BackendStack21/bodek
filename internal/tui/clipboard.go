@@ -242,7 +242,7 @@ func validSessionID(id string) bool {
 // for a later `bodek --session <id>`. The ✓ Copied flash is the only ack.
 func (m *Model) copySessionID() tea.Cmd {
 	if !validSessionID(m.sessionID) {
-		return m.transientNoteCmd("no active session yet")
+		return m.transientNoteCmd("no session yet — the id exists once a session is created; send a prompt first")
 	}
 	return m.copyText(m.sessionID)
 }
