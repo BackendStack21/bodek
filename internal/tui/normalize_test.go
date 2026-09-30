@@ -60,13 +60,13 @@ func TestResultPreviewMalformedEnvelope(t *testing.T) {
 	}
 }
 
-// Parallel tools (parallel_shell) return a top-level results array of per-
+// Delegation tools return a top-level results array of per-
 // call objects. resultPreview extracts each item's display body — stdout,
 // stderr, non-zero exit codes — and drops the JSON noise (command echoes,
 // index, duration). Wrappers inside stdout fold away entirely.
-func TestResultPreviewParallelResults(t *testing.T) {
-	raw := `{"results":[{"index":0,"command":"gofmt -l .","description":"check formatting","stdout":"\u003cuntrusted_content_abc123 source=\"parallel_shell:0:stdout\"\u003e\nREADME.md\n\u003c/untrusted_content_abc123\u003e","stderr":"","exit_code":0,"duration_ms":12},{"index":1,"command":"go vet ./...","description":"vet","stdout":"","stderr":"vets hate this","exit_code":1,"duration_ms":300}]}`
-	got := resultPreview(raw)
+func TestDelegateResultPreviewResults(t *testing.T) {
+	raw := `{"results":[{"index":0,"command":"gofmt -l .","description":"check formatting","stdout":"\u003cuntrusted_content_abc123 source=\"delegate_tasks:0:stdout\"\u003e\nREADME.md\n\u003c/untrusted_content_abc123\u003e","stderr":"","exit_code":0,"duration_ms":12},{"index":1,"command":"go vet ./...","description":"vet","stdout":"","stderr":"vets hate this","exit_code":1,"duration_ms":300}]}`
+	got := toolResultPreview("delegate_tasks", raw)
 	for _, want := range []string{"[1] README.md", "[2] exit status 1", "stderr: vets hate this"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("parallel results missing %q in:\n%s", want, got)
@@ -82,7 +82,7 @@ func TestResultPreviewParallelResults(t *testing.T) {
 // A single-item results array renders the body bare — no index label.
 func TestResultPreviewSingleResult(t *testing.T) {
 	raw := `{"results":[{"index":0,"command":"ls","stdout":"main.go\nutil.go","stderr":"","exit_code":0,"duration_ms":5}]}`
-	got := resultPreview(raw)
+	got := toolResultPreview("delegate_tasks", raw)
 	if !strings.Contains(got, "main.go") || !strings.Contains(got, "util.go") {
 		t.Errorf("stdout body lost:\n%s", got)
 	}
@@ -94,7 +94,7 @@ func TestResultPreviewSingleResult(t *testing.T) {
 // Non-stdout result shapes (delegate_tasks headlines) still extract.
 func TestResultPreviewResultsHeadline(t *testing.T) {
 	raw := `{"results":[{"headline":"built 3 sub-agents","artifacts":[{"id":"a1","path":"x.go","bytes":10}],"cost_usd":0.5}]}`
-	got := resultPreview(raw)
+	got := toolResultPreview("delegate_tasks", raw)
 	if !strings.Contains(got, "built 3 sub-agents") {
 		t.Errorf("headline body lost:\n%s", got)
 	}
@@ -131,7 +131,7 @@ func TestResultPreviewResultsFailSafe(t *testing.T) {
 		`{"results":[{"weird":{"a":1}}]}`,
 		`{"results":[{"other":"only unknown scalars"}]}`,
 	} {
-		if got := resultPreview(s); got != s {
+		if got := toolResultPreview("delegate_tasks", s); got != s {
 			t.Errorf("resultPreview(%q) = %q, want unchanged", s, got)
 		}
 	}

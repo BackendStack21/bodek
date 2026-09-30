@@ -340,9 +340,14 @@ modifier routes to the composer), and `Alt+A`/`Alt+D`/`Alt+T`
   compact composer footers must fit one terminal row and retain actionable keys.
 - Home hints wrap by display cells, including wide Unicode paths. Keep the home
   free of a second wordmark or an additional feature dashboard.
-- Structured batch summaries must not invent successful execution when normalized
-  results omit exit/status metadata. Expanded plan and batch views remain behind
-  existing details controls and preserve the chronological transcript.
+- Tool summaries must not invent successful execution when results omit
+  exit/status metadata. Expanded plan views remain behind existing details
+  controls and preserve the chronological transcript.
+- odek v2.26.0 retired `parallel_shell`, `batch_patch`, `batch_read`, `multi_grep`,
+  and `http_batch`. Keep historical entries on the generic raw/JSON path; do not
+  restore typed cards, argument previews, icons, summaries, or result schemas.
+  Preserve `delegate_tasks`, all `bg_*` views, and supported individual `shell`,
+  `patch`, `read_file`, `search_files`, and `http_request` rendering.
 - `TestTerminalWorkflowLayouts` checks real views across four themes at 40, 80,
   and 120 columns. Set `BODEK_RENDER_PREVIEW_DIR` to write optional ANSI fixtures
   for visual review without an engine/provider; generated captures are not source.
@@ -376,11 +381,10 @@ modifier routes to the composer), and `Alt+A`/`Alt+D`/`Alt+T`
   connection ends; keep allow-once and deny visible at narrow widths. Default
   turn footers right-align outcome, elapsed time, tool count, and known cost; full
   telemetry remains under `^E` and `/stats`.
-- Keep normalized `step.result` for copying/error compatibility and bounded
-  `step.detailResult` for structured display. Preserve sanitized command/path
-  identity through live and history ingestion; never infer item boundaries from
-  `[N]` text. Report omitted bodies/items and total subset counts explicitly.
-  Generic previews cap at 128 KiB/200 lines; structured details at 64 KiB/256 items.
+- Keep normalized `step.result` for copying/error compatibility. Preserve
+  sanitized command/path identity through live and history ingestion; never
+  infer item boundaries from `[N]` text. Generic previews cap at 128 KiB/200
+  lines and report omitted output explicitly.
 - Completed plans include the producer's `all N steps complete` format.
 - All footer modes fit one display row, prioritizing primary and exit actions.
   Recompute viewport height when the new-output shelf changes. Approval details

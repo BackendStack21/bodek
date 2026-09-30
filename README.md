@@ -167,10 +167,9 @@ own front-end settings are separate; see [Configuration](#configuration).
   structured output only: test verdicts (`✓ 5 passed · 2 skipped`, go
   coverage), git commits/pushes (`⎇ a1b2c3d`, `↑ main`), lint results,
   compiler warning counts, HTTP statuses, and search hit counts. Prose like
-  "Build passed" never goes green. Plans show compact progress and step rows;
-  parallel shell, batched reads/patches, and HTTP batches show item counts and
-  failures, with per-item detail behind `^E`. Missing success metadata stays
-  neutral rather than claiming that a command passed.
+  "Build passed" never goes green. Plans show compact progress and step rows.
+  Missing success metadata stays neutral rather than claiming that a command
+  passed.
 - **Streaming answers** rendered as Markdown
   ([glamour](https://github.com/charmbracelet/glamour)).
 - **Tool activity** — every `tool_call`/`tool_result` shown live with a glyph
@@ -457,12 +456,14 @@ Use `PgUp`/`PgDn` to page, `alt+i` to copy the displayed invocation,
 The global `^E` details toggle uses the same page limits. Control and
 invisible characters in invocations appear as safe escape text.
 
-Batch results retain command/file labels and original item counts; bracketed
-log lines are never treated as extra commands. Plans render creation, updates,
-blocked steps, and completion. Text previews retain up to 128 KiB and 200 lines;
-structured detail metadata is capped at 64 KiB and 256 items. Omitted content
-and subset counts are labelled, so a preview is never presented as the full
-result when it was shortened.
+Plans render creation, updates, blocked steps, and completion. Text previews
+retain up to 128 KiB and 200 lines, with omitted content labelled.
+
+odek v2.26.0 retired `parallel_shell`, `batch_patch`, `batch_read`, `multi_grep`,
+and `http_batch`. Historical entries for these tools use generic raw/JSON
+inspection without typed cards, icons, or summaries. Supported `shell`, `patch`,
+`read_file`, `search_files`, and `http_request` rendering remains available,
+as do delegation and background-job views.
 
 ### The prompt queue
 

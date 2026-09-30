@@ -1232,7 +1232,7 @@ func (m *Model) renderStep(s step, streaming bool, msgIdx, stepIdx, startLine in
 	right := ""
 	live := !s.done && streaming
 	if s.done {
-		right = stepHeadSuffixFor(s.name, s.arg, stepDetailResult(s), s.isErr, th)
+		right = stepHeadSuffixFor(s.name, s.arg, s.result, s.isErr, th)
 		// The sealed duration keeps the live clock's slot — “how long did
 		// this tool take” survives completion instead of vanishing with
 		// the running timer. Resumed history (dur 0) shows none.
@@ -1320,7 +1320,7 @@ func (m *Model) renderStep(s step, streaming bool, msgIdx, stepIdx, startLine in
 			if s.resultCard != nil {
 				details = append(details, agentResultLines(m, s.resultCard, detailBudget)...)
 			} else if s.result != "" {
-				details = append(details, stepDetail(s.name, stepDetailResult(s), m.vp.Width, th)...)
+				details = append(details, stepDetail(s.name, s.result, m.vp.Width, th)...)
 			}
 			if !focusedParent {
 				sectionBreak = len(details)
@@ -1353,7 +1353,7 @@ func (m *Model) renderStep(s step, streaming bool, msgIdx, stepIdx, startLine in
 		if s.resultCard != nil {
 			details = append(details, agentResultLines(m, s.resultCard, detailBudget)...)
 		} else {
-			details = append(details, stepDetail(s.name, stepDetailResult(s), m.vp.Width, th)...)
+			details = append(details, stepDetail(s.name, s.result, m.vp.Width, th)...)
 		}
 		for i, d := range m.toolDetailPage(&s, details, detailBudget, invocationRows, "invocation", "result") {
 			conn := "    "

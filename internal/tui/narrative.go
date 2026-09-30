@@ -195,6 +195,9 @@ func scanReceipt(msg message) receipt {
 	files := map[string]struct{}{}
 	var r receipt
 	for _, s := range msg.steps {
+		if retiredTool(s.name) {
+			continue
+		}
 		if p := touchedPath(s.name, s.arg); p != "" {
 			files[p] = struct{}{}
 		}
@@ -235,6 +238,9 @@ func formatReceipt(r receipt) string {
 // touchedPath is the file a write/patch/edit step named. Reads do not
 // count — the receipt is what the turn changed, not what it looked at.
 func touchedPath(name, arg string) string {
+	if retiredTool(name) {
+		return ""
+	}
 	n := strings.ToLower(name)
 	if !strings.Contains(n, "write") && !strings.Contains(n, "patch") && !strings.Contains(n, "edit") {
 		return ""
@@ -247,6 +253,9 @@ func touchedPath(name, arg string) string {
 }
 
 func isShellTool(name string) bool {
+	if retiredTool(name) {
+		return false
+	}
 	n := strings.ToLower(name)
 	return strings.Contains(n, "shell") || strings.Contains(n, "bash") || strings.Contains(n, "exec")
 }
