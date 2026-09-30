@@ -220,6 +220,35 @@ func (m *Model) handleMgmtMsg(msg mgmtMsg) {
 		} else {
 			m.panelMsg = fmt.Sprintf("%d built-ins · %d MCP servers", len(msg.tls), msg.mcpN)
 		}
+		// One-shot /mcp focus: land on the first MCP row (bare) or the
+		// named server (case-insensitive). Consumed exactly once.
+		if m.mcpJump {
+			m.mcpJump = false
+			if focus := m.mcpFocus; focus != "" {
+				m.mcpFocus = ""
+				found := false
+				for i, r := range m.toolRows {
+					if r.kind == "mcp" && strings.EqualFold(r.id, focus) {
+						m.panelSel = i
+						found = true
+						break
+					}
+				}
+				if !found {
+					m.panelMsg = "no MCP server named '" + focus + "' — /mcp lists all"
+				}
+			} else {
+				for i, r := range m.toolRows {
+					if r.kind == "mcp" {
+						m.panelSel = i
+						break
+					}
+				}
+			}
+		}
+		if msg.mcpN == 0 && len(m.toolRows) > 0 {
+			m.panelMsg = fmt.Sprintf("%d built-ins · no MCP servers configured", len(msg.tls))
+		}
 	case panelConfig:
 		m.cfgRows = buildCfgRows(msg.cfg, msg.usr, msg.con)
 		m.panelMsg = ""

@@ -118,6 +118,11 @@ func slashCommands() []command {
 		{"tools", "tool registry & MCP servers", func(m *Model, _ string) tea.Cmd {
 			return m.openTools()
 		}},
+		{"mcp", "MCP servers — /mcp [name] jumps to one", func(m *Model, args string) tea.Cmd {
+			m.mcpJump = true
+			m.mcpFocus = strings.TrimSpace(args)
+			return m.openTools()
+		}},
 		{"config", "server config, usage & connections", func(m *Model, _ string) tea.Cmd {
 			return m.openConfig()
 		}},
