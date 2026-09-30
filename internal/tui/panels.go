@@ -1007,6 +1007,7 @@ func (m *Model) handleSessionDetail(msg sessionDetailMsg) tea.Cmd {
 	// on the connection (session_switch restores the server-side memory
 	// buffer; the reply's session event re-syncs state).
 	m.sessionID = msg.sess.ID
+	m.sessionLive = true // an adopted session is live: its id is copyable
 	m.authToken = msg.token
 	m.tokens.Set(msg.sess.ID, msg.token)
 	if msg.sess.Model != "" {

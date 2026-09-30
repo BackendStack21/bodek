@@ -241,7 +241,11 @@ func validSessionID(id string) bool {
 // copySessionID puts the active session id on the clipboard — the payload
 // for a later `bodek --session <id>`. The ✓ Copied flash is the only ack.
 func (m *Model) copySessionID() tea.Cmd {
-	if !validSessionID(m.sessionID) {
+	// sessionLive, not just a non-empty id: the connect-time session event
+	// stamps an id before any prompt — that placeholder is never the
+	// operator's session, so the command stays dormant until a prompt (or
+	// a resume) makes the session real.
+	if !m.sessionLive || !validSessionID(m.sessionID) {
 		return m.transientNoteCmd("no session yet — the id exists once a session is created; send a prompt first")
 	}
 	return m.copyText(m.sessionID)

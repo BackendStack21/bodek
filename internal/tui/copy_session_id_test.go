@@ -34,9 +34,80 @@ func TestCopySessionIDRegistered(t *testing.T) {
 func TestCopySessionIDCopiesActiveSession(t *testing.T) {
 	m := newTestModel()
 	m.sessionID = "sess-abc123"
+	m.sessionLive = true
 	runCopySessionID(m)
 	if !m.copyFlashing() {
 		t.Error("copying a session id must arm the ✓ Copied flash")
+	}
+}
+
+// A session id stamped by the connect-time session event is not a live
+// session yet: no prompt was sent, so the id may point at a placeholder
+// the operator never created. /copy-session-id must stay unavailable.
+func TestCopySessionIDUnavailableBeforeFirstPrompt(t *testing.T) {
+	m := newTestModel()
+	m.sessionID = "sess-connect-stamp" // wire session frame, no prompt sent
+	runCopySessionID(m)
+	if m.copyFlashing() {
+		t.Error("pre-session copy must not arm the ✓ Copied flash")
+	}
+	if n := len(m.notices); n == 0 {
+		t.Fatal("pre-session copy must record a visible note")
+	} else if got := m.notices[n-1]; !strings.Contains(got, "no session") || !strings.Contains(got, "prompt") {
+		t.Errorf("note = %q, want a warning naming the session and a prompt hint", got)
+	}
+}
+
+// The first prompt creates the session: the command becomes usable.
+func TestCopySessionIDAvailableAfterFirstPrompt(t *testing.T) {
+	m := newTestModel()
+	m.sessionID = "sess-abc123"
+	m.sessionLive = true // armed by sendPrompt
+	runCopySessionID(m)
+	if !m.copyFlashing() {
+		t.Error("after a prompt the session id must copy")
+	}
+}
+
+// /new tears the session down: the command goes dormant again until the
+// next prompt creates the replacement session.
+func TestCopySessionIDDormantAfterNewSession(t *testing.T) {
+	m := newTestModel()
+	m.sessionID = "sess-old"
+	m.sessionLive = true
+	m.startFreshSession()
+	if m.sessionLive {
+		t.Error("startFreshSession must clear sessionLive")
+	}
+}
+
+// Hidden surfaces: the slash popup and /help must not offer the command
+// before the session exists — unavailable means not discoverable.
+func TestCopySessionIDHiddenPreSession(t *testing.T) {
+	m := newTestModel()
+	m.sessionID = "sess-connect-stamp"
+	m.openCmdAC("")
+	for _, it := range m.ac.items {
+		if it.ID == "/copy-session-id" {
+			t.Error("AC popup must not offer /copy-session-id before the session exists")
+		}
+	}
+	if strings.Contains(m.buildHelpCard(), "/copy-session-id") {
+		t.Error("/help must not list /copy-session-id before the session exists")
+	}
+	m.sessionLive = true
+	m.openCmdAC("")
+	found := false
+	for _, it := range m.ac.items {
+		if it.ID == "/copy-session-id" {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("AC popup must offer /copy-session-id once the session is live")
+	}
+	if !strings.Contains(m.buildHelpCard(), "/copy-session-id") {
+		t.Error("/help must list /copy-session-id once the session is live")
 	}
 }
 

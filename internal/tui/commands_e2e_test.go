@@ -138,6 +138,7 @@ func TestE2EAllCommands(t *testing.T) {
 		},
 		"/copy-session-id": func(t *testing.T, m *Model) {
 			m.sessionID = "sess-e2e"
+			m.sessionLive = true // a live session is the copy gate
 			if cmd := m.copySessionID(); cmd == nil {
 				t.Fatal("/copy-session-id returned nil cmd with a session on record")
 			}
