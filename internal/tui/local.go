@@ -43,8 +43,12 @@ func (m *Model) restoreWorkspace() {
 		_ = m.attachFile(p)
 	}
 	m.resumeTitle = st.SessionTitle
-	if !m.opts.Fresh && st.SessionID != "" {
-		m.pendingResume = st.SessionID
+	if !m.opts.Fresh {
+		if m.opts.ResumeSession != "" {
+			m.pendingResume = m.opts.ResumeSession // --session beats the saved id
+		} else if st.SessionID != "" {
+			m.pendingResume = st.SessionID
+		}
 	}
 }
 

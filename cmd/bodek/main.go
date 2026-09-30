@@ -45,6 +45,7 @@ type config struct {
 	thinking  string // startup reasoning depth (empty = inherit / seed from serve)
 	fresh     bool   // --new: skip last-session resume
 	resume    bool   // --resume: opt back in to last-session resume (default false)
+	sessionID string // --session: resume this exact session id
 	reduceMot bool   // --reduce-motion: calmer transcript (slower clock lane, no accent pulses)
 	extraArgs []string
 
@@ -84,6 +85,7 @@ func parseConfig(args []string, output io.Writer) (config, error) {
 	fs.StringVar(&cfg.verbosity, "verbosity", verbDefault, "noise dial: quiet (info notes hidden, compact steps), normal, detailed (steps expand) — /verbosity switches at runtime and persists")
 	fs.StringVar(&cfg.thinking, "thinking", st.Thinking, "reasoning depth: disabled, low, medium, high — /thinking and ^T switch at runtime and persist")
 	fs.BoolVar(&cfg.resume, "resume", st.Bool(st.Resume, false), "resume this directory's last session on start (--resume=false disables; off by default)")
+	fs.StringVar(&cfg.sessionID, "session", "", "resume a specific session by id (implies --resume; /copy-session-id copies it)")
 	fs.BoolVar(&cfg.reduceMot, "reduce-motion", st.Bool(st.ReduceMotion, false), "calm transcript for motion-sensitive readers: clock lane ticks at 2s, no accent pulses")
 	fs.BoolVar(&cfg.fresh, "new", false, "start a fresh session (always skips last-session resume)")
 	fs.Usage = func() {
@@ -97,6 +99,7 @@ func parseConfig(args []string, output io.Writer) (config, error) {
 		_, _ = fmt.Fprintf(fs.Output(), "\nExamples:\n")
 		_, _ = fmt.Fprintf(fs.Output(), "  bodek                                             # spawn odek serve and start fresh in this directory\n")
 		_, _ = fmt.Fprintf(fs.Output(), "  bodek --resume                                    # continue this directory's last session (off by default)\n")
+		_, _ = fmt.Fprintf(fs.Output(), "  bodek --session <id>                              # resume one exact session (/copy-session-id copies the id)\n")
 		_, _ = fmt.Fprintf(fs.Output(), "  bodek --new                                       # start a fresh session\n")
 		_, _ = fmt.Fprintf(fs.Output(), "  bodek --sandbox                                   # spawn odek serve with Docker sandbox\n")
 		_, _ = fmt.Fprintf(fs.Output(), "  bodek --url 'http://127.0.0.1:8080/?token=…'      # attach with the token URL odek serve printed\n")
@@ -253,21 +256,23 @@ func run() error {
 		cwd = "."
 	}
 
+	ws := workspace.Open()
 	model := tui.New(cl, tui.Options{
-		Sandbox:      cfg.sandbox,
-		CWD:          cwd,
-		LogPath:      logPath,
-		OdekVersion:  srv.Version,
-		Version:      currentVersion(),
-		Bell:         cfg.bel,
-		Notify:       cfg.notify,
-		Plain:        cfg.plain,
-		ReduceMotion: cfg.reduceMot,
-		Theme:        cfg.theme,
-		Verbosity:    cfg.verbosity,
-		Thinking:     cfg.thinking,
-		Workspace:    workspace.Open(),
-		Fresh:        cfg.fresh || !cfg.resume,
+		Sandbox:       cfg.sandbox,
+		CWD:           cwd,
+		LogPath:       logPath,
+		OdekVersion:   srv.Version,
+		Version:       currentVersion(),
+		Bell:          cfg.bel,
+		Notify:        cfg.notify,
+		Plain:         cfg.plain,
+		ReduceMotion:  cfg.reduceMot,
+		Theme:         cfg.theme,
+		Verbosity:     cfg.verbosity,
+		Thinking:      cfg.thinking,
+		Workspace:     ws,
+		Fresh:         fresh(cfg),
+		ResumeSession: cfg.sessionID,
 		OnThemeChange: func(name string) error {
 			cfg.persist.Theme = name
 			return settings.Save(cfg.persist)
@@ -298,8 +303,20 @@ func run() error {
 	// deferred srv.Stop() and cl.Close() still execute with terminal state
 	// intact.
 	setupSignalHandler(p)
-	if _, err := p.Run(); err != nil {
-		return fmt.Errorf("TUI exited: %w", err)
+	final, runErr := p.Run()
+	// The alt screen is down: suggest resuming the session that was just
+	// closed, with its exact id (Ctrl+C included — Run returns the same
+	// way). The live model id wins over the store; a crashed TUI still
+	// left a resumable session, so the hint fires on the error path too.
+	if interactive {
+		liveID := ""
+		if m, ok := final.(*tui.Model); ok {
+			liveID = m.SessionID()
+		}
+		printResumeHint(ws, cwd, liveID, os.Stderr)
+	}
+	if runErr != nil {
+		return fmt.Errorf("TUI exited: %w", runErr)
 	}
 	return nil
 }

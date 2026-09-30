@@ -215,6 +215,38 @@ func (m *Model) copyLastReply() tea.Cmd {
 	return m.copyText(m.lastReply())
 }
 
+// SessionID returns the active session id ("" before the first session
+// frame). This is what the CLI reads at teardown so the after-exit resume
+// hint names the session actually being closed, not a stale store value.
+func (m *Model) SessionID() string { return m.sessionID }
+
+// validSessionID guards ids that reach a shell-paste surface (the exit
+// hint, the clipboard): a corrupted store entry must never smuggle a
+// newline or escape into what the operator is told to run.
+func validSessionID(id string) bool {
+	if id == "" {
+		return false
+	}
+	for _, r := range id {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9':
+		case r == '.' || r == '_' || r == '-':
+		default:
+			return false
+		}
+	}
+	return true
+}
+
+// copySessionID puts the active session id on the clipboard — the payload
+// for a later `bodek --session <id>`. The ✓ Copied flash is the only ack.
+func (m *Model) copySessionID() tea.Cmd {
+	if !validSessionID(m.sessionID) {
+		return m.transientNoteCmd("no active session yet")
+	}
+	return m.copyText(m.sessionID)
+}
+
 // copyFocusedTurn puts the focused surface on the clipboard: an open
 // reasoning block, an expanded step, or the turn reply. After alt+m it
 // yanks the sanitized range between the mark and the current focus.

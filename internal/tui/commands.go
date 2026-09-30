@@ -53,6 +53,9 @@ func slashCommands() []command {
 		{"copy", "copy the last reply to the clipboard", func(m *Model, _ string) tea.Cmd {
 			return m.copyLastReply()
 		}},
+		{"copy-session-id", "copy this session's id — resume with --session <id>", func(m *Model, _ string) tea.Cmd {
+			return m.copySessionID()
+		}},
 		{"export", "save the session transcript — /export [md|json]", runExport},
 		{"theme", "switch the color theme — /theme [name]", runTheme},
 		{"verbosity", "noise dial — /verbosity [quiet|normal|detailed]", func(m *Model, args string) tea.Cmd {

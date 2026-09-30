@@ -108,6 +108,7 @@ bodek looks for `odek` on your `PATH`. To point at a specific binary use
 ```bash
 bodek                                             # launch odek serve and start fresh in this directory
 bodek --resume                                    # continue this directory's last session (opt-in)
+bodek --session <id>                              # resume one exact session (also printed on exit)
 bodek --sandbox                                   # run tool calls inside odek's Docker sandbox
 bodek --url 'http://127.0.0.1:8080/?token=…'      # attach with the token URL odek serve printed
 bodek --url http://127.0.0.1:8080 --token d3adb33f  # attach with an explicit token
@@ -251,6 +252,10 @@ own front-end settings are separate; see [Configuration](#configuration).
   transcript (`session_switch`); a failed resume is a note, never a
   leftover approval form. `/new` or `--new` always starts a fresh
   session; the old one stays resumable via `/sessions`.
+- **Resume a specific session** — `/copy-session-id` copies the active
+  session id; `bodek --session <id>` resumes it directly (implies
+  `--resume`; `--new` still wins). When bodek exits, it prints the exact
+  line for the session that was just closed, so one paste brings it back.
 - **Session home** — first-run shows the working directory, the last
   session title when one exists, and `type a task · ^K`. After `^L`, the
   cleared transcript keeps the last prompt and coding receipt so the
@@ -486,6 +491,7 @@ full command and press `⏎`.
 | `/clear` | Clear the conversation (two-step confirm; idle only) |
 | `/new` | Start a fresh session — new ID, empty context; the old one stays resumable via `/sessions` (idle only) |
 | `/copy` | Copy the last reply to the clipboard |
+| `/copy-session-id` | Copy this session's id — paste it into `bodek --session <id>` to resume later |
 | `/export` | Save the session transcript next to you — `/export [md|json]` (markdown by default, never overwrites) |
 | `/retry` | Re-send the last prompt (queues it if a turn is running) |
 | `/queue` | Manage the prompt queue — priority, delete, send now (the full manager over the `^Q` strip) |
