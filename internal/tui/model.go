@@ -399,10 +399,15 @@ type Model struct {
 	quitting      bool
 
 	gradRule  string // cached full-width gradient rule
+	glamWrap  int    // wrap width m.glam was built for; -1 forces rebuild (theme switch)
 	gradRuleW int
 	logoCache string // cached gradient logo (width-independent)
 
+	canvasFG, canvasBG string // cached paintCanvas probe colors for the active theme
+	canvasSGRValid     bool   // canvasFG/BG populated; cleared on theme switch
+
 	convPrefix       string          // joined finalized prefix (assembled from msgBlocks)
+	convPrefixLines  int             // lineCount(convPrefix), cached so refresh skips re-measuring
 	convPrefixRefs   []stepRef       // step header line index for the cached prefix
 	convPrefixTurn   []stepRef       // turn-head line index for the cached prefix (stepIdx -1)
 	convPrefixMsgs   []stepRef       // per-message first-line index for the cached prefix
@@ -1376,6 +1381,24 @@ func (m *Model) resize(w, h int) tea.Cmd {
 	if wrap < 20 {
 		wrap = 20
 	}
+	// The transcript's glamour renders depend only on the wrap width —
+	// rebuilding the renderer and re-rendering every message on height-only
+	// or no-op resizes (window-drag bursts) is wasted full-transcript work.
+	// glamWrap == -1 forces a rebuild (theme switch swaps the palette).
+	if wrap == m.glamWrap {
+		// Same width: no renderer rebuild, but a finalized message whose
+		// render was never produced (finalized after the last resize)
+		// still needs its glamour pass once.
+		for i := range m.msgs {
+			if m.msgs[i].role != roleAsst || m.msgs[i].raw || m.msgs[i].streaming || m.msgs[i].rendered != "" {
+				continue
+			}
+			m.msgs[i].rendered = m.render(m.msgs[i].content)
+		}
+		m.refresh()
+		return nil
+	}
+	m.glamWrap = wrap
 	if r, err := glamour.NewTermRenderer(
 		glamour.WithStyles(answerGlamourStyle()),
 		glamour.WithWordWrap(wrap),

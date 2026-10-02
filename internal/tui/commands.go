@@ -276,6 +276,8 @@ func (m *Model) switchTheme(name string) tea.Cmd {
 	m.ta.FocusedStyle.Placeholder = m.th.inputPlaceholder
 	m.ta.BlurredStyle.Placeholder = m.th.inputPlaceholder
 	m.logoCache = "" // the banner gradient is palette-dependent
+	m.canvasSGRValid = false
+	m.glamWrap = -1 // palette changed — force a glamour rebuild on resize
 	// Raw cards are point-in-time snapshots and never go through glamour
 	// (resize skips them) — the /help card must still follow the palette, so
 	// regenerate it in place, preserving transcript position.

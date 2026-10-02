@@ -23,6 +23,7 @@ func (m *Model) invalidateMsgBlock(i int) {
 		return
 	}
 	m.msgBlocks[i].valid = false
+	m.convCount = -1 // the joined prefix embeds this block — drop it too
 }
 
 // invalidateAllMsgBlocks drops every cached message block (resize, expand-all,
