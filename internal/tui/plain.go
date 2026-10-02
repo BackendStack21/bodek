@@ -21,12 +21,16 @@ const plainPanelMax = 14
 
 // plainPrintCmd renders one agent event into the scrollback. Nil when plain
 // mode is off or the event maps to no output (streamed fragments never
-// print; the reply lands whole on done).
+// print; completed reply segments print at the next turn boundary).
 func (m *Model) plainPrintCmd(ev client.Event) tea.Cmd {
 	if !m.plain {
 		return nil
 	}
-	lines := m.plainEventLines(ev)
+	return plainLinesCmd(m.plainEventLines(ev))
+}
+
+// plainLinesCmd emits one ordered batch of scrollback lines.
+func plainLinesCmd(lines []string) tea.Cmd {
 	if len(lines) == 0 {
 		return nil
 	}
@@ -35,9 +39,41 @@ func (m *Model) plainPrintCmd(ev client.Event) tea.Cmd {
 
 // plainEventLines maps a wire event to its linear text lines. Kept free of
 // tea types so tests assert the mapping directly. Every wire-borne string
-// goes through collapse() — sanitize + whitespace flatten — because these
-// lines land verbatim on the terminal.
+// goes through sanitize(); event labels also flatten whitespace. Reply
+// segments keep their formatting and print before the next reasoning/tool
+// boundary, with only the remaining text emitted on completion or failure.
 func (m *Model) plainEventLines(ev client.Event) []string {
+	var reply []string
+	switch ev.Type {
+	case "thinking", "thinking_delta", "tool_call", "approval_request", "clarify_request", "done", "error", client.EventDisconnected:
+		reply = m.plainReplyLines()
+	}
+	return append(reply, m.plainStatusLines(ev)...)
+}
+
+// plainReplyLines drains only new prose from the latest assistant card.
+// Keeping the cursor on the message prevents a new empty turn from replaying
+// an earlier answer and lets a failed turn retain its partial output.
+func (m *Model) plainReplyLines() []string {
+	for i := len(m.msgs) - 1; i >= 0; i-- {
+		msg := &m.msgs[i]
+		if msg.role != roleAsst || msg.raw {
+			continue
+		}
+		if msg.plainPrinted >= len(msg.content) {
+			return nil
+		}
+		text := sanitize(msg.content[msg.plainPrinted:])
+		msg.plainPrinted = len(msg.content)
+		if strings.TrimSpace(text) == "" {
+			return nil
+		}
+		return []string{strings.TrimPrefix(text, "\n\n")}
+	}
+	return nil
+}
+
+func (m *Model) plainStatusLines(ev client.Event) []string {
 	switch ev.Type {
 	case "thinking":
 		if s := collapse(ev.Content); s != "" {
@@ -98,12 +134,7 @@ func (m *Model) plainEventLines(ev client.Event) []string {
 		}
 
 	case "done":
-		var lines []string
-		if reply := m.lastReply(); reply != "" {
-			lines = append(lines, reply)
-		}
-		lines = append(lines, m.plainDoneSummary())
-		return lines
+		return []string{m.plainDoneSummary()}
 
 	case client.EventDisconnected:
 		return []string{"[error] connection lost"}

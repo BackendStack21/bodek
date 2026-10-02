@@ -123,6 +123,8 @@ type message struct {
 	collapsed  bool       // turn card folded to its head + summary line (c)
 	systemWake bool       // server-initiated turn (background-job wake): marker on the card
 	failed     bool       // the run ended in error — ✗ marks the turn head (in-session state; replay does not restore it)
+
+	plainPrinted int // reply bytes already emitted to linear scrollback
 }
 
 // Options carries startup display info into the model.

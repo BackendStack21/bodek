@@ -60,17 +60,28 @@ func (m *Model) ingestWireEvent(ev client.Event) (tea.Model, tea.Cmd) {
 func (m *Model) ingestWireBatch(events []client.Event) (tea.Model, tea.Cmd) {
 	m.lastEvent = time.Now() // (R5) the head's last-event age resets on each batch
 	var model tea.Model = m
+	var plainLines []string
 	for _, ev := range events {
 		var cmd tea.Cmd
-		model, cmd = model.(*Model).ingestWireEvent(ev)
+		model, cmd = model.(*Model).handleEvent(ev)
+		pm := model.(*Model)
+		if pm.plain {
+			// Capture output at each event's state, before later frames close
+			// the turn or open another. One print preserves the wire order.
+			plainLines = append(plainLines, pm.plainEventLines(ev)...)
+		}
+		if ev.Type == "session" && pm.sessionID != "" && pm.authToken != "" {
+			cmd = tea.Batch(cmd, pm.armJobsWatch())
+		}
 		if ev.Type == client.EventDisconnected {
-			return model, cmd
+			return model, tea.Batch(cmd, plainLinesCmd(plainLines))
 		}
 	}
 	pm := model.(*Model)
 	// Kicks ride as model flags so a burst coalesces into ONE fetch per
 	// kind — a swarm of state frames must not flood the registry endpoint.
 	return pm, tea.Batch(
+		plainLinesCmd(plainLines),
 		listen(pm.events),
 		pm.rearmRenderFlush(),
 		pm.noticeSweep(),
