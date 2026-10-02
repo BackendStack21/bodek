@@ -222,9 +222,10 @@ const EventDisconnected = "_disconnected"
 // readLoop, and odek's write timeout closed the socket after any prompt.
 const eventBuffer = 4096
 
-// deltaCoalesceMax merges this many consecutive thinking_delta / token_delta
-// frames in readLoop so a token-by-token firehose does not enqueue one event
-// per fragment. Type or turn_id changes flush immediately.
+// deltaCoalesceMax merges this many consecutive thinking_delta frames in
+// readLoop so a reasoning firehose does not enqueue one event per fragment.
+// Assistant text is delivered immediately; short notes must not wait for a
+// future frame. The TUI coalesces their redraws. Type/turn changes flush.
 const deltaCoalesceMax = 16
 
 // Resource is a single @-reference completion candidate from /api/resources.
@@ -388,7 +389,7 @@ func (c *Client) readLoop() {
 		if err := json.Unmarshal(data, &ev); err != nil {
 			continue // ignore malformed frames
 		}
-		if ev.Type == "thinking_delta" || ev.Type == "token_delta" {
+		if ev.Type == "thinking_delta" {
 			if pending != nil && pending.Type == ev.Type && pending.TurnID == ev.TurnID {
 				pending.Content += ev.Content
 				n++

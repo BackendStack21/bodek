@@ -132,7 +132,9 @@ feat(tui): compact tool steps with Ctrl+E details toggle
   and tripped odek's 30s write timeout — connection lost after any
   prompt). `ingestWireBatch` re-arms `listen()` as a top-level cmd, never
   nested inside handleEvent's Batch. The client also merges consecutive
-  thinking/token deltas (16 at a time) before enqueueing. The header
+  thinking deltas (16 at a time) before enqueueing. Assistant text deltas
+  enqueue immediately so short progress notes cannot wait for a later frame;
+  their redraws still coalesce in the TUI. The header
   connection lamp stays lit while a turn runs (`◉`); idle is `●`,
   reconnect `◌`, down `○`. Progress stays on the status line — an empty
   corner was read as a dropped socket. The header `ctx` gauge is the
@@ -247,6 +249,12 @@ modifier routes to the composer), and `Alt+A`/`Alt+D`/`Alt+T`
 - The TUI reconnects with backoff and resumes the session after a socket
   drop (`reconnect.go`) — don't break that by assuming a single
   connection per run.
+- Assistant notes are reply segments even when no reasoning event precedes
+  them (OpenAI buffered notes need odek v2.29.7 or later). Plain mode prints
+  completed segments before tools/reasoning and drains only unprinted text
+  on completion, error or disconnect. Batch ingestion captures each event's
+  linear output before later frames mutate the turn, returning one ordered
+  print command alongside the flat listener and refresh commands.
 - Streaming renders are coalesced into one flush per 80ms for
   performance; batching new redraw paths the same way keeps the TUI
   responsive. Live reply segments glamour-render on that flush (not only

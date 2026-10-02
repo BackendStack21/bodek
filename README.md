@@ -212,6 +212,11 @@ own front-end settings are separate; see [Configuration](#configuration).
   thinks more than once labels each block `beat 2/3` — one beat is one
   think→act cycle. Long turns keep every think→reply pair intact: each
   reasoning block is followed by its own answer card, in arrival order.
+- **Assistant progress notes** — pre-tool notes stay visible as answer cards
+  before their tools, including OpenAI responses with no reasoning summary.
+  Buffered and streamed delivery share the same chronological transcript.
+  Short streamed notes appear without waiting for another server event.
+  OpenAI buffered-response notes require odek v2.29.7 or later.
 - **Context-aware progress** — while the agent works, a status line right
   below your last message shows what it's actually doing (`🧪 running
   tests`, `📖 reading client.go`, `🚀 pushing`) with a live elapsed timer.
@@ -357,7 +362,10 @@ own front-end settings are separate; see [Configuration](#configuration).
   print as append-only text in the terminal's native scrollback above a
   minimal input chrome (`▸` tool calls, `[think]`, `[error]`, `⚠ approval`,
   `❯` your prompts, `✓ done · N tools · Xs · N tok`). Streamed fragments stay
-  suppressed; the reply lands whole when the turn ends.
+  suppressed; each completed reply segment prints before its next tool or
+  reasoning block. Completion prints only the remaining reply, and a failed
+  or disconnected turn retains its partial text. Batched events preserve
+  scrollback output in wire order.
 - **Severity never rides color alone** — state always carries a glyph, which
   makes `--plain` the accessible surface for screen readers — and the
   natural one for pipes: `bodek --plain < task > run.log`.
