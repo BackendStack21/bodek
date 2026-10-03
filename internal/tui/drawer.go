@@ -199,6 +199,8 @@ func (m *Model) jumpToAgentStep() tea.Cmd {
 				m.msgs[i].steps[j].setAgentFocus(a.idx)
 			}
 			m.msgs[i].steps[j].expanded = true
+			clearStepBlockCache(&m.msgs[i].steps[j])
+			m.invalidateMsgBlock(i) // the cached prefix embeds this block
 			m.panel = panelNone
 			m.relayout()
 			m.scrollToMessage(i)

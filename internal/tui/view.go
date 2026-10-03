@@ -554,24 +554,39 @@ func (m *Model) conversation() string {
 	}
 	lineOffset := 0
 	blocks := make([]string, 0, tail+2)
-	for i := 0; i < tail; i++ {
-		collectTurn(i, lineOffset)
-		c, r := m.msgBlockAt(i, lineOffset)
-		blocks = append(blocks, c)
-		absorbRefs(r)
-		lineOffset += lineCount(c) + 1
-	}
-	m.convPrefix = strings.Join(blocks, turnSep)
-	m.convPrefixRefs = refs
-	m.convPrefixTurn = turns
-	m.convPrefixMsgs = msgsIdx
-	m.convCount = tail
-	if m.convPrefix != "" {
-		lineOffset = lineCount(m.convPrefix) + 1
-	}
-	blocks = blocks[:0]
-	if m.convPrefix != "" {
+	if m.convCount == tail {
+		// Prefix unchanged since the last build (no finalize, invalidation, or
+		// resize): reuse the joined string and its cached line count instead
+		// of re-reading every block and re-joining — the hot path for the
+		// ~12 Hz render flush while a turn streams.
 		blocks = append(blocks, m.convPrefix)
+		refs = append(refs, m.convPrefixRefs...)
+		turns = append(turns, m.convPrefixTurn...)
+		msgsIdx = append(msgsIdx, m.convPrefixMsgs...)
+		if m.convPrefix != "" {
+			lineOffset = m.convPrefixLines + 1
+		}
+	} else {
+		for i := 0; i < tail; i++ {
+			collectTurn(i, lineOffset)
+			c, r := m.msgBlockAt(i, lineOffset)
+			blocks = append(blocks, c)
+			absorbRefs(r)
+			lineOffset += lineCount(c) + 1
+		}
+		m.convPrefix = strings.Join(blocks, turnSep)
+		m.convPrefixLines = lineCount(m.convPrefix)
+		m.convPrefixRefs = refs
+		m.convPrefixTurn = turns
+		m.convPrefixMsgs = msgsIdx
+		m.convCount = tail
+		if m.convPrefix != "" {
+			lineOffset = m.convPrefixLines + 1
+		}
+		blocks = blocks[:0]
+		if m.convPrefix != "" {
+			blocks = append(blocks, m.convPrefix)
+		}
 	}
 	for i := tail; i < len(m.msgs); i++ {
 		if emptyStreamingTurn(m.msgs[i]) {

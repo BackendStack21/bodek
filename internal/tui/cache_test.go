@@ -94,3 +94,35 @@ func TestMsgBlockPartialInvalidate(t *testing.T) {
 		t.Error("sibling message block should stay cached")
 	}
 }
+
+// TestResizeSkipsGlamourRebuildForSameWidth pins the resize debounce: the
+// glamour renderer (and the full-transcript re-render behind it) is rebuilt
+// only when the wrap width changes; height-only and no-op resizes reuse it.
+func TestResizeSkipsGlamourRebuildForSameWidth(t *testing.T) {
+	m := newTestModel() // resize(100,30) in the constructor: glam built once
+	if m.glam == nil {
+		t.Fatal("precondition: glamour renderer not built")
+	}
+	glam := m.glam
+	rendered := m.render("# hello")
+	m.resize(100, 24) // height-only
+	if m.glam != glam {
+		t.Error("height-only resize rebuilt the glamour renderer")
+	}
+	m.resize(100, 30) // no-op
+	if m.glam != glam {
+		t.Error("no-op resize rebuilt the glamour renderer")
+	}
+	if m.render("# hello") != rendered {
+		t.Error("same-width resize changed rendered output")
+	}
+	m.resize(120, 30) // width change rebuilds
+	if m.glam == glam {
+		t.Error("width change should rebuild the glamour renderer")
+	}
+	m.glamWrap = -1 // theme switch forces a rebuild even at unchanged width
+	m.resize(120, 30)
+	if m.glam == glam {
+		t.Error("forced rebuild (glamWrap -1) did not replace the renderer")
+	}
+}

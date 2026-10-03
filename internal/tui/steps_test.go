@@ -374,11 +374,13 @@ func TestToggleStep(t *testing.T) {
 		t.Error("toggleStep did not expand the step")
 	}
 	m.ensureMsgBlocks()
-	if m.convCount == -1 {
-		t.Error("toggleStep should not invalidate the whole prefix")
-	}
 	if len(m.msgBlocks) == 0 || m.msgBlocks[0].valid {
 		t.Error("toggleStep did not invalidate the message block")
+	}
+	// The joined prefix embeds message 0's block, so it is stale — but
+	// sibling blocks keep their caches (no wholesale invalidation).
+	if m.convCount != -1 {
+		t.Error("toggleStep must drop the stale joined prefix (convCount)")
 	}
 	out := plain(m.conversation())
 	if !strings.Contains(out, "▼") || !strings.Contains(out, "FAIL") {
