@@ -129,7 +129,8 @@ func TestLiveElapsed(t *testing.T) {
 }
 
 // TestLostOnDisconnect: a socket drop retires in-flight cards — no ghost
-// spinners — and leaves one quiet note instead of silence.
+// spinners — and the card itself carries the lost marker (the strip stays
+// quiet: the header lamp owns connection state).
 func TestLostOnDisconnect(t *testing.T) {
 	m := manifestFixture(t)
 	m.handleEvent(client.Event{Type: "subagent_state", TaskID: "t1", TaskIdx: 0, Phase: "active", Status: "running", Step: 7})
@@ -145,8 +146,8 @@ func TestLostOnDisconnect(t *testing.T) {
 	if line := agentCardLine(card); strings.Contains(line, "step 7") {
 		t.Errorf("lost card still shows live telemetry: %q", line)
 	}
-	if got := strings.Join(m.notices, "\n"); !strings.Contains(got, "sub-agent state lost on disconnect") {
-		t.Errorf("disconnect note missing: %q", got)
+	if got := strings.Join(m.notices, "\n"); strings.Contains(got, "sub-agent state lost on disconnect") {
+		t.Errorf("disconnect must not reach the strip (header lamp owns it): %q", got)
 	}
 	// The verdict counts lost cards as lost, not live.
 	if !strings.Contains(swarmVerdict(&m.msgs[0]), "sub-agents: 1 lost") {

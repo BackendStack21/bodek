@@ -34,15 +34,21 @@ func seedRunning(t *testing.T) *Model {
 	return m
 }
 
-// TestJobExitAlertTier pins J1: a terminal transition posts an alert-tier
-// note (dwell in (noticeTTL, alertTTL]), not a 3s transient.
+// TestJobExitAlertTier pins J1: a FAILED terminal transition posts an
+// alert-tier note (dwell in (noticeTTL, alertTTL]); a clean exit 0 is
+// owned by the wake card and jobs tab and stays out of the strip.
 func TestJobExitAlertTier(t *testing.T) {
 	m := seedRunning(t)
 	m.applyJobs([]client.Job{exitedJob("exited", 0)}, nil)
+	if note, _ := lastNoteMatching(m, "bg_0000abcd"); note != "" {
+		t.Fatalf("clean exit must not post a note: %q", note)
+	}
+	m = seedRunning(t)
+	m.applyJobs([]client.Job{exitedJob("failed", 1)}, nil)
 
 	note, exp := lastNoteMatching(m, "bg_0000abcd")
 	if note == "" {
-		t.Fatal("exit transition posted no note")
+		t.Fatal("failed exit transition posted no note")
 	}
 	if dwell := time.Until(exp); dwell <= noticeTTL || dwell > alertTTL {
 		t.Errorf("exit note dwell = %v, want alert tier (%v, %v]", dwell, noticeTTL, alertTTL)
@@ -53,10 +59,10 @@ func TestJobExitAlertTier(t *testing.T) {
 // carries the sanitized command head so the operator knows WHICH job.
 func TestJobExitNoteNamesCommand(t *testing.T) {
 	m := seedRunning(t)
-	m.applyJobs([]client.Job{exitedJob("exited", 0)}, nil)
+	m.applyJobs([]client.Job{exitedJob("failed", 2)}, nil)
 
 	note, _ := lastNoteMatching(m, "bg_0000abcd")
-	for _, want := range []string{"gh pr checks 63 --watch", "exited 0", "1m44s"} {
+	for _, want := range []string{"gh pr checks 63 --watch", "failed 2", "1m44s"} {
 		if !strings.Contains(note, want) {
 			t.Errorf("exit note missing %q: %q", want, note)
 		}
@@ -68,12 +74,12 @@ func TestJobExitNoteNamesCommand(t *testing.T) {
 func TestJobExitAttentionCmd(t *testing.T) {
 	m := seedRunning(t)
 	var attn tea.Cmd
-	attn = m.applyJobs([]client.Job{exitedJob("exited", 0)}, nil)
+	attn = m.applyJobs([]client.Job{exitedJob("failed", 1)}, nil)
 	if attn == nil {
 		t.Fatal("terminal transition fired no attention")
 	}
 
-	if attn = m.applyJobs([]client.Job{exitedJob("exited", 0)}, nil); attn != nil {
+	if attn = m.applyJobs([]client.Job{exitedJob("failed", 1)}, nil); attn != nil {
 		t.Error("steady-state re-apply must not re-fire attention")
 	}
 }

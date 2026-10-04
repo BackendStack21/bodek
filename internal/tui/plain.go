@@ -112,15 +112,10 @@ func (m *Model) plainStatusLines(ev client.Event) []string {
 		}
 		return []string{plainClip("⚠ approval — a approve · d deny (empty draft); Alt+A/Alt+D always" + what)}
 
-	case "skill_event":
-		return []string{"· skill · " + strings.TrimSpace(collapse(ev.SubType+" "+ev.SkillName)) + eventTail(ev)}
-	case "memory_event":
-		return []string{"· memory · " + strings.TrimSpace(collapse(ev.SubType+" "+ev.Target)) + eventTail(ev)}
-	case "agent_signal":
-		if silentAgentSignal(ev.SubType) {
-			return nil
-		}
-		return []string{"· signal · " + strings.TrimSpace(collapse(ev.SubType+" "+ev.Detail)) + eventTail(ev)}
+	case "skill_event", "memory_event", "agent_signal":
+		// Engine bookkeeping: no reachable action, and plain scrollback has
+		// no drawer tabs to consult — silence beats noise.
+		return nil
 	case "subagent_log":
 		line := strings.TrimSpace(collapse(ev.SubType + " " + ev.Name))
 		if d := collapse(ev.Detail); d != "" {

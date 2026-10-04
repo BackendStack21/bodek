@@ -448,15 +448,21 @@ func TestHumanCtx(t *testing.T) {
 
 func TestEventTailNotices(t *testing.T) {
 	m := newTestModel()
-	m.handleEvent(client.Event{Type: "memory_event", SubType: "merge", Target: "user", Count: 12})
+	// The tails ride the surviving engine line in --plain scrollback: the
+	// TUI strip no longer carries skill/memory/signal chatter.
 	m.handleEvent(client.Event{Type: "subagent_log", SubType: "started", Name: "t0", TaskIdx: 2})
-
-	joined := strings.Join(m.notices, "\n")
-	if !strings.Contains(joined, "×12") {
-		t.Errorf("missing count tail in notices: %q", joined)
+	m.handleEvent(client.Event{Type: "subagent_log", SubType: "log", Name: "t1", Count: 12})
+	if len(m.notices) != 0 {
+		t.Fatalf("engine chatter must not reach the strip: %v", m.notices)
 	}
+	lines := append(m.plainEventLines(client.Event{Type: "subagent_log", SubType: "started", Name: "t0", TaskIdx: 2}),
+		m.plainEventLines(client.Event{Type: "subagent_log", SubType: "log", Name: "t1", Count: 12})...)
+	joined := strings.Join(lines, "\n")
 	if !strings.Contains(joined, "#2") {
-		t.Errorf("missing task-index tail in notices: %q", joined)
+		t.Errorf("missing task-index tail in plain lines: %q", joined)
+	}
+	if !strings.Contains(joined, "×12") {
+		t.Errorf("missing count tail in plain lines: %q", joined)
 	}
 }
 

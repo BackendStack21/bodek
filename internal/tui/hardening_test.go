@@ -238,28 +238,26 @@ func TestResourceCompletionSanitizesWireFields(t *testing.T) {
 	}
 }
 
-// Engine notices keep sanitize() (CSI gone, newlines kept). A wire
-// SkillName/Target/Detail with a newline paints a second strip row.
+// Engine frames (skill / memory / signal) are silenced — they have no
+// operator action (the drawer tabs own the state). The strip-notice
+// newline contract still holds for the paths that do post: a wire field
+// with a newline must never paint a second strip row.
 func TestEngineNoticesCollapseNewlines(t *testing.T) {
-	cases := []struct {
-		name string
-		ev   client.Event
-	}{
-		{"skill", client.Event{Type: "skill_event", SubType: "suggested", SkillName: "x\n● disconnected"}},
-		{"memory", client.Event{Type: "memory_event", SubType: "stored", Target: "x\n● disconnected"}},
-		{"signal", client.Event{Type: "agent_signal", SubType: "info", Detail: "x\n● disconnected"}},
+	m := newTestModel()
+	for _, ev := range []client.Event{
+		{Type: "skill_event", SubType: "suggested", SkillName: "x\n● disconnected"},
+		{Type: "memory_event", SubType: "stored", Target: "x\n● disconnected"},
+		{Type: "agent_signal", SubType: "info", Detail: "x\n● disconnected"},
+	} {
+		m.handleEvent(ev)
 	}
-	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
-			m := newTestModel()
-			m.handleEvent(c.ev)
-			if len(m.notices) != 1 {
-				t.Fatalf("notices = %d, want 1: %v", len(m.notices), m.notices)
-			}
-			if strings.Contains(m.notices[0], "\n") {
-				t.Errorf("notice kept a newline: %q", m.notices[0])
-			}
-		})
+	if len(m.notices) != 0 {
+		t.Fatalf("engine frames must not reach the strip: %v", m.notices)
+	}
+	// A still-posting engine path keeps the newline contract.
+	m.handleEvent(client.Event{Type: "subagent_cancelled", Accepted: false})
+	if note, _ := lastNoteMatching(m, "stop declined"); strings.Contains(note, "\n") {
+		t.Errorf("notice kept a newline: %q", note)
 	}
 }
 

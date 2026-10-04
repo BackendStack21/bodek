@@ -150,10 +150,17 @@ func (m *Model) applyJobs(jobs []client.Job, err error) tea.Cmd {
 			old, seen := m.jobsPrev[j.ID]
 			switch {
 			case !seen:
-				m.addTransientNote("bg · " + jobStatusGlyph(j.Status) + " " + sanitize(j.ID) + " · " + sanitize(j.Command))
+				// Jobs materializing in the diff are tab state, not
+				// transcript state — the start is already visible where the
+				// job was launched (bg_start feedback).
 			case old == "running" && j.Status != "running":
-				// Alert tier + attention: a finished job must survive a
-				// glance-away, and the operator opted into knowing.
+				// Alert tier + attention — but only when it demands a look:
+				// a clean exit (code 0) is reported by the wake card and
+				// the jobs tab; a failure (or an unreported code, which we
+				// cannot call clean) must survive a glance-away.
+				if j.ExitCode != nil && *j.ExitCode == 0 {
+					break
+				}
 				m.addNote(jobExitNote(j))
 				attn = m.attentionCmd(m.attentionFor(jobAttentionKind(j)))
 			}

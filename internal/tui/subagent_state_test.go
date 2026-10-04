@@ -97,26 +97,25 @@ func TestSubagentStateGlyphs(t *testing.T) {
 	}
 }
 
-// TestSubagentStateStray: with no in-flight sub-agent step the frame falls
-// back to a notice instead of vanishing — including a frame that arrives
-// after the delegate step already closed.
+// TestSubagentStateStray: with no in-flight sub-agent step the frame has
+// no transcript surface — the agents tab owns it, and the strip stays
+// quiet (nothing to act on).
 func TestSubagentStateStray(t *testing.T) {
 	m := newTestModel()
 	m.msgs = append(m.msgs, message{role: roleAsst, streaming: true})
 	m.curIdx = 0
 	m.busy = true
 	m.handleEvent(client.Event{Type: "subagent_state", TaskID: "t9", TaskIdx: 2, Phase: "started", Status: "running"})
-	got := strings.Join(m.notices, "\n")
-	if !strings.Contains(got, "sub-agent #3") || !strings.Contains(got, "started") {
-		t.Errorf("stray state frame not noticed: %q", got)
+	if got := strings.Join(m.notices, "\n"); strings.Contains(got, "sub-agent #3") {
+		t.Errorf("stray state frame must not reach the strip: %q", got)
 	}
 
 	m = stateFixture(t)
 	m.handleEvent(client.Event{Type: "tool_result", Name: "delegate_tasks", Data: `{"status":"success"}`})
 	m.handleEvent(client.Event{Type: "subagent_state", TaskID: "t1", TaskIdx: 0, Phase: "finished", Status: "success"})
-	got = strings.Join(m.notices, "\n")
-	if !strings.Contains(got, "sub-agent #1") || !strings.Contains(got, "finished") {
-		t.Errorf("late frame not noticed: %q", got)
+	got := strings.Join(m.notices, "\n")
+	if strings.Contains(got, "sub-agent #1") {
+		t.Errorf("late frame must not reach the strip: %q", got)
 	}
 }
 

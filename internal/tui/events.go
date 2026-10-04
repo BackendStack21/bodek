@@ -469,21 +469,18 @@ func (m *Model) handleEvent(ev client.Event) (tea.Model, tea.Cmd) {
 			m.skillSuggest = &e // the card shows until answered or the next prompt
 			m.relayout()
 		}
-		m.addTransientNote("skill · " + strings.TrimSpace(ev.SubType+" "+ev.SkillName) + eventTail(ev))
+		// Skill loads are engine bookkeeping: no reachable action, and the
+		// drawer's skill tab already shows what is loaded.
 	case "memory_event":
-		m.addTransientNote("memory · " + strings.TrimSpace(ev.SubType+" "+ev.Target) + eventTail(ev))
 		// Facts just changed server-side: refresh the open memory tab so
 		// the list never lies about what exists. The flag flushes as ONE
 		// coalesced fetch (bursty writers must not flood the endpoint).
+		// The strip stays out of it — the tab owns the surface.
 		m.kickMemory = true
 	case "agent_signal":
-		if silentAgentSignal(ev.SubType) {
-			// Engine housekeeping: context trimming and tool-running
-			// heartbeats duplicate what the transcript already shows
-			// (the in-flight step spinner) — never reach the strip.
-			break
-		}
-		m.addTransientNote("signal · " + strings.TrimSpace(ev.SubType+" "+ev.Detail) + eventTail(ev))
+		// Engine housekeeping signals carry no operator action: the
+		// transcript (in-flight steps), status line, and header ctx gauge
+		// already own this state — never reach the strip.
 	case "subagent_log":
 		line := strings.TrimSpace(ev.SubType + " " + ev.Name)
 		// The relay delivers the payload in data (Detail is only a legacy
@@ -498,12 +495,12 @@ func (m *Model) handleEvent(ev client.Event) (tea.Model, tea.Cmd) {
 			line = strings.TrimSpace(line + " · " + ev.Status)
 		}
 		line += eventTail(ev)
-		// Nest the log under the in-flight sub-agent step when there is one;
-		// otherwise (resumed turn, idle, or an unwrapped log) keep it as a notice.
+		// Nest the log under the in-flight sub-agent step when there is
+		// one; a stray (resumed turn, idle, unwrapped) belongs to the
+		// agents tab — not the strip.
 		if i := m.cur(); i >= 0 && m.attachSubLog(i, line) {
 			break
 		}
-		m.addTransientNote("subagent · " + line)
 
 	case "subagent_state":
 		// Per-task lifecycle telemetry (odek v1.30+): attach to the
@@ -525,7 +522,8 @@ func (m *Model) handleEvent(ev client.Event) (tea.Model, tea.Cmd) {
 			}
 			break
 		}
-		m.addTransientNote("subagent · " + stateNoticeLine(ev))
+		// Stray state frames (resumed turn, idle, late arrivals) belong to
+		// the agents tab — the card path above owns the transcript view.
 
 	case "subagent_cancelled":
 		// Stop ack. accepted:false is a benign race — the task already
@@ -537,12 +535,11 @@ func (m *Model) handleEvent(ev client.Event) (tea.Model, tea.Cmd) {
 
 	case "bg_wake":
 		// odek ≥ v1.40 enqueued a wake turn for a finished background job:
-		// the stamped session frame that follows opens the card; this note
-		// gives the operator the context for the unprompted activity. The
+		// the stamped session frame that follows opens the card. The
 		// flag also arms the lazy marker (ensureWireTurn) so the wake keeps
-		// its identity even when the stamped frame is missed.
+		// its identity even when the stamped frame is missed. No strip
+		// note: the wake card itself is the operator-visible signal.
 		m.wakeArmed = true
-		m.addTransientNote("background job finished · agent waking")
 
 	case "bg_job":
 		// Push notification of a job start/exit (≥ v1.40): refresh the
@@ -586,23 +583,18 @@ func (m *Model) handleEvent(ev client.Event) (tea.Model, tea.Cmd) {
 		if i := m.cur(); i >= 0 {
 			setTurnMarker(&m.msgs[i], "**Interrupted:** connection lost")
 		}
-		if n := m.loseLiveAgents(); n > 0 {
-			// In-flight cards just became unknowable — say so once instead of
-			// leaving spinners that will never settle.
-			m.addNote("sub-agent state lost on disconnect")
-		}
+		// In-flight cards just became unknowable: seal them so no spinner
+		// runs forever. The strip stays quiet — the header lamp and
+		// reconnect status own connection state.
+		_ = m.loseLiveAgents()
 		m.finalize()
 		m.relayout() // the busy status line is gone with the socket
 		if cmd := m.scheduleReconnect(0); cmd != nil {
 			m.status = "reconnecting…"
-			if m.freshStart {
-				m.addTransientNote("starting a fresh session…")
-			} else {
-				m.addTransientNote("connection lost — reconnecting…")
-			}
 			m.refresh()
-			// The interim note fades via the sweep; the reconnect outcome
-			// (success or the ⏎-retry hint) replaces it within seconds.
+			// The header lamp (◌) owns the interim state; the reconnect
+			// outcome (success or the ⏎-retry hint) replaces it within
+			// seconds.
 			return m, tea.Batch(cmd, m.noticeSweep())
 		}
 		m.status = "disconnected"
@@ -727,19 +719,8 @@ func stepGlyphs(steps []step) []string {
 	return out
 }
 
-// silentAgentSignal reports engine-housekeeping signal subtypes that must
-// never reach the notice strip or --plain scrollback. odek serve wraps
-// loop.SignalEvent as agent_signal with event = SignalEvent.Type.
-func silentAgentSignal(subType string) bool {
-	switch subType {
-	case "context_trimmed", "trim", "tool_running":
-		return true
-	}
-	return false
-}
-
 // eventTail renders the optional ×count / #task-index suffix shared by the
-// engine-event notices (skill / memory / signal / subagent).
+// engine-event notices (subagent).
 func eventTail(ev client.Event) string {
 	s := ""
 	if ev.Count > 0 {

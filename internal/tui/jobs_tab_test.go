@@ -255,19 +255,20 @@ func TestJobsWatcherBaselineAndDiffNotes(t *testing.T) {
 		t.Errorf("baseline produced notes: %v", m.notices)
 	}
 
-	// New job appears; existing one exits 0.
-	zero := 0
+	// New job appears (silent — tab state); existing one exits 0 (silent —
+	// wake card owns clean exits); only a failure earns a note.
+	zero, one := 0, 1
 	next := []client.Job{
-		{ID: "bg_1a2b3c4d", Command: "npm run dev", Status: "exited", RuntimeS: 130, ExitCode: &zero},
+		{ID: "bg_1a2b3c4d", Command: "npm run dev", Status: "failed", RuntimeS: 130, ExitCode: &one},
 		{ID: "bg_9f8e7d6c", Command: "go test ./...", Status: "exited", RuntimeS: 21, ExitCode: &zero},
 		{ID: "bg_aaaa0000", Command: "air -c .air.toml", Status: "running", RuntimeS: 2},
 	}
 	m.applyJobs(next, nil)
-	if len(m.notices) != 2 {
-		t.Fatalf("diff produced %d notes, want 2: %v", len(m.notices), m.notices)
+	if len(m.notices) != 1 {
+		t.Fatalf("diff produced %d notes, want 1: %v", len(m.notices), m.notices)
 	}
 	joined := strings.Join(m.notices, "\n")
-	for _, want := range []string{"bg_1a2b3c4d", "exited 0", "bg_aaaa0000", "air"} {
+	for _, want := range []string{"bg_1a2b3c4d", "failed 1"} {
 		if !strings.Contains(joined, want) {
 			t.Errorf("notes missing %q: %v", want, m.notices)
 		}
