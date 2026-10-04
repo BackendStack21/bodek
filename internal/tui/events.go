@@ -496,8 +496,9 @@ func (m *Model) handleEvent(ev client.Event) (tea.Model, tea.Cmd) {
 		}
 		line += eventTail(ev)
 		// Nest the log under the in-flight sub-agent step when there is
-		// one; a stray (resumed turn, idle, unwrapped) belongs to the
-		// agents tab — not the strip.
+		// one; strays (resumed turn, idle, unwrapped) are dropped — the
+		// agents tab builds from card telemetry and state frames, not
+		// stray log lines.
 		if i := m.cur(); i >= 0 && m.attachSubLog(i, line) {
 			break
 		}
@@ -538,8 +539,14 @@ func (m *Model) handleEvent(ev client.Event) (tea.Model, tea.Cmd) {
 		// the stamped session frame that follows opens the card. The
 		// flag also arms the lazy marker (ensureWireTurn) so the wake keeps
 		// its identity even when the stamped frame is missed. No strip
-		// note: the wake card itself is the operator-visible signal.
+		// note only when the wake card cannot open (an operator turn is
+		// streaming — openWakeTurn opens nothing then, and the completion
+		// must still be reported). While idle, the card itself is the
+		// signal.
 		m.wakeArmed = true
+		if m.busy {
+			m.addNote("background job finished · agent will wake after this turn")
+		}
 
 	case "bg_job":
 		// Push notification of a job start/exit (≥ v1.40): refresh the

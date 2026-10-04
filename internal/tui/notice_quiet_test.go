@@ -35,17 +35,23 @@ func TestEngineChatterNeverSurfaces(t *testing.T) {
 	}
 }
 
-// TestBgWakeStillArmsIdentity pins that suppression is render-only: the
-// wake marker must still arm so the unprompted turn keeps its identity
-// even though no note announces it.
-func TestBgWakeStillArmsIdentity(t *testing.T) {
+// TestBgWakeIdleSilentBusyNoted: while idle the wake card is the signal
+// (no note); while an operator turn streams the card cannot open, so the
+// completion must be reported as an alert-tier note instead.
+func TestBgWakeIdleSilentBusyNoted(t *testing.T) {
 	m := newTestModel()
 	m.handleEvent(client.Event{Type: "bg_wake"})
 	if !m.wakeArmed {
 		t.Fatal("bg_wake suppression must not lose the wakeArmed identity marker")
 	}
 	if len(m.notices) != 0 {
-		t.Fatalf("bg_wake must not surface a note: %v", m.notices)
+		t.Fatalf("idle bg_wake must not surface a note: %v", m.notices)
+	}
+	m.notices = nil
+	m.busy = true
+	m.handleEvent(client.Event{Type: "bg_wake"})
+	if note, _ := lastNoteMatching(m, "background job finished"); note == "" {
+		t.Fatalf("bg_wake during a busy turn must report the completion: %v", m.notices)
 	}
 }
 
@@ -60,15 +66,16 @@ func TestJobStartDiffSilenced(t *testing.T) {
 	}
 }
 
-// TestJobCleanExitSilenced: a clean (exit 0) terminal transition is
-// reported by the wake card / tab; the strip stays out of it.
-func TestJobCleanExitSilenced(t *testing.T) {
+// TestJobCleanExitStillReports: clean exits keep the alert-tier
+// completion note — the wake card depends on odek ≥ v1.40 and
+// wake_on_complete, so this note is the guaranteed report.
+func TestJobCleanExitStillReports(t *testing.T) {
 	m := newTestModel()
 	m.applyJobs([]client.Job{{ID: "j1", Status: "running", Command: "make test"}}, nil)
 	zero := 0
 	m.applyJobs([]client.Job{{ID: "j1", Status: "exited", Command: "make test", ExitCode: &zero}}, nil)
-	if len(m.notices) != 0 {
-		t.Fatalf("clean job exit must not reach the strip: %v", m.notices)
+	if note, _ := lastNoteMatching(m, "j1"); note == "" {
+		t.Fatalf("clean job exit must still be reported: %v", m.notices)
 	}
 }
 

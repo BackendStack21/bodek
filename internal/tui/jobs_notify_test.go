@@ -34,24 +34,30 @@ func seedRunning(t *testing.T) *Model {
 	return m
 }
 
-// TestJobExitAlertTier pins J1: a FAILED terminal transition posts an
-// alert-tier note (dwell in (noticeTTL, alertTTL]); a clean exit 0 is
-// owned by the wake card and jobs tab and stays out of the strip.
+// TestJobExitAlertTier pins J1: every terminal transition — clean or
+// failed — posts an alert-tier completion note (dwell in (noticeTTL,
+// alertTTL]); the wake card is a bonus, not a guaranteed report.
 func TestJobExitAlertTier(t *testing.T) {
-	m := seedRunning(t)
-	m.applyJobs([]client.Job{exitedJob("exited", 0)}, nil)
-	if note, _ := lastNoteMatching(m, "bg_0000abcd"); note != "" {
-		t.Fatalf("clean exit must not post a note: %q", note)
-	}
-	m = seedRunning(t)
-	m.applyJobs([]client.Job{exitedJob("failed", 1)}, nil)
+	for _, tc := range []struct {
+		name   string
+		status string
+		code   int
+	}{
+		{"clean exit", "exited", 0},
+		{"failed exit", "failed", 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			m := seedRunning(t)
+			m.applyJobs([]client.Job{exitedJob(tc.status, tc.code)}, nil)
 
-	note, exp := lastNoteMatching(m, "bg_0000abcd")
-	if note == "" {
-		t.Fatal("failed exit transition posted no note")
-	}
-	if dwell := time.Until(exp); dwell <= noticeTTL || dwell > alertTTL {
-		t.Errorf("exit note dwell = %v, want alert tier (%v, %v]", dwell, noticeTTL, alertTTL)
+			note, exp := lastNoteMatching(m, "bg_0000abcd")
+			if note == "" {
+				t.Fatal("exit transition posted no note")
+			}
+			if dwell := time.Until(exp); dwell <= noticeTTL || dwell > alertTTL {
+				t.Errorf("exit note dwell = %v, want alert tier (%v, %v]", dwell, noticeTTL, alertTTL)
+			}
+		})
 	}
 }
 
@@ -59,10 +65,10 @@ func TestJobExitAlertTier(t *testing.T) {
 // carries the sanitized command head so the operator knows WHICH job.
 func TestJobExitNoteNamesCommand(t *testing.T) {
 	m := seedRunning(t)
-	m.applyJobs([]client.Job{exitedJob("failed", 2)}, nil)
+	m.applyJobs([]client.Job{exitedJob("exited", 0)}, nil)
 
 	note, _ := lastNoteMatching(m, "bg_0000abcd")
-	for _, want := range []string{"gh pr checks 63 --watch", "failed 2", "1m44s"} {
+	for _, want := range []string{"gh pr checks 63 --watch", "exited 0", "1m44s"} {
 		if !strings.Contains(note, want) {
 			t.Errorf("exit note missing %q: %q", want, note)
 		}
