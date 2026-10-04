@@ -32,10 +32,17 @@ func TestPlainEventLines(t *testing.T) {
 			Content: "checking the files"}, "[think] checking the files"},
 		{"error", client.Event{Type: "error", Message: "boom"}, "[error] boom"},
 		{"skill note", client.Event{Type: "skill_event", SubType: "loaded",
-			SkillName: "go"}, "· skill · loaded go"},
+			SkillName: "go"}, ""},
 	}
 	for _, tc := range tests {
 		got := m.plainEventLines(tc.ev)
+		if tc.want == "" {
+			// want "" pins a suppressed event: no line at all.
+			if len(got) != 0 {
+				t.Errorf("%s: got %d lines (%v), want none", tc.name, len(got), got)
+			}
+			continue
+		}
 		if len(got) != 1 {
 			t.Errorf("%s: got %d lines (%v), want 1", tc.name, len(got), got)
 			continue

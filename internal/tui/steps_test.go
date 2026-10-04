@@ -94,11 +94,12 @@ func TestSubagentLogNesting(t *testing.T) {
 	m.curIdx = 0
 	m.busy = true
 
-	// A non-sub-agent tool: the log has nowhere to nest → notice.
+	// A non-sub-agent tool: the log has nowhere to nest and no notice —
+	// the agents tab owns strays.
 	m.handleEvent(client.Event{Type: "tool_call", Name: "shell", Data: `{"command":"ls"}`})
 	m.handleEvent(client.Event{Type: "subagent_log", SubType: "started", Name: "explorer"})
-	if got := strings.Join(m.notices, "\n"); !strings.Contains(got, "subagent · started explorer") {
-		t.Errorf("expected fallback notice, notices=%q", got)
+	if got := strings.Join(m.notices, "\n"); strings.Contains(got, "subagent · started explorer") {
+		t.Errorf("stray log must not reach the strip, notices=%q", got)
 	}
 
 	// A sub-agent tool: subsequent logs nest under its step.

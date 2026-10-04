@@ -34,18 +34,30 @@ func seedRunning(t *testing.T) *Model {
 	return m
 }
 
-// TestJobExitAlertTier pins J1: a terminal transition posts an alert-tier
-// note (dwell in (noticeTTL, alertTTL]), not a 3s transient.
+// TestJobExitAlertTier pins J1: every terminal transition — clean or
+// failed — posts an alert-tier completion note (dwell in (noticeTTL,
+// alertTTL]); the wake card is a bonus, not a guaranteed report.
 func TestJobExitAlertTier(t *testing.T) {
-	m := seedRunning(t)
-	m.applyJobs([]client.Job{exitedJob("exited", 0)}, nil)
+	for _, tc := range []struct {
+		name   string
+		status string
+		code   int
+	}{
+		{"clean exit", "exited", 0},
+		{"failed exit", "failed", 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			m := seedRunning(t)
+			m.applyJobs([]client.Job{exitedJob(tc.status, tc.code)}, nil)
 
-	note, exp := lastNoteMatching(m, "bg_0000abcd")
-	if note == "" {
-		t.Fatal("exit transition posted no note")
-	}
-	if dwell := time.Until(exp); dwell <= noticeTTL || dwell > alertTTL {
-		t.Errorf("exit note dwell = %v, want alert tier (%v, %v]", dwell, noticeTTL, alertTTL)
+			note, exp := lastNoteMatching(m, "bg_0000abcd")
+			if note == "" {
+				t.Fatal("exit transition posted no note")
+			}
+			if dwell := time.Until(exp); dwell <= noticeTTL || dwell > alertTTL {
+				t.Errorf("exit note dwell = %v, want alert tier (%v, %v]", dwell, noticeTTL, alertTTL)
+			}
+		})
 	}
 }
 
@@ -68,12 +80,12 @@ func TestJobExitNoteNamesCommand(t *testing.T) {
 func TestJobExitAttentionCmd(t *testing.T) {
 	m := seedRunning(t)
 	var attn tea.Cmd
-	attn = m.applyJobs([]client.Job{exitedJob("exited", 0)}, nil)
+	attn = m.applyJobs([]client.Job{exitedJob("failed", 1)}, nil)
 	if attn == nil {
 		t.Fatal("terminal transition fired no attention")
 	}
 
-	if attn = m.applyJobs([]client.Job{exitedJob("exited", 0)}, nil); attn != nil {
+	if attn = m.applyJobs([]client.Job{exitedJob("failed", 1)}, nil); attn != nil {
 		t.Error("steady-state re-apply must not re-fire attention")
 	}
 }

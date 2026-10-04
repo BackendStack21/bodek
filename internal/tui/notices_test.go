@@ -59,29 +59,21 @@ func assertAlertDwell(t *testing.T, m *Model, cmdArmed bool, substr string) {
 }
 
 // TestTrimSignalSilenced pins the actionable-only contract for agent_signal:
-// odek's context_trimmed (and the older "trim" alias) and tool_running
-// heartbeats are engine housekeeping — nothing the user can act on —
-// so they must never surface as notices.
-// Every other subtype keeps flowing into the strip.
+// every subtype is engine housekeeping — nothing the user can act on — so
+// none may ever surface as a notice (the transcript, status line, and ctx
+// gauge own the state).
 func TestTrimSignalSilenced(t *testing.T) {
 	m := newTestModel()
 	for _, ev := range []client.Event{
 		{Type: "agent_signal", SubType: "context_trimmed", Detail: "proactive", Count: 3},
 		{Type: "agent_signal", SubType: "trim", Detail: "ctx"},
 		{Type: "agent_signal", SubType: "tool_running", Detail: "shell"},
+		{Type: "agent_signal", SubType: "fallback", Detail: "glm-x"},
 	} {
 		m.handleEvent(ev)
-		for _, n := range m.notices {
-			if strings.Contains(n, "signal · "+ev.SubType) {
-				t.Fatalf("%s signal surfaced as a notice: %v", ev.SubType, m.notices)
-			}
+		if len(m.notices) != 0 {
+			t.Fatalf("%s signal surfaced as a notice: %v", ev.SubType, m.notices)
 		}
-	}
-
-	// Silence is per-subtype, not per event class.
-	m.handleEvent(client.Event{Type: "agent_signal", SubType: "fallback", Detail: "glm-x"})
-	if note, _ := lastNoteMatching(m, "signal · fallback"); note == "" {
-		t.Errorf("non-trim agent_signal was silenced too: %v", m.notices)
 	}
 }
 

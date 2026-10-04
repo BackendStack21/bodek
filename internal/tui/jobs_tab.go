@@ -114,11 +114,12 @@ func (m *Model) resetJobsState() {
 	m.jobsPrev = nil
 }
 
-// applyJobs stores a snapshot; watcher diffs become alert-tier notes — a
-// finished job is actionable, not housekeeping — and terminal transitions
-// fire the attention layer (bell / OSC 9). The first successful snapshot
-// baselines silently — jobs that predate the attach belong to the tab, not
-// the transcript. Returns the attention cmd (nil without a transition).
+// applyJobs stores a snapshot; terminal watcher diffs become alert-tier
+// notes — a finished job is a completion report the operator opted into,
+// not housekeeping — and fire the attention layer (bell / OSC 9). Job
+// starts stay on the tab. The first successful snapshot baselines
+// silently — jobs that predate the attach belong to the tab, not the
+// transcript. Returns the attention cmd (nil without a transition).
 func (m *Model) applyJobs(jobs []client.Job, err error) tea.Cmd {
 	if err != nil {
 		if errors.Is(err, client.ErrJobsUnavailable) {
@@ -150,10 +151,15 @@ func (m *Model) applyJobs(jobs []client.Job, err error) tea.Cmd {
 			old, seen := m.jobsPrev[j.ID]
 			switch {
 			case !seen:
-				m.addTransientNote("bg · " + jobStatusGlyph(j.Status) + " " + sanitize(j.ID) + " · " + sanitize(j.Command))
+				// Jobs materializing in the diff are tab state, not
+				// transcript state — the start is already visible where the
+				// job was launched (bg_start feedback).
 			case old == "running" && j.Status != "running":
 				// Alert tier + attention: a finished job must survive a
-				// glance-away, and the operator opted into knowing.
+				// glance-away, and the operator opted into knowing. This is
+				// the guaranteed completion report — the wake card is a
+				// bonus that depends on odek ≥ v1.40 and wake_on_complete,
+				// so it may never fire; this note must.
 				m.addNote(jobExitNote(j))
 				attn = m.attentionCmd(m.attentionFor(jobAttentionKind(j)))
 			}

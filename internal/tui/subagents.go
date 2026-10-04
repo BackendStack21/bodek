@@ -610,25 +610,6 @@ func (s *step) cardByIdx(idx int) *agentCard {
 	return nil
 }
 
-// stateNoticeLine renders a subagent_state frame that had nowhere to attach
-// as a transient notice line.
-func stateNoticeLine(ev client.Event) string {
-	parts := []string{fmt.Sprintf("sub-agent #%d", ev.TaskIdx+1), ev.Phase, ev.Status}
-	if ev.Step > 0 {
-		parts = append(parts, fmt.Sprintf("step %d", ev.Step))
-	}
-	if ev.TokensUsed > 0 {
-		parts = append(parts, human(ev.TokensUsed)+" tok")
-	}
-	out := make([]string, 0, len(parts))
-	for _, p := range parts {
-		if p != "" {
-			out = append(out, p)
-		}
-	}
-	return strings.Join(out, " · ")
-}
-
 // ── per-agent stop (subagent_cancel) ─────────────────────────────────────────
 
 // stopAgentDoneMsg reports a failed WS stop so the failure isn't silent;

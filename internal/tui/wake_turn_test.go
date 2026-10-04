@@ -108,15 +108,21 @@ func TestWakeTurnLifecycleRendersMarker(t *testing.T) {
 
 // The bg_wake frame is the operator's context for the unprompted activity:
 // surface it as a transient note.
-func TestBgWakeFrameNotifies(t *testing.T) {
+// TestBgWakeFrameArmsMarkerSilently: the bg_wake frame no longer posts a
+// strip note while idle (the wake card is the operator-visible signal)
+// but must still arm the wake identity so the unprompted turn is never
+// mistaken for an operator exchange.
+func TestBgWakeFrameArmsMarkerSilently(t *testing.T) {
 	m := newTestModel()
 	m.handleEvent(client.Event{Type: "bg_wake", SessionID: "s1"})
+	if !m.wakeArmed {
+		t.Fatal("bg_wake frame did not arm the wake marker")
+	}
 	for _, n := range m.notices {
 		if strings.Contains(n, "waking") {
-			return
+			t.Errorf("bg_wake must not reach the strip: %v", m.notices)
 		}
 	}
-	t.Errorf("bg_wake frame produced no note; notices = %v", m.notices)
 }
 
 // A bg_job push frame refreshes the jobs snapshot immediately; a surface

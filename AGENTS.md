@@ -287,7 +287,8 @@ modifier routes to the composer), and `Alt+A`/`Alt+D`/`Alt+T`
   and diffs status transitions into transient notes. odek ≥ v1.40 also
   pushes `bg_job` frames on start/exit — `handleEvent` routes them through
   `kickJobsFetch()` for an immediate snapshot, watcher tick as fallback;
-  `bg_wake` frames become transient notes. Generation counters
+  `bg_wake` frames arm the wake marker only (an alert-tier note appears
+  just when a busy turn blocks the wake card). Generation counters
   (`jobsSeq`/`jobsWatchSeq`) drop stale ticks — keep both chains
   generation-guarded when touching the cadence. The same push-beats-poll
   pattern drives the other tabs: `subagent_state` and `memory_event` frames
