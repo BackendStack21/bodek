@@ -6,7 +6,9 @@ package workspace
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"sync"
@@ -55,6 +57,11 @@ func Open() *Store {
 	}
 	data, err := os.ReadFile(s.path)
 	if err != nil {
+		if !errors.Is(err, fs.ErrNotExist) {
+			// Present but unreadable: never replace bytes we could not read.
+			fmt.Fprintf(os.Stderr, "bodek: warning: %s unreadable, not persisting: %v\n", s.path, err)
+			s.path = ""
+		}
 		return s
 	}
 	var f fileFormat
