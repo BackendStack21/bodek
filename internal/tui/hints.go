@@ -50,7 +50,7 @@ func (m *Model) teach(key, text string) {
 	if m.width < 24 {
 		text = "tip: F1 help"
 	}
-	label := "💡 " + text
+	label := text
 	if m.width > 4 {
 		label = truncate(label, m.width-4) // note rail adds its own prefix
 	}

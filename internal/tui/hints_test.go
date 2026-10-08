@@ -26,7 +26,7 @@ func countNotices(m *Model, marker string) int {
 // than an operational note — tests that demand silence for a state use it
 // to ignore the teaching layer.
 func isHintNote(s string) bool {
-	return strings.HasPrefix(s, "💡")
+	return strings.HasPrefix(s, "tip: ")
 }
 
 // liveTurnModel mirrors sendPrompt's local state without touching a client.
