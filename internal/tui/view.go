@@ -809,9 +809,9 @@ func (m *Model) renderMessage(msg message, msgIdx, lineOffset int) (string, []st
 				if strings.TrimSpace(t) == "" {
 					continue
 				}
-				body := t
-				if items[it].rendered != "" {
-					body = items[it].rendered
+				body := items[it].rendered
+				if body == "" {
+					body = rawReplyBody(t)
 				}
 				card, n := m.answerCardBody(body)
 				start := addBlock(card, true)
@@ -863,6 +863,22 @@ func (m *Model) renderMessage(msg message, msgIdx, lineOffset int) (string, []st
 		}
 		return stackTurn(label, strings.Join(lines, "\n")), refs
 	}
+}
+
+// rawReplyMargin matches glamour's document margin, so a reply segment
+// painted before its first render flush sits in the same column the
+// rendered card will — the text never jumps sideways when markdown lands.
+const rawReplyMargin = "  "
+
+// rawReplyBody indents a not-yet-rendered reply to glamour's margin.
+func rawReplyBody(t string) string {
+	lines := strings.Split(t, "\n")
+	for i, ln := range lines {
+		if ln != "" {
+			lines[i] = rawReplyMargin + ln
+		}
+	}
+	return strings.Join(lines, "\n")
 }
 
 // answerCardBody styles one reply segment as its raised card — the
