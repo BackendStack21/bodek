@@ -172,8 +172,9 @@ own front-end settings are separate; see [Configuration](#configuration).
   passed.
 - **Streaming answers** rendered as Markdown
   ([glamour](https://github.com/charmbracelet/glamour)).
-- **Tool activity** — every `tool_call`/`tool_result` shown live with a glyph
-  per tool and a static live mark (`▸`); result bodies wait behind `^E` or a
+- **Tool activity** — every `tool_call`/`tool_result` shown live with one
+  status glyph per step: a static live mark (`▸`) while running, the tool's
+  own glyph once it finishes, `✗` when it fails; result bodies wait behind `^E` or a
   click so a finished step reads as one calm line. An opened step shows its
   invocation before its result, including while the tool is running. Tool
   arguments are retained up to 256 KiB, with an explicit omission marker if

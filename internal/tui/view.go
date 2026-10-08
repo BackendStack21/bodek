@@ -1241,16 +1241,21 @@ func (m *Model) renderStep(s step, streaming bool, msgIdx, stepIdx, startLine in
 			return st.blockCache, refs, lineCount(st.blockCache)
 		}
 	}
+	// One status-bearing glyph per row: a clean finish shows the tool's own
+	// icon, a failure replaces it with ✗ (shape, not only color), and live
+	// and pending share a static ▸ — the status line is the only spinner,
+	// so a fast tool swarm cannot strobe the transcript.
+	glyph := toolGlyph(s.name)
 	var icon string
 	switch {
 	case s.done && s.isErr:
-		icon = th.stepErr.Render("✗")
+		glyph = "✗"
+		icon = th.stepErr.Render(glyph)
 	case s.done:
-		icon = th.stepDone.Render("✓")
+		icon = th.toolIcon.Render(glyph)
 	default:
-		// Live and pending share a static glyph — the status line is the
-		// only spinner, so a fast tool swarm cannot strobe the transcript.
-		icon = th.stepRun.Render("▸")
+		glyph = "▸"
+		icon = th.stepRun.Render(glyph)
 	}
 	chevron := th.stepTree.Render("▶")
 	if expanded {
@@ -1280,7 +1285,7 @@ func (m *Model) renderStep(s step, streaming bool, msgIdx, stepIdx, startLine in
 		}
 	}
 	rightW := lipgloss.Width(right)
-	pre := chevron + " " + icon + " " + th.toolIcon.Render(toolGlyph(s.name)) + " "
+	pre := chevron + " " + icon + " "
 	chips := s.agentChips()
 	nameBudget := max(m.vp.Width-4-rightW-lipgloss.Width(pre)-8, 4)
 	var left string
@@ -1304,7 +1309,7 @@ func (m *Model) renderStep(s step, streaming bool, msgIdx, stepIdx, startLine in
 		}
 		budget := max(m.vp.Width-4-rightW-2, 4)
 		if s.arg != "" && len(chips) == 0 {
-			left += th.stepArg.Render("  " + truncate(s.arg, budget-lipgloss.Width(chevron+" "+icon+" "+toolGlyph(s.name)+" "+s.name)-2))
+			left += th.stepArg.Render("  " + truncate(s.arg, budget-lipgloss.Width(chevron+" "+glyph+" "+s.name)-2))
 		}
 	}
 	gap := max(m.vp.Width-4-lipgloss.Width(left)-rightW, 1)

@@ -129,3 +129,27 @@ func TestWarningHueDistinctFromAccent(t *testing.T) {
 		}
 	}
 }
+
+// A step head carries one status-bearing glyph after the disclosure chevron:
+// the tool icon on success, ✗ on failure, a static ▸ while live.
+func TestStepHeadSingleStatusGlyph(t *testing.T) {
+	head := func(s step) string {
+		m := newTestModel()
+		m.resize(100, 30)
+		out, _, _ := m.renderStep(s, !s.done, -1, -1, 0)
+		return plain(strings.Split(out, "\n")[0])
+	}
+	shell := toolGlyph("shell")
+	ok := head(step{name: "shell", arg: "go test", done: true, result: "ok"})
+	if strings.Contains(ok, "✓") || !strings.Contains(ok, shell+" shell") {
+		t.Errorf("done head = %q, want the tool icon without a ✓", ok)
+	}
+	bad := head(step{name: "shell", arg: "go test", done: true, isErr: true, result: "boom"})
+	if !strings.Contains(bad, "✗ shell") || strings.Contains(bad, shell) {
+		t.Errorf("failed head = %q, want ✗ in place of the tool icon", bad)
+	}
+	live := head(step{name: "shell", arg: "go test"})
+	if !strings.Contains(live, "▸") || strings.Contains(live, shell) {
+		t.Errorf("live head = %q, want a static ▸ in place of the tool icon", live)
+	}
+}
