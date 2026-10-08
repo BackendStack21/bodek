@@ -8,6 +8,7 @@
 package client
 
 import (
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"net"
@@ -310,12 +311,32 @@ func dialWS(cfg *ws.Config) (*ws.Conn, error) {
 		_ = raw.Close()
 		return nil, err
 	}
-	conn, err := ws.NewClient(cfg, raw)
+	// ws.NewClient speaks plain WS over whatever it is handed; a wss:// URL
+	// needs the TLS handshake done here (ws.DialConfig would, but has no
+	// dial timeout).
+	nc := net.Conn(raw)
+	if cfg.Location.Scheme == "wss" {
+		tc := cfg.TlsConfig
+		if tc == nil {
+			tc = &tls.Config{MinVersion: tls.VersionTLS12}
+		}
+		if tc.ServerName == "" {
+			tc = tc.Clone()
+			tc.ServerName = cfg.Location.Hostname()
+		}
+		tlsConn := tls.Client(raw, tc)
+		if err := tlsConn.Handshake(); err != nil {
+			_ = raw.Close()
+			return nil, err
+		}
+		nc = tlsConn
+	}
+	conn, err := ws.NewClient(cfg, nc)
 	if err != nil {
-		_ = raw.Close()
+		_ = nc.Close()
 		return nil, err
 	}
-	_ = raw.SetDeadline(time.Time{}) // live stream: no deadline
+	_ = nc.SetDeadline(time.Time{}) // live stream: no deadline
 	return conn, nil
 }
 
@@ -363,12 +384,23 @@ func (c *Client) Resources(query string, limit int) ([]Resource, error) {
 // only happens on a dead link. A test hook; do not shrink further.
 var readIdleTimeout = 45 * time.Second
 
+// thinkingIdleFlush bounds how long a merged thinking_delta run may sit
+// pending when the stream goes quiet: the coalescer only flushes on the next
+// frame, so the tail of a reasoning burst would otherwise stay invisible
+// until the server's next heartbeat.
+var thinkingIdleFlush = 50 * time.Millisecond
+
 func (c *Client) readLoop() {
 	defer close(c.Events)
 	defer func() { _ = c.conn.Close() }() // release the fd even when the sender never closes (reconnect swap)
-	var pending *Event
-	n := 0
-	flush := func() {
+	var (
+		mu      sync.Mutex // guards pending/n/closed and orders every emit
+		pending *Event
+		n       int
+		closed  bool
+		timer   *time.Timer
+	)
+	flush := func() { // caller holds mu
 		if pending == nil {
 			return
 		}
@@ -376,12 +408,22 @@ func (c *Client) readLoop() {
 		pending = nil
 		n = 0
 	}
+	defer func() { // runs before close(c.Events): the idle timer must not emit after it
+		mu.Lock()
+		closed = true
+		if timer != nil {
+			timer.Stop()
+		}
+		mu.Unlock()
+	}()
 	for {
 		var data []byte
 		_ = c.conn.SetReadDeadline(time.Now().Add(readIdleTimeout))
 		if err := ws.Message.Receive(c.conn, &data); err != nil {
+			mu.Lock()
 			flush()
 			c.emit(Event{Type: EventDisconnected})
+			mu.Unlock()
 			return
 		}
 		_ = c.conn.SetReadDeadline(time.Time{}) // received: drop the deadline while decoding
@@ -389,24 +431,39 @@ func (c *Client) readLoop() {
 		if err := json.Unmarshal(data, &ev); err != nil {
 			continue // ignore malformed frames
 		}
+		mu.Lock()
 		if ev.Type == "thinking_delta" {
 			if pending != nil && pending.Type == ev.Type && pending.TurnID == ev.TurnID {
 				pending.Content += ev.Content
 				n++
-				if n < deltaCoalesceMax {
-					continue
+				if n >= deltaCoalesceMax {
+					flush()
 				}
+			} else {
 				flush()
-				continue
+				e := ev
+				pending = &e
+				n = 1
 			}
-			flush()
-			e := ev
-			pending = &e
-			n = 1
+			if pending != nil {
+				if timer == nil {
+					timer = time.AfterFunc(thinkingIdleFlush, func() {
+						mu.Lock()
+						defer mu.Unlock()
+						if !closed {
+							flush()
+						}
+					})
+				} else {
+					timer.Reset(thinkingIdleFlush)
+				}
+			}
+			mu.Unlock()
 			continue
 		}
 		flush()
 		c.emit(ev)
+		mu.Unlock()
 	}
 }
 

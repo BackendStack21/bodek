@@ -131,7 +131,10 @@ feat(tui): compact tool steps with Ctrl+E details toggle
   cannot run View per fragment (that filled the 256-deep Events buffer
   and tripped odek's 30s write timeout — connection lost after any
   prompt). `ingestWireBatch` re-arms `listen()` as a top-level cmd, never
-  nested inside handleEvent's Batch. The client also merges consecutive
+  nested inside handleEvent's Batch. While a batch drains, `handleEvent` parks its
+  state-consuming follow-ups (`sendQueued`, `planFollowup`, attention, `flushKicks`)
+  in `batchCarry` instead of returning them, so the flat batch never drops a
+  queue pop, bell, or tab refresh. The client also merges consecutive
   thinking deltas (16 at a time) before enqueueing. Assistant text deltas
   enqueue immediately so short progress notes cannot wait for a later frame;
   their redraws still coalesce in the TUI. The header

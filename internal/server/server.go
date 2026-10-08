@@ -145,10 +145,8 @@ func Connect(opts Options) (*Conn, error) {
 
 	if opts.URL != "" {
 		base, urlToken := splitTokenURL(opts.URL)
-		base = strings.TrimRight(base, "/")
-		c.BaseURL = base
-		c.Origin = base
-		c.WSURL = "ws" + strings.TrimPrefix(base, "http") + "/ws"
+		c.BaseURL, c.WSURL = attachEndpoints(base)
+		c.Origin = c.BaseURL
 		if token == "" {
 			token = urlToken
 		}
@@ -371,6 +369,26 @@ func (c *Conn) Stop() {
 			}
 		}
 	}
+}
+
+// attachEndpoints derives the REST base and the WebSocket URL from an attach
+// URL whose token has been split off. Surviving query parameters stay on the
+// WS URL (after the /ws path) and never leak into the REST base, which later
+// code extends by path concatenation.
+func attachEndpoints(base string) (baseURL, wsURL string) {
+	u, err := url.Parse(base)
+	if err != nil {
+		b := strings.TrimRight(base, "/")
+		return b, "ws" + strings.TrimPrefix(b, "http") + "/ws"
+	}
+	u.Path = strings.TrimRight(u.Path, "/")
+	u.RawPath = ""
+	rest := *u
+	rest.RawQuery = ""
+	w := *u
+	w.Path += "/ws"
+	w.Scheme = "ws" + strings.TrimPrefix(u.Scheme, "http")
+	return rest.String(), w.String()
 }
 
 // splitTokenURL separates an attach URL into its base and an optional

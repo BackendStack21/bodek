@@ -381,9 +381,9 @@ func jobStatusGlyph(status string) string {
 func jobExitNote(j client.Job) string {
 	s := jobStatusGlyph(j.Status) + " " + sanitize(j.ID) + " · " + truncate(sanitize(j.Command), 48)
 	if j.ExitCode != nil {
-		s += " — " + j.Status + fmt.Sprintf(" %d", *j.ExitCode)
+		s += " — " + sanitize(j.Status) + fmt.Sprintf(" %d", *j.ExitCode)
 	} else {
-		s += " — " + j.Status
+		s += " — " + sanitize(j.Status)
 	}
 	return s + " · " + fmtRuntime(j.RuntimeS)
 }

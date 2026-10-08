@@ -3,6 +3,7 @@ package tui
 import (
 	"fmt"
 	"strings"
+	"unicode/utf8"
 
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -159,7 +160,7 @@ func plainClip(s string) string {
 		return s
 	}
 	cut := max
-	for cut > 0 && r[cut-1] >= 0x80 && r[cut-1] < 0xC0 {
+	for cut > 0 && !utf8.RuneStart(r[cut]) {
 		cut-- // never split a UTF-8 sequence
 	}
 	return string(r[:cut]) + "…"

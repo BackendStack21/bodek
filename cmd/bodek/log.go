@@ -14,11 +14,17 @@ import (
 // so it never grows without bound.
 const serverLogName = "bodek-odek-serve.log"
 
-// openServerLog opens (truncating) the server log file. On failure it falls
+// openServerLog (re)creates the server log file. On failure it falls
 // back to a discarding writer so a missing temp dir never breaks startup.
 func openServerLog() (w io.Writer, path string, closeFn func()) {
 	path = filepath.Join(os.TempDir(), serverLogName)
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600)
+	// The log receives odek's "WS token:" line. Never reuse an existing
+	// file: another user may have pre-created it (or a symlink to a file of
+	// theirs) with open permissions. Remove it and create exclusively; if the
+	// remove is refused (not ours, sticky dir) the create fails and logging
+	// is skipped rather than leaking the token.
+	_ = os.Remove(path)
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
 	if err != nil {
 		return io.Discard, "", func() {}
 	}

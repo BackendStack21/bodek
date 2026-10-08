@@ -22,6 +22,7 @@ import (
 // fields render immediately; these fill in a moment later.
 func (m *Model) openCockpit() tea.Cmd {
 	m.popover = true
+	m.popScroll = 0
 	m.refresh()
 	return m.cockpitFetch()
 }
@@ -70,15 +71,15 @@ func (m *Model) handlePopoverKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "r":
 		return m, m.cockpitFetch()
 	case "up", "ctrl+p", "k":
-		m.vp.ScrollUp(1)
+		m.popScroll = max(m.popScroll-1, 0)
 	case "down", "ctrl+n", "j":
-		m.vp.ScrollDown(1)
+		m.popScroll++ // clamped against the card height when drawn
 	case "pgup", "ctrl+u":
-		m.vp.HalfPageUp()
+		m.popScroll = max(m.popScroll-popoverPage(m.vp.Height), 0)
 	case "pgdown", "ctrl+d":
-		m.vp.HalfPageDown()
+		m.popScroll += popoverPage(m.vp.Height)
 	case "ctrl+g":
-		m.vp.GotoBottom()
+		m.popScroll = 1 << 20
 	}
 	m.refresh()
 	return m, nil
@@ -100,10 +101,22 @@ func (m *Model) popoverView(w, h int) string {
 	}
 	// The session section renders un-boxed — no nested card inside a card.
 	b.WriteString("\n\n" + m.statsBody())
-	b.WriteString("\n\n" + th.acDetail.Render("r refresh · esc close"))
 
-	return th.acBox.Width(boxWidth(w)).Height(h - 2).Render(b.String())
+	// Window the card to the transcript area (the box height is only a
+	// minimum): the hint row stays pinned, the rest scrolls.
+	lines := strings.Split(b.String(), "\n")
+	visible := max(h-4, 1)
+	m.popScroll = min(max(m.popScroll, 0), max(len(lines)-visible, 0))
+	if len(lines) > visible {
+		lines = lines[m.popScroll : m.popScroll+visible]
+	}
+	lines = append(lines, "", th.acDetail.Render("r refresh · esc close"))
+
+	return th.acBox.Width(boxWidth(w)).Height(h - 2).MaxHeight(h).Render(strings.Join(lines, "\n"))
 }
+
+// popoverPage is the half-page step for the cockpit card.
+func popoverPage(h int) int { return max((h-4)/2, 1) }
 
 // cockpitServerSection is the server/link card: identity and liveness from
 // the server_info/pong snapshot plus the heartbeat round-trip.

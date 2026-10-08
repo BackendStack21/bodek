@@ -10,7 +10,9 @@ package tokens
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"sync"
@@ -42,6 +44,12 @@ func openAt(path string) *Store {
 	s := &Store{m: map[string]string{}, path: path}
 	data, err := os.ReadFile(path)
 	if err != nil {
+		if !errors.Is(err, fs.ErrNotExist) {
+			// Present but unreadable (e.g. root-owned after sudo): never
+			// replace bytes we could not read.
+			warnPersist(fmt.Errorf("store unreadable, not persisting: %w", err))
+			s.path = ""
+		}
 		return s // missing store: fresh start
 	}
 	if err := json.Unmarshal(data, &s.m); err != nil {

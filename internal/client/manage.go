@@ -1,6 +1,7 @@
 package client
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -73,7 +74,30 @@ func (c *Client) PromoteEpisode(sessionID string) error {
 
 // ConsolidateMemory merges similar facts through the LLM.
 func (c *Client) ConsolidateMemory(target string) error {
-	return c.postAction("/api/memory/consolidate", map[string]string{"target": target})
+	payload, err := json.Marshal(map[string]string{"target": target})
+	if err != nil {
+		return err
+	}
+	req, err := http.NewRequest(http.MethodPost, c.baseURL+"/api/memory/consolidate", bytes.NewReader(payload))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	c.authHeaders(req, "")
+	// An LLM-backed merge outlives the 3s interactive budget.
+	h := c.slowHTTP
+	if h == nil {
+		h = c.http
+	}
+	resp, err := h.Do(req)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNoContent {
+		return fmt.Errorf("/api/memory/consolidate: status %s", resp.Status)
+	}
+	return nil
 }
 
 // Skill is one discovered skill with its provenance state.

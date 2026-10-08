@@ -8,6 +8,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/BackendStack21/bodek/internal/client"
 )
@@ -840,7 +841,7 @@ func (m *Model) mgmtDetailLines(w int) []string {
 		}
 		j := m.jobs[m.panelSel]
 		out = append(out, th.acSel.Render("› "+jobStatusGlyph(j.Status)+" "+sanitize(j.ID)))
-		meta := []string{j.Status, fmtRuntime(j.RuntimeS)}
+		meta := []string{sanitize(j.Status), fmtRuntime(j.RuntimeS)}
 		if j.ExitCode != nil {
 			meta = append(meta, fmt.Sprintf("exit %d", *j.ExitCode))
 		}
@@ -876,7 +877,7 @@ func (m *Model) mgmtDetailLines(w int) []string {
 		}
 		e := m.agentsReg[m.panelSel]
 		out = append(out, th.acSel.Render("› "+agentStatusGlyph(e.Phase, e.Status)+" "+sanitize(e.Goal)))
-		meta := []string{e.Phase, e.Status, "task " + sanitize(e.TaskID)}
+		meta := []string{sanitize(e.Phase), sanitize(e.Status), "task " + sanitize(e.TaskID)}
 		if e.LastTool != "" {
 			meta = append(meta, "last "+sanitize(e.LastTool))
 		}
@@ -983,5 +984,19 @@ func (m *Model) mgmtDetailLines(w int) []string {
 			out = append(out, wrapText(sanitize(r.raw), w)...)
 		}
 	}
-	return out
+	return fitDetailLines(out, w)
+}
+
+// fitDetailLines bounds every detail row by display cells: embedded
+// newlines split, tabs expand, and wide runes wrap at the cell edge, so the
+// windowed panel's row count is the rendered row count.
+func fitDetailLines(lines []string, w int) []string {
+	w = max(w, 1)
+	fit := make([]string, 0, len(lines))
+	for _, ln := range lines {
+		for _, sub := range strings.Split(strings.ReplaceAll(ln, "\t", "    "), "\n") {
+			fit = append(fit, strings.Split(ansi.Hardwrap(sub, w, true), "\n")...)
+		}
+	}
+	return fit
 }

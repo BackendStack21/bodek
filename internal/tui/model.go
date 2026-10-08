@@ -215,14 +215,16 @@ type Model struct {
 	sp   spinner.Model
 	glam *glamour.TermRenderer
 
-	msgs      []message
-	curIdx    int // index of the streaming assistant message, -1 when idle
-	busy      bool
-	wakeArmed bool // bg_wake seen but its turn not carded yet: arms the lazy wake marker
-	runStart  time.Time
-	lastEvent time.Time // (R5) last eventBatchMsg arrival; drives the stale-age head segment
-	lastTool  string
-	lastArg   string
+	msgs       []message
+	curIdx     int // index of the streaming assistant message, -1 when idle
+	busy       bool
+	wakeArmed  bool // bg_wake seen but its turn not carded yet: arms the lazy wake marker
+	runStart   time.Time
+	inBatch    bool      // ingestWireBatch is draining frames: handleEvent parks follow-ups in batchCarry
+	batchCarry []tea.Cmd // follow-up cmds collected during the batch
+	lastEvent  time.Time // (R5) last eventBatchMsg arrival; drives the stale-age head segment
+	lastTool   string
+	lastArg    string
 
 	failBellFired bool   // (A3) the failure BEL rang for this turn — guard against double-fire
 	apprBells     []bool // per-approval urgent-window BEL latch, parallel to apprDeadlines
@@ -288,6 +290,7 @@ type Model struct {
 	// can see what they are gating.
 	panelDetail  bool // management tab: detail view open
 	detailScroll int  // detail view top-line scroll offset
+	popScroll    int  // cockpit card top-line offset
 	popover      bool // cockpit overlay (h): server/link/budget/session consolidation
 
 	// Sessions panel state: server-side search plus paged "load more".
@@ -1226,6 +1229,7 @@ func (m *Model) clearConversation() tea.Cmd {
 	m.resetMsgBlocks()
 	m.convPrefixRefs = nil
 	m.find = findState{} // nothing left to search
+	m.copyMark = copySpan{}
 	m.stepLineIndex = nil
 	m.replyLineIndex = nil
 	m.turnStats = nil

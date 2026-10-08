@@ -314,8 +314,8 @@ func (m *Model) handlePaletteKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.refresh()
 		return m, cmd
 	case "backspace":
-		if n := len(m.pal.query); n > 0 {
-			m.pal.query = m.pal.query[:n-1]
+		if q := []rune(m.pal.query); len(q) > 0 {
+			m.pal.query = string(q[:len(q)-1])
 			m.filterPalette()
 			m.refresh()
 		}
