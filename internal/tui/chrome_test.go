@@ -29,7 +29,7 @@ func TestDrawerSheetKeepsTranscript(t *testing.T) {
 		t.Errorf("view = %d rows, terminal = %d", viewRows(m), m.height)
 	}
 	out := plain(m.View())
-	if !strings.Contains(out, "type a task") && !strings.Contains(out, "bodek") {
+	if !strings.Contains(out, "⏎ send") && !strings.Contains(out, "bodek") {
 		t.Errorf("transcript home missing above the sheet:\n%s", out)
 	}
 	if !strings.Contains(strings.ToLower(out), "queue") {
@@ -149,7 +149,7 @@ func TestSessionHomeAfterClear(t *testing.T) {
 	if strings.Contains(out, "fix the flaky test") {
 		t.Errorf("/new must drop the session home:\n%s", out)
 	}
-	if !strings.Contains(out, "type a task") {
+	if !strings.Contains(out, "⏎ send") {
 		t.Errorf("fresh session should show first-run home:\n%s", out)
 	}
 }

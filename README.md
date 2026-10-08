@@ -261,7 +261,7 @@ own front-end settings are separate; see [Configuration](#configuration).
   `--resume`; `--new` still wins). When bodek exits, it prints the exact
   line for the session that was just closed, so one paste brings it back.
 - **Session home** — first-run shows the working directory, the last
-  session title when one exists, and `type a task · ^K`. After `^L`, the
+  session title when one exists, and `⏎ send · ⇧⏎ newline · @ attach a file`, anchored just above the composer. After `^L`, the
   cleared transcript keeps the last prompt and coding receipt so the
   session is still oriented; `/new` returns to the first-run splash. The
   footer leads with a mode pill (`composer` / `approval` / `question` / `jobs` / …).

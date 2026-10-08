@@ -274,7 +274,20 @@ func (m *Model) home() string {
 	if m.homePrompt != "" || (m.sessionID != "" && m.lastPrompt != "") {
 		return m.sessionHome()
 	}
-	return welcome(m.th, m.cardSpan(), m.opts.CWD, m.resumeTitle)
+	return anchorAboveComposer(welcome(m.th, m.cardSpan(), m.opts.CWD, m.resumeTitle), m.vp.Height)
+}
+
+// anchorAboveComposer bottom-anchors a home block in the transcript viewport
+// of the given height: the block's last line sits one blank row above the
+// composer. A viewport too short for that keeps the top placement, and a
+// block taller than the viewport is left for the viewport to clip.
+func anchorAboveComposer(block string, height int) string {
+	lines := lineCount(block) + 1
+	pad := height - lines
+	if pad <= 0 {
+		return block
+	}
+	return strings.Repeat("\n", pad) + block
 }
 
 func (m *Model) sessionHome() string {
