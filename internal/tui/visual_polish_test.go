@@ -165,3 +165,27 @@ func TestSandboxBadgeIsNotADot(t *testing.T) {
 		}
 	}
 }
+
+// A high-risk approval escalates its border to the danger color; other
+// risks keep the warning border.
+func TestHighRiskApprovalBorderIsRed(t *testing.T) {
+	old := lipgloss.ColorProfile()
+	lipgloss.SetColorProfile(termenv.TrueColor)
+	defer lipgloss.SetColorProfile(old)
+	border := func(risk string) string {
+		m := newTestModel()
+		m.th = themeFrom(emberDark)
+		m.resize(100, 30)
+		busyTurn(m)
+		m.handleEvent(client.Event{Type: "approval_request", ID: "a", Risk: risk, Command: "make"})
+		return strings.Split(m.approvalPanel(), "\n")[0]
+	}
+	red := surfaceSGR(lipgloss.NewStyle().Background(emberDark.red))
+	red = strings.Replace(red, "[48;", "[38;", 1)
+	if !strings.Contains(border("high"), red) {
+		t.Errorf("high-risk border is not red: %q", border("high"))
+	}
+	if strings.Contains(border("shell_exec"), red) {
+		t.Errorf("shell_exec border escalated to red: %q", border("shell_exec"))
+	}
+}

@@ -1657,7 +1657,11 @@ func (m *Model) approvalPanel() string {
 		// Compact terminals spend their rows on the command and controls.
 		return m.approvalBody()
 	}
-	return m.th.apprBox.Width(m.cardWidth()).Render(m.approvalBody())
+	box := m.th.apprBox
+	if a := m.curApproval(); a != nil && a.Risk == "high" {
+		box = m.th.apprBoxHi
+	}
+	return box.Width(m.cardWidth()).Render(m.approvalBody())
 }
 
 // approvalBody builds the panel's inner content: head, the command (one

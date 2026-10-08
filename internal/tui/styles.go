@@ -285,6 +285,7 @@ type theme struct {
 	thinkStyle  lipgloss.Style
 
 	apprBox    lipgloss.Style
+	apprBoxHi  lipgloss.Style // high-risk approvals escalate the border to red
 	apprHead   lipgloss.Style
 	apprBody   lipgloss.Style
 	apprKey    lipgloss.Style
@@ -400,6 +401,7 @@ func themeFrom(p palette) theme {
 		thinkStyle:  lipgloss.NewStyle().Foreground(p.bodyText).Italic(true),
 
 		apprBox:    lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(p.yellow).Padding(0, 1),
+		apprBoxHi:  lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(p.red).Padding(0, 1),
 		apprHead:   lipgloss.NewStyle().Foreground(p.yellow).Bold(true),
 		apprBody:   lipgloss.NewStyle().Foreground(p.text),
 		apprKey:    lipgloss.NewStyle().Foreground(p.green).Bold(true),
