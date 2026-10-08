@@ -60,12 +60,22 @@ func TestApprovalActionRowFrictionPath(t *testing.T) {
 	busyTurn(m)
 	m.handleEvent(client.Event{Type: "approval_request", ID: "apr", Name: "shell",
 		Risk: "shell_exec", Command: "make", AllowTrust: true, Friction: true, FrictionApprovals: 3})
-	row, ok := rowContaining(approvalCardRows(m), "type approve")
+	// Before the editor opens, 'a' starts the two-step confirm — the row must
+	// not claim typing alone approves.
+	row, ok := rowContaining(approvalCardRows(m), "confirm → type approve")
 	if !ok {
-		t.Fatalf("friction card has no typed-confirmation row:\n%s", plain(m.approvalBody()))
+		t.Fatalf("friction card has no confirm row:\n%s", plain(m.approvalBody()))
+	}
+	if !strings.Contains(row, "d deny") || strings.Contains(row, "trust") {
+		t.Fatalf("friction action row = %q, want d deny and no trust", row)
+	}
+	m.apprEditing = true
+	row, ok = rowContaining(approvalCardRows(m), "type approve + ⏎")
+	if !ok {
+		t.Fatalf("friction editor has no typed-confirmation row:\n%s", plain(m.approvalBody()))
 	}
 	if !strings.Contains(row, "Alt+D deny") || strings.Contains(row, "trust") {
-		t.Fatalf("friction action row = %q, want Alt+D deny and no trust", row)
+		t.Fatalf("friction editor row = %q, want Alt+D deny and no trust", row)
 	}
 }
 

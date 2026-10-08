@@ -1796,9 +1796,14 @@ func (m *Model) approvalActionRow(a *client.Event, budget int) string {
 	th := m.th
 	type hint struct{ key, text string }
 	var hints []hint
-	if a.Friction {
+	switch {
+	case a.Friction && m.apprEditing:
 		hints = []hint{{"type approve + ⏎", ""}, {"Alt+D", "deny"}}
-	} else {
+	case a.Friction:
+		// Same two-step contract as the friction line above: 'a' opens the
+		// confirm editor, it never approves on its own.
+		hints = []hint{{"a", "confirm → type approve"}, {"d", "deny"}}
+	default:
 		hints = []hint{{"a", "allow once"}, {"d", "deny"}}
 		if a.AllowTrust {
 			hints = append(hints, hint{"t", "trust class"})
