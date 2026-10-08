@@ -328,45 +328,124 @@ func (m *Model) buildHelpCard() string {
 		b.WriteString("\n" + th.tipKey.Render(padRight("/"+c.name, cmdW)) + " " + th.tipText.Render(c.desc))
 	}
 	b.WriteString(rule)
-	b.WriteString("\n" + th.statsLabel.Render("keys"))
-	const keyW = 8 // clears the widest chord in the table (alt+↑↓)
-	for _, k := range [][2]string{
-		{"⏎", "send · queue mid-turn · run a /command"},
-		{"⇧⏎", "newline in the input"},
-		{"@", "attach files"},
-		{"↑↓", "scroll the transcript"},
-		{"alt+↑↓", "jump to the previous/next turn"},
-		{"alt+y", "copy the focused surface (reply, step, or reasoning)"},
-		{"alt+i", "copy the inspected tool invocation"},
-		{"alt+m", "mark a copy span · alt+y yanks from the mark"},
-		{"^Y", "copy the latest reply"},
-		{"alt+r", "re-send the last prompt (/retry)"},
-		{"^F", "fold/unfold the latest turn card"},
-		{"↑↓ (inspecting)", "focus the previous/next item"},
-		{"Pg↑↓", "page the transcript"},
-		{"^P^N", "recall prompts"},
-		{"^G", "jump to the latest output"},
-		{"^R", "browse & resume sessions"},
-		{"^Q", "unfold the queue strip (full manager: /queue)"},
-		{"^O", "switch model"},
-		{"^K", "command palette"},
-		{"^T", "cycle reasoning depth"},
-		{"^S", "stop the running sub-agent"},
-		{"^X", "arm turn cancellation from any state (y confirms)"},
-		{"^L", "clear the conversation"},
-		{"^E", "toggle details (reasoning + tool invocation/result)"},
-		{"alt+f", "find in the transcript"},
-		{"esc", "close overlay · cancel the running turn (y confirms)"},
-		{"/server", "cockpit — server, link, budget, session"},
-		{"F1", "this help card"},
-		{"^C", "quit"},
-		{"wheel", "scroll · click a reply to copy · tool rows & turn heads"},
-	} {
-		b.WriteString("\n" + th.tipKey.Render(padRight(k[0], keyW)) + " " + th.tipText.Render(k[1]))
-	}
+	b.WriteString("\n" + m.helpKeyBlock(innerW))
 
 	card := th.acBox.Width(m.cardWidth()).Render(b.String())
 	return card
+}
+
+// helpKeyW clears the widest chord in the key table (alt+↑↓).
+const helpKeyW = 8
+
+// helpColMin is the terminal width at which the key groups sit side by side;
+// narrower terminals keep one column.
+const helpColMin = 100
+
+// helpColGap separates the two key columns.
+const helpColGap = 4
+
+// helpGroup is one titled section of the /help key table.
+type helpGroup struct {
+	title string
+	rows  [][2]string
+}
+
+// helpKeyGroups is the /help key table, grouped by intent. Every binding must
+// stay on the card; grouping and column placement only decide where it sits.
+func helpKeyGroups() []helpGroup {
+	return []helpGroup{
+		{"compose", [][2]string{
+			{"⏎", "send · queue mid-turn · run a /command"},
+			{"⇧⏎", "newline in the input"},
+			{"@", "attach files"},
+			{"^P^N", "recall prompts"},
+			{"alt+r", "re-send the last prompt (/retry)"},
+		}},
+		{"navigate", [][2]string{
+			{"↑↓", "scroll the transcript"},
+			{"alt+↑↓", "jump to the previous/next turn"},
+			{"Pg↑↓", "page the transcript"},
+			{"^G", "jump to the latest output"},
+			{"^F", "fold/unfold the latest turn card"},
+			{"wheel", "scroll · click a reply to copy · tool rows & turn heads"},
+		}},
+		{"inspect & copy", [][2]string{
+			{"alt+y", "copy the focused surface (reply, step, or reasoning)"},
+			{"alt+i", "copy the inspected tool invocation"},
+			{"alt+m", "mark a copy span · alt+y yanks from the mark"},
+			{"^Y", "copy the latest reply"},
+			{"↑↓ (inspecting)", "focus the previous/next item"},
+			{"^E", "toggle details (reasoning + tool invocation/result)"},
+			{"alt+f", "find in the transcript"},
+		}},
+		{"session", [][2]string{
+			{"^R", "browse & resume sessions"},
+			{"^Q", "unfold the queue strip (full manager: /queue)"},
+			{"^O", "switch model"},
+			{"^T", "cycle reasoning depth"},
+			{"^S", "stop the running sub-agent"},
+			{"^X", "arm turn cancellation from any state (y confirms)"},
+			{"^L", "clear the conversation"},
+			{"/server", "cockpit — server, link, budget, session"},
+		}},
+		{"general", [][2]string{
+			{"^K", "command palette"},
+			{"esc", "close overlay · cancel the running turn (y confirms)"},
+			{"F1", "this help card"},
+			{"^C", "quit"},
+		}},
+	}
+}
+
+// helpKeyBlock lays the key groups out inside innerW columns: one column
+// below helpColMin, two side by side at or above it.
+func (m *Model) helpKeyBlock(innerW int) string {
+	th := m.th
+	groups := helpKeyGroups()
+	if m.termWidth() < helpColMin {
+		return renderHelpGroups(th, groups, innerW)
+	}
+	colW := (innerW - helpColGap) / 2
+	left := lipgloss.NewStyle().Width(colW).Render(
+		renderHelpGroups(th, []helpGroup{groups[0], groups[1], groups[4]}, colW))
+	right := renderHelpGroups(th, groups[2:4], colW)
+	return lipgloss.JoinHorizontal(lipgloss.Top, left, strings.Repeat(" ", helpColGap), right)
+}
+
+// renderHelpGroups stacks the groups in one column of w cells: a muted title
+// per group, then its bindings, with a blank line between groups.
+func renderHelpGroups(th theme, groups []helpGroup, w int) string {
+	var lines []string
+	for i, g := range groups {
+		if i > 0 {
+			lines = append(lines, "")
+		}
+		lines = append(lines, th.statsLabel.Render(g.title))
+		for _, r := range g.rows {
+			lines = append(lines, helpRowLines(th, r, w)...)
+		}
+	}
+	return strings.Join(lines, "\n")
+}
+
+// helpRowLines renders one binding within w cells. Long descriptions wrap
+// under the description column, so no row is cut or pushed past its column.
+func helpRowLines(th theme, row [2]string, w int) []string {
+	dw := w - helpKeyW - 1
+	if dw < 12 {
+		dw = 12
+	}
+	wrapped := strings.Split(lipgloss.NewStyle().Width(dw).Render(row[1]), "\n")
+	out := make([]string, 0, len(wrapped))
+	for i, line := range wrapped {
+		line = strings.TrimRight(line, " ")
+		if i == 0 {
+			out = append(out, th.tipKey.Render(padRight(row[0], helpKeyW))+" "+th.tipText.Render(line))
+			continue
+		}
+		out = append(out, strings.Repeat(" ", helpKeyW+1)+th.tipText.Render(line))
+	}
+	return out
 }
 
 // runExport saves the current session transcript next to the user —
