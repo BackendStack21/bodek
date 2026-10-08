@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"os/signal"
+	"reflect"
 	"runtime"
 	"strings"
 	"syscall"
@@ -50,6 +51,10 @@ type config struct {
 	extraArgs []string
 
 	persist settings.Settings // the loaded file, re-saved when /theme switches
+	// persisted is the last state read from or written to disk; save writes
+	// only the fields that differ from it, merged over the file's current
+	// contents, so a change made by another running instance survives.
+	persisted settings.Settings
 	// persistDisabled is set when the settings file could not be read;
 	// a full-replace Save would then overwrite the (unparsed) file with
 	// a near-empty struct, so all persistence is refused for the run.
@@ -67,7 +72,21 @@ func (c *config) save() error {
 	if c.persistDisabled {
 		return fmt.Errorf("settings file could not be parsed; changes are not saved this run")
 	}
-	return settings.Save(c.persist)
+	cur, err := settings.Load()
+	if err != nil {
+		cur = c.persisted // file vanished or changed shape: fall back to our baseline
+	}
+	rb, rc, rd := reflect.ValueOf(c.persisted), reflect.ValueOf(c.persist), reflect.ValueOf(&cur).Elem()
+	for i := range rc.NumField() {
+		if !reflect.DeepEqual(rb.Field(i).Interface(), rc.Field(i).Interface()) {
+			rd.Field(i).Set(rc.Field(i))
+		}
+	}
+	if err := settings.Save(cur); err != nil {
+		return err
+	}
+	c.persisted = c.persist
+	return nil
 }
 
 func parseConfig(args []string, output io.Writer) (config, error) {
@@ -89,6 +108,7 @@ func parseConfig(args []string, output io.Writer) (config, error) {
 		_, _ = fmt.Fprintln(output, "bodek: settings changes will not be saved this run (file could not be parsed)")
 	}
 	cfg.persist = st
+	cfg.persisted = st
 	fs := flag.NewFlagSet("bodek", flag.ContinueOnError)
 	if output != nil {
 		fs.SetOutput(output)
