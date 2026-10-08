@@ -194,6 +194,8 @@ func (m *Model) modeName() string {
 		return "cockpit"
 	case m.find.open:
 		return "find"
+	case m.ac.open && m.ac.mode == acCmd:
+		return "commands"
 	case m.ac.open:
 		return "attach"
 	case m.qfocus:
@@ -225,7 +227,7 @@ func panelModeName(p panelMode) string {
 }
 
 func (m *Model) modePrefix() string {
-	return "  " + m.th.footerKey.Render(m.modeName()) + m.th.footerSep.Render(" · ")
+	return "  " + m.th.footerKey.Render(m.modeName())
 }
 
 // ── session home ────────────────────────────────────────────────────────────

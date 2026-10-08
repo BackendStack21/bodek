@@ -1851,8 +1851,8 @@ func (m *Model) footerContent() string {
 	if m.panel == panelRuns {
 		return m.panelFooter(
 			th.footer.Render("↑↓ select · ]/[ tabs"),
-			th.footerKey.Render("A")+th.footer.Render("pprove · "),
-			th.footerKey.Render("D")+th.footer.Render("eny · "),
+			th.footerKey.Render("A")+th.footer.Render("pprove"),
+			th.footerKey.Render("D")+th.footer.Render("eny"),
 			th.footerKey.Render("T")+th.footer.Render("rust"),
 			th.footerKey.Render("c")+th.footer.Render(" cancel"),
 			th.footerKey.Render("e")+th.footer.Render(" events"),
@@ -1913,12 +1913,12 @@ func (m *Model) footerContent() string {
 			)
 		}
 		return m.panelFooter(
-			th.footer.Render("⏎ detail · "),
-			th.footerKey.Render("a")+th.footer.Render(" add user · "),
+			th.footer.Render("⏎ detail"),
+			th.footerKey.Render("a")+th.footer.Render(" add user"),
 			th.footerKey.Render("A")+th.footer.Render(" add env"),
 			th.footerKey.Render("d")+th.footer.Render(" delete fact → y confirm"),
 			th.footerKey.Render("p")+th.footer.Render(" promote episode"),
-			th.footerKey.Render("c")+th.footer.Render(" consolidate user · "),
+			th.footerKey.Render("c")+th.footer.Render(" consolidate user"),
 			th.footerKey.Render("E")+th.footer.Render(" env"),
 			th.footer.Render("]/[ tabs · esc close"),
 		)
@@ -1931,10 +1931,10 @@ func (m *Model) footerContent() string {
 	}
 	if m.panel == panelQueue {
 		return m.panelFooter(
-			th.footerKey.Render("↑↓")+th.footer.Render(" select · "),
-			th.footerKey.Render("←→")+th.footer.Render(" priority · "),
-			th.footerKey.Render("⏎")+th.footer.Render(" send now · "),
-			th.footerKey.Render("d")+th.footer.Render(" delete → y · "),
+			th.footerKey.Render("↑↓")+th.footer.Render(" select"),
+			th.footerKey.Render("←→")+th.footer.Render(" priority"),
+			th.footerKey.Render("⏎")+th.footer.Render(" send now"),
+			th.footerKey.Render("d")+th.footer.Render(" delete → y"),
 			th.footer.Render("esc close"),
 		)
 	}
@@ -1942,7 +1942,7 @@ func (m *Model) footerContent() string {
 		if m.panelDetail {
 			return m.panelFooter(
 				th.footer.Render("↑↓ scroll"),
-				th.footerKey.Render("p")+th.footer.Render(" promote · "),
+				th.footerKey.Render("p")+th.footer.Render(" promote"),
 				th.footerKey.Render("P")+th.footer.Render(" force-promote"),
 				th.footer.Render("esc back"),
 			)
@@ -2020,26 +2020,30 @@ func (m *Model) footerContent() string {
 	// The status bar carries no static key cheatsheet (the welcome splash and
 	// /help cover that) — only the live run state: a cancel hint while busy on
 	// the left, and latency / scroll position on the right.
-	left := m.modePrefix()
+	var lefts []string
 	if m.busy {
-		left += th.footerKey.Render("^X") + th.footer.Render(" stop")
+		lefts = append(lefts, th.footerKey.Render("^X")+th.footer.Render(" stop"))
 	} else if m.status == "error" && m.ta.Value() == "" && m.lastPrompt != "" {
 		// A failed turn with an empty input: ⏎ resends the preserved
 		// prompt — the same contract the error card states. Hidden while a
 		// draft exists so typing is never hijacked by the hint.
-		left += th.footerKey.Render("⏎") + th.footer.Render(" retry last prompt")
+		lefts = append(lefts, th.footerKey.Render("⏎")+th.footer.Render(" retry last prompt"))
 	}
 	// Persistent expandAll indicator — while the global toggle holds every
 	// step open, per-step toggles look dead unless the chrome says why.
 	if m.expandAll {
-		ind := th.footerKey.Render("▼") + th.footer.Render(" details")
-		left += th.footerSep.Render(" · ") + ind
+		lefts = append(lefts, th.footerKey.Render("▼")+th.footer.Render(" details"))
 	}
 	// Click / ^Y / alt+y copy ack — footer only, so it stays visible
 	// when the reader is up in history.
 	if m.copyFlashing() {
-		ind := th.badgeOK.Render("✓") + th.footer.Render(" Copied")
-		left += th.footerSep.Render(" · ") + ind
+		lefts = append(lefts, th.badgeOK.Render("✓")+th.footer.Render(" Copied"))
+	}
+	// Segments join after the mode name — an idle composer shows the bare
+	// name, never a dangling separator.
+	left := m.modePrefix()
+	if len(lefts) > 0 {
+		left += th.footerSep.Render(" · ") + strings.Join(lefts, th.footerSep.Render(" · "))
 	}
 
 	var segs []string
@@ -2100,8 +2104,8 @@ func (m *Model) footerContent() string {
 // panelFooter joins pre-styled hint segments for an open panel (pre-styled so
 // destructive hints can carry the danger tint).
 func (m *Model) panelFooter(hints ...string) string {
-	prefix := m.modePrefix()
 	sep := m.th.footerSep.Render(" · ")
+	prefix := m.modePrefix() + sep
 	full := prefix + strings.Join(hints, sep)
 	if lipgloss.Width(full) <= m.width {
 		return full
