@@ -18,6 +18,11 @@ type SessionMessage struct {
 	ToolCallID       string            `json:"tool_call_id,omitempty"`
 	ToolCalls        []SessionToolCall `json:"tool_calls,omitempty"`
 	ReasoningContent string            `json:"reasoning_content,omitempty"`
+	// Superseded marks a draft final answer the loop replaced by re-asking
+	// the model (odek ≥ v2.33); SupersededReason is completion_nudge |
+	// verify_retry.
+	Superseded       bool   `json:"superseded,omitempty"`
+	SupersededReason string `json:"superseded_reason,omitempty"`
 }
 
 // SessionToolCall is one persisted tool invocation (OpenAI wire format).
