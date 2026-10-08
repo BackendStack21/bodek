@@ -44,6 +44,17 @@ func plainLinesCmd(lines []string) tea.Cmd {
 // segments keep their formatting and print before the next reasoning/tool
 // boundary, with only the remaining text emitted on completion or failure.
 func (m *Model) plainEventLines(ev client.Event) []string {
+	if ev.Type == "answer_superseded" {
+		// The draft already reached (or is about to reach) scrollback, which
+		// cannot be unprinted: print what is left of it, then say plainly
+		// that the next answer replaces it.
+		out := m.plainReplyLines()
+		if d := strings.TrimSpace(m.plainDraft); d != "" {
+			out = append(out, d)
+		}
+		m.plainDraft = ""
+		return append(out, "[draft revised · "+draftReasonLabel(collapse(ev.Reason))+"] the next answer replaces the text above")
+	}
 	var reply []string
 	switch ev.Type {
 	case "thinking", "thinking_delta", "tool_call", "approval_request", "clarify_request", "done", "error", client.EventDisconnected:
@@ -143,6 +154,14 @@ func (m *Model) plainStatusLines(ev client.Event) []string {
 // turnStats entry is this turn's).
 func (m *Model) plainDoneSummary() string {
 	s := "✓ done"
+	for i := len(m.msgs) - 1; i >= 0; i-- {
+		if m.msgs[i].role == roleAsst {
+			if m.msgs[i].unverified {
+				s = "✗ unverified"
+			}
+			break
+		}
+	}
 	if n := len(m.turnStats); n > 0 {
 		ts := m.turnStats[n-1]
 		s += fmt.Sprintf(" · %d tools · %.1fs · %d tok", ts.toolCount, ts.wall.Seconds(), ts.outTok)

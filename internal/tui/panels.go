@@ -1150,9 +1150,21 @@ func (m *Model) replayTranscript(msgs []client.SessionMessage) {
 				cur.items = append(cur.items, turnItem{thinking: true, text: rc})
 			}
 			if c := sanitize(mm.Content); strings.TrimSpace(c) != "" {
-				// One reply segment per persisted assistant record — the same
-				// think→reply pairing live turns build from token events.
-				appendReply(cur, c)
+				switch {
+				case mm.Superseded:
+					// A draft odek replaced by re-asking: folded, like the
+					// live answer_superseded path.
+					sealThinking(cur)
+					cur.items = append(cur.items, turnItem{draft: true, draftReason: collapse(mm.SupersededReason), text: c, stepIdx: -1})
+				default:
+					if rest, ok := stripVerifyMarker(c); ok {
+						c = rest
+						cur.unverified = true
+					}
+					// One reply segment per persisted assistant record — the
+					// same think→reply pairing live turns build from tokens.
+					appendReply(cur, c)
+				}
 			}
 			for _, tc := range mm.ToolCalls {
 				name := collapse(tc.Function.Name)

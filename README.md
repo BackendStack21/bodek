@@ -171,7 +171,13 @@ own front-end settings are separate; see [Configuration](#configuration).
   Missing success metadata stays neutral rather than claiming that a command
   passed.
 - **Streaming answers** rendered as Markdown
-  ([glamour](https://github.com/charmbracelet/glamour)).
+  ([glamour](https://github.com/charmbracelet/glamour)). When odek re-asks
+  the model after an answer already streamed (completion check or
+  verification retry, odek ≥ v2.33), the draft folds into a
+  `⋯ draft revised` row (open it with `^E` or inspect + `⏎`) and only the
+  replacement shows as the answer. While odek verifies the answer, the status
+  line reads `verifying answer`; an answer that fails verification carries
+  `✗ unverified` on its turn heading and outcome row.
 - **Tool activity** — every `tool_call`/`tool_result` shown live with one
   status glyph per step: a static live mark (`▸`) while running, the tool's
   own glyph once it finishes, `✗` when it fails; result bodies wait behind `^E` or a

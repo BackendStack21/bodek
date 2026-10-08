@@ -802,7 +802,7 @@ func (m *Model) dismissChrome() (bool, tea.Cmd) {
 	}
 	for i := len(m.msgs) - 1; i >= 0; i-- {
 		for j := len(m.msgs[i].items) - 1; j >= 0; j-- {
-			if m.msgs[i].items[j].thinking && m.msgs[i].items[j].open {
+			if m.msgs[i].items[j].foldable() && m.msgs[i].items[j].open {
 				m.msgs[i].items[j].open = false
 				m.invalidateMsgBlock(i)
 				m.refresh()

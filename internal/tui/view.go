@@ -348,6 +348,8 @@ func (m *Model) statusLine() string {
 	}
 	var label string
 	switch {
+	case m.verifying:
+		label = "verifying answer"
 	case m.lastTool != "":
 		// Context-aware message derived from the running tool + its args.
 		label = toolProgress(m.lastTool, m.lastArg)
@@ -694,6 +696,11 @@ func (m *Model) renderMessage(msg message, msgIdx, lineOffset int) (string, []st
 			// state, never wire text — and persists through finalization.
 			label += " " + th.badgeDanger.Render(lampError)
 		}
+		if msg.unverified {
+			// odek's verification rejected the shipped answer: the chip
+			// replaces the marker odek prepends, so the prose stays clean.
+			label += " " + th.badgeDanger.Render("✗ unverified")
+		}
 		rec := formatReceipt(scanReceipt(msg))
 		tallyShown := false
 		if msg.collapsed && !msg.streaming {
@@ -804,6 +811,12 @@ func (m *Model) renderMessage(msg message, msgIdx, lineOffset int) (string, []st
 				addBlock(th.asstWork.Render(m.renderIntentRail(body, it, msg)), false)
 				continue
 			}
+			if items[it].draft {
+				if strings.TrimSpace(items[it].text) != "" {
+					addBlock(th.asstWork.Render(m.renderDraft(items[it], it, msgIdx)), false)
+				}
+				continue
+			}
 			if items[it].reply {
 				t := items[it].text
 				if strings.TrimSpace(t) == "" {
@@ -863,6 +876,27 @@ func (m *Model) renderMessage(msg message, msgIdx, lineOffset int) (string, []st
 		}
 		return stackTurn(label, strings.Join(lines, "\n")), refs
 	}
+}
+
+// renderDraft paints a superseded draft as one folded row; opening it
+// (Enter while inspecting, ^E) shows the draft text dimmed beneath, so the
+// replacement answer stays the only card.
+func (m *Model) renderDraft(it turnItem, itemIdx, msgIdx int) string {
+	th := m.th
+	label := "⋯ draft revised · " + draftReasonLabel(it.draftReason)
+	sel := m.inspect != nil && m.inspect.msgIdx == msgIdx && m.inspect.itemIdx == itemIdx && m.inspect.stepIdx < 0
+	head := th.statsDim.Render(label)
+	if sel {
+		head = th.acSel.Render("› " + label)
+	}
+	if !it.open && !m.expandAll {
+		if sel {
+			head += th.acSel.Render(" · Enter expand")
+		}
+		return head
+	}
+	body := ansi.Wrap(strings.TrimSpace(it.text), max(m.cardInner()-2, 8), "")
+	return head + "\n" + th.thinkStyle.Render(body)
 }
 
 // rawReplyMargin matches glamour's document margin, so a reply segment
@@ -966,7 +1000,7 @@ func stepTally(msg message) string {
 func foldTally(msg message) string {
 	n := 0
 	for _, it := range msg.items {
-		if !it.thinking && !it.reply {
+		if it.isStep() {
 			n++
 		}
 	}
@@ -1081,6 +1115,9 @@ func (m *Model) turnStatFoot(msg message) string {
 	}
 	ts := *msg.stats
 	outcome := "✓ done"
+	if msg.unverified {
+		outcome = "✗ unverified"
+	}
 	if msg.failed {
 		outcome = "✗ failed"
 	}
