@@ -249,12 +249,13 @@ func (m *Model) gaugeColor(ratio float64) lipgloss.Style {
 }
 
 // sandboxBadge renders the agent's isolation state with the monochrome glyph
-// vocabulary (width-stable, unlike emoji): a green ● when sandboxed, an amber ▲
-// when it has host access. Shared by the header and the /stats card so the two
-// never drift.
+// vocabulary (width-stable, unlike emoji): a green ◆ when sandboxed, an amber ▲
+// when it has host access. Never a dot — dots are the connection lamp's
+// vocabulary (◉ ● ◌ ○), and two green dots in one header read as one signal.
+// Shared by the header and the /stats card so the two never drift.
 func (m *Model) sandboxBadge() string {
 	if m.sandbox {
-		return m.th.badgeOK.Render("● sandboxed")
+		return m.th.badgeOK.Render("◆ sandboxed")
 	}
 	return m.th.badgeWarn.Render("▲ host access")
 }

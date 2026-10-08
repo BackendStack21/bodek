@@ -153,3 +153,15 @@ func TestStepHeadSingleStatusGlyph(t *testing.T) {
 		t.Errorf("live head = %q, want a static ▸ in place of the tool icon", live)
 	}
 }
+
+// The sandbox chip never borrows the connection lamp's dot vocabulary.
+func TestSandboxBadgeIsNotADot(t *testing.T) {
+	m := newTestModel()
+	m.sandbox = true
+	got := plain(m.sandboxBadge())
+	for _, dot := range []string{lampReady, lampLive, lampReconnect, lampDown} {
+		if strings.Contains(got, dot) {
+			t.Fatalf("sandbox badge %q reuses lamp glyph %q", got, dot)
+		}
+	}
+}

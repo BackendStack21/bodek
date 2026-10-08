@@ -390,7 +390,7 @@ own front-end settings are separate; see [Configuration](#configuration).
   set the terminal window title (`✓ done — <model>` / `⚠ approval needed —
   <model>`) and ring the bell (`--bel=false` mutes); `--notify` adds OSC 9
   desktop notifications. Fires only on terminal states — never per token.
-- **Sandbox aware** — the header shows `🛡 sandboxed` or `⚠ host access`;
+- **Sandbox aware** — the header shows `◆ sandboxed` or `▲ host access`;
   pass `--sandbox` to run tool calls inside odek's Docker isolation.
 - **Wake turns** — when a background job finishes while the session is
   idle (odek ≥ v1.40), the engine wakes the model on its own; bodek opens
