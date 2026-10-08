@@ -288,6 +288,7 @@ type theme struct {
 	apprHead   lipgloss.Style
 	apprBody   lipgloss.Style
 	apprKey    lipgloss.Style
+	apprCode   lipgloss.Style
 	apprUrgent lipgloss.Style
 
 	statusReady lipgloss.Style
@@ -402,6 +403,7 @@ func themeFrom(p palette) theme {
 		apprHead:   lipgloss.NewStyle().Foreground(p.yellow).Bold(true),
 		apprBody:   lipgloss.NewStyle().Foreground(p.text),
 		apprKey:    lipgloss.NewStyle().Foreground(p.green).Bold(true),
+		apprCode:   codeValueStyle(p.surface, p.text),
 		apprUrgent: lipgloss.NewStyle().Foreground(p.red).Bold(true),
 
 		statusReady: lipgloss.NewStyle().Foreground(p.green),
@@ -454,6 +456,17 @@ func themeFrom(p palette) theme {
 		diffAdd: lipgloss.NewStyle().Foreground(p.green),
 		diffDel: lipgloss.NewStyle().Foreground(p.red),
 	}
+}
+
+// codeValueStyle paints an approval's command or resource value as code: the
+// input text color on the card surface, so it reads as typed input rather
+// than prose. An empty surface (high-contrast) leaves the background unset.
+func codeValueStyle(bg, fg lipgloss.Color) lipgloss.Style {
+	st := lipgloss.NewStyle().Foreground(fg)
+	if bg != "" {
+		st = st.Background(bg)
+	}
+	return st
 }
 
 // surfaceStyle builds the answer card style; empty means no surface. The

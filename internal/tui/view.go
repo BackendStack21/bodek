@@ -8,6 +8,8 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
+
+	"github.com/BackendStack21/bodek/internal/client"
 )
 
 // View composes the full screen: header, scrollable transcript (plus the
@@ -1695,29 +1697,42 @@ func (m *Model) approvalBody() string {
 	if target == "" {
 		command = targetLabel + " not supplied by odek"
 	}
-	var body []string
-	if m.apprExpanded {
-		appendWrapped := func(line string) {
-			body = append(body, strings.Split(ansi.Hardwrap(line, budget, true), "\n")...)
+	// A reason that only repeats the tool name or the Action text adds
+	// nothing, so its row is dropped.
+	reason := ""
+	if a.Description != "" {
+		if shown := visibleInvocation(a.Description); !approvalReasonRepeats(shown, a.Name, approvalRiskLabel(a.Risk)) {
+			reason = shown
 		}
-		appendWrapped(command)
-		appendWrapped(action)
-		appendWrapped("Working directory: not supplied by odek")
-		if a.Description != "" {
-			appendWrapped("Reason: " + visibleInvocation(a.Description))
+	}
+	hasCmd := target != ""
+	var body []apprLine
+	if m.apprExpanded {
+		appendWrapped := func(line string, code bool) {
+			for _, seg := range strings.Split(ansi.Hardwrap(line, budget, true), "\n") {
+				body = append(body, apprLine{text: seg, code: code})
+			}
+		}
+		appendWrapped(command, hasCmd)
+		appendWrapped(action, false)
+		appendWrapped("Working directory: not supplied by odek", false)
+		if reason != "" {
+			appendWrapped("Reason: "+reason, false)
 		}
 		if a.AllowTrust && !a.Friction {
-			appendWrapped("Trust: allow " + approvalRiskLabel(a.Risk) + " until this connection ends")
+			appendWrapped("Trust: allow "+approvalRiskLabel(a.Risk)+" until this connection ends", false)
 		}
 	} else {
 		preview := strings.ReplaceAll(command, "\n", "↵")
-		body = append(body, truncate(collapse(preview), budget))
-		body = append(body, truncate(action, budget))
-		if a.Description != "" {
-			body = append(body, truncate("Reason: "+collapse(visibleInvocation(a.Description)), budget))
+		body = append(body, apprLine{text: truncate(collapse(preview), budget), code: hasCmd})
+		body = append(body, apprLine{text: truncate(action, budget)})
+		if reason != "" {
+			body = append(body, apprLine{text: truncate("Reason: "+collapse(reason), budget)})
 		}
 	}
-	limit := max(1, min(8, m.height-m.desiredComposerHeight()-headerHeight-footerHeight-8))
+	// The in-card action row always takes one more row, so the body gives
+	// that row back to keep the card inside the terminal.
+	limit := max(1, min(8, m.height-m.desiredComposerHeight()-headerHeight-footerHeight-9))
 	if a.Friction {
 		limit = max(1, limit-2)
 	}
@@ -1728,7 +1743,7 @@ func (m *Model) approvalBody() string {
 	m.apprOffset = offset
 	end := min(len(body), offset+limit)
 	for _, line := range body[offset:end] {
-		lines = append(lines, th.apprBody.Render(ansi.Truncate(line, budget, "")))
+		lines = append(lines, m.renderApprLine(line, budget))
 	}
 	if len(body) > limit && m.apprExpanded {
 		lines = append(lines, th.noticeStyle.Render(ansi.Truncate(fmt.Sprintf("%d–%d/%d · Alt+PgUp/PgDn", offset+1, end, len(body)), budget, "")))
@@ -1740,7 +1755,71 @@ func (m *Model) approvalBody() string {
 			lines = append(lines, th.apprKey.Render(ansi.Truncate(typed+"▏", budget, "")))
 		}
 	}
+	lines = append(lines, m.approvalActionRow(a, budget))
 	return strings.Join(lines, "\n")
+}
+
+// apprLine is one body row of the approval card. When code is set, the
+// value after a "Command: " or "Resource: " label paints as code.
+type apprLine struct {
+	text string
+	code bool
+}
+
+// renderApprLine paints one pre-wrapped body row, clamped to the card width.
+func (m *Model) renderApprLine(l apprLine, budget int) string {
+	th := m.th
+	text := ansi.Truncate(l.text, budget, "")
+	if !l.code {
+		return th.apprBody.Render(text)
+	}
+	for _, label := range []string{"Command: ", "Resource: "} {
+		if rest, ok := strings.CutPrefix(text, label); ok {
+			return th.apprBody.Render(label) + th.apprCode.Render(rest)
+		}
+	}
+	return th.apprCode.Render(text)
+}
+
+// approvalReasonRepeats reports whether a reason only restates the tool name
+// or the Action text, compared case-insensitively.
+func approvalReasonRepeats(reason, name, action string) bool {
+	r := strings.TrimSpace(reason)
+	return strings.EqualFold(r, strings.TrimSpace(name)) || strings.EqualFold(r, action)
+}
+
+// approvalActionRow lists the decisions at the foot of the card, mirroring the
+// footer keys. Trust is dropped first when the row is too wide for the card;
+// allow-once and deny always stay. Friction cards show the typed-confirmation
+// path, since a bare 'a' only opens the editor there.
+func (m *Model) approvalActionRow(a *client.Event, budget int) string {
+	th := m.th
+	type hint struct{ key, text string }
+	var hints []hint
+	if a.Friction {
+		hints = []hint{{"type approve + ⏎", ""}, {"Alt+D", "deny"}}
+	} else {
+		hints = []hint{{"a", "allow once"}, {"d", "deny"}}
+		if a.AllowTrust {
+			hints = append(hints, hint{"t", "trust class"})
+		}
+	}
+	render := func(hs []hint) string {
+		parts := make([]string, 0, len(hs))
+		for _, h := range hs {
+			part := th.footerKey.Render(h.key)
+			if h.text != "" {
+				part += th.footer.Render(" " + h.text)
+			}
+			parts = append(parts, part)
+		}
+		return strings.Join(parts, th.footer.Render(" · "))
+	}
+	row := render(hints)
+	if len(hints) > 2 && lipgloss.Width(row) > budget {
+		row = render(hints[:2])
+	}
+	return ansi.Truncate(row, budget, "…")
 }
 
 // ── footer ────────────────────────────────────────────────────────────────
