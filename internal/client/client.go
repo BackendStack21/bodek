@@ -314,7 +314,7 @@ func dialWS(cfg *ws.Config) (*ws.Conn, error) {
 	// ws.NewClient speaks plain WS over whatever it is handed; a wss:// URL
 	// needs the TLS handshake done here (ws.DialConfig would, but has no
 	// dial timeout).
-	var nc net.Conn = raw
+	nc := net.Conn(raw)
 	if cfg.Location.Scheme == "wss" {
 		tc := cfg.TlsConfig
 		if tc == nil {
