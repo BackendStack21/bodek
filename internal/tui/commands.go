@@ -410,8 +410,14 @@ func (m *Model) showStats() {
 }
 
 // statsBody renders the session dashboard content without a frame — the
-// cockpit embeds it directly; the /stats sheet wraps it in the drawer box.
-func (m *Model) statsBody() string {
+// /stats sheet wraps it in the drawer box.
+func (m *Model) statsBody() string { return m.sessionBlock(false, 0) }
+
+// sessionBlock renders the frameless session dashboard. In cockpit mode the
+// values align to valueCol (the cockpit's shared value column), and the
+// sandbox row goes: the header and the server card already carry it, and a
+// lone row between two rules read as padding.
+func (m *Model) sessionBlock(cockpit bool, valueCol int) string {
 	th := m.th
 	// Same inner column as every other framed card.
 	innerW := m.cardInner()
@@ -609,6 +615,9 @@ func (m *Model) statsBody() string {
 		}
 	}
 	gutter++ // one space before the value column
+	if cockpit && gutter < valueCol {
+		gutter = valueCol
+	}
 
 	var b strings.Builder
 	if m.panel != panelStats {
@@ -631,12 +640,20 @@ func (m *Model) statsBody() string {
 			}
 			b.WriteString("\n" + styled + strings.Repeat(" ", pad) + r.value)
 		}
-		idline := m.sandboxBadge()
-		if !m.sessionStart.IsZero() {
-			idline += th.statsDim.Render(" · started " + ago(m.sessionStart))
+		if cockpit {
+			// No second rule and no sandbox badge: only the start time,
+			// when known, trails the rows.
+			if !m.sessionStart.IsZero() {
+				b.WriteString("\n" + th.statsDim.Render("started "+ago(m.sessionStart)))
+			}
+		} else {
+			idline := m.sandboxBadge()
+			if !m.sessionStart.IsZero() {
+				idline += th.statsDim.Render(" · started " + ago(m.sessionStart))
+			}
+			b.WriteString("\n" + th.rule.Render(strings.Repeat("─", innerW)))
+			b.WriteString("\n" + idline)
 		}
-		b.WriteString("\n" + th.rule.Render(strings.Repeat("─", innerW)))
-		b.WriteString("\n" + idline)
 	}
 
 	return b.String()
