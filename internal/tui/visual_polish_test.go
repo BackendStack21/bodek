@@ -1,6 +1,8 @@
 package tui
 
 import (
+	"fmt"
+	"math"
 	"strings"
 	"testing"
 
@@ -88,5 +90,42 @@ func TestHeaderRuleIsSingleHairline(t *testing.T) {
 	}
 	if plain(r) != strings.Repeat("─", 120) {
 		t.Fatalf("rule = %q, want a full-width hairline", plain(r))
+	}
+}
+
+// Warning color must not share the brand accent's hue, or a warning reads as
+// ordinary chrome (the approval border looked like branding).
+func TestWarningHueDistinctFromAccent(t *testing.T) {
+	hue := func(c lipgloss.Color) float64 {
+		var r, g, b int
+		if _, err := fmt.Sscanf(string(c), "#%02x%02x%02x", &r, &g, &b); err != nil {
+			t.Fatalf("bad color %q", c)
+		}
+		R, G, B := float64(r)/255, float64(g)/255, float64(b)/255
+		mx, mn := math.Max(R, math.Max(G, B)), math.Min(R, math.Min(G, B))
+		d := mx - mn
+		if d == 0 {
+			return 0
+		}
+		var h float64
+		switch mx {
+		case R:
+			h = math.Mod((G-B)/d, 6)
+		case G:
+			h = (B-R)/d + 2
+		default:
+			h = (R-G)/d + 4
+		}
+		return math.Mod(h*60+360, 360)
+	}
+	for _, name := range []string{"ember-dark", "ember-light", "high-contrast", "classic"} {
+		p := paletteByName(name)
+		d := math.Abs(hue(p.yellow) - hue(p.accent))
+		if d > 180 {
+			d = 360 - d
+		}
+		if d < 10 {
+			t.Errorf("%s: warning hue %.0f° within %.0f° of accent", name, hue(p.yellow), d)
+		}
 	}
 }

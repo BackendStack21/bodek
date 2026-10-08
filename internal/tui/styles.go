@@ -55,7 +55,8 @@ var (
 		accentLo: "#FF8A3D",
 		steel:    "#98AAC8",
 		green:    "#34D399",
-		yellow:   "#FBBF24",
+		// Lemon, not amber: warnings must not read as brand accent.
+		yellow:   "#FDE047",
 		red:      "#F87171",
 		text:     "#E7E9EE",
 		muted:    "#A8B0C0",
@@ -79,7 +80,7 @@ var (
 		accentLo: "#8F5E00",
 		steel:    "#536B8B",
 		green:    "#08754F",
-		yellow:   "#924B00",
+		yellow:   "#B54708", // burnt orange — distinct from the olive-amber accent
 		red:      "#C22B2B",
 		text:     "#22252C",
 		muted:    "#5A5F6D",
@@ -98,7 +99,7 @@ var (
 		accentLo: "#FFB224",
 		steel:    "#B8C4E0",
 		green:    "#4ADE80",
-		yellow:   "#FBBF24",
+		yellow:   "#FF9F43", // orange — the accent already owns yellow here
 		red:      "#FF6B6B",
 		text:     "#FFFFFF",
 		muted:    "#C0C0C0",
