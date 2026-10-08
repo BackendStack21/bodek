@@ -401,9 +401,7 @@ type Model struct {
 	reconnAttempt int // current redial attempt index (drives the status-line backoff readout)
 	quitting      bool
 
-	gradRule  string // cached full-width gradient rule
 	glamWrap  int    // wrap width m.glam was built for; -1 forces rebuild (theme switch)
-	gradRuleW int
 	logoCache string // cached gradient logo (width-independent)
 
 	canvasFG, canvasBG string // cached paintCanvas probe colors for the active theme
@@ -1372,7 +1370,6 @@ func (m *Model) resize(w, h int) tea.Cmd {
 	}
 	m.ta.SetWidth(w - 4)
 	m.syncComposer() // the new width re-wraps content — refit the box
-	m.gradRule = ""  // invalidate cached rule for the new width
 	m.invalidateAllMsgBlocks()
 	for i := range m.msgs {
 		for j := range m.msgs[i].steps {

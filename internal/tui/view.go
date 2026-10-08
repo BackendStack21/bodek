@@ -63,7 +63,7 @@ func (m *Model) plainView() string {
 func (m *Model) header() string {
 	th := m.th
 	// The logo gradient is width-independent, so render it once and cache it
-	// (like gradRule) instead of re-interpolating every frame.
+	// instead of re-interpolating every frame.
 	if m.logoCache == "" {
 		m.logoCache = th.logo.Render(gradient("⬡ bodek", th.grad[0], th.grad[1]))
 	}
@@ -290,14 +290,11 @@ func gaugeGlyph(r float64) string {
 	return bar
 }
 
-// rule returns a full-width gradient hairline, cached per width.
+// rule returns the full-width header hairline. It is structure, not brand:
+// a quiet hairline keeps amber reserved for the wordmark and focus, and one
+// SGR span replaces a per-cell gradient on every frame.
 func (m *Model) rule() string {
-	w := max(m.width, 1)
-	if m.gradRule == "" || m.gradRuleW != w {
-		m.gradRule = gradient(strings.Repeat("─", w), m.th.grad[0], m.th.grad[1])
-		m.gradRuleW = w
-	}
-	return m.gradRule
+	return m.th.rule.Render(strings.Repeat("─", max(m.width, 1)))
 }
 
 // statusBadge is the header's session-state lamp. Turn progress lives on

@@ -1,9 +1,12 @@
 package tui
 
 import (
-	"github.com/BackendStack21/bodek/internal/client"
 	"strings"
 	"testing"
+
+	"github.com/BackendStack21/bodek/internal/client"
+	"github.com/charmbracelet/lipgloss"
+	"github.com/muesli/termenv"
 )
 
 // Footer hints join through one separator: an idle mode name never trails a
@@ -69,5 +72,21 @@ func TestReplyColumnStableAcrossRenderFlush(t *testing.T) {
 	done := col(m.View())
 	if live < 0 || live != done {
 		t.Fatalf("reply column live=%d done=%d, want equal", live, done)
+	}
+}
+
+// The header rule is one hairline span, not a per-cell brand gradient.
+func TestHeaderRuleIsSingleHairline(t *testing.T) {
+	old := lipgloss.ColorProfile()
+	lipgloss.SetColorProfile(termenv.TrueColor)
+	defer lipgloss.SetColorProfile(old)
+	m := newTestModel()
+	m.resize(120, 30)
+	r := m.rule()
+	if got := strings.Count(r, "\x1b["); got > 2 {
+		t.Fatalf("rule carries %d SGR sequences, want one span", got)
+	}
+	if plain(r) != strings.Repeat("─", 120) {
+		t.Fatalf("rule = %q, want a full-width hairline", plain(r))
 	}
 }
