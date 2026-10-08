@@ -296,6 +296,7 @@ func (m *Model) openJobDetail() tea.Cmd {
 	m.jobsOut = ""
 	m.jobsOutCursor = 0
 	m.jobsOutID = m.jobs[m.panelSel].ID
+	m.relayout() // detail mode changes the sheet split; the viewport must follow
 	m.refresh()
 	return m.fetchJobOutput(0)
 }

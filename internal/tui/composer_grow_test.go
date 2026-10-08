@@ -46,7 +46,7 @@ func TestUserPromptWrapsUnbrokenToken(t *testing.T) {
 }
 
 // ── composer: the input box must auto-fit its content ───────────────────────
-// Constants pinned as literals on purpose: the box rests at 3 rows and grows
+// Constants pinned as literals on purpose: the box rests at 1 row and grows
 // to at most 12, and the tests must catch a silent constant change.
 
 func TestShiftEnterInsertsNewline(t *testing.T) {
@@ -161,8 +161,8 @@ func TestFilterModifyOtherKeys(t *testing.T) {
 
 func TestComposerGrowsWithNewlines(t *testing.T) {
 	m := newTestModel()
-	if m.ta.Height() != 3 {
-		t.Fatalf("initial composer height = %d, want 3", m.ta.Height())
+	if m.ta.Height() != 1 {
+		t.Fatalf("initial composer height = %d, want 1", m.ta.Height())
 	}
 	for i := 0; i < 6; i++ {
 		m.handleKey(key("ctrl+j"))
@@ -177,6 +177,35 @@ func TestComposerGrowsWithNewlines(t *testing.T) {
 	}
 	if m.inputAreaHeight() != m.ta.Height()+2 {
 		t.Fatalf("inputAreaHeight = %d, want %d (box + border)", m.inputAreaHeight(), m.ta.Height()+2)
+	}
+}
+
+// The resting composer is one text row (3 rows with its border), not the old
+// 3-row box (5 with border), so the transcript gets the two rows back. Growth
+// then adds one row per line from there.
+func TestComposerRestsAtOneRowAndGrows(t *testing.T) {
+	m := newTestModel()
+	m.Update(tea.WindowSizeMsg{Width: 80, Height: 30})
+	boxRows := func() int {
+		return lipgloss.Height(m.th.inputBox.Width(m.cardWidth()).Render(m.ta.View()))
+	}
+
+	if got := boxRows(); got != 3 {
+		t.Fatalf("empty composer box = %d rows, want 3 (border + 1 + border)", got)
+	}
+	// 30 - header(2) - footer(1) - box(3) = 24; the old 5-row box gave 22.
+	if m.vp.Height != 24 {
+		t.Fatalf("viewport at rest = %d rows, want 24", m.vp.Height)
+	}
+
+	m.handleKey(key("a"))
+	m.handleKey(key("shift+enter"))
+	m.handleKey(key("b"))
+	if got := boxRows(); got != 4 {
+		t.Fatalf("two-line composer box = %d rows, want 4", got)
+	}
+	if m.vp.Height != 23 {
+		t.Fatalf("viewport with two lines = %d rows, want 23", m.vp.Height)
 	}
 }
 
@@ -221,8 +250,8 @@ func TestComposerShrinksOnHistoryRecall(t *testing.T) {
 	}
 	m.history = []string{"short prompt"}
 	m.historyPrev()
-	if m.ta.Height() != 3 {
-		t.Fatalf("composer height after history recall = %d, want 3", m.ta.Height())
+	if m.ta.Height() != 1 {
+		t.Fatalf("composer height after history recall = %d, want 1", m.ta.Height())
 	}
 }
 
@@ -235,8 +264,8 @@ func TestComposerResetsAfterQueueSubmit(t *testing.T) {
 		t.Fatalf("precondition: composer height = %d, want 11", m.ta.Height())
 	}
 	m.submit()
-	if m.ta.Height() != 3 {
-		t.Fatalf("composer height after queued submit = %d, want 3", m.ta.Height())
+	if m.ta.Height() != 1 {
+		t.Fatalf("composer height after queued submit = %d, want 1", m.ta.Height())
 	}
 	if m.ta.Value() != "" {
 		t.Fatalf("composer not cleared after queued submit: %q", m.ta.Value())

@@ -246,7 +246,7 @@ func weaveSurface(s, bgSeq string) string {
 // Layout — fixed heights for the chrome around the scrollable transcript.
 const (
 	headerHeight = 2 // cockpit bar + hairline rule
-	inputHeight  = 5 // composer at rest: 3 rows + top/bottom border (grows with content)
+	inputHeight  = 3 // composer at rest: 1 row + top/bottom border (grows with content)
 	footerHeight = 1 // status bar
 )
 

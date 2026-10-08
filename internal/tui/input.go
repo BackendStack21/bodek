@@ -342,10 +342,10 @@ func writeEnhancedKeys(seq string) {
 
 // ── composer auto-fit ───────────────────────────────────────────────────────
 
-// Composer growth bounds: the box rests at three rows, grows with its
+// Composer growth bounds: the box rests at one row, grows with its
 // content, and never eats the screen (syncComposer).
 const (
-	composerMinRows = 3
+	composerMinRows = 1
 	composerMaxRows = 12
 )
 

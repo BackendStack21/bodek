@@ -24,7 +24,7 @@ func plain(s string) string { return ansiRe.ReplaceAllString(s, "") }
 // newTestModel builds a Model without a live client/TTY for rendering tests.
 func newTestModel() *Model {
 	ta := textarea.New()
-	ta.SetHeight(3) // match New(), so inputHeight row math holds
+	ta.SetHeight(composerMinRows) // match New(), so inputHeight row math holds
 	// Mirror New()'s composer configuration so previews and layout tests
 	// render the production input box.
 	ta.Prompt = " "

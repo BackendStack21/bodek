@@ -444,7 +444,7 @@ func New(cl *client.Client, opts Options) *Model {
 	ta.Prompt = " "
 	ta.ShowLineNumbers = false
 	ta.CharLimit = 0
-	ta.SetHeight(3)
+	ta.SetHeight(composerMinRows)
 	ta.FocusedStyle.CursorLine = th.taCursorLine
 	ta.FocusedStyle.Text = th.inputText
 	ta.BlurredStyle.Text = th.inputText

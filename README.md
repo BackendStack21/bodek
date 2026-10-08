@@ -265,7 +265,7 @@ own front-end settings are separate; see [Configuration](#configuration).
   cleared transcript keeps the last prompt and coding receipt so the
   session is still oriented; `/new` returns to the first-run splash. The
   footer leads with a mode pill (`composer` / `approval` / `question` / `jobs` / …).
-- **Auto-fitting composer** — the input box rests at three rows and grows
+- **Auto-fitting composer** — the input box rests at one text row (three with its border) and grows
   with your prompt (multi-line or a single long line, wide-char aware) up to
   twelve rows or what the terminal can spare; `⇧⏎` inserts a newline
   (`ctrl+enter`, `alt+enter`, or `^J` on terminals that cannot tell

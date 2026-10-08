@@ -223,7 +223,7 @@ func TestRegressDrawerDetailWidthBound(t *testing.T) {
 	m.panel = panelJobs
 	m.panelSel = 0
 	m.jobs = []client.Job{{ID: "j1", Command: "one line", Status: "running"}}
-	m.panelDetail = true
+	m.openJobDetail()
 	if n := strings.Count(m.View(), "\n") + 1; n > 20 {
 		t.Fatalf("baseline detail view already %d rows", n)
 	}
