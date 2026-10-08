@@ -120,10 +120,10 @@ func (m *Model) attachSubState(i int, ev client.Event) bool {
 			s.agents = append(s.agents, card)
 		}
 		if ev.Phase != "" {
-			card.phase = ev.Phase
+			card.phase = collapse(ev.Phase)
 		}
 		if ev.Status != "" {
-			card.status = ev.Status
+			card.status = collapse(ev.Status)
 		}
 		card.step = ev.Step
 		if ev.Tool != "" {

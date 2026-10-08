@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"reflect"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -92,7 +93,9 @@ func TestPlainBatchProgressPrintsInWireOrder(t *testing.T) {
 		{Type: "token", Content: "Second turn complete."},
 		{Type: "done"},
 	})
-	out := capturePlainPrint(t, cmd)
+	// The done title/bell (OSC) now fires from a batch too; only the
+	// scrollback text is under test here.
+	out := oscRe.ReplaceAllString(capturePlainPrint(t, cmd), "")
 	previous := -1
 	for _, text := range []string{"Inspecting now.", "▸ read_file", "▪ read_file", "Checking the result.", "▸ shell", "▪ shell", "First turn complete.", "Second turn complete."} {
 		index := strings.Index(out, text)
@@ -236,3 +239,5 @@ func TestBufferedProgressNotesVisibleWithoutReasoning(t *testing.T) {
 		}
 	}
 }
+
+var oscRe = regexp.MustCompile(`\x1b\][^\x07]*\x07`)

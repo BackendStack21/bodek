@@ -503,6 +503,7 @@ func (m *Model) submit() tea.Cmd {
 // sendPrompt appends the user/assistant pair to the transcript, records the
 // prompt in the history ring, and dispatches it to the server.
 func (m *Model) sendPrompt(text string) tea.Cmd {
+	m.lastEvent = time.Now() // a fresh turn must not inherit the idle gap as a stale age
 	m.lastPrompt = text
 	m.recordHistory(text)
 	shown := sanitize(text) // pasted payloads can carry escapes — same rule as resumed transcripts

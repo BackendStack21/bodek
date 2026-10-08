@@ -1208,12 +1208,17 @@ func (m *Model) handleSessionDeleted(msg sessionDeletedMsg) tea.Cmd {
 		return nil
 	}
 	m.tokens.Delete(msg.id)
-	if m.panelSel < len(m.sessions) && m.sessions[m.panelSel].ID == msg.id {
-		m.sessions = append(m.sessions[:m.panelSel], m.sessions[m.panelSel+1:]...)
-		if m.panelSel >= len(m.sessions) && m.panelSel > 0 {
-			m.panelSel--
+	for i := range m.sessions {
+		if m.sessions[i].ID != msg.id {
+			continue
 		}
+		m.sessions = append(m.sessions[:i], m.sessions[i+1:]...)
+		if i < m.panelSel {
+			m.panelSel-- // the selected row shifted up with the removal
+		}
+		break
 	}
+	m.panelSel = clampSel(m.panelSel, len(m.sessions))
 	if len(m.sessions) == 0 {
 		m.panelMsg = "no saved sessions yet"
 	}

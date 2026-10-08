@@ -38,6 +38,7 @@ type noticeExpireMsg struct{}
 // effects that used to live next to the eventMsg case (plain print, jobs
 // watcher bind).
 func (m *Model) ingestWireEvent(ev client.Event) (tea.Model, tea.Cmd) {
+	m.lastEvent = time.Now()
 	mm, cmd := m.handleEvent(ev)
 	pm := mm.(*Model)
 	if pm.plain {
@@ -61,6 +62,11 @@ func (m *Model) ingestWireBatch(events []client.Event) (tea.Model, tea.Cmd) {
 	m.lastEvent = time.Now() // (R5) the head's last-event age resets on each batch
 	var model tea.Model = m
 	var plainLines []string
+	// handleEvent consumes its follow-ups' state (queue pop, kick flags, plan
+	// triggers, the done bell) while building them; in a batch it parks the
+	// resulting cmds in batchCarry instead of dropping them.
+	m.inBatch, m.batchCarry = true, nil
+	defer func() { m.inBatch, m.batchCarry = false, nil }()
 	for _, ev := range events {
 		var cmd tea.Cmd
 		model, cmd = model.(*Model).handleEvent(ev)
@@ -74,7 +80,7 @@ func (m *Model) ingestWireBatch(events []client.Event) (tea.Model, tea.Cmd) {
 			cmd = tea.Batch(cmd, pm.armJobsWatch())
 		}
 		if ev.Type == client.EventDisconnected {
-			return model, tea.Batch(cmd, plainLinesCmd(plainLines))
+			return model, tea.Batch(cmd, tea.Batch(pm.batchCarry...), plainLinesCmd(plainLines))
 		}
 	}
 	pm := model.(*Model)
@@ -89,6 +95,7 @@ func (m *Model) ingestWireBatch(events []client.Event) (tea.Model, tea.Cmd) {
 		pm.sendQueued(),
 		pm.planFollowup(),
 		pm.flushKicks(),
+		tea.Batch(pm.batchCarry...),
 	)
 }
 
@@ -613,6 +620,16 @@ func (m *Model) handleEvent(ev client.Event) (tea.Model, tea.Cmd) {
 		return m, m.noticeSweep()
 	}
 
+	if m.inBatch {
+		if stream {
+			_ = m.queueRender() // flag only; rearmRenderFlush arms the one flush
+			m.batchCarry = append(m.batchCarry, m.flushKicks())
+			return m, nil
+		}
+		m.refresh()
+		m.batchCarry = append(m.batchCarry, m.sendQueued(), m.planFollowup(), attn, m.flushKicks())
+		return m, nil
+	}
 	if stream {
 		return m, tea.Batch(listen(m.events), m.noticeSweep(), m.approvalSweep(), m.queueRender(), m.flushKicks())
 	}
@@ -683,6 +700,7 @@ func (m *Model) ensureWireTurn() {
 // The viewport is left alone: refresh() already sticks when the reader
 // is at the bottom; a forced GotoBottom would yank scrollback.
 func (m *Model) beginWireTurn(wake bool) {
+	m.lastEvent = time.Now() // a fresh turn must not inherit the idle gap as a stale age
 	m.msgs = append(m.msgs, message{role: roleAsst, streaming: true, systemWake: wake})
 	m.curIdx = len(m.msgs) - 1
 	m.busy = true
