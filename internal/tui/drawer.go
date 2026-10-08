@@ -19,12 +19,14 @@ import (
 
 // tabBar renders the drawer's tab strip after the panel title: the active
 // tab in accent, the rest muted, with the digit shortcuts taught inline.
-// When the strip doesn't fit the given width, it collapses to the
-// active tab behind an ellipsis — cycling and digits still reach the rest.
+// When the strip doesn't fit the given width, it collapses to a position
+// readout ("tab 7/10") — the title already names the active tab, and cycling
+// and digits still reach the rest.
 func (m *Model) tabBar(maxw int) string {
 	var parts []string
-	active := ""
-	for i, t := range drawerTabs() {
+	active, pos := "", 0
+	tabs := drawerTabs()
+	for i, t := range tabs {
 		// The tenth tab teaches "0" — the strip renders the shortcut the
 		// digit jump actually accepts, never a "10" no key can type.
 		shot := fmt.Sprintf("%d", i+1)
@@ -34,6 +36,7 @@ func (m *Model) tabBar(maxw int) string {
 		label := fmt.Sprintf("%s %s", shot, t.name)
 		if t.mode == m.panel {
 			active = m.th.acSel.Render(label)
+			pos = i + 1
 			parts = append(parts, active)
 		} else {
 			parts = append(parts, m.th.acDetail.Render(label))
@@ -42,7 +45,7 @@ func (m *Model) tabBar(maxw int) string {
 	sep := m.th.footerSep.Render(" · ")
 	full := "  " + strings.Join(parts, sep)
 	if maxw > 0 && lipgloss.Width(full) > maxw {
-		return "  " + m.th.acDetail.Render("…") + sep + active
+		return "  " + m.th.acDetail.Render(fmt.Sprintf("tab %d/%d", pos, len(tabs)))
 	}
 	return full
 }
