@@ -296,3 +296,33 @@ func TestDraftSelectedHintAndCopySpan(t *testing.T) {
 		t.Fatalf("copy span = %+v, want the open draft", span)
 	}
 }
+
+// Replay shows the prompt as typed: odek stores attachments and
+// @-resources inlined (wrapped in untrusted markers) in content and the
+// typed text in principal_prompt.
+func TestReplayPrincipalPrompt(t *testing.T) {
+	typed, empty := "summarize notes.txt", ""
+	expanded := "<untrusted_content_ab12 source=\"attachment:notes.txt\">\nATTACHMENT-BODY\n</untrusted_content_ab12>\n\nsummarize notes.txt"
+	cases := []struct {
+		name string
+		mm   client.SessionMessage
+		want string
+	}{
+		{"typed", client.SessionMessage{Role: "user", Content: expanded, PrincipalPrompt: &typed}, typed},
+		{"attachment only", client.SessionMessage{Role: "user", Content: expanded, PrincipalPrompt: &empty}, "(attached files)"},
+		{"legacy record", client.SessionMessage{Role: "user", Content: "plain"}, "plain"},
+	}
+	for _, tc := range cases {
+		if got := replayPrompt(tc.mm); got != tc.want {
+			t.Errorf("%s: replayPrompt = %q, want %q", tc.name, got, tc.want)
+		}
+	}
+	m := newTestModel()
+	m.resize(100, 30)
+	m.replayTranscript([]client.SessionMessage{cases[0].mm, {Role: "assistant", Content: "done"}})
+	m.refresh()
+	view := plain(m.View())
+	if !strings.Contains(view, typed) || strings.Contains(view, "ATTACHMENT-BODY") || strings.Contains(view, "untrusted_content") {
+		t.Fatalf("replayed prompt leaks the expanded content:\n%s", view)
+	}
+}

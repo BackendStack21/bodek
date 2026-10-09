@@ -18,6 +18,10 @@ type SessionMessage struct {
 	ToolCallID       string            `json:"tool_call_id,omitempty"`
 	ToolCalls        []SessionToolCall `json:"tool_calls,omitempty"`
 	ReasoningContent string            `json:"reasoning_content,omitempty"`
+	// PrincipalPrompt is the prompt as the operator typed it, before odek
+	// inlined attachments and @-resources into Content (nil on older
+	// records). Replay shows this, never the expanded, wrapped Content.
+	PrincipalPrompt *string `json:"principal_prompt,omitempty"`
 	// Superseded marks a draft final answer the loop replaced by re-asking
 	// the model (odek ≥ v2.33); SupersededReason is completion_nudge |
 	// verify_retry.
@@ -174,24 +178,51 @@ func (c *Client) Health() (Health, error) {
 // auth token (empty is accepted for sessions that have never been tokened). It
 // returns the effective token from the X-Session-Token response header, falling
 // back to the token passed in.
+//
+// A session another front-end created (the odek WebUI keeps its session
+// tokens in the browser) is unknown to bodek's token store. For such a
+// request odek answers with a mint-only bootstrap — the session token in the
+// X-Session-Token header and {"session_id", "bootstrapped": true} as the
+// body, never the transcript — so the detail is fetched once more with the
+// minted token.
 func (c *Client) SessionDetail(id, token string) (Session, string, error) {
-	var s Session
+	s, eff, boot, err := c.sessionDetailOnce(id, token)
+	if err != nil || !boot {
+		return s, eff, err
+	}
+	if eff == "" || eff == token {
+		return Session{}, "", fmt.Errorf("session: server issued no session token")
+	}
+	s, eff, boot, err = c.sessionDetailOnce(id, eff)
+	if err == nil && boot {
+		return Session{}, "", fmt.Errorf("session: minted token was not accepted")
+	}
+	return s, eff, err
+}
+
+// sessionDetailOnce issues one detail request; boot reports a mint-only
+// bootstrap reply (token header, no transcript).
+func (c *Client) sessionDetailOnce(id, token string) (s Session, eff string, boot bool, err error) {
 	resp, err := c.doWith(c.slowHTTP, http.MethodGet, c.baseURL+"/api/sessions/"+url.PathEscape(id), token)
 	if err != nil {
-		return s, "", err
+		return s, "", false, err
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
-		return s, "", fmt.Errorf("session: status %s", resp.Status)
+		return s, "", false, fmt.Errorf("session: status %s", resp.Status)
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&s); err != nil {
-		return s, "", err
+	var body struct {
+		Session
+		Bootstrapped bool `json:"bootstrapped"`
 	}
-	eff := resp.Header.Get("X-Session-Token")
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		return s, "", false, err
+	}
+	eff = resp.Header.Get("X-Session-Token")
 	if eff == "" {
 		eff = token
 	}
-	return s, eff, nil
+	return body.Session, eff, body.Bootstrapped, nil
 }
 
 // DeleteSession removes a saved session (requires its auth token).
