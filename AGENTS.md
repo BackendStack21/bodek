@@ -249,6 +249,13 @@ modifier routes to the composer), and `Alt+A`/`Alt+D`/`Alt+T`
   parks `focusIdx` plus the viewport on the latest transcript message
   (a surviving queued successor must not yank scrollback). The unfocused
   queue is a shelf chip; `^Q` unfolds the strip (`qfocus`).
+- Sessions other front-ends created (the odek WebUI keeps its session
+  tokens in the browser) must load: `client.SessionDetail` follows odek's
+  mint-only bootstrap reply (`{"session_id","bootstrapped":true}` plus an
+  `X-Session-Token` header, no transcript) with one refetch using the
+  minted token, and never returns that stub as a session. Replayed user
+  turns show `principal_prompt` (what was typed), not `content`, which
+  carries attachments and @-resources inlined in untrusted wrappers.
 - The TUI reconnects with backoff and resumes the session after a socket
   drop (`reconnect.go`) — don't break that by assuming a single
   connection per run.
