@@ -1115,6 +1115,20 @@ func (m *Model) handleSessionSwitch(msg sessionSwitchMsg) tea.Cmd {
 // interleaved in arrival order, mirroring live event ingestion. System
 // messages are dropped; blank assistant messages (no reply, reasoning, or
 // steps) are skipped.
+// replayPrompt is the user turn as the operator typed it. odek stores the
+// prompt with attachments and @-resources inlined (wrapped in untrusted
+// markers) in Content and the typed text in PrincipalPrompt; older records
+// carry only Content.
+func replayPrompt(mm client.SessionMessage) string {
+	if mm.PrincipalPrompt == nil {
+		return mm.Content
+	}
+	if strings.TrimSpace(*mm.PrincipalPrompt) == "" && strings.TrimSpace(mm.Content) != "" {
+		return "(attached files)" // an attachment-only prompt typed no text
+	}
+	return *mm.PrincipalPrompt
+}
+
 func (m *Model) replayTranscript(msgs []client.SessionMessage) {
 	var cur *message // current turn's assistant message, not yet flushed
 	stepByCallID := map[string]int{}
@@ -1139,7 +1153,7 @@ func (m *Model) replayTranscript(msgs []client.SessionMessage) {
 		switch mm.Role {
 		case "user":
 			flush()
-			m.msgs = append(m.msgs, message{role: roleUser, content: sanitize(mm.Content)})
+			m.msgs = append(m.msgs, message{role: roleUser, content: sanitize(replayPrompt(mm))})
 		case "assistant":
 			if cur == nil {
 				cur = &message{role: roleAsst}
