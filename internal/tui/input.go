@@ -342,10 +342,10 @@ func writeEnhancedKeys(seq string) {
 
 // ── composer auto-fit ───────────────────────────────────────────────────────
 
-// Composer growth bounds: the box rests at three rows, grows with its
+// Composer growth bounds: the box rests at one row, grows with its
 // content, and never eats the screen (syncComposer).
 const (
-	composerMinRows = 3
+	composerMinRows = 1
 	composerMaxRows = 12
 )
 
@@ -802,7 +802,7 @@ func (m *Model) dismissChrome() (bool, tea.Cmd) {
 	}
 	for i := len(m.msgs) - 1; i >= 0; i-- {
 		for j := len(m.msgs[i].items) - 1; j >= 0; j-- {
-			if m.msgs[i].items[j].thinking && m.msgs[i].items[j].open {
+			if m.msgs[i].items[j].foldable() && m.msgs[i].items[j].open {
 				m.msgs[i].items[j].open = false
 				m.invalidateMsgBlock(i)
 				m.refresh()

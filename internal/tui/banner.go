@@ -9,7 +9,8 @@ import (
 )
 
 // welcome is the empty-session home: where the agent will work, and one
-// next action. Branding lives in the header; F1 / /help hold the rest.
+// next action. Branding lives in the header; F1 / /help hold the rest. The
+// block is top-aligned here; home() anchors it above the composer.
 func welcome(th theme, width int, cwd, lastSession string) string {
 	var b strings.Builder
 	if dir := shortenHome(cwd); dir != "" {
@@ -22,8 +23,9 @@ func welcome(th theme, width int, cwd, lastSession string) string {
 		b.WriteString(th.tipText.Render("/new starts fresh") + "\n")
 		b.WriteByte('\n')
 	}
-	b.WriteString(th.tipKey.Render("type a task") + "\n")
-	hints := []string{"⏎ send", "⇧⏎ newline", "^K commands"}
+	// One next-action tip: the composer placeholder already invites a task and
+	// the footer owns ^K, so the home only names what the keys do.
+	hints := []string{"⏎ send", "⇧⏎ newline", "@ attach a file"}
 	inner := max(1, width-2)
 	line := ""
 	for _, hint := range hints {

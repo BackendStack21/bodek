@@ -125,6 +125,8 @@ func TestJobsTabDigitZeroAndRenumbering(t *testing.T) {
 		}
 	}
 	// The tab strip must teach the "0" shortcut for the 10th tab, not "10".
+	// Widen first: a narrow strip collapses to a position readout instead.
+	m.Update(tea.WindowSizeMsg{Width: 240, Height: 30})
 	m.Update(exec(m.openConfig()))
 	if !strings.Contains(plain(m.View()), "0 config") {
 		t.Errorf("tab strip does not teach 0 for config:\n%s", plain(m.View()))

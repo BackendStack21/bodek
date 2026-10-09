@@ -32,6 +32,22 @@ type Event struct {
 	// token / thinking
 	Content string `json:"content"`
 
+	// answer_superseded (odek ≥ v2.33): the reply streamed since the last
+	// tool call was a draft and the next reply replaces it. Reason is
+	// completion_nudge | verify_retry; Cycle counts re-asks of that kind
+	// within the run, from 1.
+	Reason string `json:"reason,omitempty"`
+	Cycle  int    `json:"cycle,omitempty"`
+
+	// done (odek ≥ v2.33): the final answer's verification outcome — pass |
+	// fail | uncertain | skipped; absent when verification did not run.
+	Verified string `json:"verified,omitempty"`
+
+	// runtime_event: the odek.event/v1 record. Decoded separately because
+	// the frame's "event" key is an object, while sub-agent frames carry a
+	// string there (SubType).
+	Runtime *RuntimeEvent `json:"-"`
+
 	// error
 	Message string `json:"message"`
 
@@ -212,6 +228,21 @@ type ResultDenial struct {
 	Tool   string `json:"tool"`
 	Class  string `json:"class,omitempty"`
 	Reason string `json:"reason"`
+}
+
+// decodeRuntimeFrame decodes a runtime_event frame, whose object-valued
+// "event" key cannot unmarshal into Event.SubType. Any other frame that
+// failed the plain decode stays malformed.
+func decodeRuntimeFrame(data []byte) (Event, bool) {
+	var f struct {
+		Type   string        `json:"type"`
+		TurnID string        `json:"turn_id"`
+		Event  *RuntimeEvent `json:"event"`
+	}
+	if err := json.Unmarshal(data, &f); err != nil || f.Type != "runtime_event" || f.Event == nil {
+		return Event{}, false
+	}
+	return Event{Type: f.Type, TurnID: f.TurnID, Runtime: f.Event}, true
 }
 
 // EventDisconnected is a synthetic Type emitted on the Events channel when the
@@ -429,7 +460,11 @@ func (c *Client) readLoop() {
 		_ = c.conn.SetReadDeadline(time.Time{}) // received: drop the deadline while decoding
 		var ev Event
 		if err := json.Unmarshal(data, &ev); err != nil {
-			continue // ignore malformed frames
+			rt, ok := decodeRuntimeFrame(data)
+			if !ok {
+				continue // ignore malformed frames
+			}
+			ev = rt
 		}
 		mu.Lock()
 		if ev.Type == "thinking_delta" {

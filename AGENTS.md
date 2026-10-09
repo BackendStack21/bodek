@@ -258,6 +258,19 @@ modifier routes to the composer), and `Alt+A`/`Alt+D`/`Alt+T`
   on completion, error or disconnect. Batch ingestion captures each event's
   linear output before later frames mutate the turn, returning one ordered
   print command alongside the flat listener and refresh commands.
+- Superseded drafts (odek ≥ v2.33): `answer_superseded` turns the reply
+  segments streamed since the last tool call into `draft` items — a folded
+  `⋯ draft revised · <reason>` row that opens like reasoning (inspect +
+  Enter, `^E`) — and rebuilds `msg.content` from the surviving replies, so
+  a turn never shows two answers. Use `turnItem.isStep()` / `foldable()`;
+  never treat "not reply, not reasoning" as a step. Replay folds records
+  persisted with `superseded`. `done.verified == "fail"` (or a persisted /
+  bulk verification-failed marker, stripped from the prose) sets
+  `unverified`: `✗ unverified` on the head and outcome row. Verification
+  `runtime_event` frames only drive the `verifying answer` status label;
+  the client decodes `runtime_event` separately because its object `event`
+  key collides with the string `SubType`. Plain mode prints the draft
+  remainder once plus a `[draft revised · …]` note.
 - Streaming renders are coalesced into one flush per 80ms for
   performance; batching new redraw paths the same way keeps the TUI
   responsive. Live reply segments glamour-render on that flush (not only

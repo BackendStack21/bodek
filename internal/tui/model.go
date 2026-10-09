@@ -84,6 +84,22 @@ type turnItem struct {
 	rendered string        // cached glamour render (finalized reply segments)
 	started  time.Time     // reasoning: when the block opened; zero on replay
 	dur      time.Duration // reasoning: sealed when the cycle yields; 0 while live
+
+	// draft marks a reply the engine superseded by re-asking the model
+	// (answer_superseded): it folds to one row and opens like reasoning.
+	// draftReason is the wire reason (completion_nudge | verify_retry).
+	draft       bool
+	draftReason string
+}
+
+// isStep reports whether the item references a tool step rather than
+// reasoning, a reply segment, or a superseded draft.
+func (it turnItem) isStep() bool { return !it.thinking && !it.reply && !it.draft }
+
+// foldable reports whether the item opens on demand (Enter while
+// inspecting, ^E): non-empty reasoning blocks and superseded drafts.
+func (it turnItem) foldable() bool {
+	return (it.thinking || it.draft) && strings.TrimSpace(it.text) != ""
 }
 
 // turnStats is the telemetry of one finalized assistant turn, captured from the
@@ -123,6 +139,7 @@ type message struct {
 	collapsed  bool       // turn card folded to its head + summary line (c)
 	systemWake bool       // server-initiated turn (background-job wake): marker on the card
 	failed     bool       // the run ended in error — ✗ marks the turn head (in-session state; replay does not restore it)
+	unverified bool       // the final answer failed odek's verification (done.verified, or a persisted marker on replay)
 
 	plainPrinted int // reply bytes already emitted to linear scrollback
 }
@@ -400,10 +417,10 @@ type Model struct {
 	disconn       bool
 	reconnAttempt int // current redial attempt index (drives the status-line backoff readout)
 	quitting      bool
+	verifying     bool   // odek's final-answer verification side call is running (status line label)
+	plainDraft    string // plain mode: superseded draft text not yet printed to scrollback
 
-	gradRule  string // cached full-width gradient rule
 	glamWrap  int    // wrap width m.glam was built for; -1 forces rebuild (theme switch)
-	gradRuleW int
 	logoCache string // cached gradient logo (width-independent)
 
 	canvasFG, canvasBG string // cached paintCanvas probe colors for the active theme
@@ -446,7 +463,7 @@ func New(cl *client.Client, opts Options) *Model {
 	ta.Prompt = " "
 	ta.ShowLineNumbers = false
 	ta.CharLimit = 0
-	ta.SetHeight(3)
+	ta.SetHeight(composerMinRows)
 	ta.FocusedStyle.CursorLine = th.taCursorLine
 	ta.FocusedStyle.Text = th.inputText
 	ta.BlurredStyle.Text = th.inputText
@@ -1372,7 +1389,6 @@ func (m *Model) resize(w, h int) tea.Cmd {
 	}
 	m.ta.SetWidth(w - 4)
 	m.syncComposer() // the new width re-wraps content — refit the box
-	m.gradRule = ""  // invalidate cached rule for the new width
 	m.invalidateAllMsgBlocks()
 	for i := range m.msgs {
 		for j := range m.msgs[i].steps {

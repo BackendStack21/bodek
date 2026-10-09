@@ -20,9 +20,9 @@ func (m *Model) inspectTargets() []inspectTarget {
 		}
 		seen := make(map[int]bool)
 		for j, item := range msg.items {
-			if item.thinking && strings.TrimSpace(item.text) != "" {
+			if item.foldable() {
 				out = append(out, inspectTarget{i, -1, j})
-			} else if !item.reply && !item.thinking && item.stepIdx >= 0 && item.stepIdx < len(msg.steps) {
+			} else if item.isStep() && item.stepIdx >= 0 && item.stepIdx < len(msg.steps) {
 				out = append(out, inspectTarget{i, item.stepIdx, -1})
 				seen[item.stepIdx] = true
 			}
@@ -45,7 +45,7 @@ func (m *Model) validInspect() bool {
 	if p.stepIdx >= 0 {
 		return p.stepIdx < len(msg.steps)
 	}
-	return p.itemIdx >= 0 && p.itemIdx < len(msg.items) && msg.items[p.itemIdx].thinking
+	return p.itemIdx >= 0 && p.itemIdx < len(msg.items) && msg.items[p.itemIdx].foldable()
 }
 
 // Inspection borrows the composer rows so a short terminal can show the

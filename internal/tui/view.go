@@ -8,6 +8,8 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
+
+	"github.com/BackendStack21/bodek/internal/client"
 )
 
 // View composes the full screen: header, scrollable transcript (plus the
@@ -63,7 +65,7 @@ func (m *Model) plainView() string {
 func (m *Model) header() string {
 	th := m.th
 	// The logo gradient is width-independent, so render it once and cache it
-	// (like gradRule) instead of re-interpolating every frame.
+	// instead of re-interpolating every frame.
 	if m.logoCache == "" {
 		m.logoCache = th.logo.Render(gradient("⬡ bodek", th.grad[0], th.grad[1]))
 	}
@@ -247,12 +249,13 @@ func (m *Model) gaugeColor(ratio float64) lipgloss.Style {
 }
 
 // sandboxBadge renders the agent's isolation state with the monochrome glyph
-// vocabulary (width-stable, unlike emoji): a green ● when sandboxed, an amber ▲
-// when it has host access. Shared by the header and the /stats card so the two
-// never drift.
+// vocabulary (width-stable, unlike emoji): a green ◆ when sandboxed, an amber ▲
+// when it has host access. Never a dot — dots are the connection lamp's
+// vocabulary (◉ ● ◌ ○), and two green dots in one header read as one signal.
+// Shared by the header and the /stats card so the two never drift.
 func (m *Model) sandboxBadge() string {
 	if m.sandbox {
-		return m.th.badgeOK.Render("● sandboxed")
+		return m.th.badgeOK.Render("◆ sandboxed")
 	}
 	return m.th.badgeWarn.Render("▲ host access")
 }
@@ -290,14 +293,11 @@ func gaugeGlyph(r float64) string {
 	return bar
 }
 
-// rule returns a full-width gradient hairline, cached per width.
+// rule returns the full-width header hairline. It is structure, not brand:
+// a quiet hairline keeps amber reserved for the wordmark and focus, and one
+// SGR span replaces a per-cell gradient on every frame.
 func (m *Model) rule() string {
-	w := max(m.width, 1)
-	if m.gradRule == "" || m.gradRuleW != w {
-		m.gradRule = gradient(strings.Repeat("─", w), m.th.grad[0], m.th.grad[1])
-		m.gradRuleW = w
-	}
-	return m.gradRule
+	return m.th.rule.Render(strings.Repeat("─", max(m.width, 1)))
 }
 
 // statusBadge is the header's session-state lamp. Turn progress lives on
@@ -348,6 +348,8 @@ func (m *Model) statusLine() string {
 	}
 	var label string
 	switch {
+	case m.verifying:
+		label = "verifying answer"
 	case m.lastTool != "":
 		// Context-aware message derived from the running tool + its args.
 		label = toolProgress(m.lastTool, m.lastArg)
@@ -694,6 +696,11 @@ func (m *Model) renderMessage(msg message, msgIdx, lineOffset int) (string, []st
 			// state, never wire text — and persists through finalization.
 			label += " " + th.badgeDanger.Render(lampError)
 		}
+		if msg.unverified {
+			// odek's verification rejected the shipped answer: the chip
+			// replaces the marker odek prepends, so the prose stays clean.
+			label += " " + th.badgeDanger.Render("✗ unverified")
+		}
 		rec := formatReceipt(scanReceipt(msg))
 		tallyShown := false
 		if msg.collapsed && !msg.streaming {
@@ -804,14 +811,20 @@ func (m *Model) renderMessage(msg message, msgIdx, lineOffset int) (string, []st
 				addBlock(th.asstWork.Render(m.renderIntentRail(body, it, msg)), false)
 				continue
 			}
+			if items[it].draft {
+				if strings.TrimSpace(items[it].text) != "" {
+					addBlock(th.asstWork.Render(m.renderDraft(items[it], it, msgIdx)), false)
+				}
+				continue
+			}
 			if items[it].reply {
 				t := items[it].text
 				if strings.TrimSpace(t) == "" {
 					continue
 				}
-				body := t
-				if items[it].rendered != "" {
-					body = items[it].rendered
+				body := items[it].rendered
+				if body == "" {
+					body = rawReplyBody(t)
 				}
 				card, n := m.answerCardBody(body)
 				start := addBlock(card, true)
@@ -863,6 +876,43 @@ func (m *Model) renderMessage(msg message, msgIdx, lineOffset int) (string, []st
 		}
 		return stackTurn(label, strings.Join(lines, "\n")), refs
 	}
+}
+
+// renderDraft paints a superseded draft as one folded row; opening it
+// (Enter while inspecting, ^E) shows the draft text dimmed beneath, so the
+// replacement answer stays the only card.
+func (m *Model) renderDraft(it turnItem, itemIdx, msgIdx int) string {
+	th := m.th
+	label := "⋯ draft revised · " + draftReasonLabel(it.draftReason)
+	sel := m.inspect != nil && m.inspect.msgIdx == msgIdx && m.inspect.itemIdx == itemIdx && m.inspect.stepIdx < 0
+	head := th.statsDim.Render(label)
+	if sel {
+		head = th.acSel.Render("› " + label)
+	}
+	if !it.open && !m.expandAll {
+		if sel {
+			head += th.acSel.Render(" · Enter expand")
+		}
+		return head
+	}
+	body := ansi.Wrap(strings.TrimSpace(it.text), max(m.cardInner()-2, 8), "")
+	return head + "\n" + th.thinkStyle.Render(body)
+}
+
+// rawReplyMargin matches glamour's document margin, so a reply segment
+// painted before its first render flush sits in the same column the
+// rendered card will — the text never jumps sideways when markdown lands.
+const rawReplyMargin = "  "
+
+// rawReplyBody indents a not-yet-rendered reply to glamour's margin.
+func rawReplyBody(t string) string {
+	lines := strings.Split(t, "\n")
+	for i, ln := range lines {
+		if ln != "" {
+			lines[i] = rawReplyMargin + ln
+		}
+	}
+	return strings.Join(lines, "\n")
 }
 
 // answerCardBody styles one reply segment as its raised card — the
@@ -950,7 +1000,7 @@ func stepTally(msg message) string {
 func foldTally(msg message) string {
 	n := 0
 	for _, it := range msg.items {
-		if !it.thinking && !it.reply {
+		if it.isStep() {
 			n++
 		}
 	}
@@ -1065,6 +1115,9 @@ func (m *Model) turnStatFoot(msg message) string {
 	}
 	ts := *msg.stats
 	outcome := "✓ done"
+	if msg.unverified {
+		outcome = "✗ unverified"
+	}
 	if msg.failed {
 		outcome = "✗ failed"
 	}
@@ -1226,16 +1279,21 @@ func (m *Model) renderStep(s step, streaming bool, msgIdx, stepIdx, startLine in
 			return st.blockCache, refs, lineCount(st.blockCache)
 		}
 	}
+	// One status-bearing glyph per row: a clean finish shows the tool's own
+	// icon, a failure replaces it with ✗ (shape, not only color), and live
+	// and pending share a static ▸ — the status line is the only spinner,
+	// so a fast tool swarm cannot strobe the transcript.
+	glyph := toolGlyph(s.name)
 	var icon string
 	switch {
 	case s.done && s.isErr:
-		icon = th.stepErr.Render("✗")
+		glyph = "✗"
+		icon = th.stepErr.Render(glyph)
 	case s.done:
-		icon = th.stepDone.Render("✓")
+		icon = th.toolIcon.Render(glyph)
 	default:
-		// Live and pending share a static glyph — the status line is the
-		// only spinner, so a fast tool swarm cannot strobe the transcript.
-		icon = th.stepRun.Render("▸")
+		glyph = "▸"
+		icon = th.stepRun.Render(glyph)
 	}
 	chevron := th.stepTree.Render("▶")
 	if expanded {
@@ -1265,7 +1323,7 @@ func (m *Model) renderStep(s step, streaming bool, msgIdx, stepIdx, startLine in
 		}
 	}
 	rightW := lipgloss.Width(right)
-	pre := chevron + " " + icon + " " + th.toolIcon.Render(toolGlyph(s.name)) + " "
+	pre := chevron + " " + icon + " "
 	chips := s.agentChips()
 	nameBudget := max(m.vp.Width-4-rightW-lipgloss.Width(pre)-8, 4)
 	var left string
@@ -1289,7 +1347,7 @@ func (m *Model) renderStep(s step, streaming bool, msgIdx, stepIdx, startLine in
 		}
 		budget := max(m.vp.Width-4-rightW-2, 4)
 		if s.arg != "" && len(chips) == 0 {
-			left += th.stepArg.Render("  " + truncate(s.arg, budget-lipgloss.Width(chevron+" "+icon+" "+toolGlyph(s.name)+" "+s.name)-2))
+			left += th.stepArg.Render("  " + truncate(s.arg, budget-lipgloss.Width(chevron+" "+glyph+" "+s.name)-2))
 		}
 	}
 	gap := max(m.vp.Width-4-lipgloss.Width(left)-rightW, 1)
@@ -1636,7 +1694,11 @@ func (m *Model) approvalPanel() string {
 		// Compact terminals spend their rows on the command and controls.
 		return m.approvalBody()
 	}
-	return m.th.apprBox.Width(m.cardWidth()).Render(m.approvalBody())
+	box := m.th.apprBox
+	if a := m.curApproval(); a != nil && a.Risk == "high" {
+		box = m.th.apprBoxHi
+	}
+	return box.Width(m.cardWidth()).Render(m.approvalBody())
 }
 
 // approvalBody builds the panel's inner content: head, the command (one
@@ -1682,29 +1744,42 @@ func (m *Model) approvalBody() string {
 	if target == "" {
 		command = targetLabel + " not supplied by odek"
 	}
-	var body []string
-	if m.apprExpanded {
-		appendWrapped := func(line string) {
-			body = append(body, strings.Split(ansi.Hardwrap(line, budget, true), "\n")...)
+	// A reason that only repeats the tool name or the Action text adds
+	// nothing, so its row is dropped.
+	reason := ""
+	if a.Description != "" {
+		if shown := visibleInvocation(a.Description); !approvalReasonRepeats(shown, a.Name, approvalRiskLabel(a.Risk)) {
+			reason = shown
 		}
-		appendWrapped(command)
-		appendWrapped(action)
-		appendWrapped("Working directory: not supplied by odek")
-		if a.Description != "" {
-			appendWrapped("Reason: " + visibleInvocation(a.Description))
+	}
+	hasCmd := target != ""
+	var body []apprLine
+	if m.apprExpanded {
+		appendWrapped := func(line string, code bool) {
+			for _, seg := range strings.Split(ansi.Hardwrap(line, budget, true), "\n") {
+				body = append(body, apprLine{text: seg, code: code})
+			}
+		}
+		appendWrapped(command, hasCmd)
+		appendWrapped(action, false)
+		appendWrapped("Working directory: not supplied by odek", false)
+		if reason != "" {
+			appendWrapped("Reason: "+reason, false)
 		}
 		if a.AllowTrust && !a.Friction {
-			appendWrapped("Trust: allow " + approvalRiskLabel(a.Risk) + " until this connection ends")
+			appendWrapped("Trust: allow "+approvalRiskLabel(a.Risk)+" until this connection ends", false)
 		}
 	} else {
 		preview := strings.ReplaceAll(command, "\n", "↵")
-		body = append(body, truncate(collapse(preview), budget))
-		body = append(body, truncate(action, budget))
-		if a.Description != "" {
-			body = append(body, truncate("Reason: "+collapse(visibleInvocation(a.Description)), budget))
+		body = append(body, apprLine{text: truncate(collapse(preview), budget), code: hasCmd})
+		body = append(body, apprLine{text: truncate(action, budget)})
+		if reason != "" {
+			body = append(body, apprLine{text: truncate("Reason: "+collapse(reason), budget)})
 		}
 	}
-	limit := max(1, min(8, m.height-m.desiredComposerHeight()-headerHeight-footerHeight-8))
+	// The in-card action row always takes one more row, so the body gives
+	// that row back to keep the card inside the terminal.
+	limit := max(1, min(8, m.height-m.desiredComposerHeight()-headerHeight-footerHeight-9))
 	if a.Friction {
 		limit = max(1, limit-2)
 	}
@@ -1715,7 +1790,7 @@ func (m *Model) approvalBody() string {
 	m.apprOffset = offset
 	end := min(len(body), offset+limit)
 	for _, line := range body[offset:end] {
-		lines = append(lines, th.apprBody.Render(ansi.Truncate(line, budget, "")))
+		lines = append(lines, m.renderApprLine(line, budget))
 	}
 	if len(body) > limit && m.apprExpanded {
 		lines = append(lines, th.noticeStyle.Render(ansi.Truncate(fmt.Sprintf("%d–%d/%d · Alt+PgUp/PgDn", offset+1, end, len(body)), budget, "")))
@@ -1727,7 +1802,76 @@ func (m *Model) approvalBody() string {
 			lines = append(lines, th.apprKey.Render(ansi.Truncate(typed+"▏", budget, "")))
 		}
 	}
+	lines = append(lines, m.approvalActionRow(a, budget))
 	return strings.Join(lines, "\n")
+}
+
+// apprLine is one body row of the approval card. When code is set, the
+// value after a "Command: " or "Resource: " label paints as code.
+type apprLine struct {
+	text string
+	code bool
+}
+
+// renderApprLine paints one pre-wrapped body row, clamped to the card width.
+func (m *Model) renderApprLine(l apprLine, budget int) string {
+	th := m.th
+	text := ansi.Truncate(l.text, budget, "")
+	if !l.code {
+		return th.apprBody.Render(text)
+	}
+	for _, label := range []string{"Command: ", "Resource: "} {
+		if rest, ok := strings.CutPrefix(text, label); ok {
+			return th.apprBody.Render(label) + th.apprCode.Render(rest)
+		}
+	}
+	return th.apprCode.Render(text)
+}
+
+// approvalReasonRepeats reports whether a reason only restates the tool name
+// or the Action text, compared case-insensitively.
+func approvalReasonRepeats(reason, name, action string) bool {
+	r := strings.TrimSpace(reason)
+	return strings.EqualFold(r, strings.TrimSpace(name)) || strings.EqualFold(r, action)
+}
+
+// approvalActionRow lists the decisions at the foot of the card, mirroring the
+// footer keys. Trust is dropped first when the row is too wide for the card;
+// allow-once and deny always stay. Friction cards show the typed-confirmation
+// path, since a bare 'a' only opens the editor there.
+func (m *Model) approvalActionRow(a *client.Event, budget int) string {
+	th := m.th
+	type hint struct{ key, text string }
+	var hints []hint
+	switch {
+	case a.Friction && m.apprEditing:
+		hints = []hint{{"type approve + ⏎", ""}, {"Alt+D", "deny"}}
+	case a.Friction:
+		// Same two-step contract as the friction line above: 'a' opens the
+		// confirm editor, it never approves on its own.
+		hints = []hint{{"a", "confirm → type approve"}, {"d", "deny"}}
+	default:
+		hints = []hint{{"a", "allow once"}, {"d", "deny"}}
+		if a.AllowTrust {
+			hints = append(hints, hint{"t", "trust class"})
+		}
+	}
+	render := func(hs []hint) string {
+		parts := make([]string, 0, len(hs))
+		for _, h := range hs {
+			part := th.footerKey.Render(h.key)
+			if h.text != "" {
+				part += th.footer.Render(" " + h.text)
+			}
+			parts = append(parts, part)
+		}
+		return strings.Join(parts, th.footer.Render(" · "))
+	}
+	row := render(hints)
+	if len(hints) > 2 && lipgloss.Width(row) > budget {
+		row = render(hints[:2])
+	}
+	return ansi.Truncate(row, budget, "…")
 }
 
 // ── footer ────────────────────────────────────────────────────────────────
@@ -1851,8 +1995,8 @@ func (m *Model) footerContent() string {
 	if m.panel == panelRuns {
 		return m.panelFooter(
 			th.footer.Render("↑↓ select · ]/[ tabs"),
-			th.footerKey.Render("A")+th.footer.Render("pprove · "),
-			th.footerKey.Render("D")+th.footer.Render("eny · "),
+			th.footerKey.Render("A")+th.footer.Render("pprove"),
+			th.footerKey.Render("D")+th.footer.Render("eny"),
 			th.footerKey.Render("T")+th.footer.Render("rust"),
 			th.footerKey.Render("c")+th.footer.Render(" cancel"),
 			th.footerKey.Render("e")+th.footer.Render(" events"),
@@ -1913,12 +2057,12 @@ func (m *Model) footerContent() string {
 			)
 		}
 		return m.panelFooter(
-			th.footer.Render("⏎ detail · "),
-			th.footerKey.Render("a")+th.footer.Render(" add user · "),
+			th.footer.Render("⏎ detail"),
+			th.footerKey.Render("a")+th.footer.Render(" add user"),
 			th.footerKey.Render("A")+th.footer.Render(" add env"),
 			th.footerKey.Render("d")+th.footer.Render(" delete fact → y confirm"),
 			th.footerKey.Render("p")+th.footer.Render(" promote episode"),
-			th.footerKey.Render("c")+th.footer.Render(" consolidate user · "),
+			th.footerKey.Render("c")+th.footer.Render(" consolidate user"),
 			th.footerKey.Render("E")+th.footer.Render(" env"),
 			th.footer.Render("]/[ tabs · esc close"),
 		)
@@ -1931,10 +2075,10 @@ func (m *Model) footerContent() string {
 	}
 	if m.panel == panelQueue {
 		return m.panelFooter(
-			th.footerKey.Render("↑↓")+th.footer.Render(" select · "),
-			th.footerKey.Render("←→")+th.footer.Render(" priority · "),
-			th.footerKey.Render("⏎")+th.footer.Render(" send now · "),
-			th.footerKey.Render("d")+th.footer.Render(" delete → y · "),
+			th.footerKey.Render("↑↓")+th.footer.Render(" select"),
+			th.footerKey.Render("←→")+th.footer.Render(" priority"),
+			th.footerKey.Render("⏎")+th.footer.Render(" send now"),
+			th.footerKey.Render("d")+th.footer.Render(" delete → y"),
 			th.footer.Render("esc close"),
 		)
 	}
@@ -1942,7 +2086,7 @@ func (m *Model) footerContent() string {
 		if m.panelDetail {
 			return m.panelFooter(
 				th.footer.Render("↑↓ scroll"),
-				th.footerKey.Render("p")+th.footer.Render(" promote · "),
+				th.footerKey.Render("p")+th.footer.Render(" promote"),
 				th.footerKey.Render("P")+th.footer.Render(" force-promote"),
 				th.footer.Render("esc back"),
 			)
@@ -2020,26 +2164,30 @@ func (m *Model) footerContent() string {
 	// The status bar carries no static key cheatsheet (the welcome splash and
 	// /help cover that) — only the live run state: a cancel hint while busy on
 	// the left, and latency / scroll position on the right.
-	left := m.modePrefix()
+	var lefts []string
 	if m.busy {
-		left += th.footerKey.Render("^X") + th.footer.Render(" stop")
+		lefts = append(lefts, th.footerKey.Render("^X")+th.footer.Render(" stop"))
 	} else if m.status == "error" && m.ta.Value() == "" && m.lastPrompt != "" {
 		// A failed turn with an empty input: ⏎ resends the preserved
 		// prompt — the same contract the error card states. Hidden while a
 		// draft exists so typing is never hijacked by the hint.
-		left += th.footerKey.Render("⏎") + th.footer.Render(" retry last prompt")
+		lefts = append(lefts, th.footerKey.Render("⏎")+th.footer.Render(" retry last prompt"))
 	}
 	// Persistent expandAll indicator — while the global toggle holds every
 	// step open, per-step toggles look dead unless the chrome says why.
 	if m.expandAll {
-		ind := th.footerKey.Render("▼") + th.footer.Render(" details")
-		left += th.footerSep.Render(" · ") + ind
+		lefts = append(lefts, th.footerKey.Render("▼")+th.footer.Render(" details"))
 	}
 	// Click / ^Y / alt+y copy ack — footer only, so it stays visible
 	// when the reader is up in history.
 	if m.copyFlashing() {
-		ind := th.badgeOK.Render("✓") + th.footer.Render(" Copied")
-		left += th.footerSep.Render(" · ") + ind
+		lefts = append(lefts, th.badgeOK.Render("✓")+th.footer.Render(" Copied"))
+	}
+	// Segments join after the mode name — an idle composer shows the bare
+	// name, never a dangling separator.
+	left := m.modePrefix()
+	if len(lefts) > 0 {
+		left += th.footerSep.Render(" · ") + strings.Join(lefts, th.footerSep.Render(" · "))
 	}
 
 	var segs []string
@@ -2100,8 +2248,8 @@ func (m *Model) footerContent() string {
 // panelFooter joins pre-styled hint segments for an open panel (pre-styled so
 // destructive hints can carry the danger tint).
 func (m *Model) panelFooter(hints ...string) string {
-	prefix := m.modePrefix()
 	sep := m.th.footerSep.Render(" · ")
+	prefix := m.modePrefix() + sep
 	full := prefix + strings.Join(hints, sep)
 	if lipgloss.Width(full) <= m.width {
 		return full

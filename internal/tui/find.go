@@ -120,7 +120,7 @@ func findMsgMatch(msg message, q string) bool {
 		return true
 	}
 	for _, it := range msg.items {
-		if (it.thinking || it.reply) && strings.Contains(strings.ToLower(it.text), q) {
+		if (it.thinking || it.reply || it.draft) && strings.Contains(strings.ToLower(it.text), q) {
 			return true
 		}
 	}
@@ -149,7 +149,7 @@ func (m *Model) revealFindHit(msgIdx int) {
 	}
 	msg := &m.msgs[msgIdx]
 	for i := range msg.items {
-		if msg.items[i].thinking && strings.Contains(strings.ToLower(msg.items[i].text), q) {
+		if msg.items[i].foldable() && strings.Contains(strings.ToLower(msg.items[i].text), q) {
 			msg.items[i].open = true
 		}
 	}

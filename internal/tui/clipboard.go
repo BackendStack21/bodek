@@ -296,7 +296,7 @@ func (m *Model) focusedCopyText() string {
 	}
 	msg := m.msgs[idx]
 	for i := len(msg.items) - 1; i >= 0; i-- {
-		if msg.items[i].thinking && msg.items[i].open && msg.items[i].text != "" {
+		if msg.items[i].foldable() && msg.items[i].open {
 			return sanitize(msg.items[i].text)
 		}
 	}
@@ -321,7 +321,7 @@ func (m *Model) currentCopySpan() copySpan {
 		return copySpan{}
 	}
 	for i := len(msg.items) - 1; i >= 0; i-- {
-		if msg.items[i].thinking && msg.items[i].open {
+		if msg.items[i].foldable() && msg.items[i].open {
 			return copySpan{msgIdx: idx, kind: copyThink, idx: i, set: true}
 		}
 	}

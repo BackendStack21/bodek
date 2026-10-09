@@ -15,14 +15,14 @@ import (
 // core composer interactions and command discovery.
 func TestWelcomeTipSignpostsCoreInteractions(t *testing.T) {
 	out := plain(welcome(newTheme(), 120, "/somewhere", ""))
-	for _, want := range []string{"⏎ send", "⇧⏎ newline", "^K commands"} {
+	for _, want := range []string{"⏎ send", "⇧⏎ newline", "@ attach a file"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("welcome tip missing %q:\n%s", want, out)
 		}
 	}
-	// the ^K microcopy reads as a verb, not jargon.
-	if !strings.Contains(out, "^K commands") {
-		t.Errorf("welcome tip should identify the command palette:\n%s", out)
+	// The footer owns ^K; the home must not repeat it.
+	if strings.Contains(out, "^K") {
+		t.Errorf("welcome tip repeats the footer's ^K:\n%s", out)
 	}
 	if strings.Contains(out, "^K everything") {
 		t.Errorf("welcome tip still carries the cryptic '^K everything':\n%s", out)

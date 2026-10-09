@@ -85,7 +85,8 @@ func (m *Model) handlePopoverKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// popoverView renders the cockpit card sized to the transcript area.
+// popoverView renders the cockpit card sized to the transcript area. The card
+// hugs its content; h is only a maximum, past which the body scrolls.
 func (m *Model) popoverView(w, h int) string {
 	th := m.th
 	var b strings.Builder
@@ -94,16 +95,24 @@ func (m *Model) popoverView(w, h int) string {
 	// term-4 of text — the rule fills it so the right edge stays flush.
 	b.WriteString("\n" + th.rule.Render(strings.Repeat("─", boxInner(w))))
 
-	b.WriteString("\n" + m.cockpitServerSection())
-	b.WriteString("\n" + m.cockpitBudgetSection())
+	// Every label/value section shares one label column so values line up
+	// across the server, budget, and lifetime cards.
+	sections := []cockpitSection{
+		{"server", m.cockpitServerRows()},
+		{"budget", m.cockpitBudgetRows()},
+	}
 	if m.usageSnap != nil {
-		b.WriteString("\n" + m.cockpitLifetimeSection())
+		sections = append(sections, cockpitSection{"lifetime", m.cockpitLifetimeRows()})
+	}
+	gutter := cockpitGutter(sections)
+	for _, s := range sections {
+		b.WriteString("\n" + m.cockpitRows(s.title, s.rows, gutter))
 	}
 	// The session section renders un-boxed — no nested card inside a card.
-	b.WriteString("\n\n" + m.statsBody())
+	b.WriteString("\n\n" + m.sessionBlock(true, gutter+cockpitValueOffset))
 
 	// Window the card to the transcript area (the box height is only a
-	// minimum): the hint row stays pinned, the rest scrolls.
+	// maximum): the hint row stays pinned, the rest scrolls.
 	lines := strings.Split(b.String(), "\n")
 	visible := max(h-4, 1)
 	m.popScroll = min(max(m.popScroll, 0), max(len(lines)-visible, 0))
@@ -112,17 +121,27 @@ func (m *Model) popoverView(w, h int) string {
 	}
 	lines = append(lines, "", th.acDetail.Render("r refresh · esc close"))
 
-	return th.acBox.Width(boxWidth(w)).Height(h - 2).MaxHeight(h).Render(strings.Join(lines, "\n"))
+	return th.acBox.Width(boxWidth(w)).MaxHeight(h).Render(strings.Join(lines, "\n"))
 }
 
 // popoverPage is the half-page step for the cockpit card.
 func popoverPage(h int) int { return max((h-4)/2, 1) }
 
-// cockpitServerSection is the server/link card: identity and liveness from
-// the server_info/pong snapshot plus the heartbeat round-trip.
-func (m *Model) cockpitServerSection() string {
-	// The engine version row lives in the session stats sheet below (⬢ engine)
-	// — rendering it here too duplicated it inside the same cockpit.
+// cockpitSection is one titled label→value card inside the cockpit.
+type cockpitSection struct {
+	title string
+	rows  [][2]string
+}
+
+// cockpitValueOffset is the distance from a section's label column to its
+// value column: the two-space indent plus the gutter space.
+const cockpitValueOffset = 3
+
+// cockpitServerRows is the server/link card: identity and liveness from the
+// server_info/pong snapshot plus the heartbeat round-trip.
+func (m *Model) cockpitServerRows() [][2]string {
+	// The engine version row lives in the session block below (⬢ engine) —
+	// rendering it here too duplicated it inside the same cockpit.
 	rows := [][2]string{
 		{"model", orDash(m.model)},
 		{"stream", boolDash(m.serverStream, "» live deltas", "buffered")},
@@ -143,12 +162,12 @@ func (m *Model) cockpitServerSection() string {
 	if m.healthSnap != nil && !m.healthSnap.StartedAt.IsZero() {
 		rows = append(rows, [2]string{"since", m.healthSnap.StartedAt.Format("Jan 2 15:04")})
 	}
-	return m.cockpitRows("server", rows)
+	return rows
 }
 
-// cockpitBudgetSection is the budget card: the server's configured execution
+// cockpitBudgetRows is the budget card: the server's configured execution
 // caps and this session's spend against them.
-func (m *Model) cockpitBudgetSection() string {
+func (m *Model) cockpitBudgetRows() [][2]string {
 	l := m.limits
 	inPrice, outPrice := m.prices()
 	rows := [][2]string{}
@@ -166,13 +185,13 @@ func (m *Model) cockpitBudgetSection() string {
 		rows = append(rows, [2]string{"prices", fmt.Sprintf("$%.2f in · $%.2f out /M", inPrice, outPrice)})
 	}
 	if len(rows) == 0 {
-		return m.cockpitRows("budget", [][2]string{{"caps", "none configured"}})
+		return [][2]string{{"caps", "none configured"}}
 	}
-	return m.cockpitRows("budget", rows)
+	return rows
 }
 
-// cockpitLifetimeSection is the server-lifetime card from /api/usage.
-func (m *Model) cockpitLifetimeSection() string {
+// cockpitLifetimeRows is the server-lifetime card from /api/usage.
+func (m *Model) cockpitLifetimeRows() [][2]string {
 	u := m.usageSnap
 	rows := [][2]string{
 		{"prompts", fmt.Sprintf("%d started · %d completed", u.PromptsStarted, u.PromptsCompleted)},
@@ -190,18 +209,25 @@ func (m *Model) cockpitLifetimeSection() string {
 	if u.RunsActive > 0 {
 		rows = append(rows, [2]string{"active runs", fmt.Sprintf("%d", u.RunsActive)})
 	}
-	return m.cockpitRows("lifetime", rows)
+	return rows
 }
 
-// cockpitRows renders one titled section as aligned label→value rows.
-func (m *Model) cockpitRows(title string, rows [][2]string) string {
-	th := m.th
+// cockpitGutter is the widest label across every section: the shared label
+// column that keeps values aligned from card to card.
+func cockpitGutter(sections []cockpitSection) int {
 	gutter := 0
-	for _, r := range rows {
-		if w := lipgloss.Width(r[0]); w > gutter {
-			gutter = w
+	for _, s := range sections {
+		for _, r := range s.rows {
+			gutter = max(gutter, lipgloss.Width(r[0]))
 		}
 	}
+	return gutter
+}
+
+// cockpitRows renders one titled section as label→value rows, padding every
+// label to the shared gutter.
+func (m *Model) cockpitRows(title string, rows [][2]string, gutter int) string {
+	th := m.th
 	var b strings.Builder
 	b.WriteString(th.statsLabel.Render(title))
 	for _, r := range rows {

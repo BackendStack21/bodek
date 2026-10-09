@@ -35,7 +35,7 @@ func TestWelcomeFitsCellsAndKeepsKeyboardHints(t *testing.T) {
 				t.Errorf("%d: line overflow: %q", width, line)
 			}
 		}
-		if width >= 24 && (!strings.Contains(plain(out), "⇧⏎ newline") || !strings.Contains(plain(out), "^K commands")) {
+		if width >= 24 && (!strings.Contains(plain(out), "⇧⏎ newline") || !strings.Contains(plain(out), "@ attach a file")) {
 			t.Errorf("%d: missing keyboard affordances", width)
 		}
 	}

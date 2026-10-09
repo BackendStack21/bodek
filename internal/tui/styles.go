@@ -55,7 +55,8 @@ var (
 		accentLo: "#FF8A3D",
 		steel:    "#98AAC8",
 		green:    "#34D399",
-		yellow:   "#FBBF24",
+		// Lemon, not amber: warnings must not read as brand accent.
+		yellow:   "#FDE047",
 		red:      "#F87171",
 		text:     "#E7E9EE",
 		muted:    "#A8B0C0",
@@ -79,7 +80,7 @@ var (
 		accentLo: "#8F5E00",
 		steel:    "#536B8B",
 		green:    "#08754F",
-		yellow:   "#924B00",
+		yellow:   "#B54708", // burnt orange — distinct from the olive-amber accent
 		red:      "#C22B2B",
 		text:     "#22252C",
 		muted:    "#5A5F6D",
@@ -98,7 +99,7 @@ var (
 		accentLo: "#FFB224",
 		steel:    "#B8C4E0",
 		green:    "#4ADE80",
-		yellow:   "#FBBF24",
+		yellow:   "#FF9F43", // orange — the accent already owns yellow here
 		red:      "#FF6B6B",
 		text:     "#FFFFFF",
 		muted:    "#C0C0C0",
@@ -245,7 +246,7 @@ func weaveSurface(s, bgSeq string) string {
 // Layout — fixed heights for the chrome around the scrollable transcript.
 const (
 	headerHeight = 2 // cockpit bar + hairline rule
-	inputHeight  = 5 // composer at rest: 3 rows + top/bottom border (grows with content)
+	inputHeight  = 3 // composer at rest: 1 row + top/bottom border (grows with content)
 	footerHeight = 1 // status bar
 )
 
@@ -284,9 +285,11 @@ type theme struct {
 	thinkStyle  lipgloss.Style
 
 	apprBox    lipgloss.Style
+	apprBoxHi  lipgloss.Style // high-risk approvals escalate the border to red
 	apprHead   lipgloss.Style
 	apprBody   lipgloss.Style
 	apprKey    lipgloss.Style
+	apprCode   lipgloss.Style
 	apprUrgent lipgloss.Style
 
 	statusReady lipgloss.Style
@@ -398,9 +401,11 @@ func themeFrom(p palette) theme {
 		thinkStyle:  lipgloss.NewStyle().Foreground(p.bodyText).Italic(true),
 
 		apprBox:    lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(p.yellow).Padding(0, 1),
+		apprBoxHi:  lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(p.red).Padding(0, 1),
 		apprHead:   lipgloss.NewStyle().Foreground(p.yellow).Bold(true),
 		apprBody:   lipgloss.NewStyle().Foreground(p.text),
 		apprKey:    lipgloss.NewStyle().Foreground(p.green).Bold(true),
+		apprCode:   codeValueStyle(p.surface, p.text),
 		apprUrgent: lipgloss.NewStyle().Foreground(p.red).Bold(true),
 
 		statusReady: lipgloss.NewStyle().Foreground(p.green),
@@ -453,6 +458,17 @@ func themeFrom(p palette) theme {
 		diffAdd: lipgloss.NewStyle().Foreground(p.green),
 		diffDel: lipgloss.NewStyle().Foreground(p.red),
 	}
+}
+
+// codeValueStyle paints an approval's command or resource value as code: the
+// input text color on the card surface, so it reads as typed input rather
+// than prose. An empty surface (high-contrast) leaves the background unset.
+func codeValueStyle(bg, fg lipgloss.Color) lipgloss.Style {
+	st := lipgloss.NewStyle().Foreground(fg)
+	if bg != "" {
+		st = st.Background(bg)
+	}
+	return st
 }
 
 // surfaceStyle builds the answer card style; empty means no surface. The

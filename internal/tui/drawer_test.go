@@ -14,7 +14,7 @@ import (
 func TestDrawerRunsTab(t *testing.T) {
 	m := wired(t)
 	// Ten tabs: widen the window so the full tab strip renders (it collapses
-	// behind an ellipsis when it doesn't fit — by design).
+	// to a position readout when it doesn't fit — by design).
 	m.Update(tea.WindowSizeMsg{Width: 240, Height: 30})
 	m.Update(exec(m.openRuns()))
 	if m.panel != panelRuns {
@@ -219,5 +219,36 @@ func TestRunsApprovalsRefresh(t *testing.T) {
 	m.Update(exec(cmd)) // runApprovalsMsg
 	if len(m.runs[0].PendingApprovals) != 1 || m.runs[0].PendingApprovals[0].ID != "ap-1" {
 		t.Fatalf("approvals refresh = %+v, want ap-1", m.runs[0].PendingApprovals)
+	}
+}
+
+// TestDrawerTitleCollapsedStrip guards the drawer title line on narrow
+// terminals: the collapsed tab strip must read as a position ("tab 7/10"),
+// never a bare ellipsis or a repeat of the active tab name beside the title.
+// The full strip still renders when there is room.
+func TestDrawerTitleCollapsedStrip(t *testing.T) {
+	m := newTestModel()
+	m.resize(80, 40)
+	m.runCommandLine("/memory")
+	narrow := plain(m.renderPanel(80, 20))
+	title := strings.SplitN(narrow, "\n", 3)
+	if len(title) < 2 {
+		t.Fatalf("panel has no title line: %q", narrow)
+	}
+	line := title[1]
+	if strings.Contains(line, "…") {
+		t.Errorf("collapsed title has a bare ellipsis: %q", line)
+	}
+	if strings.Contains(line, "7 memory") {
+		t.Errorf("collapsed title repeats the active tab: %q", line)
+	}
+	if !strings.Contains(line, "tab 7/10") {
+		t.Errorf("collapsed title missing position readout: %q", line)
+	}
+
+	m.resize(240, 40)
+	wide := plain(m.renderPanel(240, 20))
+	if !strings.Contains(wide, "7 memory") || strings.Contains(wide, "tab 7/10") {
+		t.Errorf("wide title should render the full strip: %q", wide)
 	}
 }

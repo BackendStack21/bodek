@@ -171,9 +171,16 @@ own front-end settings are separate; see [Configuration](#configuration).
   Missing success metadata stays neutral rather than claiming that a command
   passed.
 - **Streaming answers** rendered as Markdown
-  ([glamour](https://github.com/charmbracelet/glamour)).
-- **Tool activity** — every `tool_call`/`tool_result` shown live with a glyph
-  per tool and a static live mark (`▸`); result bodies wait behind `^E` or a
+  ([glamour](https://github.com/charmbracelet/glamour)). When odek re-asks
+  the model after an answer already streamed (completion check or
+  verification retry, odek ≥ v2.33), the draft folds into a
+  `⋯ draft revised` row (open it with `^E` or inspect + `⏎`) and only the
+  replacement shows as the answer. While odek verifies the answer, the status
+  line reads `verifying answer`; an answer that fails verification carries
+  `✗ unverified` on its turn heading and outcome row.
+- **Tool activity** — every `tool_call`/`tool_result` shown live with one
+  status glyph per step: a static live mark (`▸`) while running, the tool's
+  own glyph once it finishes, `✗` when it fails; result bodies wait behind `^E` or a
   click so a finished step reads as one calm line. An opened step shows its
   invocation before its result, including while the tool is running. Tool
   arguments are retained up to 256 KiB, with an explicit omission marker if
@@ -261,11 +268,11 @@ own front-end settings are separate; see [Configuration](#configuration).
   `--resume`; `--new` still wins). When bodek exits, it prints the exact
   line for the session that was just closed, so one paste brings it back.
 - **Session home** — first-run shows the working directory, the last
-  session title when one exists, and `type a task · ^K`. After `^L`, the
+  session title when one exists, and `⏎ send · ⇧⏎ newline · @ attach a file`, anchored just above the composer. After `^L`, the
   cleared transcript keeps the last prompt and coding receipt so the
   session is still oriented; `/new` returns to the first-run splash. The
   footer leads with a mode pill (`composer` / `approval` / `question` / `jobs` / …).
-- **Auto-fitting composer** — the input box rests at three rows and grows
+- **Auto-fitting composer** — the input box rests at one text row (three with its border) and grows
   with your prompt (multi-line or a single long line, wide-char aware) up to
   twelve rows or what the terminal can spare; `⇧⏎` inserts a newline
   (`ctrl+enter`, `alt+enter`, or `^J` on terminals that cannot tell
@@ -285,7 +292,7 @@ own front-end settings are separate; see [Configuration](#configuration).
   trims, tool execution times) stays silent. Info traces fade after 3s;
   errors, warnings, and disconnect notes autoclose after 10s.
 - **Just-in-time hints** — the first time a state appears (a held prompt,
-  a sub-agent swarm, a tool call), a one-time 💡 tip teaches its key
+  a sub-agent swarm, a tool call), a one-time tip teaches its key
   and dwells 8s (5s longer than info traces), then stays silent for the
   run. Features surface the moment they matter; no keybinding table
   required.
@@ -389,7 +396,7 @@ own front-end settings are separate; see [Configuration](#configuration).
   set the terminal window title (`✓ done — <model>` / `⚠ approval needed —
   <model>`) and ring the bell (`--bel=false` mutes); `--notify` adds OSC 9
   desktop notifications. Fires only on terminal states — never per token.
-- **Sandbox aware** — the header shows `🛡 sandboxed` or `⚠ host access`;
+- **Sandbox aware** — the header shows `◆ sandboxed` or `▲ host access`;
   pass `--sandbox` to run tool calls inside odek's Docker isolation.
 - **Wake turns** — when a background job finishes while the session is
   idle (odek ≥ v1.40), the engine wakes the model on its own; bodek opens

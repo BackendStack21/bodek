@@ -81,7 +81,7 @@ func TestStatsCardIncludesSubagentCost(t *testing.T) {
 func TestCockpitCapRowIncludesSubagentCost(t *testing.T) {
 	m := subCostFixture(t)
 	m.limits.MaxCostUSD = 0.5
-	out := plain(m.cockpitBudgetSection())
+	out := plain(m.cockpitRows("budget", m.cockpitBudgetRows(), 0))
 	if !strings.Contains(out, "$0.0335") || !strings.Contains(out, "$0.50") {
 		t.Errorf("cap row missing sub-agent-inclusive spend:\n%s", out)
 	}

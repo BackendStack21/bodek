@@ -176,10 +176,44 @@ func (m *Model) handleEvent(ev client.Event) (tea.Model, tea.Cmd) {
 		// renders independently (appendReply keeps msg.content in sync).
 		m.ensureWireTurn()
 		if i := m.cur(); i >= 0 {
-			appendReply(&m.msgs[i], sanitize(ev.Content))
+			text := sanitize(ev.Content)
+			// A bulk (non-streamed) final answer that failed strict
+			// verification arrives prefixed with odek's fixed marker; the
+			// turn's ✗ unverified chip carries it instead of the prose.
+			if rest, ok := stripVerifyMarker(text); ok {
+				text = rest
+				m.msgs[i].unverified = true
+			}
+			appendReply(&m.msgs[i], text)
 			m.msgs[i].streaming = true
 		}
 		m.setRunStatus("responding")
+		stream = true
+
+	case "answer_superseded":
+		// The reply streamed since the last tool call was a draft: odek is
+		// re-asking the model and the next reply replaces it. Fold it now
+		// so the turn never shows two answers.
+		if i := m.cur(); i >= 0 {
+			rest := supersedeDraft(&m.msgs[i], collapse(ev.Reason))
+			if m.plain {
+				m.plainDraft += rest
+			}
+			m.invalidateMsgBlock(i)
+		}
+		stream = true
+
+	case "runtime_event":
+		// Only the final-answer verification lifecycle has a surface; other
+		// runtime records (iteration, budget) live in the events tab.
+		if ev.Runtime != nil {
+			switch ev.Runtime.Type {
+			case "verification_started":
+				m.verifying = true
+			case "verification_completed":
+				m.verifying = false
+			}
+		}
 		stream = true
 
 	case "tool_call":
@@ -309,6 +343,9 @@ func (m *Model) handleEvent(ev client.Event) (tea.Model, tea.Cmd) {
 				llmDurMs:      ev.LLMDurationMs,
 			}
 			m.msgs[i].stats = &ts
+			if ev.Verified == "fail" {
+				m.msgs[i].unverified = true
+			}
 			m.turnStats = append(m.turnStats, ts)
 			m.toolTotal += ts.toolCount
 		}
@@ -979,6 +1016,69 @@ func appendReply(msg *message, s string) {
 	msg.items = append(msg.items, turnItem{reply: true, text: s})
 }
 
+// verifyFailedMarker is the fixed header odek puts on a final answer that
+// failed strict verification (or exhausted its corrective cycles).
+const verifyFailedMarker = "[Verification failed — answer returned unverified]"
+
+// stripVerifyMarker removes a leading verification-failed marker, reporting
+// whether one was present.
+func stripVerifyMarker(s string) (string, bool) {
+	if !strings.HasPrefix(s, verifyFailedMarker) {
+		return s, false
+	}
+	return strings.TrimLeft(s[len(verifyFailedMarker):], "\n"), true
+}
+
+// supersedeDraft folds the reply segments streamed since the last tool call
+// into draft items: odek is re-asking the model and the next reply replaces
+// them. msg.content is rebuilt from the surviving replies, so export, copy,
+// and stats carry only the answer. Returns the draft text linear mode had
+// not printed yet, and pulls its cursor back so the replacement prints whole.
+func supersedeDraft(msg *message, reason string) string {
+	start := len(msg.items)
+	for start > 0 && !msg.items[start-1].isStep() {
+		start--
+	}
+	found := false
+	for j := start; j < len(msg.items); j++ {
+		if it := &msg.items[j]; it.reply {
+			it.reply, it.draft, it.draftReason = false, true, reason
+			it.rendered, it.stepIdx = "", -1
+			found = true
+		}
+	}
+	if !found {
+		return ""
+	}
+	old := msg.content
+	var parts []string
+	for _, it := range msg.items {
+		if it.reply {
+			parts = append(parts, it.text)
+		}
+	}
+	msg.content = strings.Join(parts, "\n\n")
+	msg.rendered = ""
+	unprinted := ""
+	if from := max(msg.plainPrinted, len(msg.content)); from < len(old) {
+		unprinted = strings.TrimPrefix(old[from:], "\n\n")
+	}
+	msg.plainPrinted = min(msg.plainPrinted, len(msg.content))
+	return unprinted
+}
+
+// draftReasonLabel names why odek re-asked the model, for the folded row.
+func draftReasonLabel(reason string) string {
+	switch reason {
+	case "completion_nudge":
+		return "completion check"
+	case "verify_retry":
+		return "verification"
+	default:
+		return "re-asked"
+	}
+}
+
 // setTurnMarker closes out a turn with a bold status line ("**Cancelled.**",
 // "**Interrupted:** …", "**Error:** …"): below the existing reply when the
 // turn already produced prose, or as its only reply segment otherwise — the
@@ -1073,6 +1173,7 @@ func (m *Model) applyCtxWindow(ev client.Event) {
 // the swarm verdict (when the turn delegated sub-agents) lands as the turn
 // marker.
 func (m *Model) finalize() {
+	m.verifying = false
 	if i := m.cur(); i >= 0 {
 		m.closeTurn(&m.msgs[i])
 		m.invalidateMsgBlock(i)
