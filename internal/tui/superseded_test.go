@@ -247,3 +247,52 @@ func TestPlainModeSupersededDraft(t *testing.T) {
 		t.Errorf("revision note must follow the draft:\n%s", log)
 	}
 }
+
+// An answer_superseded with no reply since the last tool call (a buffered
+// draft never reached the client) folds nothing and leaves content alone.
+func TestAnswerSupersededWithoutDraftIsNoop(t *testing.T) {
+	m := newTestModel()
+	m.resize(100, 30)
+	busyTurn(m)
+	m.handleEvent(client.Event{Type: "token", Content: "note"})
+	m.handleEvent(client.Event{Type: "tool_call", Name: "shell", Data: `{"command":"ls"}`})
+	m.handleEvent(client.Event{Type: "answer_superseded", Reason: "verify_retry"})
+	msg := m.msgs[m.cur()]
+	if _, d := itemKinds(msg); d != 0 || msg.content != "note" {
+		t.Fatalf("drafts=%d content=%q; want no fold before the tool call", d, msg.content)
+	}
+}
+
+// Unknown reasons still read as a revision rather than an empty label.
+func TestDraftReasonLabelFallback(t *testing.T) {
+	if got := draftReasonLabel("future_reason"); got != "re-asked" {
+		t.Fatalf("label = %q, want re-asked", got)
+	}
+}
+
+// A selected but folded draft teaches Enter, and an opened draft becomes
+// the copy span for alt+y.
+func TestDraftSelectedHintAndCopySpan(t *testing.T) {
+	m := newTestModel()
+	m.resize(100, 30)
+	draftTurn(m, "completion_nudge")
+	m.handleEvent(client.Event{Type: "done"})
+	i := len(m.msgs) - 1
+	j := -1
+	for k, it := range m.msgs[i].items {
+		if it.draft {
+			j = k
+		}
+	}
+	m.inspect = &inspectTarget{msgIdx: i, stepIdx: -1, itemIdx: j}
+	if got := plain(m.renderDraft(m.msgs[i].items[j], j, i)); !strings.Contains(got, "› ⋯ draft revised") || !strings.Contains(got, "Enter expand") {
+		t.Fatalf("selected folded draft = %q", got)
+	}
+	m.inspect = nil
+	m.msgs[i].items[j].open = true
+	m.focusIdx = i
+	span := m.currentCopySpan()
+	if !span.set || span.kind != copyThink || span.idx != j {
+		t.Fatalf("copy span = %+v, want the open draft", span)
+	}
+}

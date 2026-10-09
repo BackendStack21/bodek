@@ -5,6 +5,7 @@ import (
 	"math"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/BackendStack21/bodek/internal/client"
 	"github.com/charmbracelet/lipgloss"
@@ -187,5 +188,25 @@ func TestHighRiskApprovalBorderIsRed(t *testing.T) {
 	}
 	if strings.Contains(border("shell_exec"), red) {
 		t.Errorf("shell_exec border escalated to red: %q", border("shell_exec"))
+	}
+}
+
+// Help rows keep a usable description column on very narrow cards.
+func TestHelpRowLinesNarrowFloor(t *testing.T) {
+	m := newTestModel()
+	lines := helpRowLines(m.th, [2]string{"^K", "command palette with a long description"}, 10)
+	if len(lines) < 2 {
+		t.Fatalf("narrow help row did not wrap: %q", lines)
+	}
+}
+
+// The cockpit's session block trails the start time when it is known.
+func TestCockpitSessionStartLine(t *testing.T) {
+	m := newTestModel()
+	m.resize(100, 34)
+	m.odekVersion = "v2.33.3" // a row, so the block renders past its empty state
+	m.sessionStart = time.Now().Add(-3 * time.Minute)
+	if got := plain(m.sessionBlock(true, 12)); !strings.Contains(got, "started ") {
+		t.Fatalf("cockpit session block lacks start time:\n%s", got)
 	}
 }
