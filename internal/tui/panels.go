@@ -60,6 +60,8 @@ const (
 	confirmStopJob
 	confirmQueueDelete
 	confirmQuit
+	confirmEpisodePromote
+	confirmEpisodeDiscard
 )
 
 // handleConfirmKey resolves an armed delete: y fires it against the
@@ -75,6 +77,10 @@ func (m *Model) handleConfirmKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, m.deleteSelected()
 		case confirmFactDelete:
 			return m, m.memDeleteSelected()
+		case confirmEpisodePromote:
+			return m, m.memPromoteSelected()
+		case confirmEpisodeDiscard:
+			return m, m.memDiscardSelected()
 		case confirmClear:
 			return m, tea.Batch(m.clearConversation(), m.transientNoteCmd("conversation cleared"))
 		case confirmCancel:
@@ -134,6 +140,10 @@ func (m *Model) armConfirm(kind confirmKind, what string) tea.Cmd {
 		verb = "cancel "
 	case confirmStopAgent, confirmStopJob:
 		verb = "stop "
+	case confirmEpisodePromote:
+		verb = "promote "
+	case confirmEpisodeDiscard:
+		verb = "discard "
 	case confirmQuit:
 		verb = "quit "
 	}
@@ -433,6 +443,9 @@ func (m *Model) handlePanelKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			if r := m.memSelected(); r != nil && r.kind != "episode" {
 				return m, m.armConfirm(confirmFactDelete, r.kind+" fact")
 			}
+			if r := m.memSelected(); r != nil && r.kind == "episode" {
+				return m, m.armConfirm(confirmEpisodeDiscard, "pending episode")
+			}
 			return m, nil
 		}
 		if m.panel == panelConfig {
@@ -476,7 +489,21 @@ func (m *Model) handlePanelKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, m.refreshSelectedRunApprovals()
 		}
 		if m.panel == panelMemory {
-			return m, m.memPromoteSelected()
+			// Promotion turns a tainted episode into trusted context replayed
+			// into future sessions — the security-relevant direction, so the
+			// gate names what the human is vouching for. Hash-less rows
+			// (episode file unreadable server-side) never reach the gate.
+			if r := m.memSelected(); r != nil && r.kind == "episode" {
+				if r.summarySHA256 == "" {
+					m.panelMsg = "cannot promote: episode text unreadable"
+					m.refresh()
+					return m, nil
+				}
+				return m, m.armConfirm(confirmEpisodePromote, fmt.Sprintf(
+					"episode (%d chars · sources: %s · hash %s)",
+					len(r.text), strings.Join(r.sources, ", "), shortHash(r.summarySHA256)))
+			}
+			return m, nil
 		}
 		if m.panel == panelSkills {
 			return m, m.skillPromote(false)
@@ -1467,6 +1494,14 @@ func shortID(id string) string {
 		return id[:17] + "…"
 	}
 	return id
+}
+
+// shortHash trims a hex hash to its first 12 characters.
+func shortHash(h string) string {
+	if len(h) > 12 {
+		return h[:12]
+	}
+	return h
 }
 
 // ago renders a coarse relative time.

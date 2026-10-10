@@ -4,8 +4,10 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
 )
 
@@ -15,8 +17,8 @@ import (
 // the pending-review episode queue (tainted episodes never auto-replay).
 type MemoryView struct {
 	Facts map[string][]string `json:"facts"`
-	// Episodes.Pending entries carry the stored episode; the promote action
-	// only needs the session id.
+	// Episodes.Pending entries carry the full stored episode text plus the
+	// raw-text hash the v2.34.0 promote contract requires.
 	Episodes struct {
 		Total   int              `json:"total"`
 		Pending []PendingEpisode `json:"pending"`
@@ -25,8 +27,33 @@ type MemoryView struct {
 
 // PendingEpisode is one tainted episode awaiting human promotion.
 type PendingEpisode struct {
-	SessionID string `json:"session_id"`
-	Summary   string `json:"summary"`
+	SessionID     string `json:"session_id"`
+	Summary       string `json:"summary"`
+	SummarySHA256 string `json:"summary_sha256"` // omitted when the episode file could not be read
+	Turns         int    `json:"turns"`
+	CreatedAt     string `json:"created_at"`
+	Provenance    struct {
+		Sources []string `json:"sources"`
+	} `json:"provenance"`
+}
+
+// PromoteResult is the 200 body of a successful episode promotion.
+type PromoteResult struct {
+	SessionID string   `json:"session_id"`
+	Summary   string   `json:"summary"`
+	Sources   []string `json:"sources"`
+}
+
+// PromoteError is a failed promotion carrying the HTTP status and the
+// server's response text, so callers can tell a 409 (the stored text
+// changed since it was listed) from other 4xx/5xx failures.
+type PromoteError struct {
+	Status  int
+	Message string
+}
+
+func (e *PromoteError) Error() string {
+	return fmt.Sprintf("promote: status %d: %s", e.Status, e.Message)
 }
 
 // Memory fetches the memory view.
@@ -68,8 +95,36 @@ func (c *Client) DeleteMemoryFact(target, oldText string) error {
 }
 
 // PromoteEpisode promotes a tainted episode to recallable (the human gate).
-func (c *Client) PromoteEpisode(sessionID string) error {
-	return c.postAction("/api/memory/episodes/promote", map[string]string{"session_id": sessionID})
+// The v2.34.0 contract requires the raw-text hash; an empty hash refuses
+// locally without a request. 409 means the stored text changed since it was
+// listed; other failures surface as *PromoteError.
+func (c *Client) PromoteEpisode(sessionID, summarySHA string) (PromoteResult, error) {
+	if summarySHA == "" {
+		return PromoteResult{}, fmt.Errorf("promote: summary_sha256 required (episode text unreadable)")
+	}
+	payload, err := json.Marshal(map[string]string{"session_id": sessionID, "summary_sha256": summarySHA})
+	if err != nil {
+		return PromoteResult{}, err
+	}
+	resp, err := c.postJSON(c.baseURL+"/api/memory/episodes/promote", "", payload)
+	if err != nil {
+		return PromoteResult{}, err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if resp.StatusCode != http.StatusOK {
+		return PromoteResult{}, &PromoteError{Status: resp.StatusCode, Message: strings.TrimSpace(string(body))}
+	}
+	var out PromoteResult
+	if err := json.Unmarshal(body, &out); err != nil {
+		return PromoteResult{}, fmt.Errorf("promote: decode response: %w", err)
+	}
+	return out, nil
+}
+
+// DiscardEpisode drops a tainted episode without promoting it (v2.34.0).
+func (c *Client) DiscardEpisode(sessionID string) error {
+	return c.postAction("/api/memory/episodes/discard", map[string]string{"session_id": sessionID})
 }
 
 // ConsolidateMemory merges similar facts through the LLM.

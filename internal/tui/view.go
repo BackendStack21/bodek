@@ -2049,6 +2049,20 @@ func (m *Model) footerContent() string {
 				th.footer.Render("any other key cancels"),
 			)
 		}
+		if m.confirm == confirmEpisodePromote {
+			return m.panelFooter(
+				th.footerDanger.Render("promote this tainted episode into recallable context?"),
+				th.footerKey.Render("y")+th.footerDanger.Render(" promote"),
+				th.footer.Render("any other key cancels"),
+			)
+		}
+		if m.confirm == confirmEpisodeDiscard {
+			return m.panelFooter(
+				th.footerDanger.Render("discard this pending episode?"),
+				th.footerKey.Render("y")+th.footerDanger.Render(" discard"),
+				th.footer.Render("any other key cancels"),
+			)
+		}
 		if m.panelDetail {
 			return m.panelFooter(
 				th.footer.Render("↑↓ scroll"),

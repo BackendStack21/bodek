@@ -34,7 +34,8 @@ update it when either side changes.
 | `GET /api/memory` | `Memory` | memory tab |
 | `POST /api/memory/facts` | `AddMemoryFact` | memory tab (`a` user, `A` env) |
 | `DELETE /api/memory/facts` | `DeleteMemoryFact` | memory tab (`d` → `y` confirm gate) |
-| `POST /api/memory/episodes/promote` | `PromoteEpisode` | memory tab (`p`) |
+| `POST /api/memory/episodes/promote` | `PromoteEpisode` | memory tab (`p` → `y` confirm gate naming taint sources, summary length and hash prefix; odek ≥ v2.34.0: body carries `session_id` + required `summary_sha256`, 200 returns `{session_id, summary, sources}`, 409 reloads for re-review, hash-less rows are un-promotable) |
+| `POST /api/memory/episodes/discard` | `DiscardEpisode` | memory tab (`x` → `y` confirm gate; odek ≥ v2.34.0) |
 | `POST /api/memory/consolidate` | `ConsolidateMemory` | memory tab (`c` user, `E` env) |
 | `GET /api/skills` | `Skills` | skills tab (provenance badges) |
 | `POST /api/skills/promote` | `PromoteSkill` | skills tab (`p`, `P` force) |
