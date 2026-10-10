@@ -29,6 +29,9 @@ type standInObs struct {
 	factDeletes    int
 	lastEventRunID string
 	prompts        int // POST /api/prompt (headless runs)
+	promotes       int // POST /api/memory/episodes/promote
+	promoteStatus  int // when non-zero, the promote reply status (0 = 200 OK)
+	discards       int // POST /api/memory/episodes/discard
 }
 
 var standInSaw standInObs
@@ -179,7 +182,9 @@ func standIn(t *testing.T, token string) *Model {
 		json.NewEncoder(w).Encode(map[string]any{
 			"facts": map[string][]string{"user": {"prefers vim"}, "env": {"go 1.25"}},
 			"episodes": map[string]any{"total": 2, "pending": []map[string]any{
-				{"session_id": "s1", "summary": "fixed the login bug"},
+				{"session_id": "s1", "summary": "fixed the login bug", "summary_sha256": "deadbeef01",
+					"turns": 3, "created_at": "2026-10-10T08:00:00Z",
+					"provenance": map[string]any{"sources": []string{"browser"}}},
 			}},
 		})
 	}))
@@ -190,7 +195,20 @@ func standIn(t *testing.T, token string) *Model {
 		w.WriteHeader(http.StatusOK)
 	}))
 	mux.HandleFunc("/api/memory/episodes/promote", guard(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
+		standInSaw.promotes++
+		if standInSaw.promoteStatus != 0 {
+			w.WriteHeader(standInSaw.promoteStatus)
+			w.Write([]byte("summary changed since listing"))
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{
+			"session_id": "s1", "summary": "fixed the login bug", "sources": []string{"browser"},
+		})
+	}))
+	mux.HandleFunc("/api/memory/episodes/discard", guard(func(w http.ResponseWriter, r *http.Request) {
+		standInSaw.discards++
+		w.WriteHeader(http.StatusNoContent)
 	}))
 	mux.HandleFunc("/api/memory/consolidate", guard(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)

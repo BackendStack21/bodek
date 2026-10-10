@@ -2,7 +2,9 @@ package tui
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
+	"net/http"
 	"sort"
 	"strings"
 
@@ -36,9 +38,11 @@ type mgmtMsg struct {
 
 // memRow is one selectable memory row.
 type memRow struct {
-	kind      string // "user" | "env" | "episode"
-	text      string
-	sessionID string // episodes: promote target
+	kind          string // "user" | "env" | "episode"
+	text          string
+	sessionID     string   // episodes: promote target
+	summarySHA256 string   // episodes: raw-text hash ("" = unreadable, cannot promote)
+	sources       []string // episodes: taint sources
 }
 
 // toolRow is one selectable tools/config row.
@@ -205,6 +209,7 @@ func (m *Model) handleMgmtMsg(msg mgmtMsg) {
 		}
 		m.memView = msg.mem
 		m.memRows = buildMemRows(msg.mem)
+		m.pendingMemReload = false // a fresh listing supersedes any stale-row failure
 		m.panelSel = anchorRow(m.panelSel, m.memRows, sel)
 		if len(m.memRows) == 0 {
 			m.panelMsg = "no facts or pending episodes"
@@ -305,7 +310,8 @@ func buildMemRows(v client.MemoryView) []memRow {
 		}
 	}
 	for _, e := range v.Episodes.Pending {
-		rows = append(rows, memRow{kind: "episode", text: e.Summary, sessionID: e.SessionID})
+		rows = append(rows, memRow{kind: "episode", text: e.Summary, sessionID: e.SessionID,
+			summarySHA256: e.SummarySHA256, sources: e.Provenance.Sources})
 	}
 	return rows
 }
@@ -461,9 +467,69 @@ func (m *Model) memPromoteSelected() tea.Cmd {
 	if r == nil || r.kind != "episode" {
 		return nil
 	}
+	if r.summarySHA256 == "" {
+		m.panelMsg = "cannot promote: episode text unreadable"
+		m.refresh()
+		return nil
+	}
+	cl := m.cl
+	sid, hash := r.sessionID, r.summarySHA256
+	return func() tea.Msg {
+		res, err := cl.PromoteEpisode(sid, hash)
+		return mgmtPromoteMsg{tab: panelMemory, res: res, err: err}
+	}
+}
+
+// memDiscardSelected drops the selected tainted episode without promoting.
+func (m *Model) memDiscardSelected() tea.Cmd {
+	r := m.memSelected()
+	if r == nil || r.kind != "episode" {
+		return nil
+	}
 	cl := m.cl
 	sid := r.sessionID
-	return func() tea.Msg { return mgmtActionMsg{tab: panelMemory, err: cl.PromoteEpisode(sid)} }
+	return func() tea.Msg { return mgmtActionMsg{tab: panelMemory, err: cl.DiscardEpisode(sid)} }
+}
+
+// mgmtPromoteMsg reports an episode-promotion outcome. Promotion has its
+// own message because the v2.34.0 failures are typed: a 409 means the
+// stored text changed since it was listed, so the row must be refetched
+// and re-reviewed rather than retried blindly.
+type mgmtPromoteMsg struct {
+	tab panelMode
+	res client.PromoteResult
+	err error
+}
+
+// afterMgmtPromote surfaces the promote outcome. 409 (or any other 4xx,
+// where the row is likely stale) refetches; 5xx and network errors keep
+// the row so the user can retry.
+func (m *Model) afterMgmtPromote(msg mgmtPromoteMsg) tea.Cmd {
+	if msg.err == nil {
+		srcs := "none"
+		if len(msg.res.Sources) > 0 {
+			srcs = strings.Join(msg.res.Sources, ", ")
+		}
+		note := fmt.Sprintf("episode promoted (%d chars, sources: %s)", len(msg.res.Summary), srcs)
+		m.pendingMemReload = false
+		cmd := m.openMemory()
+		m.panelMsg = note // openMemory resets the line; the outcome outlives it
+		return cmd
+	}
+	var pe *client.PromoteError
+	if errors.As(msg.err, &pe) && pe.Status >= 400 && pe.Status < 500 {
+		n := "promote failed: " + pe.Message
+		if pe.Status == http.StatusConflict {
+			n = "summary changed since you reviewed it — reloaded, review again"
+		}
+		m.pendingMemReload = true
+		cmd := m.openMemory()
+		m.panelMsg = n // openMemory resets the line; the outcome outlives it
+		return cmd
+	}
+	m.panelMsg = "promote failed: " + msg.err.Error()
+	m.pendingMemReload = false
+	return nil
 }
 
 func (m *Model) memConsolidate(target string) tea.Cmd {
@@ -549,6 +615,9 @@ func (m *Model) memRowsRender(w int) []string {
 		detail := "  fact · " + r.kind
 		if r.kind == "episode" {
 			detail = "  ⏳ pending episode · " + shortID(r.sessionID)
+			if r.summarySHA256 == "" {
+				detail += " · text unreadable — cannot promote"
+			}
 		}
 		budget := w - 2 - lipgloss.Width(detail)
 		prefix, lab := "  ", th.acItem.Render(truncate(label, budget))
@@ -866,6 +935,16 @@ func (m *Model) mgmtDetailLines(w int) []string {
 		if r.kind == "episode" {
 			out = append(out, th.acSel.Render("› pending episode"))
 			out = append(out, th.acDetail.Render("session "+sanitize(r.sessionID)))
+			meta := []string{"hash " + sanitize(shortHash(r.summarySHA256))}
+			if len(r.sources) > 0 {
+				meta = append(meta, "sources: "+sanitize(strings.Join(r.sources, ", ")))
+			} else {
+				meta = append(meta, "sources: none")
+			}
+			out = append(out, th.acDetail.Render(strings.Join(meta, " · ")))
+			if r.summarySHA256 == "" {
+				out = append(out, th.acDim.Render("cannot promote: episode text unreadable"))
+			}
 		} else {
 			out = append(out, th.acSel.Render("› "+sanitize(r.kind)+" fact"))
 		}

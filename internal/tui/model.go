@@ -349,15 +349,16 @@ type Model struct {
 	evRunFilter     string // events tab: drill-in — the ring of one run (wins over session)
 
 	// Management tab state (memory / skills / tools / config).
-	memView     client.MemoryView
-	memRows     []memRow
-	memTarget   string // add-fact editor target ("user" | "env")
-	skills      []client.Skill
-	toolRows    []toolRow
-	mcpJump     bool   // a /mcp invocation armed a one-shot focus
-	mcpFocus    string // /mcp <name> focus target, consumed on fetch
-	cfgRows     []cfgRow
-	shutdownReq bool // shutdown sent — the socket drop is expected, not a failure
+	memView          client.MemoryView
+	memRows          []memRow
+	pendingMemReload bool   // a stale-row promote failure scheduled a refetch
+	memTarget        string // add-fact editor target ("user" | "env")
+	skills           []client.Skill
+	toolRows         []toolRow
+	mcpJump          bool   // a /mcp invocation armed a one-shot focus
+	mcpFocus         string // /mcp <name> focus target, consumed on fetch
+	cfgRows          []cfgRow
+	shutdownReq      bool // shutdown sent — the socket drop is expected, not a failure
 
 	// Cockpit live snapshots (one-shot fetch on open).
 	healthSnap *client.Health
@@ -813,6 +814,12 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case mgmtActionMsg:
 		if m.panel == msg.tab {
 			return m, m.afterMgmtAction(msg)
+		}
+		return m, nil
+
+	case mgmtPromoteMsg:
+		if m.panel == msg.tab {
+			return m, m.afterMgmtPromote(msg)
 		}
 		return m, nil
 
