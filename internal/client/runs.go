@@ -3,6 +3,7 @@ package client
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"time"
@@ -108,7 +109,7 @@ func (c *Client) StartRun(content string, opts RunOpts) (Run, error) {
 		SessionID string `json:"session_id"`
 		Status    string `json:"status"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&started); err != nil {
+	if err := json.NewDecoder(io.LimitReader(resp.Body, maxJSONBytes)).Decode(&started); err != nil {
 		return Run{}, err
 	}
 	return Run{ID: started.RunID, SessionID: started.SessionID, Status: started.Status}, nil

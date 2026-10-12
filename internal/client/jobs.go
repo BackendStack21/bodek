@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"time"
@@ -63,7 +64,7 @@ func (c *Client) Jobs(sessionID, token string) ([]Job, error) {
 		return nil, fmt.Errorf("jobs: status %s", resp.Status)
 	}
 	var env jobsEnvelope
-	if err := json.NewDecoder(resp.Body).Decode(&env); err != nil {
+	if err := json.NewDecoder(io.LimitReader(resp.Body, maxJSONBytes)).Decode(&env); err != nil {
 		return nil, err
 	}
 	return env.Jobs, nil
@@ -86,7 +87,7 @@ func (c *Client) JobOutput(sessionID, token, jobID string, since int) (JobOutput
 	case resp.StatusCode != http.StatusOK:
 		return out, fmt.Errorf("job output: status %s", resp.Status)
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+	if err := json.NewDecoder(io.LimitReader(resp.Body, maxJSONBytes)).Decode(&out); err != nil {
 		return out, err
 	}
 	return out, nil
@@ -127,7 +128,7 @@ func (c *Client) StopJob(sessionID, token, jobID string) (string, error) {
 	var body struct {
 		Status string `json:"status"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+	if err := json.NewDecoder(io.LimitReader(resp.Body, maxJSONBytes)).Decode(&body); err != nil {
 		return "", err
 	}
 	return body.Status, nil

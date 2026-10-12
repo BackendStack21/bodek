@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 )
@@ -65,7 +66,7 @@ func (c *Client) SessionPlan(sessionID, sessionToken string) (PlanSnapshot, erro
 		return PlanSnapshot{}, fmt.Errorf("session plan: status %s", resp.Status)
 	}
 	var out PlanSnapshot
-	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+	if err := json.NewDecoder(io.LimitReader(resp.Body, maxJSONBytes)).Decode(&out); err != nil {
 		return PlanSnapshot{}, fmt.Errorf("session plan: %w", err)
 	}
 	return out, nil

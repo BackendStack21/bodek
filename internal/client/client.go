@@ -11,6 +11,7 @@ import (
 	"crypto/tls"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"net/url"
@@ -399,7 +400,7 @@ func (c *Client) Resources(query string, limit int) ([]Resource, error) {
 		return nil, fmt.Errorf("resources: status %s", resp.Status)
 	}
 	var out []Resource
-	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+	if err := json.NewDecoder(io.LimitReader(resp.Body, maxJSONBytes)).Decode(&out); err != nil {
 		return nil, err
 	}
 	return out, nil
