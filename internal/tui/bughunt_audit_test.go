@@ -156,6 +156,27 @@ func TestApprovalSweepSingleChain(t *testing.T) {
 	}
 }
 
+// A jobs snapshot fetched for the previous session must not baseline the
+// current one.
+func TestJobsSnapshotFromOldSessionDropped(t *testing.T) {
+	m := newTestModel()
+	m.sessionID = "new"
+	m.Update(jobsFetchedMsg{sid: "old", jobs: []client.Job{{ID: "j-old"}}})
+	if len(m.jobs) != 0 {
+		t.Fatalf("stale jobs adopted: %+v", m.jobs)
+	}
+}
+
+// A late plan 404 for a session we left must not disable the plan surface.
+func TestPlanErrorFromOldSessionIgnored(t *testing.T) {
+	m := newTestModel()
+	m.sessionID = "new"
+	m.handlePlanMsg(planMsg{want: "old", err: client.ErrPlanUnavailable})
+	if m.planAvail == planUnavailable {
+		t.Fatal("old session's 404 disabled the plan surface")
+	}
+}
+
 // A memory refresh that drops the confirmed fact must disarm the gate.
 func TestFactDeleteDisarmsWhenRowVanishes(t *testing.T) {
 	m := newTestModel()

@@ -803,6 +803,11 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.handleJobsTick(msg)
 
 	case jobsFetchedMsg:
+		if msg.sid != "" && msg.sid != m.sessionID {
+			// In flight across a switch/resume: the previous session's jobs
+			// must not become this session's baseline. Keep the chain alive.
+			return m, m.rearmJobs()
+		}
 		attn := m.applyJobs(msg.jobs, msg.err)
 		m.refresh()
 		return m, tea.Batch(m.rearmJobs(), m.noticeSweep(), attn)
