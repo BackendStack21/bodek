@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textarea"
@@ -1592,7 +1593,9 @@ func (m *Model) staleAge() string {
 // Tabs are kept — copied prose (Makefiles, gofmt output) must paste intact;
 // display paths expand them where cell math happens (truncate, clampLines).
 func sanitize(s string) string {
-	if !strings.ContainsFunc(s, needsSanitize) {
+	// Invalid UTF-8 takes the slow path too: a lone 0x9b/0x9d byte is an
+	// 8-bit CSI/OSC to some emulators; ranging rewrites it as U+FFFD.
+	if !strings.ContainsFunc(s, needsSanitize) && utf8.ValidString(s) {
 		return s
 	}
 	var b strings.Builder
@@ -1638,6 +1641,14 @@ func isInvisible(r rune) bool {
 	case r >= 0x2066 && r <= 0x2069: // bidi isolates
 		return true
 	case r == 0xfeff: // BOM / zero-width no-break space
+		return true
+	case r == 0x061c, r == 0x180e: // Arabic letter mark, Mongolian vowel separator
+		return true
+	case r >= 0x2061 && r <= 0x2064: // invisible math operators
+		return true
+	case r >= 0xfff9 && r <= 0xfffb: // interlinear annotation controls
+		return true
+	case r >= 0xe0000 && r <= 0xe007f: // tag characters (hidden payload)
 		return true
 	}
 	return false

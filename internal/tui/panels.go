@@ -859,7 +859,7 @@ func (m *Model) exportSelected(format string) tea.Cmd {
 // overwriting: an existing file gets a -1, -2… suffix. 0600 — transcripts
 // can carry sensitive tool output, matching the tokens store standard.
 func writeExport(dir, id, format string, data []byte) (string, error) {
-	base := fmt.Sprintf("bodek-%s-%s", shortID(id), time.Now().Format("20060102-150405"))
+	base := fmt.Sprintf("bodek-%s-%s", fileSafeID(id), time.Now().Format("20060102-150405"))
 	for i := 0; i < 1000; i++ { // O_EXCL: never a racing truncating overwrite
 		suffix := ""
 		if i > 0 {
@@ -1356,7 +1356,7 @@ func (m *Model) renderPanel(w, h int) string {
 		body += "\n" + th.acSel.Render(prompt+": "+collapse(m.panelDraft)+"▏")
 	}
 	if m.panelMsg != "" {
-		body += "\n" + th.acDim.Render(m.panelMsg)
+		body += "\n" + th.acDim.Render(sanitize(m.panelMsg)) // may quote server bodies
 	}
 	if m.panel == panelStats {
 		body += "\n" + m.statsBody()
@@ -1490,10 +1490,23 @@ func windowRows(rows []string, sel, n int) []string {
 
 // shortID trims a session ID for display.
 func shortID(id string) string {
-	if len(id) > 17 {
-		return id[:17] + "…"
+	// Ids come off the wire: strip escapes and cut on a rune boundary.
+	id = collapse(id)
+	if r := []rune(id); len(r) > 17 {
+		return string(r[:17]) + "…"
 	}
 	return id
+}
+
+// fileSafeID maps a wire id to a filename fragment: anything outside
+// [A-Za-z0-9._-] becomes '_', so a hostile id cannot add path separators.
+func fileSafeID(id string) string {
+	return strings.Map(func(r rune) rune {
+		if validSessionID(string(r)) {
+			return r
+		}
+		return '_'
+	}, shortID(id))
 }
 
 // shortHash trims a hex hash to its first 12 characters.
