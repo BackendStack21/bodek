@@ -301,3 +301,65 @@ func TestSessionDeletedDisarmsGateOnRemovedRow(t *testing.T) {
 		t.Fatal("gate slid onto the neighbouring session")
 	}
 }
+
+// The startup resume must land before any queued or new prompt sends.
+func TestStartupResumeHoldsQueue(t *testing.T) {
+	m := newTestModel()
+	m.queue = []string{"held"}
+	m.resumeInFlight = true
+	if m.sendQueued() != nil || len(m.queue) != 1 {
+		t.Fatal("queue drained before the startup resume landed")
+	}
+	m.ta.SetValue("typed now")
+	m.Update(key("enter"))
+	if m.busy || len(m.queue) != 2 {
+		t.Fatalf("submit sent while resume in flight (busy=%v queue=%v)", m.busy, m.queue)
+	}
+	m.handleSessionDetail(sessionDetailMsg{sess: client.Session{ID: "s1"}, token: "t"})
+	if m.resumeInFlight {
+		t.Fatal("resume outcome did not release the hold")
+	}
+	if m.sessionID != "s1" {
+		t.Fatalf("resume was refused: sessionID=%q", m.sessionID)
+	}
+}
+
+// /new during a slow startup resume: the late reply must not adopt the
+// abandoned session, and /queue Enter must not send while a resume is held.
+func TestStaleResumeAfterNewIsDropped(t *testing.T) {
+	m := newTestModel()
+	m.resumeInFlight = true
+	stale := sessionDetailMsg{sess: client.Session{ID: "old"}, token: "t", gen: m.resumeGen}
+	_ = m.startFreshSession()
+	if m.resumeInFlight {
+		t.Fatal("/new left the startup resume hold set")
+	}
+	m.handleSessionDetail(stale)
+	if m.sessionID == "old" {
+		t.Fatal("a resume fetched before /new adopted the abandoned session")
+	}
+}
+
+func TestQueuePanelSendHeldDuringResume(t *testing.T) {
+	m := newTestModel()
+	m.queue = []string{"held"}
+	m.resumeInFlight = true
+	m.panel = panelQueue
+	_ = m.queueSendSelected()
+	if len(m.queue) != 1 || m.busy {
+		t.Fatal("/queue Enter sent while the startup resume was in flight")
+	}
+}
+
+// An explicit ^R pick supersedes the startup resume still in flight.
+func TestExplicitResumeSupersedesStartupResume(t *testing.T) {
+	m := newTestModel()
+	m.resumeInFlight = true
+	startup := sessionDetailMsg{sess: client.Session{ID: "startup"}, token: "t", gen: m.resumeGen}
+	_ = m.resumeSession("picked")
+	m.handleSessionDetail(sessionDetailMsg{sess: client.Session{ID: "picked"}, token: "t", gen: m.resumeGen})
+	m.handleSessionDetail(startup)
+	if m.sessionID != "picked" {
+		t.Fatalf("late startup resume replaced the operator's pick: %q", m.sessionID)
+	}
+}

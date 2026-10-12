@@ -479,7 +479,7 @@ func (m *Model) submit() tea.Cmd {
 		m.refresh()
 		return m.noticeSweep()
 	}
-	if m.busy {
+	if m.busy || m.resumeInFlight {
 		if m.status == "cancelling" {
 			// cancelRun handed the queue back to the input so it would
 			// not fire into the cancelled session. Re-queueing here
@@ -499,6 +499,9 @@ func (m *Model) submit() tea.Cmd {
 		m.refresh()
 		m.vp.GotoBottom() // Enter means "show me the latest", even mid-turn
 		m.teach(hintQueue, "tip: ^Q manages the queue · /queue opens the full panel")
+		if !m.busy {
+			return m.transientNoteCmd("queued — it sends once the session resumes")
+		}
 		return m.transientNoteCmd("queued — it sends when the turn ends")
 	}
 	m.ta.Reset()
@@ -587,7 +590,7 @@ func (m *Model) sendPrompt(text string) tea.Cmd {
 // sendQueued pops the oldest queued prompt and sends it when the model is
 // idle and connected; otherwise it is a no-op (nil cmd).
 func (m *Model) sendQueued() tea.Cmd {
-	if m.busy || m.disconn || len(m.queue) == 0 {
+	if m.busy || m.disconn || m.resumeInFlight || len(m.queue) == 0 {
 		return nil
 	}
 	text := m.queue[0]
@@ -618,7 +621,7 @@ func (m *Model) retryLast() tea.Cmd {
 	if m.lastPrompt == "" {
 		return m.transientNoteCmd("nothing to retry yet — send a prompt first")
 	}
-	if m.busy {
+	if m.busy || m.resumeInFlight {
 		if m.status == "cancelling" {
 			return m.transientNoteCmd("cancelling — retry stays off the queue")
 		}

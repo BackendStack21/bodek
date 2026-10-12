@@ -192,6 +192,7 @@ type sessionDetailMsg struct {
 	sess  client.Session
 	token string
 	err   error
+	gen   int // resumeGen when the fetch was issued
 }
 
 type sessionDeletedMsg struct {
@@ -774,11 +775,14 @@ func (m *Model) panelSelect() tea.Cmd {
 func (m *Model) resumeSession(id string) tea.Cmd {
 	m.panelMsg = "loading session…"
 	m.refresh()
-	cl := m.cl
+	// An explicit pick supersedes a startup resume still in flight: its
+	// late reply must not replace the session the operator chose.
+	m.resumeGen++
+	cl, gen := m.cl, m.resumeGen
 	token := m.tokens.Get(id)
 	return func() tea.Msg {
 		sess, eff, err := cl.SessionDetail(id, token)
-		return sessionDetailMsg{sess: sess, token: eff, err: err}
+		return sessionDetailMsg{sess: sess, token: eff, err: err, gen: gen}
 	}
 }
 
@@ -1062,11 +1066,15 @@ func (m *Model) handleLimitsMsg(msg limitsMsg) {
 }
 
 func (m *Model) handleSessionDetail(msg sessionDetailMsg) tea.Cmd {
+	if msg.gen != m.resumeGen {
+		return nil // fetched before /new: the operator abandoned that session
+	}
+	m.resumeInFlight = false // every outcome releases the held queue
 	if msg.err != nil {
 		if m.panel != panelNone {
 			m.panelMsg = "error: " + msg.err.Error()
 		}
-		return m.transientNoteCmd("resume failed — /new or ^R")
+		return tea.Batch(m.transientNoteCmd("resume failed — /new or ^R"), m.sendQueued())
 	}
 	// The running turn's remaining frames would stream into whatever
 	// replayed message sits at curIdx — never swap transcripts under it.

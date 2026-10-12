@@ -110,11 +110,15 @@ func (m *Model) resumeLast() tea.Cmd {
 		return nil
 	}
 	m.pendingResume = ""
-	cl := m.cl
+	// The connect-time session frame usually beats this round trip, and
+	// its batch drains the queue: a prompt sent now would make the turn
+	// busy and the resume would be refused. Hold sends until it lands.
+	m.resumeInFlight = true
+	cl, gen := m.cl, m.resumeGen
 	token := m.tokens.Get(id)
 	return func() tea.Msg {
 		sess, eff, err := cl.SessionDetail(id, token)
-		return sessionDetailMsg{sess: sess, token: eff, err: err}
+		return sessionDetailMsg{sess: sess, token: eff, err: err, gen: gen}
 	}
 }
 

@@ -248,36 +248,38 @@ type Model struct {
 	apprBells     []bool // per-approval urgent-window BEL latch, parallel to apprDeadlines
 	apprSweeping  bool   // an approvalExpireMsg tick is in flight (one chain at a time)
 
-	approvals     []client.Event   // pending approval queue — odek runs parallel tools, so requests FIFO
-	apprDeadlines []time.Time      // per-approval expiry, stamped on arrival (parallel to approvals)
-	apprSel       int              // highlighted option in the approval panel
-	apprExpanded  bool             // tab: show the full command/description text
-	apprTyped     string           // friction mode: the literal word being typed ("approve")
-	apprEditing   bool             // explicit focus on the friction confirmation editor
-	apprOffset    int              // expanded approval command page
-	ac            autocomplete     // @-reference completion state
-	pal           palState         // ⌘K command palette — the navigation spine
-	skillSuggest  *client.Event    // pending skill suggestion card (skill_event "suggested")
-	clarify       *client.Event    // pending principal-channel question
-	clarifyBuf    string           // typed answer (not the composer)
-	queue         []string         // prompts typed mid-turn, sent when the turn ends
-	qfocus        bool             // the queue strip owns the keyboard (ctrl+q)
-	qsel          int              // selected strip row while qfocus
-	qarm          int              // armed-for-delete row while qfocus (-1 = none)
-	lastPrompt    string           // most recent prompt sent — /retry re-sends it
-	ws            *workspace.Store // nil in tests unless injected
-	pendingResume string           // cwd last-session id; consumed by resumeLast
-	resumeTitle   string           // sanitized last-session title for the home card
-	attachPaths   []string         // original paths for staged files (persist only)
-	persistSeq    int              // generation guard for persistDraftMsg
-	copyMark      copySpan         // alt+m span start; zero = none
-	homePrompt    string           // last user prompt, kept across ^L for the session home
-	homeReceipt   string           // last turn's coding receipt, shown on the cleared home
-	homeSess      []client.Session // recent sessions for the home dashboard
-	homeSessDone  bool             // the current clear's fetch already ran
-	homeSessGen   int              // bumped per clear; stale fetches dropped
-	focusIdx      int              // transcript cursor: turn head alt+↑/↓ last jumped to (-1 none)
-	inspect       *inspectTarget   // explicit keyboard focus on one transcript item
+	approvals      []client.Event   // pending approval queue — odek runs parallel tools, so requests FIFO
+	apprDeadlines  []time.Time      // per-approval expiry, stamped on arrival (parallel to approvals)
+	apprSel        int              // highlighted option in the approval panel
+	apprExpanded   bool             // tab: show the full command/description text
+	apprTyped      string           // friction mode: the literal word being typed ("approve")
+	apprEditing    bool             // explicit focus on the friction confirmation editor
+	apprOffset     int              // expanded approval command page
+	ac             autocomplete     // @-reference completion state
+	pal            palState         // ⌘K command palette — the navigation spine
+	skillSuggest   *client.Event    // pending skill suggestion card (skill_event "suggested")
+	clarify        *client.Event    // pending principal-channel question
+	clarifyBuf     string           // typed answer (not the composer)
+	queue          []string         // prompts typed mid-turn, sent when the turn ends
+	qfocus         bool             // the queue strip owns the keyboard (ctrl+q)
+	qsel           int              // selected strip row while qfocus
+	qarm           int              // armed-for-delete row while qfocus (-1 = none)
+	lastPrompt     string           // most recent prompt sent — /retry re-sends it
+	ws             *workspace.Store // nil in tests unless injected
+	pendingResume  string           // cwd last-session id; consumed by resumeLast
+	resumeInFlight bool             // startup resume fetch pending: hold queued/new prompts until it lands
+	resumeGen      int              // bumped by /new: a session detail fetched before it is stale
+	resumeTitle    string           // sanitized last-session title for the home card
+	attachPaths    []string         // original paths for staged files (persist only)
+	persistSeq     int              // generation guard for persistDraftMsg
+	copyMark       copySpan         // alt+m span start; zero = none
+	homePrompt     string           // last user prompt, kept across ^L for the session home
+	homeReceipt    string           // last turn's coding receipt, shown on the cleared home
+	homeSess       []client.Session // recent sessions for the home dashboard
+	homeSessDone   bool             // the current clear's fetch already ran
+	homeSessGen    int              // bumped per clear; stale fetches dropped
+	focusIdx       int              // transcript cursor: turn head alt+↑/↓ last jumped to (-1 none)
+	inspect        *inspectTarget   // explicit keyboard focus on one transcript item
 
 	history   []string // submitted prompts, newest last (recalled with ↑)
 	histNav   bool     // true while ^P/^N is walking the history
@@ -1312,6 +1314,8 @@ func (m *Model) startFreshSession() tea.Cmd {
 	m.freshStart = true
 	m.suppressRemember = true // the fresh connection's first session frame carries only a placeholder
 	m.pendingResume = ""
+	m.resumeInFlight = false // a startup resume still in flight now targets the abandoned session
+	m.resumeGen++
 	if m.ws != nil && m.opts.CWD != "" {
 		m.ws.ClearSession(m.opts.CWD)
 	}
