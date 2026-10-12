@@ -898,7 +898,7 @@ func (m *Model) mgmtDetailLines(w int) []string {
 			return []string{th.acDim.Render("no step selected")}
 		}
 		out = append(out, th.acSel.Render("› "+planGlyph(st.Status)+" "+sanitize(st.ID)))
-		meta := []string{string(st.Status)}
+		meta := []string{collapse(string(st.Status))} // REST snapshot status is wire text
 		if m.planInit {
 			meta = append(meta, fmt.Sprintf("v%d", m.plan.Version))
 		}

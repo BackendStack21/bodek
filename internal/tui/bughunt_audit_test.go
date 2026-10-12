@@ -343,6 +343,20 @@ func TestStartupResumeHoldsQueue(t *testing.T) {
 	}
 }
 
+// The plan step detail renders the REST snapshot's status verbatim.
+func TestPlanDetailStatusSanitized(t *testing.T) {
+	m := newTestModel()
+	m.panel = panelPlan
+	m.plan = client.PlanSnapshot{Found: true, Steps: []client.PlanStep{{ID: "a", Title: "t",
+		Status: client.PlanStepStatus("done\x1b]52;c;Zm9v\x07")}}}
+	m.planInit = true
+	for _, l := range m.mgmtDetailLines(80) {
+		if strings.Contains(l, "\x1b]52") {
+			t.Fatalf("plan detail line carries an OSC sequence: %q", l)
+		}
+	}
+}
+
 // /new during a slow startup resume: the late reply must not adopt the
 // abandoned session, and /queue Enter must not send while a resume is held.
 func TestStaleResumeAfterNewIsDropped(t *testing.T) {
