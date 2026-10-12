@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"os"
@@ -76,7 +77,8 @@ func queryAPI(ctx context.Context, client *http.Client, apiURL string) (string, 
 		return "", nil, statusError(resp.StatusCode, resp.Status)
 	}
 	var rel release
-	if err := json.NewDecoder(resp.Body).Decode(&rel); err != nil {
+	// A release document is a few KiB; bound it like every other decode.
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 4<<20)).Decode(&rel); err != nil {
 		return "", nil, fmt.Errorf("decode latest release: %w", err)
 	}
 	if rel.TagName == "" {
