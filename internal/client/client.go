@@ -619,10 +619,17 @@ func (c *Client) SendSkillPromptResponse(action, skillName string) error {
 	}{Type: "skill_prompt_response", Action: action, SkillName: skillName})
 }
 
+// writeTimeout bounds one frame write. A peer that stops reading would
+// otherwise park send forever while holding wmu, wedging every later
+// approval and cancel behind it. Generous enough for a 10 MB attachment
+// prompt on a slow link.
+var writeTimeout = 60 * time.Second
+
 // send marshals v and writes it as one frame, serialized against other writers.
 func (c *Client) send(v any) error {
 	c.wmu.Lock()
 	defer c.wmu.Unlock()
+	_ = c.conn.SetWriteDeadline(time.Now().Add(writeTimeout))
 	return ws.JSON.Send(c.conn, v)
 }
 
