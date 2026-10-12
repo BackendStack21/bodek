@@ -215,6 +215,9 @@ func (c *Conn) spawn(opts Options, addr string) error {
 
 	cmd := exec.Command(bin, args...)
 	cmd.Stderr = c.scan
+	// A grandchild that leaves the group but keeps fd 2 open would hold the
+	// stderr pipe forever, and Wait (hence Stop) with it.
+	cmd.WaitDelay = stderrWaitDelay
 	cmd.Env = os.Environ()
 	// Own process group so the watchdog (and Stop) can signal the server
 	// and any of its subprocesses as a unit, without touching bodek itself.
@@ -424,12 +427,23 @@ type tokenScanWriter struct {
 // maxTailLines bounds the stderr tail kept for error reporting.
 const maxTailLines = 4
 
+// maxPartialLine caps an unterminated stderr line buffered for scanning, so
+// newline-free output (\r progress bars) cannot grow memory without bound.
+const maxPartialLine = 64 << 10
+
+// stderrWaitDelay bounds how long Wait keeps draining stderr after the
+// child exits.
+const stderrWaitDelay = 2 * time.Second
+
 func (s *tokenScanWriter) Write(p []byte) (int, error) {
 	s.scan(p)
 	if s.act != nil {
 		s.act.Store(time.Now().UnixNano())
 	}
-	return s.w.Write(p)
+	// A failing sink (full log disk) must never surface to os/exec: its
+	// copy goroutine would close the pipe and odek would die on SIGPIPE.
+	_, _ = s.w.Write(p)
+	return len(p), nil
 }
 
 // Token returns the scanned token, or "" if no token line was seen yet.
@@ -462,6 +476,7 @@ func (s *tokenScanWriter) scan(p []byte) {
 	for {
 		i := bytes.IndexByte(s.buf, '\n')
 		if i < 0 {
+			s.capPartial()
 			return
 		}
 		line := string(s.buf[:i])
@@ -509,6 +524,15 @@ func (s *tokenScanWriter) partialTail(chunk []byte) {
 		line := string(s.buf[:i])
 		s.buf = s.buf[i+1:]
 		s.appendTailLine(line)
+	}
+	s.capPartial()
+}
+
+// capPartial keeps only the newest maxPartialLine bytes of the pending
+// partial line. Callers hold s.mu.
+func (s *tokenScanWriter) capPartial() {
+	if n := len(s.buf); n > maxPartialLine {
+		s.buf = append([]byte(nil), s.buf[n-maxPartialLine:]...)
 	}
 }
 

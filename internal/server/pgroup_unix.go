@@ -19,13 +19,13 @@ func setPgroup(cmd *exec.Cmd) {
 
 // signalServer sends sig to the spawned server's whole process group (the
 // server's own subprocesses follow it down), falling back to the leader
-// when the group is gone. Safe because Stop holds a live Process handle
-// for this pid — no recycled-PID window.
+// when the group is gone. The leader fallback is skipped once the reaper
+// has collected the child: its pid may already belong to another process.
 func (c *Conn) signalServer(sig syscall.Signal) {
 	if c.proc == nil || c.proc.Process == nil {
 		return
 	}
-	if err := syscall.Kill(-c.proc.Process.Pid, sig); err != nil {
+	if err := syscall.Kill(-c.proc.Process.Pid, sig); err != nil && !c.reaped.Load() {
 		_ = syscall.Kill(c.proc.Process.Pid, sig)
 	}
 }
