@@ -959,13 +959,40 @@ func (m *Model) handleSessionsMsg(msg sessionsMsg) {
 		m.panelMsg = "error: " + msg.err.Error()
 		return
 	}
+	prevID := m.selectedSessionID()
 	m.sessions = msg.items
 	m.panelSel = 0
+	if m.keepSessionDeleteArmed(prevID) {
+		return // the "delete …?" prompt stays visible for the still-armed gate
+	}
 	if len(m.sessions) == 0 {
 		m.panelMsg = "no saved sessions yet"
 	} else {
 		m.panelMsg = ""
 	}
+}
+
+// selectedSessionID is the highlighted session row's id, or "".
+func (m *Model) selectedSessionID() string {
+	if m.panelSel >= 0 && m.panelSel < len(m.sessions) {
+		return m.sessions[m.panelSel].ID
+	}
+	return ""
+}
+
+// keepSessionDeleteArmed reports whether an armed session delete still
+// targets prevID after a list replacement. A late list or search page can
+// re-rank rows under the gate; y must never delete a session the operator
+// did not confirm, so a moved target disarms it.
+func (m *Model) keepSessionDeleteArmed(prevID string) bool {
+	if m.confirm != confirmSessionDelete {
+		return false
+	}
+	if prevID != "" && m.selectedSessionID() == prevID {
+		return true
+	}
+	m.confirm = confirmNone
+	return false
 }
 
 // handleSessionsPageMsg applies a search/pagination envelope: replace on
@@ -975,6 +1002,7 @@ func (m *Model) handleSessionsPageMsg(msg sessionsPageMsg) {
 		m.panelMsg = "error: " + msg.err.Error()
 		return
 	}
+	prevID := m.selectedSessionID()
 	if msg.append {
 		m.sessions = append(m.sessions, msg.page.Sessions...)
 	} else {
@@ -985,6 +1013,8 @@ func (m *Model) handleSessionsPageMsg(msg sessionsPageMsg) {
 	}
 	m.sessHasMore = msg.page.Count >= msg.page.Limit && msg.page.Count > 0
 	switch {
+	case m.keepSessionDeleteArmed(prevID):
+		// the "delete …?" prompt stays visible for the still-armed gate
 	case len(m.sessions) == 0:
 		if m.sessQuery != "" {
 			m.panelMsg = "no matches for “" + m.sessQuery + "”"
@@ -1261,6 +1291,7 @@ func (m *Model) handleSessionDeleted(msg sessionDeletedMsg) tea.Cmd {
 		return nil
 	}
 	m.tokens.Delete(msg.id)
+	prevID := m.selectedSessionID()
 	for i := range m.sessions {
 		if m.sessions[i].ID != msg.id {
 			continue
@@ -1272,6 +1303,9 @@ func (m *Model) handleSessionDeleted(msg sessionDeletedMsg) tea.Cmd {
 		break
 	}
 	m.panelSel = clampSel(m.panelSel, len(m.sessions))
+	if armed := m.confirm == confirmSessionDelete; armed && !m.keepSessionDeleteArmed(prevID) {
+		m.panelMsg = "" // a re-armed gate on the removed row must not slide onto its neighbour
+	}
 	if len(m.sessions) == 0 {
 		m.panelMsg = "no saved sessions yet"
 	}

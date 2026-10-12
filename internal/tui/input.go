@@ -587,9 +587,18 @@ func (m *Model) sendQueued() tea.Cmd {
 	m.queue = m.queue[1:]
 	m.qsel = clampSel(m.qsel, len(m.queue))
 	if m.panel == panelQueue {
-		m.panelSel = clampSel(m.panelSel, len(m.queue)) // the drain races the open panel too
+		// The drain races the open panel too: rows shifted up by one, so
+		// keep the highlight on the same prompt.
+		if m.panelSel > 0 {
+			m.panelSel--
+		}
+		m.panelSel = clampSel(m.panelSel, len(m.queue))
 	}
 	m.qarm = -1 // the head just drained — never mis-aim the armed confirm
+	if m.confirm == confirmQueueDelete {
+		m.confirm = confirmNone // the armed row may have just been sent
+		m.panelMsg = ""
+	}
 	if len(m.queue) == 0 {
 		m.qfocus = false
 	}

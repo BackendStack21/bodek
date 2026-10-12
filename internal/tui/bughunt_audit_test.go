@@ -5,6 +5,10 @@ import (
 	"strings"
 	"testing"
 	"unicode/utf8"
+
+	tea "github.com/charmbracelet/bubbletea"
+
+	"github.com/BackendStack21/bodek/internal/client"
 )
 
 // Lone 8-bit CSI/OSC bytes (invalid UTF-8) and invisible tag characters
@@ -60,5 +64,133 @@ func TestPanelMsgRenderedSanitized(t *testing.T) {
 	m.panelMsg = "promote failed: \x1b]52;c;Zm9v\x07"
 	if v := m.View(); strings.Contains(v, "]52;") && strings.Contains(v, "\x1b]52") {
 		t.Fatal("panel message rendered a raw OSC sequence")
+	}
+}
+
+// Draining the head under an open /queue panel keeps the highlight on the
+// same prompt and disarms a pending delete.
+func TestQueueDrainDisarmsDeleteAndKeepsSelection(t *testing.T) {
+	m := newTestModel()
+	m.busy = true
+	m.queue = []string{"A", "B", "C"}
+	m.runCommandLine("/queue")
+	m.Update(key("down"))
+	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("d")})
+	if m.confirm != confirmQueueDelete {
+		t.Fatalf("delete not armed: %v", m.confirm)
+	}
+	m.busy = false
+	_ = m.sendQueued()
+	if m.confirm != confirmNone {
+		t.Fatal("drain left the queue delete armed")
+	}
+	if m.queue[m.panelSel] != "B" {
+		t.Fatalf("selection moved to %q, want B", m.queue[m.panelSel])
+	}
+}
+
+// A runs poll that reorders rows must not slide approve/cancel onto
+// another run.
+func TestRunsPollAnchorsSelectionByID(t *testing.T) {
+	m := newTestModel()
+	m.panel = panelRuns
+	m.runs = []client.Run{{ID: "r1"}, {ID: "r2"}}
+	m.panelSel = 1
+	m.handleRunsMsg(runsMsg{runs: []client.Run{{ID: "r0"}, {ID: "r1"}, {ID: "r2"}}})
+	if r := m.selectedRun(); r == nil || r.ID != "r2" {
+		t.Fatalf("selection = %+v, want r2", r)
+	}
+}
+
+// Reopening the runs tab must not anchor the first poll on the old list.
+func TestRunsReopenDropsStaleList(t *testing.T) {
+	m := newTestModel()
+	m.runs = []client.Run{{ID: "old"}}
+	_ = m.openRuns()
+	if m.selectedRun() != nil {
+		t.Fatal("a stale run is actionable before the first poll lands")
+	}
+}
+
+// A memory refresh that drops the confirmed fact must disarm the gate.
+func TestFactDeleteDisarmsWhenRowVanishes(t *testing.T) {
+	m := newTestModel()
+	m.panel = panelMemory
+	m.memRows = []memRow{{kind: "user", text: "a"}, {kind: "user", text: "b"}}
+	m.panelSel = 1
+	m.armConfirm(confirmFactDelete, "user fact")
+	var mem client.MemoryView
+	mem.Facts = map[string][]string{"user": {"a", "c"}}
+	m.handleMgmtMsg(mgmtMsg{tab: panelMemory, mem: mem})
+	if m.confirm != confirmNone {
+		t.Fatal("delete still armed against a neighbouring fact")
+	}
+}
+
+// Late session rows re-rank the palette; Enter must keep its target.
+func TestPaletteSelectionSurvivesLateSessions(t *testing.T) {
+	m := newTestModel()
+	m.pal = palState{open: true, mode: palModeCommands, query: "ca"}
+	m.pal.all = []palEntry{{title: "xc a run", kind: "action"}}
+	m.filterPalette()
+	m.pal.sel = 0
+	late := client.Session{ID: "s1", Task: "ca"}
+	a, _ := fuzzyScore("ca", "resume · ca")
+	if b, _ := fuzzyScore("ca", "xc a run"); a <= b {
+		t.Fatal("fixture must rank the late session above the selected entry")
+	}
+	m.handlePalSessions(palSessionsMsg{items: []client.Session{late}})
+	if got := m.pal.items[m.pal.sel].title; got != "xc a run" {
+		t.Fatalf("highlight moved to %q", got)
+	}
+}
+
+// A late list or search page that re-ranks rows under an armed session
+// delete must disarm it — y would delete a session never confirmed.
+func TestSessionDeleteDisarmsOnReorderedPage(t *testing.T) {
+	m := newTestModel()
+	m.panel = panelSessions
+	m.sessions = []client.Session{{ID: "x"}, {ID: "y"}}
+	m.panelSel = 0
+	m.armConfirm(confirmSessionDelete, "session x")
+	m.handleSessionsPageMsg(sessionsPageMsg{page: client.SessionsPage{Sessions: []client.Session{{ID: "y"}, {ID: "x"}}}})
+	if m.confirm != confirmNone {
+		t.Fatal("delete still armed after the list re-ranked")
+	}
+	if _, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")}); cmd != nil {
+		t.Fatal("y fired a command after the target moved")
+	}
+
+	m.sessions = []client.Session{{ID: "x"}, {ID: "y"}}
+	m.panelSel = 1
+	m.armConfirm(confirmSessionDelete, "session y")
+	m.handleSessionsMsg(sessionsMsg{items: []client.Session{{ID: "x"}, {ID: "y"}}}) // selection resets to x
+	if m.confirm != confirmNone {
+		t.Fatal("initial list reply left the delete armed on a moved target")
+	}
+}
+
+// An unchanged target keeps the gate (and its prompt).
+func TestSessionDeleteStaysArmedWhenTargetUnchanged(t *testing.T) {
+	m := newTestModel()
+	m.panel = panelSessions
+	m.sessions = []client.Session{{ID: "x"}}
+	m.armConfirm(confirmSessionDelete, "session x")
+	m.handleSessionsPageMsg(sessionsPageMsg{page: client.SessionsPage{Sessions: []client.Session{{ID: "x"}}}})
+	if m.confirm != confirmSessionDelete || m.panelMsg == "" {
+		t.Fatalf("gate dropped for an unchanged target: confirm=%v msg=%q", m.confirm, m.panelMsg)
+	}
+}
+
+// A delete reply removing the row a second gate was re-armed on must not
+// leave that gate pointing at the next session.
+func TestSessionDeletedDisarmsGateOnRemovedRow(t *testing.T) {
+	m := newTestModel()
+	m.panel = panelSessions
+	m.sessions = []client.Session{{ID: "a"}, {ID: "b"}}
+	m.armConfirm(confirmSessionDelete, "session a")
+	m.handleSessionDeleted(sessionDeletedMsg{id: "a"})
+	if m.confirm != confirmNone {
+		t.Fatal("gate slid onto the neighbouring session")
 	}
 }

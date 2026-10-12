@@ -211,9 +211,20 @@ func (m *Model) handleMgmtMsg(msg mgmtMsg) {
 		m.memRows = buildMemRows(msg.mem)
 		m.pendingMemReload = false // a fresh listing supersedes any stale-row failure
 		m.panelSel = anchorRow(m.panelSel, m.memRows, sel)
-		if len(m.memRows) == 0 {
+		armed := m.confirm == confirmFactDelete || m.confirm == confirmEpisodePromote ||
+			m.confirm == confirmEpisodeDiscard
+		if armed && (m.panelSel >= len(m.memRows) || m.memRows[m.panelSel].text != sel) {
+			// The confirmed row is gone: y would act on a neighbour the
+			// operator never confirmed.
+			m.confirm = confirmNone
+			armed = false
+		}
+		switch {
+		case armed:
+			// keep the visible "delete …?" prompt for the still-armed gate
+		case len(m.memRows) == 0:
 			m.panelMsg = "no facts or pending episodes"
-		} else {
+		default:
 			m.panelMsg = ""
 		}
 	case panelSkills:
