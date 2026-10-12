@@ -302,6 +302,25 @@ func TestSessionDeletedDisarmsGateOnRemovedRow(t *testing.T) {
 	}
 }
 
+// The same fact text under user and env: an armed delete on the env row
+// must not slide onto the user row after a refresh.
+func TestFactDeleteKeepsKindAcrossDuplicateText(t *testing.T) {
+	m := newTestModel()
+	m.panel = panelMemory
+	m.memRows = []memRow{{kind: "user", text: "x"}, {kind: "env", text: "x"}}
+	m.panelSel = 1
+	m.armConfirm(confirmFactDelete, "env fact")
+	var mem client.MemoryView
+	mem.Facts = map[string][]string{"user": {"x"}, "env": {"x"}}
+	m.handleMgmtMsg(mgmtMsg{tab: panelMemory, mem: mem})
+	if m.confirm == confirmFactDelete && m.memRows[m.panelSel].kind != "env" {
+		t.Fatalf("armed delete now targets the %s row", m.memRows[m.panelSel].kind)
+	}
+	if m.confirm != confirmFactDelete {
+		t.Fatal("unchanged target should stay armed")
+	}
+}
+
 // The startup resume must land before any queued or new prompt sends.
 func TestStartupResumeHoldsQueue(t *testing.T) {
 	m := newTestModel()

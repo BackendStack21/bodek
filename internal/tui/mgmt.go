@@ -204,8 +204,10 @@ func (m *Model) handleMgmtMsg(msg mgmtMsg) {
 		// Anchor the selection by identity across rebuilds: a fact inserted
 		// above the selection must not silently swap the open detail.
 		var sel string
+		var prev memRow
 		if m.panelSel >= 0 && m.panelSel < len(m.memRows) {
-			sel = m.memRows[m.panelSel].text
+			prev = m.memRows[m.panelSel]
+			sel = prev.text
 		}
 		m.memView = msg.mem
 		m.memRows = buildMemRows(msg.mem)
@@ -213,11 +215,21 @@ func (m *Model) handleMgmtMsg(msg mgmtMsg) {
 		m.panelSel = anchorRow(m.panelSel, m.memRows, sel)
 		armed := m.confirm == confirmFactDelete || m.confirm == confirmEpisodePromote ||
 			m.confirm == confirmEpisodeDiscard
-		if armed && (m.panelSel >= len(m.memRows) || m.memRows[m.panelSel].text != sel) {
-			// The confirmed row is gone: y would act on a neighbour the
-			// operator never confirmed.
-			m.confirm = confirmNone
+		if armed {
+			// The gate acts on the row at confirm time: re-find the exact
+			// confirmed row (the same text can exist under user and env, or
+			// as two episodes), and disarm when it is gone — y must never
+			// act on a row the operator did not confirm.
 			armed = false
+			for i, r := range m.memRows {
+				if sameMemRow(r, prev) {
+					m.panelSel, armed = i, true
+					break
+				}
+			}
+			if !armed {
+				m.confirm = confirmNone
+			}
 		}
 		switch {
 		case armed:
@@ -302,6 +314,12 @@ func (m *Model) handleMgmtMsg(msg mgmtMsg) {
 // anchorRow re-locates a selection by its row text after a rebuild: an
 // insert above must not silently change what the selection points at. Falls
 // back to clamping when the row vanished.
+// sameMemRow reports whether two rows name the same fact or episode.
+func sameMemRow(a, b memRow) bool {
+	return a.kind == b.kind && a.text == b.text && a.sessionID == b.sessionID &&
+		a.summarySHA256 == b.summarySHA256
+}
+
 func anchorRow(prev int, rows []memRow, text string) int {
 	if text != "" {
 		for i := range rows {
