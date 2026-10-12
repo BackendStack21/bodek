@@ -74,6 +74,13 @@ func newlineChord(s string) bool {
 	return false
 }
 
+// isKeySentinel reports whether s is one of the KeyRunes sentinels the
+// input decoder synthesizes for enhanced chords; their rune text is a name,
+// never something the user typed.
+func isKeySentinel(s string) bool {
+	return newlineChord(s) || s == "shift+delete" || s == "alt+unmapped-chord"
+}
+
 // insertNewline drops a line break at the caret and refits the composer.
 func (m *Model) insertNewline() tea.Cmd {
 	var cmd tea.Cmd

@@ -985,6 +985,13 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if msg.String() == "alt+unmapped-chord" {
 		return m, m.transientNoteCmd("unmapped key chord ignored")
 	}
+	// shift+delete is the composer's clear chord. Every other capture
+	// surface (approval composer + friction editor, clarify, popups, panel
+	// editors) would splice its sentinel text in, so it is a no-op there.
+	if msg.String() == "shift+delete" && (m.curApproval() != nil || m.clarify != nil ||
+		m.ac.open || m.pal.open || m.panel != panelNone) {
+		return m, nil
+	}
 	// The palette works from every rung of the modality ladder — except over
 	// a live approval or clarify card, which captures the keyboard until
 	// answered (a chord answering underneath would be a surprise decision).

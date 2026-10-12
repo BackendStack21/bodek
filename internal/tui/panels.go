@@ -121,10 +121,18 @@ func (m *Model) handleConfirmKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// falls through to the composer, so the reflex "esc, keep typing" never
 	// loses a character. Panel contexts keep silent disarm — their keys are
 	// navigation, not typing.
-	if m.panel == panelNone && msg.Type == tea.KeyRunes && len(msg.Runes) > 0 {
-		m.ta.InsertString(string(msg.Runes))
-		m.syncComposer()
+	// Only plain typing qualifies: Alt chords (approval decisions), pastes
+	// and key sentinels ("shift+enter"…) must never splice in as text, and
+	// a live approval card keeps its keys — the gate ate this one.
+	if m.panel != panelNone || msg.Type != tea.KeyRunes || len(msg.Runes) == 0 ||
+		msg.Alt || msg.Paste || isKeySentinel(msg.String()) || m.curApproval() != nil {
+		return m, nil
 	}
+	if m.clarify != nil {
+		return m.handleClarifyKey(msg) // the answer buffer, not the hidden composer
+	}
+	m.ta.InsertString(string(msg.Runes))
+	m.syncComposer()
 	return m, nil
 }
 

@@ -210,6 +210,37 @@ func TestPaletteSelectionSurvivesLateSessions(t *testing.T) {
 	}
 }
 
+// After disarming a gate, Alt chords and key sentinels must not be typed
+// into the composer.
+func TestConfirmDisarmDoesNotTypeChordsOrSentinels(t *testing.T) {
+	m := newTestModel()
+	for _, k := range []tea.KeyMsg{
+		{Type: tea.KeyRunes, Runes: []rune("d"), Alt: true},
+		{Type: tea.KeyRunes, Runes: []rune("shift+enter")},
+	} {
+		m.armConfirm(confirmClear, "the conversation")
+		m.Update(k)
+		if v := m.ta.Value(); v != "" {
+			t.Fatalf("key %q typed %q into the composer", k.String(), v)
+		}
+	}
+	m.armConfirm(confirmClear, "the conversation")
+	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("h")})
+	if m.ta.Value() != "h" {
+		t.Fatalf("plain typing after disarm lost: %q", m.ta.Value())
+	}
+}
+
+// shift+delete's sentinel text must never land in the approval composer.
+func TestShiftDeleteSentinelNoOpOnApproval(t *testing.T) {
+	m := newTestModel()
+	m.approvals = []client.Event{{ID: "a1"}}
+	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("shift+delete")})
+	if strings.Contains(m.ta.Value(), "shift") || strings.Contains(m.apprTyped, "shift") {
+		t.Fatal("sentinel text spliced into the approval surface")
+	}
+}
+
 // A late list or search page that re-ranks rows under an armed session
 // delete must disarm it — y would delete a session never confirmed.
 func TestSessionDeleteDisarmsOnReorderedPage(t *testing.T) {
