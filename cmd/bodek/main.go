@@ -370,6 +370,9 @@ func setupSignalHandler(p *tea.Program) {
 	signal.Notify(ch, os.Interrupt, syscall.SIGTERM)
 	go func() {
 		<-ch
+		// Restore default handling so a second Ctrl+C / SIGTERM can abort a
+		// slow shutdown instead of being swallowed by this channel.
+		signal.Stop(ch)
 		p.Quit()
 	}()
 }
