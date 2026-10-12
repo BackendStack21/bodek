@@ -98,7 +98,7 @@ func (c *Client) JobOutput(sessionID, token, jobID string, since int) (JobOutput
 // bgproc.Manager.Stop), which the shared 3s client would abort mid-kill.
 func (c *Client) stopHTTP() *http.Client {
 	c.stopOnce.Do(func() {
-		c.stopClient = &http.Client{Timeout: 12 * time.Second}
+		c.stopClient = &http.Client{Timeout: 12 * time.Second, CheckRedirect: noRedirect}
 	})
 	return c.stopClient
 }

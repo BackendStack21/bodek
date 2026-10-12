@@ -310,7 +310,7 @@ func Dial(wsURL, origin, baseURL, token string) (*Client, error) {
 		conn:       conn,
 		baseURL:    baseURL,
 		serveToken: token,
-		http:       &http.Client{Timeout: 3 * time.Second},
+		http:       &http.Client{Timeout: 3 * time.Second, CheckRedirect: noRedirect},
 		// Thinking models stream hundreds of delta frames per turn. The TUI
 		// batch-drains this channel, but a deep buffer keeps readLoop from
 		// blocking (which trips odek's 30s write watchdog and drops the socket).
@@ -319,7 +319,7 @@ func Dial(wsURL, origin, baseURL, token string) (*Client, error) {
 		// exports) legitimately take longer than interactive REST calls; a
 		// dedicated 30s client serves them so the 3s interactive budget does
 		// not cut their body reads.
-		slowHTTP: &http.Client{Timeout: 30 * time.Second},
+		slowHTTP: &http.Client{Timeout: 30 * time.Second, CheckRedirect: noRedirect},
 		done:     make(chan struct{}),
 	}
 	go c.readLoop()
@@ -624,6 +624,15 @@ func (c *Client) send(v any) error {
 	c.wmu.Lock()
 	defer c.wmu.Unlock()
 	return ws.JSON.Send(c.conn, v)
+}
+
+// noRedirect keeps REST calls on the origin they were addressed to. Go
+// strips Authorization on cross-host redirects but copies custom headers,
+// so following one would hand X-Odek-Ws-Token / X-Session-Token (and a
+// replayed POST body on 307/308) to another host. odek's API never
+// redirects; the 3xx reaches the caller as a status error.
+func noRedirect(*http.Request, []*http.Request) error {
+	return http.ErrUseLastResponse
 }
 
 // Close shuts the connection and releases a readLoop parked on Events.
