@@ -45,7 +45,10 @@ func Run(ctx context.Context, parentPID, targetPID int, poll, grace time.Duratio
 		poll = DefaultPoll
 	}
 	token := startToken(targetPID)
-	for processAlive(parentPID) {
+	// The parent is identified the same way: a recycled parent PID must not
+	// keep the guard waiting forever.
+	parentToken := startToken(parentPID)
+	for sameTarget(parentPID, parentToken) {
 		if !sameTarget(targetPID, token) {
 			return // server already gone (or its PID recycled): nothing to guard
 		}
