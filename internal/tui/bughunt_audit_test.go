@@ -396,3 +396,17 @@ func TestExplicitResumeSupersedesStartupResume(t *testing.T) {
 		t.Fatalf("late startup resume replaced the operator's pick: %q", m.sessionID)
 	}
 }
+
+// /attach feedback (staged, or why not) must paint immediately — the note
+// sat in state, invisible, until an unrelated redraw.
+func TestAttachOutcomeNotePaintsImmediately(t *testing.T) {
+	for _, cmd := range []string{"/attach /nonexistent-bodek-path", "/unattach nothing-staged"} {
+		m := newTestModel()
+		m.msgs = append(m.msgs, message{role: roleUser, content: "q"}, message{role: roleAsst, content: "a"})
+		m.refresh()
+		_ = m.runCommandLine(cmd)
+		if v := plain(m.View()); !strings.Contains(v, "attach: ") && !strings.Contains(v, "staged") {
+			t.Fatalf("%s: outcome note not painted", cmd)
+		}
+	}
+}
