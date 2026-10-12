@@ -65,3 +65,25 @@ func TestParseConfigBrokenFileRefusesPersistence(t *testing.T) {
 		t.Fatalf("expected saved settings file: %v", err)
 	}
 }
+
+// A file broken mid-run (a hand-edit typo after a clean startup) must not
+// be replaced by the next preference change either.
+func TestSaveRefusesFileBrokenMidRun(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.json")
+	t.Setenv("BODEK_CONFIG", path)
+	cfg, err := parseConfig(nil, &bytes.Buffer{})
+	if err != nil || cfg.persistDisabled {
+		t.Fatalf("parseConfig: %v, disabled=%v", err, cfg.persistDisabled)
+	}
+	broken := `{"theme": "dracula",`
+	if err := os.WriteFile(path, []byte(broken), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg.persist.Theme = "ember-light"
+	if err := cfg.save(); err == nil {
+		t.Fatal("save over a broken file must report an error")
+	}
+	if data, _ := os.ReadFile(path); string(data) != broken {
+		t.Fatalf("broken settings file was overwritten: %q", data)
+	}
+}
