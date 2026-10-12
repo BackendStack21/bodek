@@ -102,6 +102,31 @@ func TestRunsPollAnchorsSelectionByID(t *testing.T) {
 	}
 }
 
+// Resuming mid-turn would stream the old run into a replayed message.
+func TestResumeRefusedWhileBusy(t *testing.T) {
+	m := newTestModel()
+	m.msgs = []message{{role: roleUser, content: "q"}, {role: roleAsst, streaming: true}}
+	m.curIdx = 1
+	m.busy = true
+	m.sessionID = "old"
+	m.handleSessionDetail(sessionDetailMsg{sess: client.Session{ID: "new"}, token: "t"})
+	if m.sessionID != "old" || len(m.msgs) != 2 || m.curIdx != 1 {
+		t.Fatalf("resume swapped the transcript under a running turn: sid=%s msgs=%d cur=%d", m.sessionID, len(m.msgs), m.curIdx)
+	}
+}
+
+// The refusal must replace the sessions panel's "loading session…" line.
+func TestResumeRefusalClearsLoadingLine(t *testing.T) {
+	m := newTestModel()
+	m.busy = true
+	m.panel = panelSessions
+	m.panelMsg = "loading session…"
+	m.handleSessionDetail(sessionDetailMsg{sess: client.Session{ID: "new"}, token: "t"})
+	if strings.Contains(m.panelMsg, "loading") {
+		t.Fatalf("panel still says %q after the refusal", m.panelMsg)
+	}
+}
+
 // Reopening the runs tab must not anchor the first poll on the old list.
 func TestRunsReopenDropsStaleList(t *testing.T) {
 	m := newTestModel()

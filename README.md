@@ -256,7 +256,8 @@ own front-end settings are separate; see [Configuration](#configuration).
 - **Session browser** (`^R`) — resume, replay, delete, pin (`p`), rename
   (`r`), export a transcript (`e` markdown, `E` JSON), and search server-side
   (`/`); `n` loads the next page. Resuming sends a `session_switch` so the
-  server-side memory buffer is restored before you type.
+  server-side memory buffer is restored before you type. Resume is refused
+  while a turn is running — finish it or cancel with `^X` first.
 - **Last-session resume (opt-in)** — by default a launch starts fresh.
   Enable continuation per launch with `--resume`, or persistently with
   `{"resume": true}` in `~/.bodek/config.json`. Resuming replays the

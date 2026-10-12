@@ -1060,6 +1060,15 @@ func (m *Model) handleSessionDetail(msg sessionDetailMsg) tea.Cmd {
 		}
 		return m.transientNoteCmd("resume failed — /new or ^R")
 	}
+	// The running turn's remaining frames would stream into whatever
+	// replayed message sits at curIdx — never swap transcripts under it.
+	if m.busy {
+		if m.panel != panelNone {
+			m.panelMsg = "a turn is running — ^X to cancel, then retry" // replaces "loading session…"
+			m.refresh()
+		}
+		return m.transientNoteCmd("a turn is running — finish or cancel it (^X) before resuming")
+	}
 	// Replay the saved transcript into the local view, then adopt the session
 	// on the connection (session_switch restores the server-side memory
 	// buffer; the reply's session event re-syncs state).
@@ -1089,7 +1098,17 @@ func (m *Model) handleSessionDetail(msg sessionDetailMsg) tea.Cmd {
 	m.lastLatency = 0
 	m.resetCallMetrics()
 	m.msgs = m.msgs[:0]
+	m.curIdx = -1
+	m.focusIdx = -1
 	m.inspect = nil // hit targets belong to the replaced transcript
+	m.find = findState{}
+	m.copyMark = copySpan{}
+	// Approvals and clarify belong to the replaced conversation.
+	m.approvals = nil
+	m.apprDeadlines = nil
+	m.apprBells = nil
+	m.resetApprovalInput()
+	m.clearClarify()
 	m.resetMsgBlocks()
 	// The plan surface is session-scoped knowledge: drop it and refetch for
 	// the resumed session. Neither live path covers a resume — the replayed
