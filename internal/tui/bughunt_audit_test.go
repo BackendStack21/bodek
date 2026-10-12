@@ -210,6 +210,17 @@ func TestPaletteSelectionSurvivesLateSessions(t *testing.T) {
 	}
 }
 
+// Invocation arguments must show '<' rather than <.
+func TestInvocationArgsNotHTMLEscaped(t *testing.T) {
+	out, err := indentJSON(map[string]any{"q": "a<b>&c"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(out), "a<b>&c") {
+		t.Fatalf("arguments HTML-escaped: %s", out)
+	}
+}
+
 // After disarming a gate, Alt chords and key sentinels must not be typed
 // into the composer.
 func TestConfirmDisarmDoesNotTypeChordsOrSentinels(t *testing.T) {
