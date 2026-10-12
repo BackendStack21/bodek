@@ -150,10 +150,14 @@ func slashCommands() []command {
 			return m.openAgents()
 		}},
 		{"attach", "stage a file for the next prompt — /attach <path>", func(m *Model, args string) tea.Cmd {
-			return m.attachFile(args)
+			cmd := m.attachFile(args)
+			m.refresh() // the outcome note (staged or why not) must paint now
+			return cmd
 		}},
 		{"unattach", "drop staged files — /unattach [name]", func(m *Model, args string) tea.Cmd {
-			return m.unattachFile(args)
+			cmd := m.unattachFile(args)
+			m.refresh()
+			return cmd
 		}},
 		{"quit", "exit bodek", func(m *Model, _ string) tea.Cmd {
 			m.quitting = true

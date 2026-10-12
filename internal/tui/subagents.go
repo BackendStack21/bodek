@@ -855,7 +855,7 @@ func parseAgentResult(data string) *agentResult {
 	if env.Status == "" || env.Summary == "" {
 		return nil
 	}
-	r := &agentResult{status: env.Status, summary: collapse(env.Summary), tokens: env.TokensUsed, iters: env.Iterations,
+	r := &agentResult{status: collapse(env.Status), summary: collapse(env.Summary), tokens: env.TokensUsed, iters: env.Iterations,
 		costUSD: env.CostUSD, artifacts: env.Artifacts, denials: env.Denials, denialsTotal: env.DenialsTotal}
 	for _, f := range env.FilesChanged {
 		if f = collapse(f); f != "" {

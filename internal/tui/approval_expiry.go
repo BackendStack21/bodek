@@ -57,11 +57,14 @@ func (m *Model) apprSecondsLeft() int {
 }
 
 // approvalSweep arms the next expiry tick while the form is open; nil when
-// nothing is pending, so the timer chain stops itself.
+// nothing is pending, so the timer chain stops itself. Every wire batch
+// calls it, so it arms only when no tick is already in flight — otherwise
+// each batch would start another 1s chain that re-arms itself forever.
 func (m *Model) approvalSweep() tea.Cmd {
-	if len(m.approvals) == 0 {
+	if len(m.approvals) == 0 || m.apprSweeping {
 		return nil
 	}
+	m.apprSweeping = true
 	return tea.Tick(time.Second, func(time.Time) tea.Msg {
 		return approvalExpireMsg{}
 	})

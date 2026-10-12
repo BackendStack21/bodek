@@ -121,10 +121,18 @@ func (m *Model) handleConfirmKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// falls through to the composer, so the reflex "esc, keep typing" never
 	// loses a character. Panel contexts keep silent disarm — their keys are
 	// navigation, not typing.
-	if m.panel == panelNone && msg.Type == tea.KeyRunes && len(msg.Runes) > 0 {
-		m.ta.InsertString(string(msg.Runes))
-		m.syncComposer()
+	// Only plain typing qualifies: Alt chords (approval decisions), pastes
+	// and key sentinels ("shift+enter"…) must never splice in as text, and
+	// a live approval card keeps its keys — the gate ate this one.
+	if m.panel != panelNone || msg.Type != tea.KeyRunes || len(msg.Runes) == 0 ||
+		msg.Alt || msg.Paste || isKeySentinel(msg.String()) || m.curApproval() != nil {
+		return m, nil
 	}
+	if m.clarify != nil {
+		return m.handleClarifyKey(msg) // the answer buffer, not the hidden composer
+	}
+	m.ta.InsertString(string(msg.Runes))
+	m.syncComposer()
 	return m, nil
 }
 
@@ -184,6 +192,7 @@ type sessionDetailMsg struct {
 	sess  client.Session
 	token string
 	err   error
+	gen   int // resumeGen when the fetch was issued
 }
 
 type sessionDeletedMsg struct {
@@ -766,11 +775,14 @@ func (m *Model) panelSelect() tea.Cmd {
 func (m *Model) resumeSession(id string) tea.Cmd {
 	m.panelMsg = "loading session…"
 	m.refresh()
-	cl := m.cl
+	// An explicit pick supersedes a startup resume still in flight: its
+	// late reply must not replace the session the operator chose.
+	m.resumeGen++
+	cl, gen := m.cl, m.resumeGen
 	token := m.tokens.Get(id)
 	return func() tea.Msg {
 		sess, eff, err := cl.SessionDetail(id, token)
-		return sessionDetailMsg{sess: sess, token: eff, err: err}
+		return sessionDetailMsg{sess: sess, token: eff, err: err, gen: gen}
 	}
 }
 
@@ -859,7 +871,7 @@ func (m *Model) exportSelected(format string) tea.Cmd {
 // overwriting: an existing file gets a -1, -2… suffix. 0600 — transcripts
 // can carry sensitive tool output, matching the tokens store standard.
 func writeExport(dir, id, format string, data []byte) (string, error) {
-	base := fmt.Sprintf("bodek-%s-%s", shortID(id), time.Now().Format("20060102-150405"))
+	base := fmt.Sprintf("bodek-%s-%s", fileSafeID(id), time.Now().Format("20060102-150405"))
 	for i := 0; i < 1000; i++ { // O_EXCL: never a racing truncating overwrite
 		suffix := ""
 		if i > 0 {
@@ -959,13 +971,40 @@ func (m *Model) handleSessionsMsg(msg sessionsMsg) {
 		m.panelMsg = "error: " + msg.err.Error()
 		return
 	}
+	prevID := m.selectedSessionID()
 	m.sessions = msg.items
 	m.panelSel = 0
+	if m.keepSessionDeleteArmed(prevID) {
+		return // the "delete …?" prompt stays visible for the still-armed gate
+	}
 	if len(m.sessions) == 0 {
 		m.panelMsg = "no saved sessions yet"
 	} else {
 		m.panelMsg = ""
 	}
+}
+
+// selectedSessionID is the highlighted session row's id, or "".
+func (m *Model) selectedSessionID() string {
+	if m.panelSel >= 0 && m.panelSel < len(m.sessions) {
+		return m.sessions[m.panelSel].ID
+	}
+	return ""
+}
+
+// keepSessionDeleteArmed reports whether an armed session delete still
+// targets prevID after a list replacement. A late list or search page can
+// re-rank rows under the gate; y must never delete a session the operator
+// did not confirm, so a moved target disarms it.
+func (m *Model) keepSessionDeleteArmed(prevID string) bool {
+	if m.confirm != confirmSessionDelete {
+		return false
+	}
+	if prevID != "" && m.selectedSessionID() == prevID {
+		return true
+	}
+	m.confirm = confirmNone
+	return false
 }
 
 // handleSessionsPageMsg applies a search/pagination envelope: replace on
@@ -975,6 +1014,7 @@ func (m *Model) handleSessionsPageMsg(msg sessionsPageMsg) {
 		m.panelMsg = "error: " + msg.err.Error()
 		return
 	}
+	prevID := m.selectedSessionID()
 	if msg.append {
 		m.sessions = append(m.sessions, msg.page.Sessions...)
 	} else {
@@ -985,6 +1025,8 @@ func (m *Model) handleSessionsPageMsg(msg sessionsPageMsg) {
 	}
 	m.sessHasMore = msg.page.Count >= msg.page.Limit && msg.page.Count > 0
 	switch {
+	case m.keepSessionDeleteArmed(prevID):
+		// the "delete …?" prompt stays visible for the still-armed gate
 	case len(m.sessions) == 0:
 		if m.sessQuery != "" {
 			m.panelMsg = "no matches for “" + m.sessQuery + "”"
@@ -1024,11 +1066,24 @@ func (m *Model) handleLimitsMsg(msg limitsMsg) {
 }
 
 func (m *Model) handleSessionDetail(msg sessionDetailMsg) tea.Cmd {
+	if msg.gen != m.resumeGen {
+		return nil // fetched before /new: the operator abandoned that session
+	}
+	m.resumeInFlight = false // every outcome releases the held queue
 	if msg.err != nil {
 		if m.panel != panelNone {
 			m.panelMsg = "error: " + msg.err.Error()
 		}
-		return m.transientNoteCmd("resume failed — /new or ^R")
+		return tea.Batch(m.transientNoteCmd("resume failed — /new or ^R"), m.sendQueued())
+	}
+	// The running turn's remaining frames would stream into whatever
+	// replayed message sits at curIdx — never swap transcripts under it.
+	if m.busy {
+		if m.panel != panelNone {
+			m.panelMsg = "a turn is running — ^X to cancel, then retry" // replaces "loading session…"
+			m.refresh()
+		}
+		return m.transientNoteCmd("a turn is running — finish or cancel it (^X) before resuming")
 	}
 	// Replay the saved transcript into the local view, then adopt the session
 	// on the connection (session_switch restores the server-side memory
@@ -1059,7 +1114,17 @@ func (m *Model) handleSessionDetail(msg sessionDetailMsg) tea.Cmd {
 	m.lastLatency = 0
 	m.resetCallMetrics()
 	m.msgs = m.msgs[:0]
+	m.curIdx = -1
+	m.focusIdx = -1
 	m.inspect = nil // hit targets belong to the replaced transcript
+	m.find = findState{}
+	m.copyMark = copySpan{}
+	// Approvals and clarify belong to the replaced conversation.
+	m.approvals = nil
+	m.apprDeadlines = nil
+	m.apprBells = nil
+	m.resetApprovalInput()
+	m.clearClarify()
 	m.resetMsgBlocks()
 	// The plan surface is session-scoped knowledge: drop it and refetch for
 	// the resumed session. Neither live path covers a resume — the replayed
@@ -1261,6 +1326,7 @@ func (m *Model) handleSessionDeleted(msg sessionDeletedMsg) tea.Cmd {
 		return nil
 	}
 	m.tokens.Delete(msg.id)
+	prevID := m.selectedSessionID()
 	for i := range m.sessions {
 		if m.sessions[i].ID != msg.id {
 			continue
@@ -1272,6 +1338,9 @@ func (m *Model) handleSessionDeleted(msg sessionDeletedMsg) tea.Cmd {
 		break
 	}
 	m.panelSel = clampSel(m.panelSel, len(m.sessions))
+	if armed := m.confirm == confirmSessionDelete; armed && !m.keepSessionDeleteArmed(prevID) {
+		m.panelMsg = "" // a re-armed gate on the removed row must not slide onto its neighbour
+	}
 	if len(m.sessions) == 0 {
 		m.panelMsg = "no saved sessions yet"
 	}
@@ -1356,7 +1425,7 @@ func (m *Model) renderPanel(w, h int) string {
 		body += "\n" + th.acSel.Render(prompt+": "+collapse(m.panelDraft)+"▏")
 	}
 	if m.panelMsg != "" {
-		body += "\n" + th.acDim.Render(m.panelMsg)
+		body += "\n" + th.acDim.Render(sanitize(m.panelMsg)) // may quote server bodies
 	}
 	if m.panel == panelStats {
 		body += "\n" + m.statsBody()
@@ -1490,10 +1559,23 @@ func windowRows(rows []string, sel, n int) []string {
 
 // shortID trims a session ID for display.
 func shortID(id string) string {
-	if len(id) > 17 {
-		return id[:17] + "…"
+	// Ids come off the wire: strip escapes and cut on a rune boundary.
+	id = collapse(id)
+	if r := []rune(id); len(r) > 17 {
+		return string(r[:17]) + "…"
 	}
 	return id
+}
+
+// fileSafeID maps a wire id to a filename fragment: anything outside
+// [A-Za-z0-9._-] becomes '_', so a hostile id cannot add path separators.
+func fileSafeID(id string) string {
+	return strings.Map(func(r rune) rune {
+		if validSessionID(string(r)) {
+			return r
+		}
+		return '_'
+	}, shortID(id))
 }
 
 // shortHash trims a hex hash to its first 12 characters.

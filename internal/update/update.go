@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"os"
@@ -76,7 +77,8 @@ func queryAPI(ctx context.Context, client *http.Client, apiURL string) (string, 
 		return "", nil, statusError(resp.StatusCode, resp.Status)
 	}
 	var rel release
-	if err := json.NewDecoder(resp.Body).Decode(&rel); err != nil {
+	// A release document is a few KiB; bound it like every other decode.
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 4<<20)).Decode(&rel); err != nil {
 		return "", nil, fmt.Errorf("decode latest release: %w", err)
 	}
 	if rel.TagName == "" {
@@ -196,9 +198,10 @@ func statusRetryable(err error) bool {
 // rule: "v1.2.0-rc1" against current "v1.2.0" compares equal and reports
 // false — this simple comparator ignores prerelease ordering. Comparison
 // is numeric over up to 3 dot-separated components, with missing
-// components treated as 0. A Go pseudo-version
-// current (v0.1.3-0.20260901abcdef12-abc1234) compares by its release
-// prefix, so a commit-installed build still sees newer releases. Anything
+// components treated as 0. A Go pseudo-version or prerelease current
+// (v0.1.3-0.20260901abcdef12-abc1234) compares by its release prefix and
+// sits below the final release of that same core, so a commit-installed
+// build still sees the release it predates. Anything
 // unparsable — including a dev build's "dev" or an empty string — reports
 // false, so a failed or skipped check never nags.
 func Newer(latest, current string) bool {
@@ -212,7 +215,10 @@ func Newer(latest, current string) bool {
 			return l[i] > c[i]
 		}
 	}
-	return false
+	// Equal cores: a final release outranks a prerelease or Go
+	// pseudo-version of the same core (v0.1.3-0.2026…-abc is a commit
+	// built before v0.1.3 shipped).
+	return !strings.Contains(latest, "-") && strings.Contains(current, "-")
 }
 
 // parseSemver splits an optional-"v"-prefixed version into its numeric

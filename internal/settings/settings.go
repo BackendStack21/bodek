@@ -70,7 +70,8 @@ func Save(s Settings) error {
 	if path == "" {
 		return os.ErrNotExist
 	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	// 0700 like the token and workspace stores that share ~/.bodek.
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return err
 	}
 	data, err := json.MarshalIndent(s, "", "  ")

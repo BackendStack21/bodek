@@ -32,6 +32,11 @@ func TestNewer(t *testing.T) {
 		{"v1.2.0-rc1", "v1.1.9", true},
 		{"v1.2.0-rc1", "v1.2.0", false}, // release core equal → not newer
 		{"1.3.0-rc1", "v1.2.0", true},
+		// A pseudo-version names the next patch: the release it predates
+		// must still read as newer.
+		{"v0.1.3", "v0.1.3-0.20260901000000-abc1234", true},
+		{"v0.1.2", "v0.1.3-0.20260901000000-abc1234", false},
+		{"v0.1.3-rc2", "v0.1.3-rc1", false},
 	}
 	for _, tc := range cases {
 		if got := Newer(tc.latest, tc.current); got != tc.want {

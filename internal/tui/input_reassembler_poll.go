@@ -16,6 +16,9 @@ func (r *inputReassembler) waitReadable(budget time.Duration) bool {
 	deadline := time.Now().Add(budget)
 	for {
 		ms := int(time.Until(deadline).Milliseconds())
+		if ms < 0 {
+			ms = 0 // an EINTR retry past the deadline: a negative timeout would block forever
+		}
 		n, err := unix.Poll([]unix.PollFd{{Fd: int32(r.file.Fd()), Events: unix.POLLIN}}, ms)
 		if err == unix.EINTR {
 			continue

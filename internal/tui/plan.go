@@ -120,6 +120,9 @@ func (m *Model) handlePlanMsg(msg planMsg) (cmd tea.Cmd) {
 			cmd = tea.Batch(cmd, m.armPlanPoll())
 		}
 	}()
+	if msg.want != m.sessionID {
+		return nil // fetched for a session we already left: its outcome says nothing about this one
+	}
 	if msg.err != nil {
 		// Only a 404 (old engine, route absent) is permanent. A transient
 		// error — timeout under load, a 5xx, a transport blip — must not

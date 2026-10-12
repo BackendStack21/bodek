@@ -136,13 +136,13 @@ func (s *Store) Save(cwd string, st State) error {
 	if s == nil || cwd == "" {
 		return nil
 	}
+	// Persist under the lock (as tokens does): writing a snapshot after
+	// unlocking lets two interleaved saves land out of order on disk.
 	s.mu.Lock()
+	defer s.mu.Unlock()
 	s.reloadLocked(cwd)
 	s.all[cwd] = cloneState(st)
-	path := s.path
-	snap := cloneAll(s.all)
-	s.mu.Unlock()
-	return persist(path, snap)
+	return persist(s.path, cloneAll(s.all))
 }
 
 // Patch applies fn to the cwd snapshot and persists.
@@ -151,16 +151,14 @@ func (s *Store) Patch(cwd string, fn func(*State)) {
 		return
 	}
 	s.mu.Lock()
+	defer s.mu.Unlock()
 	s.reloadLocked(cwd)
 	st := cloneState(s.all[cwd])
 	fn(&st)
 	s.all[cwd] = st
-	path := s.path
-	snap := cloneAll(s.all)
-	s.mu.Unlock()
 	// A failed persist is not silent: draft/queue loss on a full disk or a
 	// read-only directory must be diagnosable, like tokens' warnPersist.
-	if err := persist(path, snap); err != nil {
+	if err := persist(s.path, cloneAll(s.all)); err != nil {
 		fmt.Fprintf(os.Stderr, "bodek: warning: workspace not saved: %v\n", err)
 	}
 }

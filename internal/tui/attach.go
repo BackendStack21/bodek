@@ -3,9 +3,11 @@ package tui
 import (
 	"bytes"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -47,12 +49,22 @@ func (m *Model) attachFile(path string) tea.Cmd {
 	if p, err := filepath.Abs(expandTilde(path)); err == nil {
 		path = p
 	}
+	// Stage, name and persist the real file: the persisted path then lets a
+	// later restore detect a symlink planted anywhere along it.
+	if p, err := filepath.EvalSymlinks(path); err == nil {
+		path = p
+	}
 	info, err := os.Stat(path)
 	if err != nil {
 		return m.transientNoteCmd("attach: " + err.Error())
 	}
 	if info.IsDir() {
 		return m.transientNoteCmd("attach: " + path + " is a directory")
+	}
+	if !info.Mode().IsRegular() {
+		// A FIFO would block the UI goroutine forever; /dev/zero reports
+		// size 0 and would read without bound.
+		return m.transientNoteCmd("attach: " + filepath.Base(path) + " is not a regular file")
 	}
 	if info.Size() > maxAttachBytes {
 		return m.transientNoteCmd(fmt.Sprintf("attach: %s is %s — over the 5 MB per-file cap (use an @reference)",
@@ -65,7 +77,7 @@ func (m *Model) attachFile(path string) tea.Cmd {
 	if total+int(info.Size()) > maxAttachTotalBytes {
 		return m.transientNoteCmd("attach: staged files would exceed the 10 MB prompt cap")
 	}
-	data, err := os.ReadFile(path)
+	data, err := readCapped(path, maxAttachBytes)
 	if err != nil {
 		return m.transientNoteCmd("attach: " + err.Error())
 	}
@@ -127,4 +139,44 @@ func expandTilde(p string) string {
 		}
 	}
 	return p
+}
+
+// readCapped reads at most limit bytes of path, failing if the file grew
+// past it after the size check.
+func readCapped(path string, limit int64) ([]byte, error) {
+	// O_NONBLOCK: a path swapped for a FIFO after the caller's Stat must
+	// not block the open; the descriptor is then re-checked, so the bytes
+	// read always come from the regular file that was vetted.
+	f, err := os.OpenFile(path, os.O_RDONLY|syscall.O_NONBLOCK, 0)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = f.Close() }()
+	if info, err := f.Stat(); err != nil {
+		return nil, err
+	} else if !info.Mode().IsRegular() {
+		return nil, fmt.Errorf("%s is not a regular file", filepath.Base(path))
+	}
+	data, err := io.ReadAll(io.LimitReader(f, limit+1))
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(data)) > limit {
+		return nil, fmt.Errorf("%s grew past the 5 MB per-file cap", filepath.Base(path))
+	}
+	return data, nil
+}
+
+// restoreAttachment re-stages a path persisted from an earlier run. Unlike
+// an explicit /attach, nobody chose it this launch, and attachFile persists
+// fully resolved paths: if it no longer resolves to itself, a symlink was
+// planted somewhere along it (an agent with workspace write access can, and
+// inside a bind-mounted sandbox it resolves on the host). It is skipped, so
+// a host secret is never sent with the next prompt.
+func (m *Model) restoreAttachment(path string) tea.Cmd {
+	p := expandTilde(path)
+	if real, err := filepath.EvalSymlinks(p); err == nil && real != filepath.Clean(p) {
+		return m.transientNoteCmd("attach: " + filepath.Base(p) + " now resolves elsewhere — not re-attached")
+	}
+	return m.attachFile(p)
 }

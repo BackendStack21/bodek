@@ -31,6 +31,7 @@ const (
 type jobsFetchedMsg struct {
 	jobs []client.Job
 	err  error
+	sid  string // session the snapshot was fetched for
 }
 
 // jobsTickMsg re-arms the cadence; watch selects the background chain.
@@ -90,7 +91,7 @@ func (m *Model) fetchJobs() tea.Cmd {
 	cl, sid, tok := m.cl, m.sessionID, m.authToken
 	return func() tea.Msg {
 		jobs, err := cl.Jobs(sid, tok)
-		return jobsFetchedMsg{jobs: jobs, err: err}
+		return jobsFetchedMsg{jobs: jobs, err: err, sid: sid}
 	}
 }
 

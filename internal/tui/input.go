@@ -74,6 +74,13 @@ func newlineChord(s string) bool {
 	return false
 }
 
+// isKeySentinel reports whether s is one of the KeyRunes sentinels the
+// input decoder synthesizes for enhanced chords; their rune text is a name,
+// never something the user typed.
+func isKeySentinel(s string) bool {
+	return newlineChord(s) || s == "shift+delete" || s == "alt+unmapped-chord"
+}
+
 // insertNewline drops a line break at the caret and refits the composer.
 func (m *Model) insertNewline() tea.Cmd {
 	var cmd tea.Cmd
@@ -472,7 +479,7 @@ func (m *Model) submit() tea.Cmd {
 		m.refresh()
 		return m.noticeSweep()
 	}
-	if m.busy {
+	if m.busy || m.resumeInFlight {
 		if m.status == "cancelling" {
 			// cancelRun handed the queue back to the input so it would
 			// not fire into the cancelled session. Re-queueing here
@@ -492,6 +499,9 @@ func (m *Model) submit() tea.Cmd {
 		m.refresh()
 		m.vp.GotoBottom() // Enter means "show me the latest", even mid-turn
 		m.teach(hintQueue, "tip: ^Q manages the queue · /queue opens the full panel")
+		if !m.busy {
+			return m.transientNoteCmd("queued — it sends once the session resumes")
+		}
 		return m.transientNoteCmd("queued — it sends when the turn ends")
 	}
 	m.ta.Reset()
@@ -580,16 +590,25 @@ func (m *Model) sendPrompt(text string) tea.Cmd {
 // sendQueued pops the oldest queued prompt and sends it when the model is
 // idle and connected; otherwise it is a no-op (nil cmd).
 func (m *Model) sendQueued() tea.Cmd {
-	if m.busy || m.disconn || len(m.queue) == 0 {
+	if m.busy || m.disconn || m.resumeInFlight || len(m.queue) == 0 {
 		return nil
 	}
 	text := m.queue[0]
 	m.queue = m.queue[1:]
 	m.qsel = clampSel(m.qsel, len(m.queue))
 	if m.panel == panelQueue {
-		m.panelSel = clampSel(m.panelSel, len(m.queue)) // the drain races the open panel too
+		// The drain races the open panel too: rows shifted up by one, so
+		// keep the highlight on the same prompt.
+		if m.panelSel > 0 {
+			m.panelSel--
+		}
+		m.panelSel = clampSel(m.panelSel, len(m.queue))
 	}
 	m.qarm = -1 // the head just drained — never mis-aim the armed confirm
+	if m.confirm == confirmQueueDelete {
+		m.confirm = confirmNone // the armed row may have just been sent
+		m.panelMsg = ""
+	}
 	if len(m.queue) == 0 {
 		m.qfocus = false
 	}
@@ -602,7 +621,7 @@ func (m *Model) retryLast() tea.Cmd {
 	if m.lastPrompt == "" {
 		return m.transientNoteCmd("nothing to retry yet — send a prompt first")
 	}
-	if m.busy {
+	if m.busy || m.resumeInFlight {
 		if m.status == "cancelling" {
 			return m.transientNoteCmd("cancelling — retry stays off the queue")
 		}

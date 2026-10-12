@@ -74,7 +74,11 @@ func (c *config) save() error {
 	}
 	cur, err := settings.Load()
 	if err != nil {
-		cur = c.persisted // file vanished or changed shape: fall back to our baseline
+		// A missing file loads clean; an error means the file became
+		// unreadable or unparsable mid-run (a hand-edit typo). Replacing it
+		// would clobber those edits — the same rule persistDisabled enforces
+		// at startup.
+		return fmt.Errorf("settings file could not be read; change not saved: %w", err)
 	}
 	rb, rc, rd := reflect.ValueOf(c.persisted), reflect.ValueOf(c.persist), reflect.ValueOf(&cur).Elem()
 	for i := range rc.NumField() {
@@ -370,6 +374,9 @@ func setupSignalHandler(p *tea.Program) {
 	signal.Notify(ch, os.Interrupt, syscall.SIGTERM)
 	go func() {
 		<-ch
+		// Restore default handling so a second Ctrl+C / SIGTERM can abort a
+		// slow shutdown instead of being swallowed by this channel.
+		signal.Stop(ch)
 		p.Quit()
 	}()
 }

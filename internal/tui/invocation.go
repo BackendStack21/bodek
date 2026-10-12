@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -74,14 +75,14 @@ func invocationText(s step) string {
 				delete(fields, key)
 				out := "invocation · command\n" + visibleInvocation(command)
 				if len(fields) > 0 {
-					if rest, err := json.MarshalIndent(fields, "", "  "); err == nil {
+					if rest, err := indentJSON(fields); err == nil {
 						out += "\nother arguments\n" + visibleInvocation(string(rest))
 					}
 				}
 				return appendArgsLimit(out, s.argsOmitted)
 			}
 		}
-		if pretty, err := json.MarshalIndent(fields, "", "  "); err == nil {
+		if pretty, err := indentJSON(fields); err == nil {
 			return appendArgsLimit("invocation · arguments\n"+visibleInvocation(string(pretty)), s.argsOmitted)
 		}
 	}
@@ -111,4 +112,17 @@ func invocationDetailLines(s step, width int, th theme) []string {
 		out = append(out, style.Render(line))
 	}
 	return out
+}
+
+// indentJSON pretty-prints v without json.Marshal's HTML escaping, which
+// would show "<" as \u003c in the inspector and in alt+i copies.
+func indentJSON(v any) ([]byte, error) {
+	var b bytes.Buffer
+	enc := json.NewEncoder(&b)
+	enc.SetEscapeHTML(false)
+	enc.SetIndent("", "  ")
+	if err := enc.Encode(v); err != nil {
+		return nil, err
+	}
+	return bytes.TrimRight(b.Bytes(), "\n"), nil
 }

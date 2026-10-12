@@ -256,6 +256,8 @@ modifier routes to the composer), and `Alt+A`/`Alt+D`/`Alt+T`
   minted token, and never returns that stub as a session. Replayed user
   turns show `principal_prompt` (what was typed), not `content`, which
   carries attachments and @-resources inlined in untrusted wrappers.
+  `handleSessionDetail` refuses a resume while `busy` — the running turn's
+  frames would stream into a replayed message at `curIdx`.
 - The TUI reconnects with backoff and resumes the session after a socket
   drop (`reconnect.go`) — don't break that by assuming a single
   connection per run.

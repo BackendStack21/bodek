@@ -282,6 +282,7 @@ func (m *Model) cycleDrawerTab(dir int) tea.Cmd {
 func (m *Model) openRuns() tea.Cmd {
 	m.panel = panelRuns
 	m.panelSel = 0
+	m.runs = nil // a stale list would mis-anchor the first poll and target old rows
 	m.panelEdit = panelEditNone
 	m.panelMsg = "loading runs…"
 	m.relayout()
@@ -311,7 +312,19 @@ func (m *Model) handleRunsMsg(msg runsMsg) {
 		m.panelMsg = "error: " + msg.err.Error()
 		return
 	}
+	// Anchor the selection by run id: a/D/t/c act on the highlighted run,
+	// so a poll that inserts or reaps rows must not slide it onto another.
+	prevID := ""
+	if m.panelSel < len(m.runs) {
+		prevID = m.runs[m.panelSel].ID
+	}
 	m.runs = msg.runs
+	for i, r := range m.runs {
+		if prevID != "" && r.ID == prevID {
+			m.panelSel = i
+			break
+		}
+	}
 	if m.panelSel >= len(m.runs) {
 		m.panelSel = max(len(m.runs)-1, 0)
 	}

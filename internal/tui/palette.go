@@ -113,6 +113,12 @@ func (m *Model) handlePalSessions(msg palSessionsMsg) tea.Cmd {
 		return nil
 	}
 	m.pal.loading = false
+	// Late rows re-rank the list under a typed query: keep the highlight on
+	// the same entry so Enter never runs one the operator did not pick.
+	var selTitle, selKind string
+	if m.pal.sel >= 0 && m.pal.sel < len(m.pal.items) {
+		selTitle, selKind = m.pal.items[m.pal.sel].title, m.pal.items[m.pal.sel].kind
+	}
 	if msg.err == nil {
 		for _, s := range msg.items {
 			sess := s
@@ -129,6 +135,12 @@ func (m *Model) handlePalSessions(msg palSessionsMsg) tea.Cmd {
 		}
 	}
 	m.filterPalette()
+	for i, e := range m.pal.items {
+		if selTitle != "" && e.title == selTitle && e.kind == selKind {
+			m.pal.sel = i
+			break
+		}
+	}
 	m.refresh()
 	return nil
 }

@@ -204,16 +204,39 @@ func (m *Model) handleMgmtMsg(msg mgmtMsg) {
 		// Anchor the selection by identity across rebuilds: a fact inserted
 		// above the selection must not silently swap the open detail.
 		var sel string
+		var prev memRow
 		if m.panelSel >= 0 && m.panelSel < len(m.memRows) {
-			sel = m.memRows[m.panelSel].text
+			prev = m.memRows[m.panelSel]
+			sel = prev.text
 		}
 		m.memView = msg.mem
 		m.memRows = buildMemRows(msg.mem)
 		m.pendingMemReload = false // a fresh listing supersedes any stale-row failure
 		m.panelSel = anchorRow(m.panelSel, m.memRows, sel)
-		if len(m.memRows) == 0 {
+		armed := m.confirm == confirmFactDelete || m.confirm == confirmEpisodePromote ||
+			m.confirm == confirmEpisodeDiscard
+		if armed {
+			// The gate acts on the row at confirm time: re-find the exact
+			// confirmed row (the same text can exist under user and env, or
+			// as two episodes), and disarm when it is gone — y must never
+			// act on a row the operator did not confirm.
+			armed = false
+			for i, r := range m.memRows {
+				if sameMemRow(r, prev) {
+					m.panelSel, armed = i, true
+					break
+				}
+			}
+			if !armed {
+				m.confirm = confirmNone
+			}
+		}
+		switch {
+		case armed:
+			// keep the visible "delete …?" prompt for the still-armed gate
+		case len(m.memRows) == 0:
 			m.panelMsg = "no facts or pending episodes"
-		} else {
+		default:
 			m.panelMsg = ""
 		}
 	case panelSkills:
@@ -291,6 +314,12 @@ func (m *Model) handleMgmtMsg(msg mgmtMsg) {
 // anchorRow re-locates a selection by its row text after a rebuild: an
 // insert above must not silently change what the selection points at. Falls
 // back to clamping when the row vanished.
+// sameMemRow reports whether two rows name the same fact or episode.
+func sameMemRow(a, b memRow) bool {
+	return a.kind == b.kind && a.text == b.text && a.sessionID == b.sessionID &&
+		a.summarySHA256 == b.summarySHA256
+}
+
 func anchorRow(prev int, rows []memRow, text string) int {
 	if text != "" {
 		for i := range rows {
@@ -869,7 +898,7 @@ func (m *Model) mgmtDetailLines(w int) []string {
 			return []string{th.acDim.Render("no step selected")}
 		}
 		out = append(out, th.acSel.Render("› "+planGlyph(st.Status)+" "+sanitize(st.ID)))
-		meta := []string{string(st.Status)}
+		meta := []string{collapse(string(st.Status))} // REST snapshot status is wire text
 		if m.planInit {
 			meta = append(meta, fmt.Sprintf("v%d", m.plan.Version))
 		}

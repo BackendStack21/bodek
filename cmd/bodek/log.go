@@ -41,6 +41,9 @@ type ringWriter struct {
 	partial []byte
 }
 
+// maxPartialBytes caps the unterminated trailing line a ringWriter keeps.
+const maxPartialBytes = 64 << 10
+
 func newRingWriter(maxLine int) *ringWriter {
 	return &ringWriter{maxLine: maxLine}
 }
@@ -59,6 +62,10 @@ func (w *ringWriter) Write(p []byte) (int, error) {
 		if len(w.lines) > w.maxLine {
 			w.lines = w.lines[len(w.lines)-w.maxLine:]
 		}
+	}
+	// Newline-free output (\r progress bars) must not grow without bound.
+	if n := len(w.partial); n > maxPartialBytes {
+		w.partial = append([]byte(nil), w.partial[n-maxPartialBytes:]...)
 	}
 	return len(p), nil
 }

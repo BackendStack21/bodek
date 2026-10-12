@@ -74,3 +74,14 @@ func TestOpenServerLogTruncates(t *testing.T) {
 		t.Fatal("prior run's log was not truncated")
 	}
 }
+
+func TestRingWriterCapsPartialLine(t *testing.T) {
+	w := newRingWriter(3)
+	chunk := []byte(strings.Repeat("x", 4096))
+	for range 64 {
+		_, _ = w.Write(chunk)
+	}
+	if len(w.partial) > maxPartialBytes {
+		t.Fatalf("partial = %d bytes, want <= %d", len(w.partial), maxPartialBytes)
+	}
+}

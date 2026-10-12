@@ -103,12 +103,17 @@ func TestUpgradeSlowLinkDownloads(t *testing.T) {
 // TestNewerPseudoVersion guards commit-installed builds: a Go pseudo-version
 // stamp (v0.1.3-0.20260901abcdef12-abc1234) must compare by its release
 // prefix, not report "already up to date" against every future release.
+// The stamp names the *next* patch (a commit after v0.1.2), so the v0.1.3
+// release itself is newer.
 func TestNewerPseudoVersion(t *testing.T) {
 	if !update.Newer("v9.9.9", "v0.1.3-0.20260901000000-abc1234") {
 		t.Fatal("v9.9.9 must be newer than a v0.1.3 pseudo-version stamp")
 	}
-	if update.Newer("v0.1.3", "v0.1.3-0.20260901000000-abc1234") {
-		t.Fatal("v0.1.3 must not upgrade over a v0.1.3 pseudo-version")
+	if !update.Newer("v0.1.3", "v0.1.3-0.20260901000000-abc1234") {
+		t.Fatal("v0.1.3 must be newer than the v0.1.3 pseudo-version that predates it")
+	}
+	if update.Newer("v0.1.2", "v0.1.3-0.20260901000000-abc1234") {
+		t.Fatal("v0.1.2 must not upgrade over a later commit")
 	}
 	// A genuine semver prerelease must not be misparsed as a pseudo-version.
 	if !update.Newer("v1.3.0", "v1.2.0-0.1") {

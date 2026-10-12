@@ -11,6 +11,7 @@ import (
 	"crypto/tls"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"net/url"
@@ -309,7 +310,7 @@ func Dial(wsURL, origin, baseURL, token string) (*Client, error) {
 		conn:       conn,
 		baseURL:    baseURL,
 		serveToken: token,
-		http:       &http.Client{Timeout: 3 * time.Second},
+		http:       &http.Client{Timeout: 3 * time.Second, CheckRedirect: noRedirect},
 		// Thinking models stream hundreds of delta frames per turn. The TUI
 		// batch-drains this channel, but a deep buffer keeps readLoop from
 		// blocking (which trips odek's 30s write watchdog and drops the socket).
@@ -318,7 +319,7 @@ func Dial(wsURL, origin, baseURL, token string) (*Client, error) {
 		// exports) legitimately take longer than interactive REST calls; a
 		// dedicated 30s client serves them so the 3s interactive budget does
 		// not cut their body reads.
-		slowHTTP: &http.Client{Timeout: 30 * time.Second},
+		slowHTTP: &http.Client{Timeout: 30 * time.Second, CheckRedirect: noRedirect},
 		done:     make(chan struct{}),
 	}
 	go c.readLoop()
@@ -399,7 +400,7 @@ func (c *Client) Resources(query string, limit int) ([]Resource, error) {
 		return nil, fmt.Errorf("resources: status %s", resp.Status)
 	}
 	var out []Resource
-	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+	if err := json.NewDecoder(io.LimitReader(resp.Body, maxJSONBytes)).Decode(&out); err != nil {
 		return nil, err
 	}
 	return out, nil
@@ -618,11 +619,27 @@ func (c *Client) SendSkillPromptResponse(action, skillName string) error {
 	}{Type: "skill_prompt_response", Action: action, SkillName: skillName})
 }
 
+// writeTimeout bounds one frame write. A peer that stops reading would
+// otherwise park send forever while holding wmu, wedging every later
+// approval and cancel behind it. Generous enough for a 10 MB attachment
+// prompt on a slow link.
+var writeTimeout = 60 * time.Second
+
 // send marshals v and writes it as one frame, serialized against other writers.
 func (c *Client) send(v any) error {
 	c.wmu.Lock()
 	defer c.wmu.Unlock()
+	_ = c.conn.SetWriteDeadline(time.Now().Add(writeTimeout))
 	return ws.JSON.Send(c.conn, v)
+}
+
+// noRedirect keeps REST calls on the origin they were addressed to. Go
+// strips Authorization on cross-host redirects but copies custom headers,
+// so following one would hand X-Odek-Ws-Token / X-Session-Token (and a
+// replayed POST body on 307/308) to another host. odek's API never
+// redirects; the 3xx reaches the caller as a status error.
+func noRedirect(*http.Request, []*http.Request) error {
+	return http.ErrUseLastResponse
 }
 
 // Close shuts the connection and releases a readLoop parked on Events.

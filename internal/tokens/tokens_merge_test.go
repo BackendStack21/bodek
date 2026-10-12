@@ -76,3 +76,31 @@ func TestQuarantineRotatesBackups(t *testing.T) {
 		t.Fatalf("first quarantine was clobbered: %q err=%v", got, err)
 	}
 }
+
+// Regression: a Set whose persist failed lived only in memory, and the next
+// successful mutation adopted the older disk map — erasing it for good.
+func TestFailedPersistSurvivesNextMerge(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root ignores directory permissions")
+	}
+	dir := t.TempDir()
+	path := filepath.Join(dir, "sessions.json")
+	s := openAt(path)
+	s.Set("sess-a", "tok-a")
+
+	if err := os.Chmod(dir, 0o500); err != nil { // staging the tmp file fails
+		t.Fatal(err)
+	}
+	s.Set("sess-x", "tok-x")
+	if err := os.Chmod(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	s.Set("sess-y", "tok-y")
+
+	c := openAt(path)
+	for id, want := range map[string]string{"sess-a": "tok-a", "sess-x": "tok-x", "sess-y": "tok-y"} {
+		if got := c.Get(id); got != want {
+			t.Fatalf("Get(%s) = %q, want %q", id, got, want)
+		}
+	}
+}

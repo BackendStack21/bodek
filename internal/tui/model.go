@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textarea"
@@ -245,37 +246,40 @@ type Model struct {
 
 	failBellFired bool   // (A3) the failure BEL rang for this turn — guard against double-fire
 	apprBells     []bool // per-approval urgent-window BEL latch, parallel to apprDeadlines
+	apprSweeping  bool   // an approvalExpireMsg tick is in flight (one chain at a time)
 
-	approvals     []client.Event   // pending approval queue — odek runs parallel tools, so requests FIFO
-	apprDeadlines []time.Time      // per-approval expiry, stamped on arrival (parallel to approvals)
-	apprSel       int              // highlighted option in the approval panel
-	apprExpanded  bool             // tab: show the full command/description text
-	apprTyped     string           // friction mode: the literal word being typed ("approve")
-	apprEditing   bool             // explicit focus on the friction confirmation editor
-	apprOffset    int              // expanded approval command page
-	ac            autocomplete     // @-reference completion state
-	pal           palState         // ⌘K command palette — the navigation spine
-	skillSuggest  *client.Event    // pending skill suggestion card (skill_event "suggested")
-	clarify       *client.Event    // pending principal-channel question
-	clarifyBuf    string           // typed answer (not the composer)
-	queue         []string         // prompts typed mid-turn, sent when the turn ends
-	qfocus        bool             // the queue strip owns the keyboard (ctrl+q)
-	qsel          int              // selected strip row while qfocus
-	qarm          int              // armed-for-delete row while qfocus (-1 = none)
-	lastPrompt    string           // most recent prompt sent — /retry re-sends it
-	ws            *workspace.Store // nil in tests unless injected
-	pendingResume string           // cwd last-session id; consumed by resumeLast
-	resumeTitle   string           // sanitized last-session title for the home card
-	attachPaths   []string         // original paths for staged files (persist only)
-	persistSeq    int              // generation guard for persistDraftMsg
-	copyMark      copySpan         // alt+m span start; zero = none
-	homePrompt    string           // last user prompt, kept across ^L for the session home
-	homeReceipt   string           // last turn's coding receipt, shown on the cleared home
-	homeSess      []client.Session // recent sessions for the home dashboard
-	homeSessDone  bool             // the current clear's fetch already ran
-	homeSessGen   int              // bumped per clear; stale fetches dropped
-	focusIdx      int              // transcript cursor: turn head alt+↑/↓ last jumped to (-1 none)
-	inspect       *inspectTarget   // explicit keyboard focus on one transcript item
+	approvals      []client.Event   // pending approval queue — odek runs parallel tools, so requests FIFO
+	apprDeadlines  []time.Time      // per-approval expiry, stamped on arrival (parallel to approvals)
+	apprSel        int              // highlighted option in the approval panel
+	apprExpanded   bool             // tab: show the full command/description text
+	apprTyped      string           // friction mode: the literal word being typed ("approve")
+	apprEditing    bool             // explicit focus on the friction confirmation editor
+	apprOffset     int              // expanded approval command page
+	ac             autocomplete     // @-reference completion state
+	pal            palState         // ⌘K command palette — the navigation spine
+	skillSuggest   *client.Event    // pending skill suggestion card (skill_event "suggested")
+	clarify        *client.Event    // pending principal-channel question
+	clarifyBuf     string           // typed answer (not the composer)
+	queue          []string         // prompts typed mid-turn, sent when the turn ends
+	qfocus         bool             // the queue strip owns the keyboard (ctrl+q)
+	qsel           int              // selected strip row while qfocus
+	qarm           int              // armed-for-delete row while qfocus (-1 = none)
+	lastPrompt     string           // most recent prompt sent — /retry re-sends it
+	ws             *workspace.Store // nil in tests unless injected
+	pendingResume  string           // cwd last-session id; consumed by resumeLast
+	resumeInFlight bool             // startup resume fetch pending: hold queued/new prompts until it lands
+	resumeGen      int              // bumped by /new: a session detail fetched before it is stale
+	resumeTitle    string           // sanitized last-session title for the home card
+	attachPaths    []string         // original paths for staged files (persist only)
+	persistSeq     int              // generation guard for persistDraftMsg
+	copyMark       copySpan         // alt+m span start; zero = none
+	homePrompt     string           // last user prompt, kept across ^L for the session home
+	homeReceipt    string           // last turn's coding receipt, shown on the cleared home
+	homeSess       []client.Session // recent sessions for the home dashboard
+	homeSessDone   bool             // the current clear's fetch already ran
+	homeSessGen    int              // bumped per clear; stale fetches dropped
+	focusIdx       int              // transcript cursor: turn head alt+↑/↓ last jumped to (-1 none)
+	inspect        *inspectTarget   // explicit keyboard focus on one transcript item
 
 	history   []string // submitted prompts, newest last (recalled with ↑)
 	histNav   bool     // true while ^P/^N is walking the history
@@ -801,6 +805,11 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.handleJobsTick(msg)
 
 	case jobsFetchedMsg:
+		if msg.sid != "" && msg.sid != m.sessionID {
+			// In flight across a switch/resume: the previous session's jobs
+			// must not become this session's baseline. Keep the chain alive.
+			return m, m.rearmJobs()
+		}
 		attn := m.applyJobs(msg.jobs, msg.err)
 		m.refresh()
 		return m, tea.Batch(m.rearmJobs(), m.noticeSweep(), attn)
@@ -895,6 +904,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case approvalExpireMsg:
+		m.apprSweeping = false // this chain's tick landed; approvalSweep may re-arm it
 		drop := m.handleApprovalExpiry(time.Now())
 		m.refresh()
 		return m, tea.Batch(drop, m.approvalSweep()) // re-arm while a form is open
@@ -976,6 +986,13 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// or swallow it — it always becomes the transient note.
 	if msg.String() == "alt+unmapped-chord" {
 		return m, m.transientNoteCmd("unmapped key chord ignored")
+	}
+	// shift+delete is the composer's clear chord. Every other capture
+	// surface (approval composer + friction editor, clarify, popups, panel
+	// editors) would splice its sentinel text in, so it is a no-op there.
+	if msg.String() == "shift+delete" && (m.curApproval() != nil || m.clarify != nil ||
+		m.ac.open || m.pal.open || m.panel != panelNone) {
+		return m, nil
 	}
 	// The palette works from every rung of the modality ladder — except over
 	// a live approval or clarify card, which captures the keyboard until
@@ -1297,6 +1314,8 @@ func (m *Model) startFreshSession() tea.Cmd {
 	m.freshStart = true
 	m.suppressRemember = true // the fresh connection's first session frame carries only a placeholder
 	m.pendingResume = ""
+	m.resumeInFlight = false // a startup resume still in flight now targets the abandoned session
+	m.resumeGen++
 	if m.ws != nil && m.opts.CWD != "" {
 		m.ws.ClearSession(m.opts.CWD)
 	}
@@ -1592,7 +1611,9 @@ func (m *Model) staleAge() string {
 // Tabs are kept — copied prose (Makefiles, gofmt output) must paste intact;
 // display paths expand them where cell math happens (truncate, clampLines).
 func sanitize(s string) string {
-	if !strings.ContainsFunc(s, needsSanitize) {
+	// Invalid UTF-8 takes the slow path too: a lone 0x9b/0x9d byte is an
+	// 8-bit CSI/OSC to some emulators; ranging rewrites it as U+FFFD.
+	if !strings.ContainsFunc(s, needsSanitize) && utf8.ValidString(s) {
 		return s
 	}
 	var b strings.Builder
@@ -1638,6 +1659,14 @@ func isInvisible(r rune) bool {
 	case r >= 0x2066 && r <= 0x2069: // bidi isolates
 		return true
 	case r == 0xfeff: // BOM / zero-width no-break space
+		return true
+	case r == 0x061c, r == 0x180e: // Arabic letter mark, Mongolian vowel separator
+		return true
+	case r >= 0x2061 && r <= 0x2064: // invisible math operators
+		return true
+	case r >= 0xfff9 && r <= 0xfffb: // interlinear annotation controls
+		return true
+	case r >= 0xe0000 && r <= 0xe007f: // tag characters (hidden payload)
 		return true
 	}
 	return false

@@ -331,6 +331,9 @@ func (m *Model) queueSendSelected() tea.Cmd {
 	if m.busy {
 		return m.transientNoteCmd("a turn is running — this sends when it ends · ← raises its priority")
 	}
+	if m.resumeInFlight {
+		return m.transientNoteCmd("resuming the session — this sends once it lands")
+	}
 	i := m.panelSel
 	text := m.queue[i]
 	m.queue = append(m.queue[:i], m.queue[i+1:]...)

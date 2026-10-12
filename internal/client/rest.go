@@ -215,7 +215,7 @@ func (c *Client) sessionDetailOnce(id, token string) (s Session, eff string, boo
 		Session
 		Bootstrapped bool `json:"bootstrapped"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+	if err := json.NewDecoder(io.LimitReader(resp.Body, maxJSONBytes)).Decode(&body); err != nil {
 		return s, "", false, err
 	}
 	eff = resp.Header.Get("X-Session-Token")

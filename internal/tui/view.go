@@ -2158,7 +2158,7 @@ func (m *Model) footerContent() string {
 		// ^S arms from the composer — the gate must render where it captured
 		// the keyboard, not only inside the agents panel.
 		return m.panelFooter(
-			th.footerDanger.Render(strings.SplitN(m.panelMsg, "?  ", 2)[0]+"?"),
+			th.footerDanger.Render(strings.SplitN(sanitize(m.panelMsg), "?  ", 2)[0]+"?"),
 			th.footerKey.Render("y")+th.footerDanger.Render(" stop"),
 			th.footer.Render("any other key cancels"),
 		)

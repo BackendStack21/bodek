@@ -24,6 +24,10 @@ type Store struct {
 	mu   sync.Mutex
 	m    map[string]string
 	path string
+	// pending holds this instance's mutations not yet on disk (token, or ""
+	// for a delete). mergeLocked replays them so a failed persist cannot be
+	// erased by the next successful one adopting the older disk map.
+	pending map[string]string
 }
 
 // Open loads the token store from ~/.bodek/sessions.json. It never fails:
@@ -90,6 +94,7 @@ func (s *Store) Set(id, token string) {
 	}
 	s.mergeLocked()
 	s.m[id] = token
+	s.markPendingLocked(id, token)
 	s.persistLocked()
 }
 
@@ -105,6 +110,7 @@ func (s *Store) Delete(id string) {
 	}
 	s.mergeLocked()
 	delete(s.m, id)
+	s.markPendingLocked(id, "")
 	s.persistLocked()
 }
 
@@ -128,7 +134,22 @@ func (s *Store) mergeLocked() {
 	if disk == nil {
 		disk = map[string]string{}
 	}
+	for id, tok := range s.pending {
+		if tok == "" {
+			delete(disk, id)
+		} else {
+			disk[id] = tok
+		}
+	}
 	s.m = disk
+}
+
+// markPendingLocked records a mutation until a persist lands it on disk.
+func (s *Store) markPendingLocked(id, token string) {
+	if s.pending == nil {
+		s.pending = map[string]string{}
+	}
+	s.pending[id] = token
 }
 
 // persistLocked writes the store while the mutex is held. Snapshot-then-
@@ -142,7 +163,9 @@ func (s *Store) persistLocked() {
 	}
 	if err := persist(s.path, snapshot); err != nil {
 		warnPersist(err)
+		return
 	}
+	s.pending = nil
 }
 
 // persist atomically writes the store (staged .tmp + rename) so a crash
