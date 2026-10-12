@@ -137,6 +137,25 @@ func TestRunsReopenDropsStaleList(t *testing.T) {
 	}
 }
 
+// Every wire batch calls approvalSweep: only one tick chain may exist.
+func TestApprovalSweepSingleChain(t *testing.T) {
+	m := newTestModel()
+	m.approvals = []client.Event{{ID: "a1"}}
+	if m.approvalSweep() == nil {
+		t.Fatal("first sweep must arm")
+	}
+	if m.approvalSweep() != nil {
+		t.Fatal("second sweep armed a parallel chain")
+	}
+	_, cmd := m.Update(approvalExpireMsg{})
+	if cmd == nil {
+		t.Fatal("landed tick must re-arm while an approval is pending")
+	}
+	if !m.apprSweeping {
+		t.Fatal("re-armed chain not recorded")
+	}
+}
+
 // A memory refresh that drops the confirmed fact must disarm the gate.
 func TestFactDeleteDisarmsWhenRowVanishes(t *testing.T) {
 	m := newTestModel()

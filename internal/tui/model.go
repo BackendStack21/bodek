@@ -246,6 +246,7 @@ type Model struct {
 
 	failBellFired bool   // (A3) the failure BEL rang for this turn — guard against double-fire
 	apprBells     []bool // per-approval urgent-window BEL latch, parallel to apprDeadlines
+	apprSweeping  bool   // an approvalExpireMsg tick is in flight (one chain at a time)
 
 	approvals     []client.Event   // pending approval queue — odek runs parallel tools, so requests FIFO
 	apprDeadlines []time.Time      // per-approval expiry, stamped on arrival (parallel to approvals)
@@ -896,6 +897,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case approvalExpireMsg:
+		m.apprSweeping = false // this chain's tick landed; approvalSweep may re-arm it
 		drop := m.handleApprovalExpiry(time.Now())
 		m.refresh()
 		return m, tea.Batch(drop, m.approvalSweep()) // re-arm while a form is open
