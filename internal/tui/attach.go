@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -46,6 +47,11 @@ func (m *Model) attachFile(path string) tea.Cmd {
 		return m.attachList()
 	}
 	if p, err := filepath.Abs(expandTilde(path)); err == nil {
+		path = p
+	}
+	// Stage, name and persist the real file: the persisted path then lets a
+	// later restore detect a symlink planted anywhere along it.
+	if p, err := filepath.EvalSymlinks(path); err == nil {
 		path = p
 	}
 	info, err := os.Stat(path)
@@ -138,11 +144,19 @@ func expandTilde(p string) string {
 // readCapped reads at most limit bytes of path, failing if the file grew
 // past it after the size check.
 func readCapped(path string, limit int64) ([]byte, error) {
-	f, err := os.Open(path)
+	// O_NONBLOCK: a path swapped for a FIFO after the caller's Stat must
+	// not block the open; the descriptor is then re-checked, so the bytes
+	// read always come from the regular file that was vetted.
+	f, err := os.OpenFile(path, os.O_RDONLY|syscall.O_NONBLOCK, 0)
 	if err != nil {
 		return nil, err
 	}
 	defer func() { _ = f.Close() }()
+	if info, err := f.Stat(); err != nil {
+		return nil, err
+	} else if !info.Mode().IsRegular() {
+		return nil, fmt.Errorf("%s is not a regular file", filepath.Base(path))
+	}
 	data, err := io.ReadAll(io.LimitReader(f, limit+1))
 	if err != nil {
 		return nil, err
@@ -151,4 +165,18 @@ func readCapped(path string, limit int64) ([]byte, error) {
 		return nil, fmt.Errorf("%s grew past the 5 MB per-file cap", filepath.Base(path))
 	}
 	return data, nil
+}
+
+// restoreAttachment re-stages a path persisted from an earlier run. Unlike
+// an explicit /attach, nobody chose it this launch, and attachFile persists
+// fully resolved paths: if it no longer resolves to itself, a symlink was
+// planted somewhere along it (an agent with workspace write access can, and
+// inside a bind-mounted sandbox it resolves on the host). It is skipped, so
+// a host secret is never sent with the next prompt.
+func (m *Model) restoreAttachment(path string) tea.Cmd {
+	p := expandTilde(path)
+	if real, err := filepath.EvalSymlinks(p); err == nil && real != filepath.Clean(p) {
+		return m.transientNoteCmd("attach: " + filepath.Base(p) + " now resolves elsewhere — not re-attached")
+	}
+	return m.attachFile(p)
 }

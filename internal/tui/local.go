@@ -40,7 +40,7 @@ func (m *Model) restoreWorkspace() {
 		if p == "" {
 			continue
 		}
-		_ = m.attachFile(p)
+		_ = m.restoreAttachment(p)
 	}
 	m.resumeTitle = st.SessionTitle
 	if !m.opts.Fresh {
