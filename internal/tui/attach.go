@@ -3,6 +3,7 @@ package tui
 import (
 	"bytes"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -54,6 +55,11 @@ func (m *Model) attachFile(path string) tea.Cmd {
 	if info.IsDir() {
 		return m.transientNoteCmd("attach: " + path + " is a directory")
 	}
+	if !info.Mode().IsRegular() {
+		// A FIFO would block the UI goroutine forever; /dev/zero reports
+		// size 0 and would read without bound.
+		return m.transientNoteCmd("attach: " + filepath.Base(path) + " is not a regular file")
+	}
 	if info.Size() > maxAttachBytes {
 		return m.transientNoteCmd(fmt.Sprintf("attach: %s is %s — over the 5 MB per-file cap (use an @reference)",
 			filepath.Base(path), human(int(info.Size()))))
@@ -65,7 +71,7 @@ func (m *Model) attachFile(path string) tea.Cmd {
 	if total+int(info.Size()) > maxAttachTotalBytes {
 		return m.transientNoteCmd("attach: staged files would exceed the 10 MB prompt cap")
 	}
-	data, err := os.ReadFile(path)
+	data, err := readCapped(path, maxAttachBytes)
 	if err != nil {
 		return m.transientNoteCmd("attach: " + err.Error())
 	}
@@ -127,4 +133,22 @@ func expandTilde(p string) string {
 		}
 	}
 	return p
+}
+
+// readCapped reads at most limit bytes of path, failing if the file grew
+// past it after the size check.
+func readCapped(path string, limit int64) ([]byte, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = f.Close() }()
+	data, err := io.ReadAll(io.LimitReader(f, limit+1))
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(data)) > limit {
+		return nil, fmt.Errorf("%s grew past the 5 MB per-file cap", filepath.Base(path))
+	}
+	return data, nil
 }
