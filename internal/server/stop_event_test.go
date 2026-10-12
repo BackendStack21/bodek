@@ -281,3 +281,19 @@ func TestStopProgressEvents(t *testing.T) {
 		t.Errorf("progress not monotonic: %v then %v", prev.Elapsed, last.Elapsed)
 	}
 }
+
+// The orphan watchdog must stay armed until the child is gone: a second
+// Ctrl+C kills bodek mid-Stop, and only the watchdog can then escalate.
+func TestStopRetiresWatchdogOnlyAfterChildExits(t *testing.T) {
+	oldStop, oldGrace := stopTimeout, activityGrace
+	stopTimeout, activityGrace = 10*time.Second, 300*time.Millisecond
+	defer func() { stopTimeout, activityGrace = oldStop, oldGrace }()
+	var events []StopEvent
+	c := newFixtureConn(fakeIgnoreINTScript(t), func(e StopEvent) { events = append(events, e) }, nil)
+	var atRetire []StopEvent
+	c.watch = func() { atRetire = append([]StopEvent(nil), events...) }
+	c.Stop()
+	if len(atRetire) == 0 || atRetire[len(atRetire)-1] != StopEscalated {
+		t.Fatalf("watchdog retired at events %v; want after the child was killed", atRetire)
+	}
+}

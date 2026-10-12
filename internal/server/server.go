@@ -300,13 +300,18 @@ func (c *Conn) Stop() {
 	if c.reaped.Load() {
 		return
 	}
-	// Graceful shutdown owns the exit — retire the orphan watchdog first.
-	c.watchMu.Lock()
-	if c.watch != nil {
-		c.watch()
-		c.watch = nil
-	}
-	c.watchMu.Unlock()
+	// Retire the orphan watchdog only once the child is gone: if bodek
+	// itself dies mid-Stop (a second Ctrl+C restores the default signal
+	// action), the watchdog must still be there to escalate. It stays
+	// inert while this process is alive.
+	defer func() {
+		c.watchMu.Lock()
+		if c.watch != nil {
+			c.watch()
+			c.watch = nil
+		}
+		c.watchMu.Unlock()
+	}()
 	// SIGINT triggers odek serve's graceful shutdown (closes sockets, removes
 	// sandbox containers), delivered to the server's whole process group so
 	// its own subprocesses follow. SIGKILL escalation likewise targets the
