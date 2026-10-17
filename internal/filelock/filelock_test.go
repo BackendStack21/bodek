@@ -52,7 +52,11 @@ func TestLockGivesUpAfterWait(t *testing.T) {
 // An unopenable lock path and an empty path are no-ops, never panics.
 func TestLockBestEffort(t *testing.T) {
 	Lock("")()
-	Lock(filepath.Join(t.TempDir(), "missing", "dir", "store.json"))()
+	file := filepath.Join(t.TempDir(), "file")
+	if err := os.WriteFile(file, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	Lock(filepath.Join(file, "store.json"))() // parent is a file: cannot open
 }
 
 // Serialized increments from many goroutines never lose an update.
@@ -75,5 +79,27 @@ func TestLockSerializesReadModifyWrite(t *testing.T) {
 	b, _ := os.ReadFile(path)
 	if n := strings.Count(string(b), "x"); n != 20 {
 		t.Fatalf("lost updates: %d of 20", n)
+	}
+}
+
+// A filesystem without locking fails every try: Lock must give up at once
+// rather than stall each save by the full wait.
+func TestLockUnsupportedReturnsImmediately(t *testing.T) {
+	old := tryLockFn
+	tryLockFn = func(*os.File) (bool, bool) { return false, false }
+	t.Cleanup(func() { tryLockFn = old })
+	start := time.Now()
+	Lock(filepath.Join(t.TempDir(), "store.json"))()
+	if d := time.Since(start); d > wait/2 {
+		t.Fatalf("Lock spun %v on an unsupported filesystem", d)
+	}
+}
+
+// The first write creates the store directory, so it is locked too.
+func TestLockCreatesMissingDir(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "new", "store.json")
+	defer Lock(path)()
+	if _, err := os.Stat(path + ".lock"); err != nil {
+		t.Fatalf("lock file not created: %v", err)
 	}
 }
