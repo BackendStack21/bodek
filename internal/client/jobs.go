@@ -58,6 +58,8 @@ func (c *Client) Jobs(sessionID, token string) ([]Job, error) {
 	}
 	defer func() { _ = resp.Body.Close() }()
 	switch {
+	case resp.StatusCode == http.StatusNotFound && sessionNotFound(resp):
+		return nil, ErrSessionNotFound
 	case resp.StatusCode == http.StatusNotFound:
 		return nil, ErrJobsUnavailable
 	case resp.StatusCode != http.StatusOK:
