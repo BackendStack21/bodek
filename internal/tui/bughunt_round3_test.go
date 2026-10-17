@@ -144,3 +144,19 @@ func TestRegressShutdownLatch(t *testing.T) {
 		t.Fatalf("shutdown mid-turn left no marker: %q", m.msgs[0].content)
 	}
 }
+
+// A plan call cut off before its tool_result must still confirm at the
+// turn boundary, or the never-written plan sticks on screen.
+func TestRegressAbortedPlanCallConfirms(t *testing.T) {
+	m := newTestModel()
+	m.sessionID = "s1"
+	m.busy = true
+	if !m.applyPlanMutation(`{"verb":"create","steps":[{"id":"a","title":"ghost"}]}`) {
+		t.Fatal("patch not applied")
+	}
+	m.busy = false // the turn ended without tool_result
+	before := m.planDebSeq
+	if cmd := m.planFollowup(); cmd == nil || m.planDebSeq != before+1 {
+		t.Fatal("turn end did not schedule the confirm fetch")
+	}
+}
