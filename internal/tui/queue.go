@@ -175,12 +175,10 @@ func (m *Model) queueStripClick(y, x int) bool {
 	if rel < 0 || rel >= m.queueStripHeight() {
 		return false
 	}
-	rowsCount := min(len(m.queue), queueStripCap)
-	if len(m.queue) > queueStripCap {
-		rowsCount++ // the overflow tail
-	}
-	if rel >= rowsCount {
-		return true // the overflow tail / the armed-confirm row: no controls
+	if rel >= min(len(m.queue), queueStripCap) {
+		// The overflow tail and the armed-confirm row carry no controls —
+		// the tail may echo a prompt (glyphs included) but owns no index.
+		return true
 	}
 	// Control targets are located on the unstyled row. Bubbletea reports X
 	// in terminal CELLS, so glyph columns are display widths — byte offsets

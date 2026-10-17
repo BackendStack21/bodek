@@ -46,6 +46,9 @@ func TestRegressBareApprovalKeysSkipOpenTextFields(t *testing.T) {
 		if m.curApproval() == nil {
 			t.Fatalf("%s: bare 'a' approved while the field was open", name)
 		}
+		if m.ta.Value() != "" {
+			t.Fatalf("%s: swallowed letter leaked into the draft: %q", name, m.ta.Value())
+		}
 		m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}, Alt: true})
 		if m.curApproval() != nil {
 			t.Fatalf("%s: alt+a did not approve", name)
@@ -289,5 +292,40 @@ func TestRegressClarifyQuestionFitsTerminal(t *testing.T) {
 	}
 	if !strings.Contains(plain(m.View()), "20. option number 20") {
 		t.Fatal("last question line unreachable by paging")
+	}
+}
+
+// A stale slash popup over an emptied draft must not disable the bare
+// letters: Alt-less terminals would have no approval binding left.
+func TestRegressStalePopupKeepsBareApprovalKeys(t *testing.T) {
+	m := newTestModel()
+	m.openCmdAC("")
+	m.handleEvent(client.Event{Type: "approval_request", ID: "apr", Risk: "shell_exec", Command: "rm x"})
+	m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
+	if m.curApproval() != nil {
+		t.Fatal("bare 'a' did not approve under a stale popup")
+	}
+}
+
+// The overflow tail echoes a hidden prompt but owns no controls.
+func TestRegressQueueTailRowHasNoControls(t *testing.T) {
+	m := newTestModel()
+	for i := 0; i < queueStripCap+2; i++ {
+		m.queue = append(m.queue, fmt.Sprintf("p%d", i))
+	}
+	m.queue[len(m.queue)-1] = "fix ✕ button"
+	m.qfocus = true
+	m.qsel = len(m.queue) - 1
+	rows := strings.Split(m.queueStripView(), "\n")
+	tail := unstyle(rows[queueStripCap])
+	i := strings.Index(tail, "✕")
+	if i < 0 {
+		t.Skip("tail row does not echo the selected prompt")
+	}
+	top := m.queueStripTop()
+	m.queueStripClick(top+queueStripCap, lipgloss.Width(tail[:i]))
+	m.queueStripClick(top+queueStripCap, lipgloss.Width(tail[:i]))
+	if len(m.queue) != queueStripCap+2 || m.qsel != len(m.queue)-1 {
+		t.Fatalf("tail click acted on a row: len=%d qsel=%d", len(m.queue), m.qsel)
 	}
 }
