@@ -344,3 +344,22 @@ func TestRegressQueueTailRowHasNoControls(t *testing.T) {
 		t.Fatalf("tail click acted on a row: len=%d qsel=%d", len(m.queue), m.qsel)
 	}
 }
+
+// A prompt odek would refuse (frame over 8 MiB) is never committed: the
+// draft, the staged files and the queue all survive for a trim.
+func TestRegressOversizedPromptKeepsDraftAndQueue(t *testing.T) {
+	m := newTestModel()
+	big := client.Attachment{Name: "big.txt", Content: strings.Repeat("x", 9<<20)}
+	m.attachments = []client.Attachment{big}
+	m.ta.SetValue("review this")
+	m.submit()
+	if m.ta.Value() != "review this" || len(m.attachments) != 1 || len(m.msgs) != 0 || m.busy {
+		t.Fatalf("oversized submit committed: draft=%q att=%d msgs=%d busy=%v",
+			m.ta.Value(), len(m.attachments), len(m.msgs), m.busy)
+	}
+	m.queue = []string{"queued"}
+	m.sendQueued()
+	if len(m.queue) != 1 || len(m.msgs) != 0 {
+		t.Fatalf("oversized drain popped the queue: queue=%d msgs=%d", len(m.queue), len(m.msgs))
+	}
+}

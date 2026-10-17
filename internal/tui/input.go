@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"reflect"
@@ -504,15 +505,52 @@ func (m *Model) submit() tea.Cmd {
 		}
 		return m.transientNoteCmd("queued — it sends when the turn ends")
 	}
+	if note := m.promptTooLarge(text); note != nil {
+		return note // the draft and the staged files stay for a trim
+	}
 	m.ta.Reset()
 	m.syncComposer()
 	m.closeAC()
 	return m.sendPrompt(text)
 }
 
+// promptTooLarge preflights the prompt frame against odek's inbound cap
+// and returns the explaining note when odek would refuse it. Sending
+// anyway would drop the connection, the staged files and the queue drain.
+func (m *Model) promptTooLarge(text string) tea.Cmd {
+	// Fast path: JSON grows a byte by at most 6x (\u00XX), so a prompt
+	// that small cannot reach the cap — skip encoding it on every drain.
+	raw := len(text)
+	for _, a := range m.attachments {
+		raw += len(a.Name) + len(a.Content)
+	}
+	if raw*6+4096 < client.MaxFrameBytes {
+		return nil
+	}
+	err := client.CheckPromptSize(text, m.promptOpts())
+	if errors.Is(err, client.ErrFrameTooLarge) {
+		return m.transientNoteCmd("not sent: " + err.Error() + " · /unattach drops files")
+	}
+	return nil
+}
+
+// promptOpts are the wire options the next prompt carries.
+func (m *Model) promptOpts() client.PromptOpts {
+	return client.PromptOpts{
+		Thinking:    thinkingWire(m.thinking),
+		Model:       m.pendModel,
+		SessionID:   m.sessionID,
+		AuthToken:   m.authToken,
+		Attachments: m.attachments,
+	}
+}
+
 // sendPrompt appends the user/assistant pair to the transcript, records the
 // prompt in the history ring, and dispatches it to the server.
 func (m *Model) sendPrompt(text string) tea.Cmd {
+	if note := m.promptTooLarge(text); note != nil {
+		return note // nothing committed: no transcript card, no busy state
+	}
 	m.lastEvent = time.Now() // a fresh turn must not inherit the idle gap as a stale age
 	m.lastPrompt = text
 	m.recordHistory(text)
@@ -555,14 +593,7 @@ func (m *Model) sendPrompt(text string) tea.Cmd {
 	// only sticks when already at the bottom).
 	m.vp.GotoBottom()
 
-	thinking := thinkingWire(m.thinking)
-	opts := client.PromptOpts{
-		Thinking:    thinking,
-		Model:       m.pendModel,
-		SessionID:   m.sessionID,
-		AuthToken:   m.authToken,
-		Attachments: m.attachments,
-	}
+	opts := m.promptOpts()
 	// Attachments are per-prompt by contract; the next send starts clean.
 	m.attachments = nil
 	m.attachPaths = nil
@@ -592,6 +623,9 @@ func (m *Model) sendPrompt(text string) tea.Cmd {
 func (m *Model) sendQueued() tea.Cmd {
 	if m.busy || m.disconn || m.resumeInFlight || len(m.queue) == 0 {
 		return nil
+	}
+	if note := m.promptTooLarge(m.queue[0]); note != nil {
+		return note // stays queued until its staged files are trimmed
 	}
 	text := m.queue[0]
 	m.queue = m.queue[1:]

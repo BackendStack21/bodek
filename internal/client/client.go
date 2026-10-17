@@ -536,7 +536,19 @@ type PromptOpts struct {
 // SendPrompt submits a task. Session continuity is automatic on a single
 // connection; SessionID+AuthToken resume a saved conversation.
 func (c *Client) SendPrompt(content string, opts PromptOpts) error {
-	return c.send(prompt{
+	return c.send(promptFrame(content, opts))
+}
+
+// CheckPromptSize reports ErrFrameTooLarge for a prompt whose frame odek
+// would refuse, so callers can keep the draft and attachments instead of
+// committing a turn that cannot be sent.
+func CheckPromptSize(content string, opts PromptOpts) error {
+	_, err := encodeFrame(promptFrame(content, opts))
+	return err
+}
+
+func promptFrame(content string, opts PromptOpts) prompt {
+	return prompt{
 		Type:        "prompt",
 		Content:     content,
 		Thinking:    opts.Thinking,
@@ -544,7 +556,7 @@ func (c *Client) SendPrompt(content string, opts PromptOpts) error {
 		SessionID:   opts.SessionID,
 		AuthToken:   opts.AuthToken,
 		Attachments: opts.Attachments,
-	})
+	}
 }
 
 // approval is the client→server response to an approval_request.
@@ -627,32 +639,41 @@ func (c *Client) SendSkillPromptResponse(action, skillName string) error {
 // prompt on a slow link.
 var writeTimeout = 60 * time.Second
 
-// maxFrameBytes is odek serve's inbound WebSocket message cap (8 MiB). A
+// MaxFrameBytes is odek serve's inbound WebSocket message cap (8 MiB). A
 // larger frame makes odek drop the whole connection — the prompt is lost
 // behind a bare "connection lost" — so send refuses it with a reason.
-const maxFrameBytes = 8 << 20
+const MaxFrameBytes = 8 << 20
 
 // ErrFrameTooLarge reports a frame over odek's inbound message cap.
 var ErrFrameTooLarge = errors.New("message exceeds odek serve's 8 MiB frame limit")
 
 // send marshals v and writes it as one frame, serialized against other writers.
 func (c *Client) send(v any) error {
+	frame, err := encodeFrame(v)
+	if err != nil {
+		return err
+	}
+	c.wmu.Lock()
+	defer c.wmu.Unlock()
+	_ = c.conn.SetWriteDeadline(time.Now().Add(writeTimeout))
+	return ws.Message.Send(c.conn, string(frame)) // string → text frame, as JSON.Send
+}
+
+// encodeFrame marshals one wire frame, refusing one over MaxFrameBytes.
+func encodeFrame(v any) ([]byte, error) {
 	// No HTML escaping: < > & would each grow to six bytes, so attached
 	// source files could blow past the frame cap that their size passed.
 	var buf bytes.Buffer
 	enc := json.NewEncoder(&buf)
 	enc.SetEscapeHTML(false)
 	if err := enc.Encode(v); err != nil {
-		return err
+		return nil, err
 	}
 	frame := bytes.TrimSuffix(buf.Bytes(), []byte("\n"))
-	if len(frame) > maxFrameBytes {
-		return fmt.Errorf("%w (%.1f MiB encoded) — attach fewer or smaller files", ErrFrameTooLarge, float64(len(frame))/(1<<20))
+	if len(frame) > MaxFrameBytes {
+		return nil, fmt.Errorf("%w (%.1f MiB encoded) — attach fewer or smaller files", ErrFrameTooLarge, float64(len(frame))/(1<<20))
 	}
-	c.wmu.Lock()
-	defer c.wmu.Unlock()
-	_ = c.conn.SetWriteDeadline(time.Now().Add(writeTimeout))
-	return ws.Message.Send(c.conn, string(frame)) // string → text frame, as JSON.Send
+	return frame, nil
 }
 
 // closeGrace bounds Close's close-frame write. A send stuck on a half-open

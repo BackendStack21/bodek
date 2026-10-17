@@ -330,6 +330,9 @@ func (m *Model) queueSendSelected() tea.Cmd {
 	}
 	i := m.panelSel
 	text := m.queue[i]
+	if note := m.promptTooLarge(text); note != nil {
+		return note
+	}
 	m.queue = append(m.queue[:i], m.queue[i+1:]...)
 	m.qsel = clampSel(m.qsel, len(m.queue))
 	m.panelSel = clampSel(m.panelSel, len(m.queue))
