@@ -31,3 +31,6 @@ func (c *Conn) signalServer(sig syscall.Signal) {
 		_ = c.proc.Process.Signal(sig)
 	}
 }
+
+// guardChild is a no-op here: the re-exec watchdog guards against orphaning.
+func (c *Conn) guardChild() {}

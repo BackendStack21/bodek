@@ -235,6 +235,7 @@ func (c *Conn) spawn(opts Options, addr string) error {
 	c.proc = cmd
 	c.startReaper()
 	c.startWatchdog()
+	c.guardChild()
 	return nil
 }
 
