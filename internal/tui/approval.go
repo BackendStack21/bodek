@@ -280,6 +280,11 @@ func (m *Model) plainApprovalAction(msg tea.KeyMsg) (string, bool) {
 	if m.ta.Value() != "" {
 		return "", false
 	}
+	// A visible text field (find bar, drawer search/rename/fact/shutdown
+	// editor, @ or / popup) reads as where the letters go: only Alt decides.
+	if m.find.open || m.panelEdit != panelEditNone || m.ac.open {
+		return "", false
+	}
 	switch lowerRune(msg.Runes[0]) {
 	case 'a':
 		return "approve", true
