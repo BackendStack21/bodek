@@ -1,7 +1,6 @@
 package client
 
 import (
-	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -50,18 +49,6 @@ type PlanSnapshot struct {
 // chain (ErrJobsUnavailable pattern).
 var ErrPlanUnavailable = errors.New("session plan route unavailable")
 
-// ErrSessionNotFound is odek's 404 for an unknown session on a route that
-// exists — transient for the caller (a deleted or not-yet-persisted
-// session), unlike the permanent route-missing 404s above.
-var ErrSessionNotFound = errors.New("session not found")
-
-// sessionNotFound tells odek's "session not found" 404 body apart from the
-// mux's "404 page not found" for a route this server predates.
-func sessionNotFound(resp *http.Response) bool {
-	b, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
-	return bytes.Contains(bytes.ToLower(b), []byte("session not found"))
-}
-
 // SessionPlan fetches the structured plan of a session. The token is the
 // session-scoped auth token (same as cancel/resume); rate limiting and auth
 // match every sibling session endpoint.
@@ -72,9 +59,6 @@ func (c *Client) SessionPlan(sessionID, sessionToken string) (PlanSnapshot, erro
 		return PlanSnapshot{}, err
 	}
 	defer func() { _ = resp.Body.Close() }()
-	if resp.StatusCode == http.StatusNotFound && sessionNotFound(resp) {
-		return PlanSnapshot{}, ErrSessionNotFound
-	}
 	if resp.StatusCode == http.StatusNotFound {
 		return PlanSnapshot{}, fmt.Errorf("%w: status %s", ErrPlanUnavailable, resp.Status)
 	}

@@ -1,6 +1,7 @@
 package client
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -48,6 +49,20 @@ var (
 // jobsEnvelope is the GET /api/jobs body.
 type jobsEnvelope struct {
 	Jobs []Job `json:"jobs"`
+}
+
+// ErrSessionNotFound is odek's 404 for an unknown session on a route that
+// exists — transient for the caller (a deleted or not-yet-persisted
+// session), unlike the permanent ErrJobsUnavailable.
+var ErrSessionNotFound = errors.New("session not found")
+
+// sessionNotFound tells odek's "session not found" 404 body apart from the
+// mux's "404 page not found" for a route this server predates. (Not usable
+// for the plan route: odek < v1.27 answers its missing plan route with this
+// very body, its session handler parsing "{id}/plan" as the id.)
+func sessionNotFound(resp *http.Response) bool {
+	b, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
+	return bytes.Contains(bytes.ToLower(b), []byte("session not found"))
 }
 
 // Jobs lists the session's background jobs, oldest first.

@@ -22,8 +22,10 @@ func TestRegressSessionNotFoundIsNotRouteMissing(t *testing.T) {
 	if _, err := c.Jobs("gone", "tok"); !errors.Is(err, ErrSessionNotFound) || errors.Is(err, ErrJobsUnavailable) {
 		t.Errorf("Jobs err = %v, want ErrSessionNotFound", err)
 	}
-	if _, err := c.SessionPlan("gone", "tok"); !errors.Is(err, ErrSessionNotFound) || errors.Is(err, ErrPlanUnavailable) {
-		t.Errorf("SessionPlan err = %v, want ErrSessionNotFound", err)
+	// The plan route stays permanent: odek < v1.27 answers its missing
+	// route with this very body (the id parser swallows "{id}/plan").
+	if _, err := c.SessionPlan("gone", "tok"); !errors.Is(err, ErrPlanUnavailable) {
+		t.Errorf("SessionPlan err = %v, want ErrPlanUnavailable", err)
 	}
 }
 
