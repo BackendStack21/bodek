@@ -237,8 +237,11 @@ feat(tui): compact tool steps with Ctrl+E details toggle
   stays. Approvals render above a live composer: bare `a`/`d`/`t` decide
 only while the composer draft is empty (a non-empty draft, paste, or any
 modifier routes to the composer), and `Alt+A`/`Alt+D`/`Alt+T`
-  decide. On Alt-less terminals (macOS Option-as-UTF-8), `^U` clears the
-  whole draft first, restoring the bare-key path — never leave such a
+  decide. On Alt-less terminals (macOS Option-as-UTF-8), emptying the draft
+  (Backspace, or `^W` word-wise — `^U` pages the transcript while a card
+  is up, and Shift+Delete is a no-op there) restores the bare-key path;
+  with the find bar or a drawer editor open, a bare letter is swallowed
+  with a hint and Esc closes the field first — never leave such a
   terminal with no reachable approval binding. Text, paste, cursor keys, and Enter retain composer behavior. Friction
   captures `apprTyped` only after explicit `Alt+A`; Escape returns to the draft
   without deciding. Keep the editor rune/row bounded and reset it on head changes. Clarify questions capture the
