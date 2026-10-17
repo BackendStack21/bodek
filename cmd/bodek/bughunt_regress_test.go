@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"flag"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -86,5 +87,30 @@ func TestRegressHelpPrintsUsageOnce(t *testing.T) {
 	}
 	if n := strings.Count(out.String(), "Usage:"); n != 1 {
 		t.Fatalf("usage printed %d times", n)
+	}
+}
+
+// Two instances saving different preferences at once keep both.
+func TestRegressConcurrentSettingsSavesKeepBoth(t *testing.T) {
+	t.Setenv("BODEK_CONFIG", filepath.Join(t.TempDir(), "config.json"))
+	for i := 0; i < 20; i++ {
+		a, err := parseConfig(nil, io.Discard)
+		if err != nil {
+			t.Fatal(err)
+		}
+		b, _ := parseConfig(nil, io.Discard)
+		a.persist.Theme = fmt.Sprintf("theme-%d", i)
+		b.persist.Verbosity = fmt.Sprintf("v-%d", i)
+		done := make(chan struct{})
+		go func() { _ = a.save(); close(done) }()
+		_ = b.save()
+		<-done
+		got, err := settings.Load()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got.Theme != a.persist.Theme || got.Verbosity != b.persist.Verbosity {
+			t.Fatalf("round %d lost a save: %+v", i, got)
+		}
 	}
 }

@@ -15,6 +15,7 @@ Keep it that way.
 | `internal/tokens` | Local persistence of per-session auth tokens |
 | `internal/workspace` | Per-cwd draft, queue, history, and last-session id |
 | `internal/settings` | Persisted front-end preferences (theme, bell, notify, plain, verbosity, thinking, resume, reduce-motion) at `~/.bodek/config.json`; flag > file > default resolution with a theme-only `BODEK_THEME` env override (`BODEK_CONFIG` relocates the file); odek's config is untouched |
+| `internal/filelock` | Cross-process advisory lock (`<path>.lock`, flock / LockFileEx) around the stores' read-merge-write; best-effort, gives up after 2s |
 | `internal/watchdog` | Orphan guard: re-execs a tiny watchdog that terminates `odek serve` when the bodek parent dies for any reason (per-platform impls) |
 | `internal/tui` | The Bubble Tea model, update loop, panels, and view |
 | `internal/update` | Self-upgrade: fetch and swap in the latest GitHub release binary |

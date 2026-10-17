@@ -22,6 +22,7 @@ import (
 	"github.com/muesli/termenv"
 
 	"github.com/BackendStack21/bodek/internal/client"
+	"github.com/BackendStack21/bodek/internal/filelock"
 	"github.com/BackendStack21/bodek/internal/server"
 	"github.com/BackendStack21/bodek/internal/settings"
 	"github.com/BackendStack21/bodek/internal/tui"
@@ -74,6 +75,8 @@ func (c *config) save() error {
 	if c.persistDisabled {
 		return fmt.Errorf("settings file could not be parsed; changes are not saved this run")
 	}
+	// Another instance must not save between this load and the rename.
+	defer filelock.Lock(settings.Path())()
 	cur, err := settings.Load()
 	if err != nil {
 		// A missing file loads clean; an error means the file became

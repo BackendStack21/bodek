@@ -12,6 +12,8 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+
+	"github.com/BackendStack21/bodek/internal/filelock"
 )
 
 // State is the bodek-owned snapshot for one working directory.
@@ -140,6 +142,7 @@ func (s *Store) Save(cwd string, st State) error {
 	// unlocking lets two interleaved saves land out of order on disk.
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	defer filelock.Lock(s.path)() // a peer must not interleave between merge and rename
 	s.reloadLocked(cwd)
 	s.all[cwd] = cloneState(st)
 	return persist(s.path, cloneAll(s.all))
@@ -152,6 +155,7 @@ func (s *Store) Patch(cwd string, fn func(*State)) {
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	defer filelock.Lock(s.path)() // a peer must not interleave between merge and rename
 	s.reloadLocked(cwd)
 	st := cloneState(s.all[cwd])
 	fn(&st)
@@ -188,6 +192,11 @@ func persist(path string, all map[string]State) error {
 	data, err := json.MarshalIndent(fileFormat{Workspaces: all}, "", "  ")
 	if err != nil {
 		return fmt.Errorf("encode workspace: %w", err)
+	}
+	// Write through a symlinked store (dotfile managers): the rename
+	// would otherwise replace the link with a regular file.
+	if target, err := filepath.EvalSymlinks(path); err == nil {
+		path = target
 	}
 	// A per-call staged name: callers persist after releasing the store
 	// mutex, so a shared path+'.tmp' let two interleaved writes tear the

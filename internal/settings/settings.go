@@ -78,6 +78,11 @@ func Save(s Settings) error {
 	if err != nil {
 		return err
 	}
+	// Write through a symlinked config.json (dotfile managers): the rename
+	// would otherwise replace the link with a regular file.
+	if target, err := filepath.EvalSymlinks(path); err == nil {
+		path = target
+	}
 	// Staged tmp + rename: a crash mid plain WriteFile left a truncated
 	// config.json, which Load reports as malformed — every setting reset.
 	tmp, err := os.CreateTemp(filepath.Dir(path), filepath.Base(path)+".*.tmp")
