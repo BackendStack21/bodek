@@ -89,8 +89,9 @@ func (m *Model) startHeadlessRun(prompt string) tea.Cmd {
 	}
 	cl := m.cl
 	thinking := thinkingWire(m.thinking)
+	// The run is a fresh session, so the interactive one has not switched
+	// yet: keep the pending choice for its next turn, as the header says.
 	model := m.pendModel
-	m.pendModel = "" // applied to the run, not held for the next turn
 	return func() tea.Msg {
 		run, err := cl.StartRun(prompt, client.RunOpts{Model: model, Thinking: thinking})
 		return runStartedMsg{run: run, err: err}

@@ -84,25 +84,44 @@ func (m *Model) attachFile(path string) tea.Cmd {
 	if idx := bytes.IndexByte(data[:min(len(data), binarySniffLen)], 0); idx >= 0 {
 		return m.transientNoteCmd("attach: " + filepath.Base(path) + " looks binary — attach text files only")
 	}
-	name := filepath.Base(path)
 	// Restaging the same file replaces it rather than duplicating.
 	for i := range m.attachments {
-		if m.attachments[i].Name == name {
+		if i < len(m.attachPaths) && m.attachPaths[i] == path {
 			m.attachments[i].Content = string(data)
-			if i < len(m.attachPaths) {
-				m.attachPaths[i] = path
-			} else {
-				m.attachPaths = append(m.attachPaths, path)
-			}
 			m.persistLocal()
+			name := m.attachments[i].Name
 			return m.transientNoteCmd("restaged " + name + " (" + human(len(data)) + ")")
 		}
 	}
+	name := m.uniqueAttachName(path)
 	m.attachments = append(m.attachments, client.Attachment{Name: name, Content: string(data)})
 	m.attachPaths = append(m.attachPaths, path)
 	m.persistLocal()
 	return m.transientNoteCmd(fmt.Sprintf("attached %s (%s) — sends with the next prompt · /unattach to drop",
 		name, human(len(data))))
+}
+
+// uniqueAttachName names a new attachment by its base name, qualified by
+// its parent directory (then a counter) when another staged file already
+// holds that name — two README.md files must both reach the prompt.
+func (m *Model) uniqueAttachName(path string) string {
+	taken := func(n string) bool {
+		for _, a := range m.attachments {
+			if a.Name == n {
+				return true
+			}
+		}
+		return false
+	}
+	name := filepath.Base(path)
+	if !taken(name) {
+		return name
+	}
+	name = filepath.Join(filepath.Base(filepath.Dir(path)), name)
+	for i := 2; taken(name); i++ {
+		name = fmt.Sprintf("%s (%d)", filepath.Join(filepath.Base(filepath.Dir(path)), filepath.Base(path)), i)
+	}
+	return name
 }
 
 // unattachFile drops one staged file by name, or the whole stage with no arg.

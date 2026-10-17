@@ -22,10 +22,11 @@ import (
 // as alert-tier notes naming the command and fire the attention layer; the
 // tab is the full surface (rows, output detail, stop).
 
-const (
-	jobsPollEvery  = 3 * time.Second  // tab visible: live view
-	jobsWatchEvery = 10 * time.Second // background: completion watching
-)
+const jobsPollEvery = 3 * time.Second // tab visible: live view
+
+// jobsWatchEvery is the background completion-watching cadence (a var so
+// tests can observe the chain without waiting it out).
+var jobsWatchEvery = 10 * time.Second
 
 // jobsFetchedMsg carries one /api/jobs snapshot (tab poll or watcher tick).
 type jobsFetchedMsg struct {
@@ -140,7 +141,23 @@ func (m *Model) applyJobs(jobs []client.Job, err error) tea.Cmd {
 		}
 		return nil
 	}
+	// Anchor the selection by job id: a reaped row above it must not
+	// silently retarget the detail header or the stop gate.
+	selID := ""
+	if m.panel == panelJobs {
+		if m.panelDetail && m.jobsOutID != "" {
+			selID = m.jobsOutID
+		} else if m.panelSel < len(m.jobs) {
+			selID = m.jobs[m.panelSel].ID
+		}
+	}
 	m.jobs = jobs
+	for i, j := range jobs {
+		if selID != "" && j.ID == selID {
+			m.panelSel = i
+			break
+		}
+	}
 	var attn tea.Cmd
 	if m.jobsPrev == nil {
 		m.jobsPrev = make(map[string]string, len(jobs))

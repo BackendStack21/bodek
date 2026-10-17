@@ -8,8 +8,10 @@
 package client
 
 import (
+	"bytes"
 	"crypto/tls"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -625,13 +627,38 @@ func (c *Client) SendSkillPromptResponse(action, skillName string) error {
 // prompt on a slow link.
 var writeTimeout = 60 * time.Second
 
+// maxFrameBytes is odek serve's inbound WebSocket message cap (8 MiB). A
+// larger frame makes odek drop the whole connection — the prompt is lost
+// behind a bare "connection lost" — so send refuses it with a reason.
+const maxFrameBytes = 8 << 20
+
+// ErrFrameTooLarge reports a frame over odek's inbound message cap.
+var ErrFrameTooLarge = errors.New("message exceeds odek serve's 8 MiB frame limit")
+
 // send marshals v and writes it as one frame, serialized against other writers.
 func (c *Client) send(v any) error {
+	// No HTML escaping: < > & would each grow to six bytes, so attached
+	// source files could blow past the frame cap that their size passed.
+	var buf bytes.Buffer
+	enc := json.NewEncoder(&buf)
+	enc.SetEscapeHTML(false)
+	if err := enc.Encode(v); err != nil {
+		return err
+	}
+	frame := bytes.TrimSuffix(buf.Bytes(), []byte("\n"))
+	if len(frame) > maxFrameBytes {
+		return fmt.Errorf("%w (%.1f MiB encoded) — attach fewer or smaller files", ErrFrameTooLarge, float64(len(frame))/(1<<20))
+	}
 	c.wmu.Lock()
 	defer c.wmu.Unlock()
 	_ = c.conn.SetWriteDeadline(time.Now().Add(writeTimeout))
-	return ws.JSON.Send(c.conn, v)
+	return ws.Message.Send(c.conn, string(frame)) // string → text frame, as JSON.Send
 }
+
+// closeGrace bounds Close's close-frame write. A send stuck on a half-open
+// link holds the write lock until writeTimeout; Close moves that deadline
+// in so it (and the update loop calling it) cannot wedge for up to 60s.
+var closeGrace = time.Second
 
 // noRedirect keeps REST calls on the origin they were addressed to. Go
 // strips Authorization on cross-host redirects but copies custom headers,
@@ -652,6 +679,7 @@ func (c *Client) Close() error {
 	if c.conn == nil {
 		return nil
 	}
+	_ = c.conn.SetWriteDeadline(time.Now().Add(closeGrace)) // applies to a pending write too
 	return c.conn.Close()
 }
 

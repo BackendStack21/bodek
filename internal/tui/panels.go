@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -82,6 +83,12 @@ func (m *Model) handleConfirmKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case confirmEpisodeDiscard:
 			return m, m.memDiscardSelected()
 		case confirmClear:
+			// Arming is idle-only, but a wake or remote turn can start
+			// while the gate sits armed: wiping it would drop its card and
+			// any approval odek is waiting on.
+			if m.busy {
+				return m, m.transientNoteCmd("a turn started — clear when it ends")
+			}
 			return m, tea.Batch(m.clearConversation(), m.transientNoteCmd("conversation cleared"))
 		case confirmCancel:
 			// cancelRun self-guards: if the run settled while the gate sat
@@ -510,7 +517,7 @@ func (m *Model) handlePanelKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				}
 				return m, m.armConfirm(confirmEpisodePromote, fmt.Sprintf(
 					"episode (%d chars · sources: %s · hash %s)",
-					len(r.text), strings.Join(r.sources, ", "), shortHash(r.summarySHA256)))
+					utf8.RuneCountInString(r.text), strings.Join(r.sources, ", "), shortHash(r.summarySHA256)))
 			}
 			return m, nil
 		}
@@ -718,6 +725,7 @@ func (m *Model) panelSelect() tea.Cmd {
 		if m.planStepAt(m.panelSel) != nil {
 			m.panelDetail = true // readable step text through sanitize() — house grammar
 			m.detailScroll = 0
+			m.relayout() // the detail sheet is taller; the viewport must follow
 			m.refresh()
 		}
 		return nil
@@ -750,6 +758,7 @@ func (m *Model) panelSelect() tea.Cmd {
 		if m.panelSel < len(m.agentsReg) {
 			m.panelDetail = true // readable goal text through sanitize() — house grammar
 			m.detailScroll = 0
+			m.relayout() // the detail sheet is taller; the viewport must follow
 			m.refresh()
 		}
 		return nil
@@ -766,6 +775,7 @@ func (m *Model) panelSelect() tea.Cmd {
 		}
 		m.panelDetail = true
 		m.detailScroll = 0
+		m.relayout() // the detail sheet is taller; the viewport must follow
 		m.refresh()
 		return nil
 	}
@@ -1428,7 +1438,16 @@ func (m *Model) renderPanel(w, h int) string {
 		body += "\n" + th.acDim.Render(sanitize(m.panelMsg)) // may quote server bodies
 	}
 	if m.panel == panelStats {
-		body += "\n" + m.statsBody()
+		// lipgloss Height is a minimum, never a clip: window the sheet so
+		// View cannot outgrow the terminal and push the header off.
+		lines := strings.Split(m.statsBody(), "\n")
+		visible := max(h-2-lipgloss.Height(body), 1)
+		if len(lines) > visible {
+			more := len(lines) - visible + 1
+			marker := truncate(fmt.Sprintf("  … +%d rows · /stats in a taller terminal", more), boxInner(w))
+			lines = append(lines[:visible-1], th.acDim.Render(marker))
+		}
+		body += "\n" + strings.Join(lines, "\n")
 		return th.acBox.Width(boxWidth(w)).Height(h - 2).Render(body)
 	}
 	if m.panelDetail && mgmtPanel(m.panel) {

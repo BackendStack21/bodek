@@ -175,33 +175,27 @@ func (m *Model) queueStripClick(y, x int) bool {
 	if rel < 0 || rel >= m.queueStripHeight() {
 		return false
 	}
-	rowsCount := min(len(m.queue), queueStripCap)
-	if len(m.queue) > queueStripCap {
-		rowsCount++ // the overflow tail
-	}
-	if rel >= rowsCount {
-		return true // the overflow tail / the armed-confirm row: no controls
+	if rel >= min(len(m.queue), queueStripCap) {
+		// The overflow tail and the armed-confirm row carry no controls —
+		// the tail may echo a prompt (glyphs included) but owns no index.
+		return true
 	}
 	// Control targets are located on the unstyled row. Bubbletea reports X
 	// in terminal CELLS, so glyph columns are display widths — byte offsets
 	// drift 2 cells per multibyte rune and misfire the neighboring control.
 	row := unstyle(strings.Split(m.queueStripView(), "\n")[rel])
+	// The controls trail the row, so the LAST occurrence of each glyph is
+	// the control — prompt text may contain the same glyphs.
 	upC, downC, delC := -1, -1, -1
 	cell := 0
 	for _, r := range row {
 		switch r {
 		case '▲':
-			if upC < 0 {
-				upC = cell
-			}
+			upC = cell
 		case '▼':
-			if downC < 0 {
-				downC = cell
-			}
+			downC = cell
 		case '✕':
-			if delC < 0 {
-				delC = cell
-			}
+			delC = cell
 		}
 		cell += lipgloss.Width(string(r))
 	}

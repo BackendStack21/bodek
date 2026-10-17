@@ -191,12 +191,14 @@ func (m *Model) runCommandLine(text string) tea.Cmd {
 }
 
 // runCommand finds and executes a command by name, resetting the input.
+// An unknown name keeps the draft: it may be a prompt that starts with a
+// path (/etc/hosts …) or a typo worth fixing in place.
 func (m *Model) runCommand(name, args string) tea.Cmd {
-	m.ta.Reset()
-	m.syncComposer()
 	m.closeAC()
 	for _, c := range slashCommands() {
 		if c.name == name {
+			m.ta.Reset()
+			m.syncComposer()
 			return c.run(m, args)
 		}
 	}
@@ -224,15 +226,26 @@ func (m *Model) runSelectedCommand() tea.Cmd {
 // openCmdAC populates the popup with commands matching the typed prefix.
 func (m *Model) openCmdAC(query string) {
 	var items []client.Resource
+	exact := false
 	for _, c := range slashCommands() {
 		if !commandOffered(m, c) {
 			continue
 		}
 		if strings.HasPrefix(c.name, query) {
-			items = append(items, client.Resource{
+			item := client.Resource{
 				ID: "/" + c.name, Type: "command", Label: "/" + c.name, Detail: c.desc,
-			})
+			}
+			if c.name == query {
+				// An exact name leads, so /run + ⏎ never runs /runs.
+				items = append([]client.Resource{item}, items...)
+				exact = true
+				continue
+			}
+			items = append(items, item)
 		}
+	}
+	if exact && query != m.ac.query {
+		m.ac.sel = 0 // typing the full name selects it
 	}
 	m.ac.open = true
 	m.ac.loading = false

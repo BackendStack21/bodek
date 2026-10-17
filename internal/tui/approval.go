@@ -81,6 +81,13 @@ func (m *Model) handleApprovalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// (macOS Option-as-UTF-8) still let a bare a/d/t decide — but only on
 	// an empty composer and never from a paste, so typing always wins.
 	if action, ok := m.plainApprovalAction(msg); ok {
+		// With the find bar or a drawer editor on screen the letter was
+		// likely meant for that field: swallow it instead of deciding.
+		// ESC closes the field first (ESC chain), then a/d/t decide again —
+		// an Alt-less terminal keeps a reachable binding.
+		if m.find.open || m.panelEdit != panelEditNone {
+			return m, m.transientNoteCmd("esc closes the open field — then a/d/t decide (or Alt+A/D/T)")
+		}
 		if action == "trust" && !a.AllowTrust {
 			return m, nil
 		}

@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"fmt"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -10,6 +11,7 @@ import (
 func (m *Model) clearClarify() {
 	m.clarify = nil
 	m.clarifyBuf = ""
+	m.clarifyOff = 0
 }
 
 func (m *Model) handleClarifyKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -40,6 +42,15 @@ func (m *Model) handleClarifyKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, cmd
 	case "ctrl+g":
 		m.vp.GotoBottom()
+		return m, nil
+	case "alt+pgup", "alt+pgdown":
+		// Page a question taller than the card (clamped in clarifyBody).
+		step := max(m.clarifyQuestionRoom()-1, 1)
+		if msg.String() == "alt+pgup" {
+			step = -step
+		}
+		m.clarifyOff = max(m.clarifyOff+step, 0)
+		m.refresh()
 		return m, nil
 	}
 	if text := clarifyTyped(msg); text != "" {
@@ -117,18 +128,38 @@ func (m *Model) clarifyBody() string {
 	}
 	budget := m.cardInner()
 	question := wrapCells(sanitize(m.clarify.Question), budget)
+	var pager string
+	if room := m.clarifyQuestionRoom(); len(question) > room {
+		// The question has no cap of its own otherwise: a long one pushed
+		// View past the terminal and the header off-screen. Window it and
+		// keep one row for the pager.
+		show := max(room-1, 1)
+		m.clarifyOff = min(m.clarifyOff, len(question)-show)
+		if room >= 2 { // a one-row budget has no room for the pager
+			pager = fmt.Sprintf("lines %d–%d of %d · alt+pgup/pgdn", m.clarifyOff+1, m.clarifyOff+show, len(question))
+		}
+		question = question[m.clarifyOff : m.clarifyOff+show]
+	}
+	shown := len(question)
+	if pager != "" {
+		shown++
+	}
 	answer := wrapCells("answer: "+sanitize(m.clarifyBuf), budget)
-	if capn := m.clarifyAnswerCap(len(question)); len(answer) > capn {
+	if capn := m.clarifyAnswerCap(shown); len(answer) > capn {
 		answer = answer[len(answer)-capn:]
 	}
 	lines := []string{th.apprHead.Render("❓ question from the agent")}
 	for _, ln := range question {
 		lines = append(lines, th.apprBody.Render(ln))
 	}
+	if pager != "" {
+		lines = append(lines, th.apprBody.Render(truncate(pager, budget)))
+	}
 	for _, ln := range answer {
 		lines = append(lines, th.apprKey.Render(ln))
 	}
-	lines = append(lines, th.apprBody.Render("enter send · ⇧⏎ newline · type to answer"))
+	// One row, as the budgets count it — a wrapped hint overflowed at 40 cols.
+	lines = append(lines, th.apprBody.Render(truncate("enter send · ⇧⏎ newline · type to answer", budget)))
 	return strings.Join(lines, "\n")
 }
 
@@ -145,6 +176,26 @@ func wrapCells(s string, n int) []string {
 	return strings.Split(ansi.Wrap(s, n, ""), "\n")
 }
 
+// clarifyQuestionRoom is how many card rows the question may use while one
+// answer row, the hint and the rest of the chrome still fit the terminal.
+func (m *Model) clarifyQuestionRoom() int {
+	used := m.clarifyChromeRows() + 1 // one answer row
+	return max(m.height-used, 1)
+}
+
+// clarifyChromeRows counts every row besides the question and answer while
+// the clarify card is up: header, footer, one transcript row, composer,
+// status line, shelf chip, queue strip, card borders, head and hint.
+func (m *Model) clarifyChromeRows() int {
+	used := headerHeight + footerHeight + 1 // one transcript row stays
+	used += m.ta.Height() + 2               // composer box
+	if m.statusLineVisible() {
+		used += 2
+	}
+	used += m.shelfHeight() + m.queueStripHeight()
+	return used + 2 + 1 + 1 // card borders, head, hint
+}
+
 // clarifyAnswerCap is the max wrapped answer rows the card may paint. The
 // buffer keeps the full text (so a long paste is not refused); only the
 // tail is shown so typing stays visible and View cannot outgrow the terminal.
@@ -152,12 +203,7 @@ func (m *Model) clarifyAnswerCap(questionLines int) int {
 	if questionLines < 1 {
 		questionLines = 1
 	}
-	used := headerHeight + footerHeight + 1 // one transcript row stays
-	used += m.ta.Height() + 2               // composer box
-	if m.statusLineVisible() {
-		used += 2
-	}
-	used += 2 + 1 + questionLines + 1 // card borders, head, question, hint
+	used := m.clarifyChromeRows() + questionLines
 	room := m.height - used
 	if room < 1 {
 		room = 1

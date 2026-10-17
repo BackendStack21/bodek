@@ -30,6 +30,18 @@ func (m *Model) drawerAvail() int {
 	return m.height - headerHeight - footerHeight - m.inputAreaHeight()
 }
 
+// panelHeight is the row budget View hands renderPanel: full-bleed,
+// split sheet, or plain mode's cap.
+func (m *Model) panelHeight() int {
+	switch {
+	case m.plain:
+		return plainPanelMax
+	case m.drawerFullBleed():
+		return max(1, m.drawerAvail())
+	}
+	return m.drawerSheetHeight()
+}
+
 // drawerSheetHeight is the panel's row budget when split above the composer.
 // Zero with no drawer. On a short terminal the sheet claims the whole body.
 func (m *Model) drawerSheetHeight() int {
@@ -43,7 +55,9 @@ func (m *Model) drawerSheetHeight() int {
 	if avail < sheetTranscriptMin+sheetMin {
 		return avail
 	}
-	if m.panelDetail {
+	if m.panelDetail || m.panel == panelStats {
+		// Detail views and the stats sheet are reading surfaces: they take
+		// everything but the transcript minimum.
 		sheet := avail - sheetTranscriptMin
 		if sheet < sheetMin {
 			return avail

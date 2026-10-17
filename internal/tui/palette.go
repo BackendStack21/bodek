@@ -3,6 +3,7 @@ package tui
 import (
 	"sort"
 	"strings"
+	"unicode"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -338,10 +339,14 @@ func (m *Model) handlePaletteKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.refresh()
 		return m, nil
 	default:
-		if s := msg.String(); len([]rune(s)) == 1 {
-			m.pal.query += s
-			m.filterPalette()
-			m.refresh()
+		// One read can carry several runes (fast typing, IME, a paste);
+		// keep them all, minus sentinels and control characters.
+		if msg.Type == tea.KeyRunes && !msg.Alt && !isKeySentinel(msg.String()) {
+			if q := strings.Map(dropControl, string(msg.Runes)); q != "" {
+				m.pal.query += q
+				m.filterPalette()
+				m.refresh()
+			}
 		}
 		return m, nil
 	}
@@ -450,4 +455,12 @@ func (m *Model) palRowLimit() int {
 		rows = available
 	}
 	return max(1, rows)
+}
+
+// dropControl is a strings.Map filter removing control characters.
+func dropControl(r rune) rune {
+	if unicode.IsControl(r) {
+		return -1
+	}
+	return r
 }

@@ -6,6 +6,7 @@ package server
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -137,14 +138,20 @@ type Options struct {
 // auth token, returning a ready Conn.
 //
 // Token resolution order: Options.Token, then "?token=" in Options.URL, then
-// the "WS token:" line a spawned odek serve prints to stderr, then a legacy
-// fallback for servers that predate enforced auth.
+// a legacy fallback for servers that predate enforced auth. A spawned odek
+// serve's own "WS token:" stderr line beats Options.Token, which can only be
+// meant for an attached server; Options.Token remains the fallback when the
+// spawned server prints none.
 func Connect(opts Options) (*Conn, error) {
 	c := &Conn{}
 	token := opts.Token
 
 	if opts.URL != "" {
-		base, urlToken := splitTokenURL(opts.URL)
+		attach, err := attachURL(opts.URL)
+		if err != nil {
+			return nil, err
+		}
+		base, urlToken := splitTokenURL(attach)
 		c.BaseURL, c.WSURL = attachEndpoints(base)
 		c.Origin = c.BaseURL
 		if token == "" {
@@ -171,8 +178,8 @@ func Connect(opts Options) (*Conn, error) {
 			c.Stop()
 			return nil, fmt.Errorf("odek serve did not become ready: %w", err)
 		}
-		if token == "" {
-			token = c.scan.Token()
+		if t := c.scan.Token(); t != "" {
+			token = t
 		}
 	}
 
@@ -295,15 +302,11 @@ func (c *Conn) Stop() {
 	if !c.stopping.CompareAndSwap(false, true) {
 		return
 	}
-	// An already-reaped child must not be signalled: the PID may have been
-	// recycled and the group kill would hit an innocent process.
-	if c.reaped.Load() {
-		return
-	}
 	// Retire the orphan watchdog only once the child is gone: if bodek
 	// itself dies mid-Stop (a second Ctrl+C restores the default signal
 	// action), the watchdog must still be there to escalate. It stays
-	// inert while this process is alive.
+	// inert while this process is alive. An already-reaped child still
+	// retires it, or the exited guard lingers as a zombie.
 	defer func() {
 		c.watchMu.Lock()
 		if c.watch != nil {
@@ -312,6 +315,11 @@ func (c *Conn) Stop() {
 		}
 		c.watchMu.Unlock()
 	}()
+	// An already-reaped child must not be signalled: the PID may have been
+	// recycled and the group kill would hit an innocent process.
+	if c.reaped.Load() {
+		return
+	}
 	// SIGINT triggers odek serve's graceful shutdown (closes sockets, removes
 	// sandbox containers), delivered to the server's whole process group so
 	// its own subprocesses follow. SIGKILL escalation likewise targets the
@@ -397,6 +405,23 @@ func attachEndpoints(base string) (baseURL, wsURL string) {
 	w.Path += "/ws"
 	w.Scheme = "ws" + strings.TrimPrefix(u.Scheme, "http")
 	return rest.String(), w.String()
+}
+
+// attachURL normalizes a --url value: a bare host:port (the common typo)
+// gets http://, and anything that is not an http(s) URL with a host is
+// refused up front instead of probing for the full ready timeout.
+// ErrInvalidURL marks a --url no retry can fix.
+var ErrInvalidURL = errors.New("invalid --url")
+
+func attachURL(raw string) (string, error) {
+	if !strings.Contains(raw, "://") {
+		raw = "http://" + raw
+	}
+	u, err := url.Parse(raw)
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+		return "", fmt.Errorf("%w %q: want http://host:port or https://host", ErrInvalidURL, raw)
+	}
+	return raw, nil
 }
 
 // splitTokenURL separates an attach URL into its base and an optional
@@ -680,7 +705,10 @@ const spawnedTokenGrace = 2 * time.Second
 func probeReady(baseURL string) bool {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
-	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, baseURL+"/", nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, baseURL+"/", nil)
+	if err != nil {
+		return false
+	}
 	client := &http.Client{Timeout: 2 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {

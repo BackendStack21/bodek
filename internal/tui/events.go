@@ -77,7 +77,9 @@ func (m *Model) ingestWireBatch(events []client.Event) (tea.Model, tea.Cmd) {
 			plainLines = append(plainLines, pm.plainEventLines(ev)...)
 		}
 		if ev.Type == "session" && pm.sessionID != "" && pm.authToken != "" {
-			cmd = tea.Batch(cmd, pm.armJobsWatch())
+			// Carried, not joined to the dropped per-event cmd: arming bumps
+			// jobsWatchSeq, so a lost tick would end the watcher chain.
+			pm.batchCarry = append(pm.batchCarry, pm.armJobsWatch())
 		}
 		if ev.Type == client.EventDisconnected {
 			return model, tea.Batch(cmd, tea.Batch(pm.batchCarry...), plainLinesCmd(plainLines))
@@ -480,6 +482,7 @@ func (m *Model) handleEvent(ev client.Event) (tea.Model, tea.Cmd) {
 		ev := ev
 		m.clarify = &ev
 		m.clarifyBuf = ""
+		m.clarifyOff = 0
 		m.setRunStatus("question")
 		m.relayout()
 
@@ -620,6 +623,12 @@ func (m *Model) handleEvent(ev client.Event) (tea.Model, tea.Cmd) {
 			// The user asked for this drop: no reconnect spiral, just the
 			// fresh-start affordance (⏎ respawns in spawn mode).
 			m.shutdownReq = false
+			// A turn running at shutdown did not complete: mark it and seal
+			// its live sub-agent cards, as a lost connection does.
+			if i := m.cur(); i >= 0 {
+				setTurnMarker(&m.msgs[i], "**Interrupted:** server shut down")
+			}
+			_ = m.loseLiveAgents()
 			m.finalize()
 			m.relayout()
 			m.status = "server shut down"

@@ -245,7 +245,8 @@ modifier routes to the composer), and `Alt+A`/`Alt+D`/`Alt+T`
   `KeyRunes`), so every printable — spaces, punctuation, paste — must
   append. Wrap the answer by cell width and paint only a capped tail so
   a long paste cannot push `View` past the terminal; the buffer keeps
-  the full text. Expiry autocloses the card and
+  the full text. A question taller than the card is windowed with a
+  pager row (`Alt+PgUp`/`Alt+PgDn`), never painted in full. Expiry autocloses the card and
   parks `focusIdx` plus the viewport on the latest transcript message
   (a surviving queued successor must not yank scrollback). The unfocused
   queue is a shelf chip; `^Q` unfolds the strip (`qfocus`).

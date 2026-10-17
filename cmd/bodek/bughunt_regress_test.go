@@ -1,10 +1,15 @@
 package main
 
 import (
+	"errors"
+	"flag"
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+
+	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/BackendStack21/bodek/internal/settings"
 )
@@ -58,5 +63,28 @@ func TestRegressServerLogNotReusedWhenPermissive(t *testing.T) {
 	}
 	if fi.Mode().Perm()&0o077 != 0 {
 		t.Fatalf("token-bearing log is group/world accessible: %v", fi.Mode().Perm())
+	}
+}
+
+// Bubble Tea winning the SIGINT race is still the orderly exit.
+func TestRegressTUIInterruptIsCleanExit(t *testing.T) {
+	if err := tuiExitErr(tea.ErrInterrupted); err != nil {
+		t.Fatalf("interrupt reported as failure: %v", err)
+	}
+	if err := tuiExitErr(errors.New("boom")); err == nil {
+		t.Fatal("real failure swallowed")
+	}
+}
+
+// -h prints usage once and is not an error exit.
+func TestRegressHelpPrintsUsageOnce(t *testing.T) {
+	t.Setenv("BODEK_CONFIG", filepath.Join(t.TempDir(), "config.json"))
+	var out strings.Builder
+	_, err := parseConfig([]string{"-h"}, &out)
+	if !errors.Is(err, flag.ErrHelp) {
+		t.Fatalf("err = %v, want flag.ErrHelp", err)
+	}
+	if n := strings.Count(out.String(), "Usage:"); n != 1 {
+		t.Fatalf("usage printed %d times", n)
 	}
 }

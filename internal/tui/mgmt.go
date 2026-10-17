@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"sort"
 	"strings"
+	"unicode/utf8"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -539,7 +540,7 @@ func (m *Model) afterMgmtPromote(msg mgmtPromoteMsg) tea.Cmd {
 		if len(msg.res.Sources) > 0 {
 			srcs = strings.Join(msg.res.Sources, ", ")
 		}
-		note := fmt.Sprintf("episode promoted (%d chars, sources: %s)", len(msg.res.Summary), srcs)
+		note := fmt.Sprintf("episode promoted (%d chars, sources: %s)", utf8.RuneCountInString(msg.res.Summary), srcs)
 		m.pendingMemReload = false
 		cmd := m.openMemory()
 		m.panelMsg = note // openMemory resets the line; the outcome outlives it
@@ -748,13 +749,15 @@ func mgmtPanel(p panelMode) bool {
 func (m *Model) closeDetail() {
 	m.panelDetail = false
 	m.detailScroll = 0
+	m.relayout() // detail mode changes the sheet split; the viewport must follow
 	m.refresh()
 }
 
 // detailMaxScroll is the last scroll offset that keeps the final detail line
-// on screen; scrolling stops there.
+// on screen; scrolling stops there. It must use the panel's own budget (as
+// renderPanel does), not the terminal height, or the tail is unreachable.
 func (m *Model) detailMaxScroll() int {
-	visible := m.height - 5 // border(2) + title(1) + breathing room
+	visible := m.panelHeight() - 5 // border(2) + title(1) + breathing room
 	if visible < 1 {
 		visible = 1
 	}

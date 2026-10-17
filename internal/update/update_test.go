@@ -182,3 +182,15 @@ func TestLatestReleaseUnreachable(t *testing.T) {
 		t.Fatal("expected query error to unreachable host")
 	}
 }
+
+func TestNewerIgnoresBuildMetadata(t *testing.T) {
+	if !Newer("v1.5.0", "v1.2.0+dirty") {
+		t.Error("a +dirty build hid a newer release")
+	}
+	if Newer("v1.2.0", "v1.2.0+dirty") {
+		t.Error("a +dirty build of the latest release read as outdated")
+	}
+	if !Newer("v1.2.1", "v1.2.1-0.20260901000000-abc1234+dirty") {
+		t.Error("a dirty pseudo-version no longer sees its release")
+	}
+}

@@ -484,6 +484,12 @@ func (m *Model) planFollowup() tea.Cmd {
 			cmds = append(cmds, c)
 		}
 	}
+	if !m.busy && m.planDirty && !m.planConfirmIssued {
+		// The turn ended (cancel, error, drop) before the plan call's
+		// tool_result armed its confirm: the store is settled now, so
+		// confirm or revert the optimistic patch instead of freezing it.
+		m.planTrig = true
+	}
 	if m.planTrig {
 		cmds = append(cmds, m.schedulePlanRefresh())
 	}
