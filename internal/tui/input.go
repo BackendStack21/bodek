@@ -523,8 +523,8 @@ func (m *Model) sendPrompt(text string) tea.Cmd {
 	m.msgs = append(m.msgs, message{role: roleUser, content: shown, sentAt: time.Now()})
 	m.msgs = append(m.msgs, message{role: roleAsst, streaming: true})
 	m.curIdx = len(m.msgs) - 1
-	m.ta.Reset()
-	m.closeAC()
+	// No composer reset here: submit already cleared it, and a queue
+	// drain / retry must keep whatever the user is typing meanwhile.
 	m.busy = true
 	// The id stays a placeholder until a session frame confirms it — but
 	// odek does not re-emit a session frame per turn, so only a
