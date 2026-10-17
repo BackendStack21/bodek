@@ -614,7 +614,7 @@ can encode them:
 | `d` / `Alt+D` | Deny (plain key: empty composer only) |
 | `t` / `Alt+T` | Trust this risk class until the current connection ends, only when the server offers it and friction is off (plain key: empty composer only) |
 | `Tab` | Expand/collapse command and description details |
-| `Alt+PgUp` / `Alt+PgDn` | Page expanded approval details |
+| `Alt+PgUp` / `Alt+PgDn` | Page expanded approval details, or a clarify question taller than its card |
 | `Esc` | Return from confirmation editing, or fold details; otherwise arm turn cancellation when busy |
 | `^X` | Arm turn cancellation from any state; `y` confirms |
 | `PgUp` / `PgDn` / `^U` / `^D` | Scroll the transcript (approval/clarify cards still own `^U` for paging) |

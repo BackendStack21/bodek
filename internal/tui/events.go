@@ -482,6 +482,7 @@ func (m *Model) handleEvent(ev client.Event) (tea.Model, tea.Cmd) {
 		ev := ev
 		m.clarify = &ev
 		m.clarifyBuf = ""
+		m.clarifyOff = 0
 		m.setRunStatus("question")
 		m.relayout()
 

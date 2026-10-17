@@ -260,6 +260,7 @@ type Model struct {
 	skillSuggest   *client.Event    // pending skill suggestion card (skill_event "suggested")
 	clarify        *client.Event    // pending principal-channel question
 	clarifyBuf     string           // typed answer (not the composer)
+	clarifyOff     int              // first painted question row when the question outgrows the card
 	queue          []string         // prompts typed mid-turn, sent when the turn ends
 	qfocus         bool             // the queue strip owns the keyboard (ctrl+q)
 	qsel           int              // selected strip row while qfocus

@@ -2,6 +2,7 @@ package tui
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -223,5 +224,70 @@ func TestRegressQueueClickIgnoresGlyphsInPromptText(t *testing.T) {
 	m.queueStripClick(m.queueStripTop(), lipgloss.Width(row[:first]))
 	if m.qarm != -1 {
 		t.Fatal("click on the prompt's ✕ armed delete")
+	}
+}
+
+// The stats sheet is windowed to its budget; lipgloss Height never clips.
+func TestRegressStatsSheetFitsTerminal(t *testing.T) {
+	m := newTestModel()
+	m.resize(80, 24)
+	for i := 0; i < 3; i++ {
+		m.turnStats = append(m.turnStats, turnStats{toolCount: 2, outTok: 42, wall: 1500 * 1e6, ttftMs: 300})
+	}
+	m.openStats()
+	if n := viewRows(m); n > 24 {
+		t.Fatalf("stats view is %d rows on a 24-row terminal", n)
+	}
+}
+
+// Opening a detail relayouts (taller sheet) and its tail stays reachable.
+func TestRegressConfigDetailFitsAndScrollsToEnd(t *testing.T) {
+	m := newTestModel()
+	m.resize(80, 30)
+	var raw []string
+	for i := 0; i < 60; i++ {
+		raw = append(raw, fmt.Sprintf("  item-%02d", i))
+	}
+	raw = append(raw, "]END")
+	m.panel = panelConfig
+	m.cfgRows = []cfgRow{{kind: "cfg", k: "list", v: "·", raw: strings.Join(raw, "\n")}}
+	m.relayout()
+	m.panelSelect()
+	if !m.panelDetail {
+		t.Fatal("detail did not open")
+	}
+	if n := viewRows(m); n > 30 {
+		t.Fatalf("detail view is %d rows on a 30-row terminal", n)
+	}
+	for i := 0; i < 200; i++ {
+		m.handleKey(key("down"))
+	}
+	if !strings.Contains(plain(m.View()), "]END") {
+		t.Fatal("final detail line unreachable")
+	}
+	m.handleKey(key("esc"))
+	if n := viewRows(m); n != 30 {
+		t.Fatalf("closing detail left a %d-row view", n)
+	}
+}
+
+// A long clarify question is windowed and paged instead of pushing the
+// header off-screen.
+func TestRegressClarifyQuestionFitsTerminal(t *testing.T) {
+	m := newTestModel()
+	m.resize(80, 24)
+	var q []string
+	for i := 1; i <= 20; i++ {
+		q = append(q, fmt.Sprintf("%d. option number %d", i, i))
+	}
+	m.handleEvent(client.Event{Type: "clarify_request", ID: "c1", Question: strings.Join(q, "\n")})
+	if n := viewRows(m); n > 24 {
+		t.Fatalf("clarify view is %d rows on a 24-row terminal", n)
+	}
+	for i := 0; i < 10; i++ {
+		m.handleKey(tea.KeyMsg{Type: tea.KeyPgDown, Alt: true})
+	}
+	if !strings.Contains(plain(m.View()), "20. option number 20") {
+		t.Fatal("last question line unreachable by paging")
 	}
 }
