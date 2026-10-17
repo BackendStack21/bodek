@@ -205,6 +205,10 @@ func statusRetryable(err error) bool {
 // unparsable — including a dev build's "dev" or an empty string — reports
 // false, so a failed or skipped check never nags.
 func Newer(latest, current string) bool {
+	// Semver build metadata never orders: Go stamps a dirty tagged
+	// checkout "v1.2.0+dirty", which must still compare as v1.2.0.
+	latest, _, _ = strings.Cut(latest, "+")
+	current, _, _ = strings.Cut(current, "+")
 	l, lok := parseSemver(pseudoBase(latest))
 	c, cok := parseSemver(pseudoBase(current))
 	if !lok || !cok {
