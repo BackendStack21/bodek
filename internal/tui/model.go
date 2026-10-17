@@ -265,6 +265,7 @@ type Model struct {
 	qfocus         bool             // the queue strip owns the keyboard (ctrl+q)
 	qsel           int              // selected strip row while qfocus
 	qarm           int              // armed-for-delete row while qfocus (-1 = none)
+	qRefused       string           // queueSendKey of a head refused as too large (drain stays quiet until it changes)
 	lastPrompt     string           // most recent prompt sent — /retry re-sends it
 	ws             *workspace.Store // nil in tests unless injected
 	pendingResume  string           // cwd last-session id; consumed by resumeLast

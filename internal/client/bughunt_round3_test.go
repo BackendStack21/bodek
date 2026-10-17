@@ -53,7 +53,7 @@ func TestRegressPromptFrameBounds(t *testing.T) {
 	}
 	select {
 	case n := <-got:
-		if n > maxFrameBytes {
+		if n > MaxFrameBytes {
 			t.Fatalf("frame %d bytes exceeds the cap", n)
 		}
 	case <-time.After(5 * time.Second):
@@ -89,4 +89,14 @@ func TestRegressCloseDoesNotWaitOutStuckWrite(t *testing.T) {
 		t.Fatalf("Close blocked %v behind the stuck write", d)
 	}
 	<-sent
+}
+
+func TestRegressCheckPromptSize(t *testing.T) {
+	if err := CheckPromptSize("hi", PromptOpts{}); err != nil {
+		t.Fatalf("small prompt refused: %v", err)
+	}
+	big := []Attachment{{Name: "a", Content: strings.Repeat("\n", 5<<20)}} // \n encodes to 2 bytes
+	if err := CheckPromptSize("hi", PromptOpts{Attachments: big}); !errors.Is(err, ErrFrameTooLarge) {
+		t.Fatalf("err = %v, want ErrFrameTooLarge", err)
+	}
 }

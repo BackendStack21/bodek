@@ -135,7 +135,7 @@ func (m *Model) unattachFile(name string) tea.Cmd {
 		m.attachments = nil
 		m.attachPaths = nil
 		m.persistLocal()
-		return m.transientNoteCmd("dropped " + plural(n, "staged file", "staged files"))
+		return tea.Batch(m.transientNoteCmd("dropped "+plural(n, "staged file", "staged files")), m.retryRefusedQueue())
 	}
 	for i := range m.attachments {
 		if m.attachments[i].Name == name {
@@ -144,10 +144,19 @@ func (m *Model) unattachFile(name string) tea.Cmd {
 				m.attachPaths = append(m.attachPaths[:i], m.attachPaths[i+1:]...)
 			}
 			m.persistLocal()
-			return m.transientNoteCmd("dropped " + name)
+			return tea.Batch(m.transientNoteCmd("dropped "+name), m.retryRefusedQueue())
 		}
 	}
 	return m.transientNoteCmd("not staged: " + name)
+}
+
+// retryRefusedQueue re-drains a queue whose head was refused as too large,
+// now that the staged files shrank — no unrelated event needs to arrive.
+func (m *Model) retryRefusedQueue() tea.Cmd {
+	if m.qRefused == "" {
+		return nil
+	}
+	return m.sendQueued()
 }
 
 // expandTilde resolves a leading ~ to the user's home directory.

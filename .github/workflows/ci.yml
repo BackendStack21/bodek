@@ -67,6 +67,10 @@ jobs:
       - name: Vet
         run: go vet ./...
 
+      # Windows-only process and lock behaviour the unix legs cannot cover.
+      - name: Test (windows-specific)
+        run: go test ./internal/filelock/ ./internal/server/ -run "TestWindows|TestLock" -v
+
   lint:
     name: Lint
     runs-on: ubuntu-latest

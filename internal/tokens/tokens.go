@@ -16,6 +16,8 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+
+	"github.com/BackendStack21/bodek/internal/filelock"
 )
 
 // Store is a concurrency-safe session-id → token map with best-effort
@@ -92,6 +94,7 @@ func (s *Store) Set(id, token string) {
 	if s.m[id] == token {
 		return // no change; skip the disk write
 	}
+	defer filelock.Lock(s.path)() // a peer must not interleave between merge and rename
 	s.mergeLocked()
 	s.m[id] = token
 	s.markPendingLocked(id, token)
@@ -108,6 +111,7 @@ func (s *Store) Delete(id string) {
 	if _, ok := s.m[id]; !ok {
 		return
 	}
+	defer filelock.Lock(s.path)() // a peer must not interleave between merge and rename
 	s.mergeLocked()
 	delete(s.m, id)
 	s.markPendingLocked(id, "")
@@ -180,6 +184,11 @@ func persist(path string, m map[string]string) error {
 	data, err := json.MarshalIndent(m, "", "  ")
 	if err != nil {
 		return fmt.Errorf("encode store: %w", err)
+	}
+	// Write through a symlinked store (dotfile managers): the rename
+	// would otherwise replace the link with a regular file.
+	if target, err := filepath.EvalSymlinks(path); err == nil {
+		path = target
 	}
 	// A per-call staged name: callers persist after releasing the store
 	// mutex, so a shared path+'.tmp' let two interleaved writes tear the

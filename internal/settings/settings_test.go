@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -189,3 +190,26 @@ func TestBODEKConfigOverride(t *testing.T) {
 }
 
 func ptr(b bool) *bool { return &b }
+
+// A symlinked config.json (dotfile managers) stays a symlink across saves.
+func TestRegressSymlinkedConfigSurvivesSave(t *testing.T) {
+	dir := t.TempDir()
+	real := filepath.Join(dir, "real.json")
+	link := filepath.Join(dir, "config.json")
+	if err := os.WriteFile(real, []byte("{}"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(real, link); err != nil {
+		t.Skip("symlinks unsupported")
+	}
+	t.Setenv("BODEK_CONFIG", link)
+	if err := Save(Settings{Theme: "classic"}); err != nil {
+		t.Fatal(err)
+	}
+	if fi, err := os.Lstat(link); err != nil || fi.Mode()&os.ModeSymlink == 0 {
+		t.Fatal("save replaced the symlink with a regular file")
+	}
+	if b, _ := os.ReadFile(real); !strings.Contains(string(b), "classic") {
+		t.Fatal("settings not written through the link")
+	}
+}

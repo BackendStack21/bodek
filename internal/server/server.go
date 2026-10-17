@@ -233,6 +233,9 @@ func (c *Conn) spawn(opts Options, addr string) error {
 		return fmt.Errorf("start odek serve: %w", err)
 	}
 	c.proc = cmd
+	// Before the reaper: on windows Wait releases the process handle, and
+	// a recycled pid must never land in the kill-on-close job.
+	c.guardChild()
 	c.startReaper()
 	c.startWatchdog()
 	return nil
