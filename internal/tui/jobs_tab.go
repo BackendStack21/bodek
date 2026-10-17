@@ -141,7 +141,23 @@ func (m *Model) applyJobs(jobs []client.Job, err error) tea.Cmd {
 		}
 		return nil
 	}
+	// Anchor the selection by job id: a reaped row above it must not
+	// silently retarget the detail header or the stop gate.
+	selID := ""
+	if m.panel == panelJobs {
+		if m.panelDetail && m.jobsOutID != "" {
+			selID = m.jobsOutID
+		} else if m.panelSel < len(m.jobs) {
+			selID = m.jobs[m.panelSel].ID
+		}
+	}
 	m.jobs = jobs
+	for i, j := range jobs {
+		if selID != "" && j.ID == selID {
+			m.panelSel = i
+			break
+		}
+	}
 	var attn tea.Cmd
 	if m.jobsPrev == nil {
 		m.jobsPrev = make(map[string]string, len(jobs))

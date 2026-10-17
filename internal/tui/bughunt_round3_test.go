@@ -160,3 +160,17 @@ func TestRegressAbortedPlanCallConfirms(t *testing.T) {
 		t.Fatal("turn end did not schedule the confirm fetch")
 	}
 }
+
+// A reaped job above the selection must not retarget detail or stop.
+func TestRegressJobsSelectionAnchorsByID(t *testing.T) {
+	m := newTestModel()
+	m.panel = panelJobs
+	m.applyJobs([]client.Job{
+		{ID: "bg_a", Status: "exited"}, {ID: "bg_b", Status: "running"}, {ID: "bg_c", Status: "running"},
+	}, nil)
+	m.panelSel = 1
+	m.applyJobs([]client.Job{{ID: "bg_b", Status: "running"}, {ID: "bg_c", Status: "running"}}, nil)
+	if got := m.jobs[m.panelSel].ID; got != "bg_b" {
+		t.Fatalf("selection moved to %s", got)
+	}
+}
