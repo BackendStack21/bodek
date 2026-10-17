@@ -358,8 +358,19 @@ func TestRegressOversizedPromptKeepsDraftAndQueue(t *testing.T) {
 			m.ta.Value(), len(m.attachments), len(m.msgs), m.busy)
 	}
 	m.queue = []string{"queued"}
-	m.sendQueued()
+	if m.sendQueued() == nil {
+		t.Fatal("refused drain gave no note")
+	}
 	if len(m.queue) != 1 || len(m.msgs) != 0 {
 		t.Fatalf("oversized drain popped the queue: queue=%d msgs=%d", len(m.queue), len(m.msgs))
+	}
+	// Idle events (pongs) re-run the drain: no re-encode, no note spam.
+	if m.sendQueued() != nil {
+		t.Fatal("unchanged refused head re-noted")
+	}
+	// Dropping the files drains the head at once.
+	m.unattachFile("big.txt")
+	if len(m.queue) != 0 || !m.busy {
+		t.Fatalf("unattach did not drain the refused head: queue=%d busy=%v", len(m.queue), m.busy)
 	}
 }

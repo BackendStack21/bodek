@@ -527,11 +527,27 @@ func (m *Model) promptTooLarge(text string) tea.Cmd {
 	if raw*6+4096 < client.MaxFrameBytes {
 		return nil
 	}
-	err := client.CheckPromptSize(text, m.promptOpts())
-	if errors.Is(err, client.ErrFrameTooLarge) {
-		return m.transientNoteCmd("not sent: " + err.Error() + " · /unattach drops files")
+	opts := m.promptOpts()
+	err := client.CheckPromptSize(text, opts)
+	if !errors.Is(err, client.ErrFrameTooLarge) {
+		return nil
 	}
-	return nil
+	hint := " · /unattach drops files"
+	opts.Attachments = nil
+	if errors.Is(client.CheckPromptSize(text, opts), client.ErrFrameTooLarge) {
+		hint = " · the text alone is too long — shorten it"
+	}
+	return m.transientNoteCmd("not sent: " + err.Error() + hint)
+}
+
+// queueSendKey identifies what the queue head would send: its text plus
+// the staged files' count and size.
+func (m *Model) queueSendKey() string {
+	n := 0
+	for _, a := range m.attachments {
+		n += len(a.Name) + len(a.Content)
+	}
+	return fmt.Sprintf("%d/%d\x00%s", len(m.attachments), n, m.queue[0])
 }
 
 // promptOpts are the wire options the next prompt carries.
@@ -624,9 +640,17 @@ func (m *Model) sendQueued() tea.Cmd {
 	if m.busy || m.disconn || m.resumeInFlight || len(m.queue) == 0 {
 		return nil
 	}
-	if note := m.promptTooLarge(m.queue[0]); note != nil {
-		return note // stays queued until its staged files are trimmed
+	// The drain runs after every idle event (pongs included): re-encode and
+	// re-note a refused head only once it or the staged files change.
+	key := m.queueSendKey()
+	if key == m.qRefused {
+		return nil
 	}
+	if note := m.promptTooLarge(m.queue[0]); note != nil {
+		m.qRefused = key
+		return note // stays queued until it or its staged files shrink
+	}
+	m.qRefused = ""
 	text := m.queue[0]
 	m.queue = m.queue[1:]
 	m.qsel = clampSel(m.qsel, len(m.queue))
