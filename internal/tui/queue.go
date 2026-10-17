@@ -186,22 +186,18 @@ func (m *Model) queueStripClick(y, x int) bool {
 	// in terminal CELLS, so glyph columns are display widths — byte offsets
 	// drift 2 cells per multibyte rune and misfire the neighboring control.
 	row := unstyle(strings.Split(m.queueStripView(), "\n")[rel])
+	// The controls trail the row, so the LAST occurrence of each glyph is
+	// the control — prompt text may contain the same glyphs.
 	upC, downC, delC := -1, -1, -1
 	cell := 0
 	for _, r := range row {
 		switch r {
 		case '▲':
-			if upC < 0 {
-				upC = cell
-			}
+			upC = cell
 		case '▼':
-			if downC < 0 {
-				downC = cell
-			}
+			downC = cell
 		case '✕':
-			if delC < 0 {
-				delC = cell
-			}
+			delC = cell
 		}
 		cell += lipgloss.Width(string(r))
 	}

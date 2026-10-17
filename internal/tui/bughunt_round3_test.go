@@ -2,11 +2,14 @@ package tui
 
 import (
 	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 
 	"github.com/BackendStack21/bodek/internal/client"
 )
@@ -172,5 +175,53 @@ func TestRegressJobsSelectionAnchorsByID(t *testing.T) {
 	m.applyJobs([]client.Job{{ID: "bg_b", Status: "running"}, {ID: "bg_c", Status: "running"}}, nil)
 	if got := m.jobs[m.panelSel].ID; got != "bg_b" {
 		t.Fatalf("selection moved to %s", got)
+	}
+}
+
+// Two files sharing a base name both stay attached; the same path restages.
+func TestRegressAttachSameBaseNameKeepsBoth(t *testing.T) {
+	dir := t.TempDir()
+	a := filepath.Join(dir, "a", "README.md")
+	b := filepath.Join(dir, "b", "README.md")
+	for _, p := range []string{a, b} {
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(p), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	m := newTestModel()
+	m.attachFile(a)
+	m.attachFile(b)
+	m.attachFile(b)
+	if len(m.attachments) != 2 || m.attachments[0].Name == m.attachments[1].Name {
+		t.Fatalf("attachments = %+v", m.attachments)
+	}
+	if !strings.HasSuffix(m.attachments[1].Content, filepath.Join("b", "README.md")) {
+		t.Fatalf("second attachment holds %q", m.attachments[1].Content)
+	}
+}
+
+// /run uses the pending model without dropping it for the next turn.
+func TestRegressHeadlessRunKeepsPendingModel(t *testing.T) {
+	m := newTestModel()
+	m.pendModel = "other-model"
+	m.startHeadlessRun("do it")
+	if m.pendModel != "other-model" {
+		t.Fatalf("pendModel = %q", m.pendModel)
+	}
+}
+
+// A ✕ inside the prompt text is not the delete control.
+func TestRegressQueueClickIgnoresGlyphsInPromptText(t *testing.T) {
+	m := newTestModel()
+	m.queue = []string{"fix ✕ button"}
+	m.qfocus = true
+	row := unstyle(strings.Split(m.queueStripView(), "\n")[0])
+	first := strings.Index(row, "✕")
+	m.queueStripClick(m.queueStripTop(), lipgloss.Width(row[:first]))
+	if m.qarm != -1 {
+		t.Fatal("click on the prompt's ✕ armed delete")
 	}
 }
