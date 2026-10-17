@@ -4,6 +4,7 @@
 package main
 
 import (
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -12,6 +13,7 @@ import (
 	"reflect"
 	"runtime"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -158,8 +160,7 @@ func parseConfig(args []string, output io.Writer) (config, error) {
 		_, _ = fmt.Fprintf(fs.Output(), "  bodek -- --prompt-caching                         # pass extra flags to odek serve\n")
 	}
 	if err := fs.Parse(args); err != nil {
-		fs.Usage()
-		return config{}, err
+		return config{}, err // Parse already printed usage
 	}
 	cfg.extraArgs = fs.Args()
 	return cfg, nil
@@ -209,6 +210,9 @@ func run() error {
 	}
 
 	cfg, err := parseConfig(os.Args[1:], os.Stderr)
+	if errors.Is(err, flag.ErrHelp) {
+		return nil
+	}
 	if err != nil {
 		return err
 	}
@@ -350,8 +354,12 @@ func run() error {
 	// the terminal. Quit the program instead — Run returns cleanly, so the
 	// deferred srv.Stop() and cl.Close() still execute with terminal state
 	// intact.
-	setupSignalHandler(p)
+	stopSignals := setupSignalHandler(p.Quit)
 	final, runErr := p.Run()
+	// From here the terminal is cooked again and Bubble Tea's own handler is
+	// gone: release ours so the first Ctrl+C during the shutdown countdown
+	// aborts it instead of landing in a channel nobody reads.
+	stopSignals()
 	// The alt screen is down: suggest resuming the session that was just
 	// closed, with its exact id (Ctrl+C included — Run returns the same
 	// way). The live model id wins over the store; a crashed TUI still
@@ -363,20 +371,41 @@ func run() error {
 		}
 		printResumeHint(ws, cwd, liveID, os.Stderr)
 	}
-	if runErr != nil {
-		return fmt.Errorf("TUI exited: %w", runErr)
-	}
-	return nil
+	return tuiExitErr(runErr)
 }
 
-func setupSignalHandler(p *tea.Program) {
+// tuiExitErr maps Run's result to run's: Bubble Tea's own SIGINT handler
+// races setupSignalHandler's Quit, and either winner is the same orderly
+// exit the user asked for.
+func tuiExitErr(err error) error {
+	if err == nil || errors.Is(err, tea.ErrInterrupted) {
+		return nil
+	}
+	return fmt.Errorf("TUI exited: %w", err)
+}
+
+// setupSignalHandler turns the first SIGINT/SIGTERM into quit and returns a
+// stop func that releases the signals (idempotent).
+func setupSignalHandler(quit func()) (stop func()) {
 	ch := make(chan os.Signal, 1)
+	done := make(chan struct{})
 	signal.Notify(ch, os.Interrupt, syscall.SIGTERM)
 	go func() {
-		<-ch
+		select {
+		case <-ch:
+		case <-done:
+			return
+		}
 		// Restore default handling so a second Ctrl+C / SIGTERM can abort a
 		// slow shutdown instead of being swallowed by this channel.
 		signal.Stop(ch)
-		p.Quit()
+		quit()
 	}()
+	var once sync.Once
+	return func() {
+		once.Do(func() {
+			signal.Stop(ch)
+			close(done)
+		})
+	}
 }
