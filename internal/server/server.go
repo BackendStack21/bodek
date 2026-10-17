@@ -6,6 +6,7 @@ package server
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -409,13 +410,16 @@ func attachEndpoints(base string) (baseURL, wsURL string) {
 // attachURL normalizes a --url value: a bare host:port (the common typo)
 // gets http://, and anything that is not an http(s) URL with a host is
 // refused up front instead of probing for the full ready timeout.
+// ErrInvalidURL marks a --url no retry can fix.
+var ErrInvalidURL = errors.New("invalid --url")
+
 func attachURL(raw string) (string, error) {
 	if !strings.Contains(raw, "://") {
 		raw = "http://" + raw
 	}
 	u, err := url.Parse(raw)
 	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
-		return "", fmt.Errorf("invalid --url %q: want http://host:port or https://host", raw)
+		return "", fmt.Errorf("%w %q: want http://host:port or https://host", ErrInvalidURL, raw)
 	}
 	return raw, nil
 }

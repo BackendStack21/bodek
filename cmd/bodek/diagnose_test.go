@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"errors"
 	"io"
 	"strings"
 	"testing"
@@ -34,5 +35,17 @@ func TestConnectWithDiagnosisNonTTY(t *testing.T) {
 	}
 	if !strings.Contains(stderr.String(), "retry: ⏎") {
 		t.Errorf("card missing retry: %q", stderr.String())
+	}
+}
+
+// An invalid --url is a typo no retry fixes: no startup card, no loop.
+func TestConnectWithDiagnosisInvalidURLSkipsRetry(t *testing.T) {
+	var stderr bytes.Buffer
+	_, err := connectWithDiagnosis(server.Options{URL: "ftp://127.0.0.1:1"}, &stderr, bytes.NewReader(nil))
+	if !errors.Is(err, server.ErrInvalidURL) {
+		t.Fatalf("err = %v, want ErrInvalidURL", err)
+	}
+	if stderr.Len() != 0 {
+		t.Fatalf("printed a startup card for a bad --url: %q", stderr.String())
 	}
 }

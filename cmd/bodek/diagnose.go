@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -18,6 +19,9 @@ func connectWithDiagnosis(opts server.Options, stderr io.Writer, stdin io.Reader
 		srv, err := server.Connect(opts)
 		if err == nil {
 			return srv, nil
+		}
+		if errors.Is(err, server.ErrInvalidURL) {
+			return nil, err // a typo, not a startup failure: no card, no retry loop
 		}
 		card := server.Diagnose(err, tui.MissingProvider())
 		if stderr != nil && card != "" {
