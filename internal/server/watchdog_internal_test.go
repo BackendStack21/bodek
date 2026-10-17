@@ -126,3 +126,21 @@ func TestSpawnWatchdogBestEffort(t *testing.T) {
 	}
 	c.Stop()
 }
+
+// TestStopRetiresWatchdogAfterChildAlreadyExited: a child that died before
+// Stop must not leave its exited guard behind as an unreaped zombie.
+func TestStopRetiresWatchdogAfterChildAlreadyExited(t *testing.T) {
+	c := &Conn{}
+	c.proc = exec.Command("true")
+	if err := c.proc.Start(); err != nil {
+		t.Skip("no 'true' binary")
+	}
+	_ = c.proc.Wait()
+	c.reaped.Store(true)
+	retired := false
+	c.watch = func() { retired = true }
+	c.Stop()
+	if !retired {
+		t.Error("watchdog not retired for an already-reaped child")
+	}
+}

@@ -220,3 +220,17 @@ func TestConnectSpawnTokenFromBannerFallback(t *testing.T) {
 		t.Errorf("Token = %q, want %q", conn.Token, "beefcafe")
 	}
 }
+
+func TestConnectSpawnStderrTokenBeatsFlag(t *testing.T) {
+	// --token is meant for an attached server; the spawned child's own token
+	// must win or the WS handshake fails.
+	bin := fakeOdekScript(t, "  WS token:  cafef00d")
+	conn, err := Connect(Options{Bin: bin, Stderr: io.Discard, Token: "stale"})
+	if err != nil {
+		t.Fatalf("Connect: %v", err)
+	}
+	defer conn.Stop()
+	if conn.Token != "cafef00d" {
+		t.Errorf("Token = %q, want the spawned server's %q", conn.Token, "cafef00d")
+	}
+}
