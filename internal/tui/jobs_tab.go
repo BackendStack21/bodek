@@ -22,10 +22,11 @@ import (
 // as alert-tier notes naming the command and fire the attention layer; the
 // tab is the full surface (rows, output detail, stop).
 
-const (
-	jobsPollEvery  = 3 * time.Second  // tab visible: live view
-	jobsWatchEvery = 10 * time.Second // background: completion watching
-)
+const jobsPollEvery = 3 * time.Second // tab visible: live view
+
+// jobsWatchEvery is the background completion-watching cadence (a var so
+// tests can observe the chain without waiting it out).
+var jobsWatchEvery = 10 * time.Second
 
 // jobsFetchedMsg carries one /api/jobs snapshot (tab poll or watcher tick).
 type jobsFetchedMsg struct {

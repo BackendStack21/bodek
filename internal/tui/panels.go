@@ -82,6 +82,12 @@ func (m *Model) handleConfirmKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case confirmEpisodeDiscard:
 			return m, m.memDiscardSelected()
 		case confirmClear:
+			// Arming is idle-only, but a wake or remote turn can start
+			// while the gate sits armed: wiping it would drop its card and
+			// any approval odek is waiting on.
+			if m.busy {
+				return m, m.transientNoteCmd("a turn started — clear when it ends")
+			}
 			return m, tea.Batch(m.clearConversation(), m.transientNoteCmd("conversation cleared"))
 		case confirmCancel:
 			// cancelRun self-guards: if the run settled while the gate sat

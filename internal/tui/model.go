@@ -788,6 +788,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case shutdownDoneMsg:
 		if msg.err != nil {
+			m.shutdownReq = false // a later drop is a real disconnect again
 			m.addNote("shutdown failed: " + msg.err.Error())
 			m.refresh()
 		}

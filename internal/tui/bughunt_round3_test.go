@@ -1,7 +1,10 @@
 package tui
 
 import (
+	"errors"
+	"strings"
 	"testing"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -88,5 +91,56 @@ func TestRegressPaletteKeepsMultiRuneInput(t *testing.T) {
 	m.handlePaletteKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("shift+enter")})
 	if m.pal.query != "ses" {
 		t.Fatalf("query = %q", m.pal.query)
+	}
+}
+
+// A session frame inside a drained batch must keep the jobs watcher chain:
+// arming bumps the generation, so dropping its tick silenced completions.
+func TestRegressBatchedSessionKeepsJobsWatcher(t *testing.T) {
+	old := jobsWatchEvery
+	jobsWatchEvery = time.Millisecond
+	defer func() { jobsWatchEvery = old }()
+	m := newJobsTestModel(t, nil)
+	_, cmd := m.ingestWireBatch([]client.Event{
+		{Type: "session", SessionID: "s1", AuthToken: "tok"},
+		{Type: "server_info"},
+	})
+	found := false
+	for _, name := range runCmdTree(cmd) {
+		if name == "tui.jobsTickMsg" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("batched session frame dropped the watcher tick")
+	}
+}
+
+// The armed ^L confirm must not wipe a turn that started meanwhile.
+func TestRegressClearConfirmRefusesWhileBusy(t *testing.T) {
+	m := newTestModel()
+	m.armConfirm(confirmClear, "the conversation")
+	m.msgs = append(m.msgs, message{role: roleAsst, streaming: true})
+	m.curIdx, m.busy = 0, true
+	m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+	if len(m.msgs) != 1 || m.curIdx != 0 {
+		t.Fatalf("clear ran mid-turn: msgs=%d cur=%d", len(m.msgs), m.curIdx)
+	}
+}
+
+// A failed shutdown re-arms reconnect; a successful one interrupts the turn.
+func TestRegressShutdownLatch(t *testing.T) {
+	m := newTestModel()
+	m.shutdownReq = true
+	m.Update(shutdownDoneMsg{err: errors.New("403")})
+	if m.shutdownReq {
+		t.Fatal("failed shutdown left the latch set")
+	}
+	m.shutdownReq = true
+	m.msgs = append(m.msgs, message{role: roleAsst, streaming: true})
+	m.curIdx, m.busy = 0, true
+	m.handleEvent(client.Event{Type: client.EventDisconnected})
+	if !strings.Contains(m.msgs[0].content, "Interrupted") {
+		t.Fatalf("shutdown mid-turn left no marker: %q", m.msgs[0].content)
 	}
 }
