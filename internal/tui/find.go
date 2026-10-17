@@ -71,6 +71,10 @@ func (m *Model) handleFindKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	}
+	if msg.Type == tea.KeySpace {
+		// Bubble Tea delivers the spacebar as KeySpace, not KeyRunes.
+		msg = tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{' '}}
+	}
 	if msg.Type == tea.KeyRunes && len(msg.Runes) > 0 {
 		// Enhanced-key sentinels ride KeyRunes; their literal text is not input.
 		if s := msg.String(); newlineChord(s) || s == "shift+delete" {
