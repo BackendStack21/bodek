@@ -232,14 +232,16 @@ func TestRegressQueueClickIgnoresGlyphsInPromptText(t *testing.T) {
 
 // The stats sheet is windowed to its budget; lipgloss Height never clips.
 func TestRegressStatsSheetFitsTerminal(t *testing.T) {
-	m := newTestModel()
-	m.resize(80, 24)
-	for i := 0; i < 3; i++ {
-		m.turnStats = append(m.turnStats, turnStats{toolCount: 2, outTok: 42, wall: 1500 * 1e6, ttftMs: 300})
-	}
-	m.openStats()
-	if n := viewRows(m); n > 24 {
-		t.Fatalf("stats view is %d rows on a 24-row terminal", n)
+	for _, size := range [][2]int{{80, 24}, {40, 24}, {40, 14}, {120, 18}} {
+		m := newTestModel()
+		m.resize(size[0], size[1])
+		for i := 0; i < 3; i++ {
+			m.turnStats = append(m.turnStats, turnStats{toolCount: 2, outTok: 42, wall: 1500 * 1e6, ttftMs: 300})
+		}
+		m.openStats()
+		if n := viewRows(m); n > size[1] {
+			t.Fatalf("%dx%d: stats view is %d rows", size[0], size[1], n)
+		}
 	}
 }
 
@@ -277,12 +279,25 @@ func TestRegressConfigDetailFitsAndScrollsToEnd(t *testing.T) {
 // A long clarify question is windowed and paged instead of pushing the
 // header off-screen.
 func TestRegressClarifyQuestionFitsTerminal(t *testing.T) {
-	m := newTestModel()
-	m.resize(80, 24)
 	var q []string
 	for i := 1; i <= 20; i++ {
 		q = append(q, fmt.Sprintf("%d. option number %d", i, i))
 	}
+	for _, size := range [][2]int{{40, 24}, {120, 16}} {
+		for _, queued := range []bool{false, true} {
+			m := newTestModel()
+			m.resize(size[0], size[1])
+			if queued {
+				m.queue = []string{"a", "b"}
+			}
+			m.handleEvent(client.Event{Type: "clarify_request", ID: "c1", Question: strings.Join(q, "\n")})
+			if n := viewRows(m); n > size[1] {
+				t.Fatalf("%dx%d queued=%v: clarify view is %d rows", size[0], size[1], queued, n)
+			}
+		}
+	}
+	m := newTestModel()
+	m.resize(80, 24)
 	m.handleEvent(client.Event{Type: "clarify_request", ID: "c1", Question: strings.Join(q, "\n")})
 	if n := viewRows(m); n > 24 {
 		t.Fatalf("clarify view is %d rows on a 24-row terminal", n)

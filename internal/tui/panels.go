@@ -1444,7 +1444,8 @@ func (m *Model) renderPanel(w, h int) string {
 		visible := max(h-2-lipgloss.Height(body), 1)
 		if len(lines) > visible {
 			more := len(lines) - visible + 1
-			lines = append(lines[:visible-1], th.acDim.Render(fmt.Sprintf("  … +%d rows · /stats in a taller terminal", more)))
+			marker := truncate(fmt.Sprintf("  … +%d rows · /stats in a taller terminal", more), boxInner(w))
+			lines = append(lines[:visible-1], th.acDim.Render(marker))
 		}
 		body += "\n" + strings.Join(lines, "\n")
 		return th.acBox.Width(boxWidth(w)).Height(h - 2).Render(body)

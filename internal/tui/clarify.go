@@ -135,7 +135,9 @@ func (m *Model) clarifyBody() string {
 		// keep one row for the pager.
 		show := max(room-1, 1)
 		m.clarifyOff = min(m.clarifyOff, len(question)-show)
-		pager = fmt.Sprintf("lines %d–%d of %d · alt+pgup/pgdn", m.clarifyOff+1, m.clarifyOff+show, len(question))
+		if room >= 2 { // a one-row budget has no room for the pager
+			pager = fmt.Sprintf("lines %d–%d of %d · alt+pgup/pgdn", m.clarifyOff+1, m.clarifyOff+show, len(question))
+		}
 		question = question[m.clarifyOff : m.clarifyOff+show]
 	}
 	shown := len(question)
@@ -156,7 +158,8 @@ func (m *Model) clarifyBody() string {
 	for _, ln := range answer {
 		lines = append(lines, th.apprKey.Render(ln))
 	}
-	lines = append(lines, th.apprBody.Render("enter send · ⇧⏎ newline · type to answer"))
+	// One row, as the budgets count it — a wrapped hint overflowed at 40 cols.
+	lines = append(lines, th.apprBody.Render(truncate("enter send · ⇧⏎ newline · type to answer", budget)))
 	return strings.Join(lines, "\n")
 }
 
@@ -176,13 +179,21 @@ func wrapCells(s string, n int) []string {
 // clarifyQuestionRoom is how many card rows the question may use while one
 // answer row, the hint and the rest of the chrome still fit the terminal.
 func (m *Model) clarifyQuestionRoom() int {
+	used := m.clarifyChromeRows() + 1 // one answer row
+	return max(m.height-used, 1)
+}
+
+// clarifyChromeRows counts every row besides the question and answer while
+// the clarify card is up: header, footer, one transcript row, composer,
+// status line, shelf chip, queue strip, card borders, head and hint.
+func (m *Model) clarifyChromeRows() int {
 	used := headerHeight + footerHeight + 1 // one transcript row stays
 	used += m.ta.Height() + 2               // composer box
 	if m.statusLineVisible() {
 		used += 2
 	}
-	used += 2 + 1 + 1 + 1 // card borders, head, one answer row, hint
-	return max(m.height-used, 1)
+	used += m.shelfHeight() + m.queueStripHeight()
+	return used + 2 + 1 + 1 // card borders, head, hint
 }
 
 // clarifyAnswerCap is the max wrapped answer rows the card may paint. The
@@ -192,12 +203,7 @@ func (m *Model) clarifyAnswerCap(questionLines int) int {
 	if questionLines < 1 {
 		questionLines = 1
 	}
-	used := headerHeight + footerHeight + 1 // one transcript row stays
-	used += m.ta.Height() + 2               // composer box
-	if m.statusLineVisible() {
-		used += 2
-	}
-	used += 2 + 1 + questionLines + 1 // card borders, head, question, hint
+	used := m.clarifyChromeRows() + questionLines
 	room := m.height - used
 	if room < 1 {
 		room = 1
