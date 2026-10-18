@@ -138,6 +138,9 @@ func archiveName(tag, goos, goarch string) string {
 // fail every time under the short API budget.
 const downloadTimeout = 10 * time.Minute
 
+// maxDownload caps a release-asset body; var so tests can lower it.
+var maxDownload = 256 << 20
+
 // download fetches url into memory. Release archives are a few MB, so a
 // buffered read is fine and keeps checksum verification straightforward.
 func download(ctx context.Context, client *http.Client, url string) ([]byte, error) {
@@ -160,9 +163,14 @@ func download(ctx context.Context, client *http.Client, url string) ([]byte, err
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("download %s: unexpected status %s", url, resp.Status)
 	}
-	data, err := io.ReadAll(io.LimitReader(resp.Body, 256<<20))
+	data, err := io.ReadAll(io.LimitReader(resp.Body, int64(maxDownload)+1))
 	if err != nil {
 		return nil, fmt.Errorf("read %s: %w", url, err)
+	}
+	// Name an oversized asset instead of letting the truncated body surface
+	// as a confusing checksum or signature failure.
+	if len(data) > maxDownload {
+		return nil, fmt.Errorf("download %s: asset exceeds %d MiB", url, maxDownload>>20)
 	}
 	return data, nil
 }

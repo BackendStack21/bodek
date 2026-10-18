@@ -402,3 +402,22 @@ func TestReplaceExecutableFollowsSymlink(t *testing.T) {
 	}
 }
 
+// An asset past the download cap is named as oversized rather than
+// truncated into a misleading checksum or signature failure.
+func TestDownloadRejectsOversizedAsset(t *testing.T) {
+	prev := maxDownload
+	maxDownload = 8
+	t.Cleanup(func() { maxDownload = prev })
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte("0123456789"))
+	}))
+	t.Cleanup(srv.Close)
+
+	if _, err := download(context.Background(), srv.Client(), srv.URL); err == nil || !strings.Contains(err.Error(), "exceeds") {
+		t.Fatalf("expected an oversized-asset error, got %v", err)
+	}
+	maxDownload = 10
+	if data, err := download(context.Background(), srv.Client(), srv.URL); err != nil || string(data) != "0123456789" {
+		t.Fatalf("asset at the cap: data=%q err=%v", data, err)
+	}
+}
