@@ -261,8 +261,8 @@ func (m *Model) openCmdAC(query string) {
 }
 
 // themeOptions lists the palettes /theme accepts (aliases included in
-// canonicalTheme: light, contrast, dark, default).
-const themeOptions = "ember-dark · ember-light · high-contrast · classic"
+// canonicalTheme: light, contrast, black, dark, default).
+const themeOptions = "ember-dark · ember-light · high-contrast · obsidian · classic"
 
 // runTheme handles /theme: no argument reports the active palette and the
 // options; a name switches at runtime and persists via OnThemeChange.

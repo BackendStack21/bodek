@@ -47,6 +47,28 @@ func TestLightCanvasCoversTerminalAndPreservesCardSurfaces(t *testing.T) {
 	}
 }
 
+// TestObsidianCanvasIsTrueBlack pins obsidian's own #000 canvas: a gray or
+// blue-tinted host terminal still renders pure black, and the graphite
+// answer card keeps its surface on top of it.
+func TestObsidianCanvasIsTrueBlack(t *testing.T) {
+	old := lipgloss.ColorProfile()
+	lipgloss.SetColorProfile(termenv.TrueColor)
+	defer lipgloss.SetColorProfile(old)
+	m := newTestModel()
+	m.th = themeFrom(obsidian)
+	m.width, m.height = 20, 3
+	out := m.paintCanvas("header\x1b[0m body\n" + m.th.answerCard.Render("answer"))
+	if !strings.HasPrefix(out, "\x1b[38;2;243;243;245m\x1b[48;2;0;0;0m") {
+		t.Fatalf("obsidian frame does not start on the black canvas: %q", out)
+	}
+	if !strings.Contains(out, "\x1b[48;2;14;14;17m") {
+		t.Fatal("answer card lost its graphite surface")
+	}
+	if !strings.HasSuffix(out, "\x1b[0m") {
+		t.Fatal("canvas leaks into terminal after frame")
+	}
+}
+
 func TestLightThemeSwitchUpdatesComposerAndCanvas(t *testing.T) {
 	old := themeOverride
 	defer func() { themeOverride = old }()

@@ -128,6 +128,7 @@ func TestAnswerCard(t *testing.T) {
 		"ember-dark":    "[48;2;11;13;18m",    // #0B0D12 (EMBER bg-1)
 		"ember-light":   "[48;2;239;236;229m", // #EFECE5
 		"classic":       "[48;2;22;22;30m",    // #16161E
+		"obsidian":      "[48;2;14;14;17m",    // #0E0E11
 		"high-contrast": "",
 	} {
 		var pal palette
@@ -138,6 +139,8 @@ func TestAnswerCard(t *testing.T) {
 			pal = emberLight
 		case "classic":
 			pal = classic
+		case "obsidian":
+			pal = obsidian
 		default:
 			pal = emberHighContrast
 		}
@@ -245,6 +248,7 @@ func TestAnswerTextIsThemeBright(t *testing.T) {
 		"ember-light":   "38;2;34;36;44",    // #22252C (glamour quantizes g−1)
 		"classic":       "38;2;229;231;235", // #E5E7EB
 		"high-contrast": "38;2;255;255;255", // #FFFFFF
+		"obsidian":      "38;2;243;243;245", // #F4F4F5 (quantizes r/g−1)
 	} {
 		t.Run(name, func(t *testing.T) {
 			t.Setenv("BODEK_THEME", name)

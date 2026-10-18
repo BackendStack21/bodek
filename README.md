@@ -150,8 +150,8 @@ own front-end settings are separate; see [Configuration](#configuration).
 ### Interface
 
 - **EMBER Terminal** — the WebUI's design language (electric amber on
-  blue-charcoal) as terminal tokens; four themes (`ember-dark` ·
-  `ember-light` · `high-contrast` · `classic`), switchable live with `/theme`
+  blue-charcoal) as terminal tokens; five themes (`ember-dark` ·
+  `ember-light` · `high-contrast` · `obsidian` · `classic`), switchable live with `/theme`
   and persisted to `~/.bodek/config.json`. Secondary labels and focused rows
   stay readable across dark, light, and high-contrast surfaces. The terminal
   controls the font; bodek does not replace it.
@@ -519,7 +519,7 @@ full command and press `⏎`.
 | `/export` | Save the session transcript next to you — `/export [md|json]` (markdown by default, never overwrites) |
 | `/retry` | Re-send the last prompt (queues it if a turn is running) |
 | `/queue` | Manage the prompt queue — priority, delete, send now (the full manager over the `^Q` strip) |
-| `/theme [name]` | Open a searchable theme selector with the current theme marked; arrows + Enter apply and save, Esc keeps the current theme. `/theme name` still switches directly (`ember-dark` · `ember-light` · `high-contrast` · `classic`) |
+| `/theme [name]` | Open a searchable theme selector with the current theme marked; arrows + Enter apply and save, Esc keeps the current theme. `/theme name` still switches directly (`ember-dark` · `ember-light` · `high-contrast` · `obsidian` · `classic`) |
 | `/verbosity [quiet\|normal\|detailed]` | One-dial noise policy (persisted): quiet hides engine traces, detailed switches on the `^E` expand-all view; bare `/verbosity` cycles |
 | `/stats` | Session metrics sheet (speed, TTFT, cost, cache, context gauge) |
 | `/server` | Cockpit — server, link, budget & session in one card (or click the header) |

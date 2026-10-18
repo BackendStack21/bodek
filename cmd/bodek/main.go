@@ -130,7 +130,7 @@ func parseConfig(args []string, output io.Writer) (config, error) {
 	if os.Getenv("BODEK_THEME") != "" {
 		themeDefault = "" // the env override wins over the persisted file
 	}
-	fs.StringVar(&cfg.theme, "theme", themeDefault, "color theme: ember-dark, ember-light, high-contrast, classic (default: BODEK_THEME, then the settings file)")
+	fs.StringVar(&cfg.theme, "theme", themeDefault, "color theme: ember-dark, ember-light, high-contrast, obsidian, classic (default: BODEK_THEME, then the settings file)")
 	fs.BoolVar(&cfg.bel, "bel", st.Bool(st.Bell, true), "ring the terminal bell when a turn completes or an approval is waiting (--bel=false mutes)")
 	fs.BoolVar(&cfg.notify, "notify", st.Bool(st.Notify, false), "raise desktop notifications (OSC 9) on turn completion and approvals")
 	fs.BoolVar(&cfg.plain, "plain", st.Bool(st.Plain, false), "linear mode: no alt-screen, transcript printed to scrollback (screen readers, pipes, logs)")
