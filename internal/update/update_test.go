@@ -132,7 +132,7 @@ func TestLatestReleaseFallsBackOnForbidden(t *testing.T) {
 	if tag != "v9.9.9" {
 		t.Errorf("tag = %q, want v9.9.9", tag)
 	}
-	if assets["checksums.txt"] == "" || assets["bodek_9.9.9_darwin_arm64.tar.gz"] == "" {
+	if assets["checksums.txt"] == "" || assets["checksums.txt.bundle"] == "" || assets["bodek_9.9.9_darwin_arm64.tar.gz"] == "" {
 		t.Errorf("conventional assets missing: %v", assets)
 	}
 }

@@ -133,7 +133,10 @@ func tagFromURL(u *url.URL) (string, bool) {
 func conventionalAssets(tag string) map[string]string {
 	bare := strings.TrimPrefix(tag, "v")
 	base := "https://github.com/BackendStack21/bodek/releases/download/" + tag + "/"
-	assets := map[string]string{"checksums.txt": base + "checksums.txt"}
+	assets := map[string]string{
+		"checksums.txt":        base + "checksums.txt",
+		"checksums.txt.bundle": base + "checksums.txt.bundle",
+	}
 	for _, goos := range []string{"darwin", "linux", "windows"} {
 		for _, arch := range []string{"amd64", "arm64"} {
 			ext := "tar.gz"
