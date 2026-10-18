@@ -84,11 +84,21 @@ func (m *Model) attentionFor(kind attentionKind) attention {
 	return a
 }
 
-// attentionCmd materializes the plan as a single raw write via tea.Exec —
-// the same escape hatch as the OSC 52 clipboard write. Nil when all-muted.
+// attentionWrite lands an attention sequence on the terminal; tests swap it.
+var attentionWrite = writeEnhancedKeys
+
+// attentionCmd materializes the plan as a single raw write. Not tea.Exec:
+// Exec releases and restores the terminal — it leaves the alt-screen and
+// repaints — which flickered the whole screen on every turn end. One small
+// Write on stdout is serialized with the renderer's frame writes by the
+// file's write lock, so frames cannot interleave. Nil when all-muted.
 func (m *Model) attentionCmd(a attention) tea.Cmd {
 	if a.empty() {
 		return nil
 	}
-	return tea.Exec(&rawSeq{seq: a.sequence()}, afterExec)
+	seq := a.sequence()
+	return func() tea.Msg {
+		attentionWrite(seq)
+		return nil
+	}
 }

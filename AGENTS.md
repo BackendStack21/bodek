@@ -228,9 +228,11 @@ feat(tui): compact tool steps with Ctrl+E details toggle
   cards are not copy targets. Local clipboard helpers (`pbcopy` /
   `wl-copy` / `clip`) must run as a plain `tea.Cmd` — `tea.ExecProcess`
   releases the alt-screen and flickers on every copy. OSC 52 (SSH /
-  helper-less) still uses `tea.Exec`. `tea.Exec` (attention, OSC 52) must return `afterExec`
+  helper-less) still uses `tea.Exec`, which must return `afterExec`
   so `restoreAfterExec` re-arms mouse and Shift+Enter — Bubble Tea's
-  RestoreTerminal does not. `--plain` skips mouse reporting.
+  RestoreTerminal does not. Attention (title / bell / OSC 9 on done,
+  approval, jobs) is a plain `tea.Cmd` raw write — `tea.Exec` there
+  flickered the screen at every turn end. `--plain` skips mouse reporting.
 - The management drawer is a bottom sheet: keep ~8 transcript rows above
   it (`sheetTranscriptMin`); full-bleed only when the terminal cannot
   fit transcript + sheet. Layout-only — tab grammar (`]`/`[`/`⏎`/`esc`)

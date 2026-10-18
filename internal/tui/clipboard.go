@@ -22,8 +22,7 @@ const osc52Cap = 100_000
 // the terminal. tea.Println can't carry it: bodek runs on the alt-screen,
 // where the renderer drops printed lines entirely. Exec briefly pauses the
 // renderer and hands over the real terminal writer, so the sequence lands
-// verbatim and frames can't interleave. Shared by the OSC 52 clipboard
-// write and the attention layer (bell / window title / OSC 9 notify).
+// verbatim and frames can't interleave. Used by the OSC 52 clipboard write.
 type rawSeq struct {
 	seq string
 	w   io.Writer

@@ -718,8 +718,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case restoreAfterExecMsg:
 		// tea.Exec's ReleaseTerminal disables mouse and drops the
 		// Shift+Enter keyboard protocol; RestoreTerminal does not put
-		// either back. Re-arm so the wheel keeps working after a turn
-		// done bell / title write or a clipboard exec.
+		// either back. Re-arm so the wheel keeps working after a
+		// clipboard exec.
 		return m, m.restoreAfterExec()
 
 	case copyResultMsg:
