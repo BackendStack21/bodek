@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"io"
+	"strings"
 	"testing"
 )
 
@@ -60,5 +61,20 @@ func TestHandleSubcommandUnhandled(t *testing.T) {
 		if err != nil || handled {
 			t.Errorf("args %v: expected unhandled without error, got handled=%v err=%v", args, handled, err)
 		}
+	}
+}
+
+func TestHandleSubcommandUpgradeFlags(t *testing.T) {
+	var out bytes.Buffer
+	handled, err := handleSubcommand([]string{"upgrade", "--help"}, &out)
+	if err != nil || !handled {
+		t.Fatalf("--help: handled=%v err=%v", handled, err)
+	}
+	if !strings.Contains(out.String(), "--skip-signature") || !strings.Contains(out.String(), "Sigstore") {
+		t.Errorf("upgrade usage missing signature docs: %q", out.String())
+	}
+	handled, err = handleSubcommand([]string{"upgrade", "--bogus"}, io.Discard)
+	if !handled || err == nil || !strings.Contains(err.Error(), `unknown flag "--bogus"`) {
+		t.Errorf("unknown flag: handled=%v err=%v", handled, err)
 	}
 }

@@ -21,20 +21,31 @@ import (
 	"github.com/BackendStack21/bodek/internal/update"
 )
 
+// checksumsBundleAsset is the Sigstore bundle release.yml publishes for
+// checksums.txt.
+const checksumsBundleAsset = "checksums.txt.bundle"
+
+// upgradeOptions are the `bodek upgrade` flags.
+type upgradeOptions struct {
+	skipSignature bool
+}
+
 // runUpgrade self-updates the running executable to the latest release.
-func runUpgrade(stdout io.Writer) error {
+func runUpgrade(opts upgradeOptions, stdout io.Writer) error {
 	exe, err := os.Executable()
 	if err != nil {
 		return fmt.Errorf("locate current executable: %w", err)
 	}
 	client := &http.Client{Timeout: 10 * time.Second}
-	return upgrade(context.Background(), client, update.LatestURL, exe, stdout)
+	return upgrade(context.Background(), client, update.LatestURL, exe, opts, stdout)
 }
 
 // upgrade performs the full self-update against the given API endpoint,
-// replacing the executable at exePath. runUpgrade wires in the production
-// defaults; tests point it at an httptest server and a temp binary.
-func upgrade(ctx context.Context, client *http.Client, apiURL, exePath string, stdout io.Writer) error {
+// replacing the executable at exePath. The release's checksums.txt is
+// verified against its Sigstore bundle (upgrade_sigstore.go) before any
+// checksum in it is trusted. runUpgrade wires in the production defaults;
+// tests point it at an httptest server and a temp binary.
+func upgrade(ctx context.Context, client *http.Client, apiURL, exePath string, opts upgradeOptions, stdout io.Writer) error {
 	tag, assets, err := update.LatestRelease(ctx, client, apiURL)
 	if err != nil {
 		return err
@@ -61,6 +72,10 @@ func upgrade(ctx context.Context, client *http.Client, apiURL, exePath string, s
 	if !ok {
 		return fmt.Errorf("release %s has no checksums.txt asset", tag)
 	}
+	bundleURL, ok := assets[checksumsBundleAsset]
+	if !ok && !opts.skipSignature {
+		return fmt.Errorf("release %s has no %s — refusing to install without a verifiable signature (--skip-signature overrides, unsafe)", tag, checksumsBundleAsset)
+	}
 
 	_, _ = fmt.Fprintf(stdout, "downloading %s …\n", name)
 	archive, err := download(ctx, client, archiveURL)
@@ -70,6 +85,21 @@ func upgrade(ctx context.Context, client *http.Client, apiURL, exePath string, s
 	checksums, err := download(ctx, client, checksumsURL)
 	if err != nil {
 		return err
+	}
+	// A matching checksum proves nothing when checksums.txt comes from the
+	// same, possibly tampered, release: the signature ties it to the release
+	// workflow at exactly this tag.
+	if opts.skipSignature {
+		_, _ = fmt.Fprintln(stdout, "signature verification skipped (--skip-signature)")
+	} else {
+		bundle, err := download(ctx, client, bundleURL)
+		if err != nil {
+			return err
+		}
+		if err := verifyChecksumsBundle(upgradeTrust, bundle, checksums, tag); err != nil {
+			return fmt.Errorf("release %s signature verification failed: %w — refusing to install", tag, err)
+		}
+		_, _ = fmt.Fprintf(stdout, "verified Sigstore signature: %s@refs/tags/%s\n", upgradeWorkflow, tag)
 	}
 	// Supply-chain check: refuse to install anything the release checksums
 	// don't vouch for.

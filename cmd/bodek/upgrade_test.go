@@ -68,13 +68,30 @@ func sha256Hex(data []byte) string {
 }
 
 // upgradeServer serves a fake latest release: the API JSON, a tar.gz archive
-// holding newBinary, and a checksums.txt matching it. If badChecksum is set,
-// checksums.txt serves a wrong digest for the archive.
+// holding newBinary, a checksums.txt matching it, and a checksums.txt.bundle
+// signed for tag by an in-test Sigstore installed as upgradeTrust. If
+// badChecksum is set, checksums.txt serves a wrong digest for the archive.
 func upgradeServer(t *testing.T, tag, assetName string, archive []byte, badChecksum bool) *httptest.Server {
+	t.Helper()
+	ts := newTestSigstore(t)
+	ts.install(t)
+	return upgradeServerWith(t, tag, assetName, archive, badChecksum, func(sums []byte) []byte {
+		return ts.bundle(t, sums, testBundleOpts{tag: tag})
+	})
+}
+
+// upgradeServerWith is upgradeServer with the bundle built by sign over the
+// served checksums.txt; a nil sign publishes no bundle asset.
+func upgradeServerWith(t *testing.T, tag, assetName string, archive []byte, badChecksum bool, sign func(sums []byte) []byte) *httptest.Server {
 	t.Helper()
 	digest := sha256Hex(archive)
 	if badChecksum {
 		digest = sha256Hex([]byte("something else"))
+	}
+	sums := []byte(fmt.Sprintf("%s  %s\n", digest, assetName))
+	bundleAsset := ""
+	if sign != nil {
+		bundleAsset = `,{"name":"checksums.txt.bundle","browser_download_url":%[5]q}`
 	}
 	mux := http.NewServeMux()
 	var base string
@@ -83,17 +100,23 @@ func upgradeServer(t *testing.T, tag, assetName string, archive []byte, badCheck
 			t.Errorf("expected User-Agent bodek-updater, got %q", got)
 		}
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = fmt.Fprintf(w, `{"tag_name":%q,"assets":[`+
-			`{"name":%q,"browser_download_url":%q},`+
-			`{"name":"checksums.txt","browser_download_url":%q}]}`,
-			tag, assetName, base+"/files/"+assetName, base+"/files/checksums.txt")
+		_, _ = fmt.Fprintf(w, `{"tag_name":%[1]q,"assets":[`+
+			`{"name":%[2]q,"browser_download_url":%[3]q},`+
+			`{"name":"checksums.txt","browser_download_url":%[4]q}`+bundleAsset+`]}`,
+			tag, assetName, base+"/files/"+assetName, base+"/files/checksums.txt", base+"/files/checksums.txt.bundle")
 	})
 	mux.HandleFunc("/files/"+assetName, func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write(archive)
 	})
 	mux.HandleFunc("/files/checksums.txt", func(w http.ResponseWriter, _ *http.Request) {
-		_, _ = fmt.Fprintf(w, "%s  %s\n", digest, assetName)
+		_, _ = w.Write(sums)
 	})
+	if sign != nil {
+		bundle := sign(sums)
+		mux.HandleFunc("/files/checksums.txt.bundle", func(w http.ResponseWriter, _ *http.Request) {
+			_, _ = w.Write(bundle)
+		})
+	}
 	srv := httptest.NewServer(mux)
 	base = srv.URL
 	t.Cleanup(srv.Close)
@@ -127,7 +150,7 @@ func TestUpgradeHappyPath(t *testing.T) {
 	exe := installFake(t, []byte("old bodek"))
 
 	var out bytes.Buffer
-	if err := upgrade(context.Background(), srv.Client(), srv.URL+"/latest", exe, &out); err != nil {
+	if err := upgrade(context.Background(), srv.Client(), srv.URL+"/latest", exe, upgradeOptions{}, &out); err != nil {
 		t.Fatalf("upgrade returned error: %v", err)
 	}
 	if got := readFile(t, exe); !bytes.Equal(got, newBinary) {
@@ -143,6 +166,104 @@ func TestUpgradeHappyPath(t *testing.T) {
 	if !strings.Contains(out.String(), "upgraded bodek v0.0.1 → v9.9.9") {
 		t.Errorf("missing upgrade confirmation in output: %q", out.String())
 	}
+	if !strings.Contains(out.String(), "verified Sigstore signature: "+upgradeWorkflow+"@refs/tags/v9.9.9") {
+		t.Errorf("missing signature confirmation in output: %q", out.String())
+	}
+}
+
+// A release whose checksums.txt carries no Sigstore signature must not be
+// installed: a matching checksum from the same release proves nothing when
+// the release itself was tampered with.
+func TestUpgradeRefusesUnsignedChecksums(t *testing.T) {
+	setVersion(t, "0.0.1")
+	assetName := archiveName("9.9.9", runtime.GOOS, runtime.GOARCH)
+	srv := upgradeServerWith(t, "v9.9.9", assetName, buildTarGz(t, "bodek", []byte("attacker")), false, nil)
+	exe := installFake(t, []byte("old bodek"))
+
+	err := upgrade(context.Background(), srv.Client(), srv.URL+"/latest", exe, upgradeOptions{}, &bytes.Buffer{})
+	if err == nil || !strings.Contains(err.Error(), "signature") {
+		t.Fatalf("expected a signature refusal, got %v", err)
+	}
+	if got := readFile(t, exe); string(got) != "old bodek" {
+		t.Errorf("unsigned release was installed: %q", got)
+	}
+}
+
+// --skip-signature falls back to checksum-only for a release without a
+// bundle, and says so.
+func TestUpgradeSkipSignatureInstallsUnsigned(t *testing.T) {
+	setVersion(t, "0.0.1")
+	assetName := archiveName("9.9.9", runtime.GOOS, runtime.GOARCH)
+	srv := upgradeServerWith(t, "v9.9.9", assetName, buildTarGz(t, "bodek", []byte("new")), false, nil)
+	exe := installFake(t, []byte("old bodek"))
+
+	var out bytes.Buffer
+	if err := upgrade(context.Background(), srv.Client(), srv.URL+"/latest", exe, upgradeOptions{skipSignature: true}, &out); err != nil {
+		t.Fatalf("upgrade returned error: %v", err)
+	}
+	if got := readFile(t, exe); string(got) != "new" {
+		t.Errorf("expected the new binary, got %q", got)
+	}
+	if !strings.Contains(out.String(), "signature verification skipped") {
+		t.Errorf("missing skip notice in output: %q", out.String())
+	}
+}
+
+// Bundles that do not verify for this release are refused before anything
+// is installed: another tag, another workflow, an untrusted CA, or a
+// signature over a different checksums.txt.
+func TestUpgradeRejectsForeignBundle(t *testing.T) {
+	setVersion(t, "0.0.1")
+	assetName := archiveName("9.9.9", runtime.GOOS, runtime.GOARCH)
+	cases := map[string]testBundleOpts{
+		"older tag":      {tag: "v1.0.0"},
+		"other workflow": {tag: "v9.9.9", san: upgradeSourceRepo + "/.github/workflows/evil.yml@refs/tags/v9.9.9"},
+		"untrusted CA":   {tag: "v9.9.9", untrustedCA: true},
+		"other content":  {tag: "v9.9.9", signOther: []byte("x")},
+	}
+	for name, o := range cases {
+		t.Run(name, func(t *testing.T) {
+			ts := newTestSigstore(t)
+			ts.install(t)
+			srv := upgradeServerWith(t, "v9.9.9", assetName, buildTarGz(t, "bodek", []byte("attacker")), false, func(sums []byte) []byte {
+				return ts.bundle(t, sums, o)
+			})
+			exe := installFake(t, []byte("old bodek"))
+			err := upgrade(context.Background(), srv.Client(), srv.URL+"/latest", exe, upgradeOptions{}, &bytes.Buffer{})
+			if err == nil || !strings.Contains(err.Error(), "signature verification failed") {
+				t.Fatalf("expected a signature verification failure, got %v", err)
+			}
+			if got := readFile(t, exe); string(got) != "old bodek" {
+				t.Errorf("executable must be untouched, got %q", got)
+			}
+		})
+	}
+}
+
+func TestUpgradeBundleDownloadFailure(t *testing.T) {
+	setVersion(t, "0.0.1")
+	ts := newTestSigstore(t)
+	ts.install(t)
+	assetName := archiveName("9.9.9", runtime.GOOS, runtime.GOARCH)
+	srv := upgradeServerWith(t, "v9.9.9", assetName, buildTarGz(t, "bodek", []byte("new")), false, nil)
+	exe := installFake(t, []byte("old bodek"))
+	// Advertise a bundle URL the server answers with 404.
+	api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = fmt.Fprintf(w, `{"tag_name":"v9.9.9","assets":[`+
+			`{"name":%q,"browser_download_url":%q},`+
+			`{"name":"checksums.txt","browser_download_url":%q},`+
+			`{"name":"checksums.txt.bundle","browser_download_url":%q}]}`,
+			assetName, srv.URL+"/files/"+assetName, srv.URL+"/files/checksums.txt", srv.URL+"/files/missing.bundle")
+	}))
+	t.Cleanup(api.Close)
+
+	err := upgrade(context.Background(), srv.Client(), api.URL, exe, upgradeOptions{}, &bytes.Buffer{})
+	if err == nil || !strings.Contains(err.Error(), "404") {
+		t.Fatalf("expected a bundle download failure, got %v", err)
+	}
+	if got := readFile(t, exe); string(got) != "old bodek" {
+		t.Errorf("executable must be untouched, got %q", got)
+	}
 }
 
 func TestUpgradeAlreadyUpToDate(t *testing.T) {
@@ -152,7 +273,7 @@ func TestUpgradeAlreadyUpToDate(t *testing.T) {
 	exe := installFake(t, []byte("current bodek"))
 
 	var out bytes.Buffer
-	if err := upgrade(context.Background(), srv.Client(), srv.URL+"/latest", exe, &out); err != nil {
+	if err := upgrade(context.Background(), srv.Client(), srv.URL+"/latest", exe, upgradeOptions{}, &out); err != nil {
 		t.Fatalf("upgrade returned error: %v", err)
 	}
 	if got, want := out.String(), "bodek is already up to date (v9.9.9)\n"; got != want {
@@ -170,7 +291,7 @@ func TestUpgradeSkipsWhenLocalIsNewer(t *testing.T) {
 	exe := installFake(t, []byte("current bodek"))
 
 	var out bytes.Buffer
-	if err := upgrade(context.Background(), srv.Client(), srv.URL+"/latest", exe, &out); err != nil {
+	if err := upgrade(context.Background(), srv.Client(), srv.URL+"/latest", exe, upgradeOptions{}, &out); err != nil {
 		t.Fatalf("upgrade returned error: %v", err)
 	}
 	if !strings.Contains(out.String(), "already up to date") {
@@ -188,7 +309,7 @@ func TestUpgradeFromDevBuild(t *testing.T) {
 	exe := installFake(t, []byte("dev build"))
 
 	var out bytes.Buffer
-	if err := upgrade(context.Background(), srv.Client(), srv.URL+"/latest", exe, &out); err != nil {
+	if err := upgrade(context.Background(), srv.Client(), srv.URL+"/latest", exe, upgradeOptions{}, &out); err != nil {
 		t.Fatalf("upgrade returned error: %v", err)
 	}
 	if !strings.Contains(out.String(), "unstamped (dev)") {
@@ -205,7 +326,7 @@ func TestUpgradeChecksumMismatch(t *testing.T) {
 	srv := upgradeServer(t, "v9.9.9", assetName, buildTarGz(t, "bodek", []byte("new")), true)
 	exe := installFake(t, []byte("old bodek"))
 
-	err := upgrade(context.Background(), srv.Client(), srv.URL+"/latest", exe, &bytes.Buffer{})
+	err := upgrade(context.Background(), srv.Client(), srv.URL+"/latest", exe, upgradeOptions{}, &bytes.Buffer{})
 	if err == nil || !strings.Contains(err.Error(), "checksum mismatch") {
 		t.Fatalf("expected checksum mismatch error, got %v", err)
 	}
@@ -221,7 +342,7 @@ func TestUpgradeMissingPlatformAsset(t *testing.T) {
 	srv := upgradeServer(t, "v9.9.9", otherName, buildTarGz(t, "bodek", []byte("new")), false)
 	exe := installFake(t, []byte("old bodek"))
 
-	err := upgrade(context.Background(), srv.Client(), srv.URL+"/latest", exe, &bytes.Buffer{})
+	err := upgrade(context.Background(), srv.Client(), srv.URL+"/latest", exe, upgradeOptions{}, &bytes.Buffer{})
 	if err == nil || !strings.Contains(err.Error(), "no asset") {
 		t.Fatalf("expected missing-asset error, got %v", err)
 	}
@@ -280,3 +401,4 @@ func TestReplaceExecutableFollowsSymlink(t *testing.T) {
 		t.Errorf("symlink target changed: %q → %q", realExe, linkDest)
 	}
 }
+
