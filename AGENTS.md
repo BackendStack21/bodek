@@ -9,7 +9,7 @@ Keep it that way.
 
 | Path | Responsibility |
 |------|----------------|
-| `cmd/bodek` | CLI entry point: flags, lifecycle, `version` / `upgrade` subcommands, connection `diagnose`, and orphan-watchdog re-exec |
+| `cmd/bodek` | CLI entry point: flags, lifecycle, `version` / `upgrade` subcommands (Sigstore-verified `checksums.txt`, `upgrade_sigstore.go`), connection `diagnose`, and orphan-watchdog re-exec |
 | `internal/server` | Launch / attach to `odek serve`, resolve the auth token, progress-aware shutdown with escalation countdown |
 | `internal/client` | odek serve WebSocket protocol (transport + REST + decoding) |
 | `internal/tokens` | Local persistence of per-session auth tokens |

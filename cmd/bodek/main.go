@@ -146,7 +146,7 @@ func parseConfig(args []string, output io.Writer) (config, error) {
 		_, _ = fmt.Fprintf(fs.Output(), "A terminal interface for the odek agent.\n\n")
 		_, _ = fmt.Fprintf(fs.Output(), "Commands:\n")
 		_, _ = fmt.Fprintf(fs.Output(), "  version   print the bodek version\n")
-		_, _ = fmt.Fprintf(fs.Output(), "  upgrade   download and install the latest release\n\n")
+		_, _ = fmt.Fprintf(fs.Output(), "  upgrade   download, verify (Sigstore + SHA-256), and install the latest release\n\n")
 		_, _ = fmt.Fprintf(fs.Output(), "Options:\n")
 		fs.PrintDefaults()
 		_, _ = fmt.Fprintf(fs.Output(), "\nExamples:\n")

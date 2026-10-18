@@ -78,7 +78,13 @@ curl -fsSL https://bodek.21no.de/install.sh | sh
 You still need a provider API key for the engine (`DEEPSEEK_API_KEY` /
 `ZAI_API_KEY` — see odek's [PROVIDERS.md](https://github.com/BackendStack21/odek/blob/main/docs/PROVIDERS.md)
 and its [install instructions](https://github.com/BackendStack21/odek)).
-Later, `bodek upgrade` downloads and installs the latest release the same way.
+Later, `bodek upgrade` downloads and installs the latest release: it verifies
+the release's `checksums.txt` against its Sigstore signature (the release
+workflow's keyless certificate for that exact tag, logged in Rekor), then the
+archive against `checksums.txt` (SHA-256), and refuses to install on any failure.
+The signature pins the tag being installed, not freshness: a compromised release
+feed can still offer an older genuine release that is newer than the installed
+one (a `dev` build accepts whichever signed release the feed names).
 
 On Windows, download the `windows_amd64` (or `arm64`) `.zip` from the
 [releases page](https://github.com/BackendStack21/bodek/releases) and put
@@ -121,7 +127,8 @@ bodek --plain                                     # linear mode: transcript to s
 bodek --reduce-motion                             # calmer transcript: clock lane at 2s, no accent pulses
 bodek -- --prompt-caching                         # pass extra flags through to `odek serve`
 bodek version                                     # print the bodek version
-bodek upgrade                                     # download and install the latest release
+bodek upgrade                                     # download and install the latest release (Sigstore + SHA-256 verified)
+bodek upgrade --skip-signature                    # UNSAFE: checksum-only, when the embedded Sigstore root is stale
 ```
 
 `odek serve` protects its WebSocket and REST APIs with a per-instance token it
@@ -695,6 +702,14 @@ never become the weakest link:
 - **`bodek upgrade` returns 403** — GitHub's anonymous API quota (or an IP
   block) rejected the request. Retry, or set `GITHUB_TOKEN` / `GH_TOKEN`
   (`gh auth token`). bodek also falls back to the HTML latest-release page.
+- **`bodek upgrade` reports `signature verification failed`** — the release's
+  `checksums.txt.bundle` did not verify for that tag, so nothing was installed.
+  The Sigstore trust root is compiled in: after a Sigstore root or Rekor key
+  rotation an older bodek cannot verify newer releases. Verify the release
+  yourself (`cosign verify-blob --bundle checksums.txt.bundle
+  --certificate-identity https://github.com/BackendStack21/bodek/.github/workflows/release.yml@refs/tags/<tag>
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com checksums.txt`)
+  and then run `bodek upgrade --skip-signature`, or reinstall with the install script.
 - **Auth errors when attaching** — copy the *full* token URL `odek serve`
   printed (`--url 'http://…/?token=…'`) or pass the token via `--token`.
   Spawned instances adopt the token automatically.
