@@ -15,9 +15,9 @@ import (
 // completes or an approval starts waiting, bodek sets the terminal window
 // title (silent, always on), rings the terminal bell (default on,
 // --bel=false mutes it), and optionally raises a desktop notification via
-// OSC 9 (--notify). All effects ride a single raw write through tea.Exec
-// so the sequence lands verbatim and frames can't interleave — the same
-// escape hatch the OSC 52 clipboard write uses.
+// OSC 9 (--notify). All effects ride a single raw write straight to the
+// terminal — never tea.Exec, whose release/restore of the alt-screen
+// flickered the screen on every turn end.
 
 func TestAttentionPlanApproval(t *testing.T) {
 	m := newTestModel()
@@ -137,9 +137,25 @@ func TestAttentionEmptyPlanIsSilent(t *testing.T) {
 }
 
 func TestAttentionCmdWrapsTheRawWrite(t *testing.T) {
+	var got []string
+	prev := attentionWrite
+	attentionWrite = func(s string) { got = append(got, s) }
+	defer func() { attentionWrite = prev }()
+
 	m := newTestModel()
-	if cmd := m.attentionCmd(attention{title: "T", bell: true}); cmd == nil {
+	a := attention{title: "T", bell: true}
+	cmd := m.attentionCmd(a)
+	if cmd == nil {
 		t.Fatal("enabled plan returned a nil cmd")
+	}
+	// Regression: tea.Exec released and restored the alt-screen on every
+	// done, flashing the screen as the turn stats painted. The write must
+	// happen inside the cmd and yield no message (no exec, no re-arm).
+	if msg := cmd(); msg != nil {
+		t.Errorf("attention cmd returned %T, want nil — no terminal release", msg)
+	}
+	if len(got) != 1 || got[0] != a.sequence() {
+		t.Errorf("attention wrote %q, want one write of %q", got, a.sequence())
 	}
 	if cmd := m.attentionCmd(attention{bell: true}); cmd == nil {
 		t.Error("bell-only plan returned a nil cmd")
@@ -147,8 +163,8 @@ func TestAttentionCmdWrapsTheRawWrite(t *testing.T) {
 }
 
 func TestRawSeqRunWritesVerbatim(t *testing.T) {
-	// The attention write shares the clipboard's raw-seq escape hatch; the
-	// writer must land the sequence verbatim and stay silent headless.
+	// The OSC 52 clipboard's raw-seq escape hatch must land the sequence
+	// verbatim and stay silent headless.
 	var buf bytes.Buffer
 	w := &rawSeq{seq: "SEQ"}
 	w.SetStdin(nil)
