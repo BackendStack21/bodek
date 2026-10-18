@@ -165,7 +165,7 @@ type Options struct {
 	ReduceMotion bool
 
 	// Theme names the startup palette (ember-dark, ember-light,
-	// high-contrast, classic). Empty defers to BODEK_THEME, then the
+	// high-contrast, obsidian, classic). Empty defers to BODEK_THEME, then the
 	// settings file — the same order /theme persists into.
 	Theme string
 

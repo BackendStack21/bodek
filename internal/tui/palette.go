@@ -104,6 +104,7 @@ func themePaletteEntries() []palEntry {
 		{title: "ember-dark", kind: "theme", detail: "dark terminal", run: func(m *Model) tea.Cmd { return m.switchTheme("ember-dark") }},
 		{title: "ember-light", kind: "theme", detail: "light parchment", run: func(m *Model) tea.Cmd { return m.switchTheme("ember-light") }},
 		{title: "high-contrast", kind: "theme", detail: "high contrast", run: func(m *Model) tea.Cmd { return m.switchTheme("high-contrast") }},
+		{title: "obsidian", kind: "theme", detail: "true black", run: func(m *Model) tea.Cmd { return m.switchTheme("obsidian") }},
 		{title: "classic", kind: "theme", detail: "classic violet", run: func(m *Model) tea.Cmd { return m.switchTheme("classic") }},
 	}
 }

@@ -14,6 +14,7 @@ func TestThemeVariants(t *testing.T) {
 		"ember-light":   func() theme { return themeFrom(emberLight) },
 		"high-contrast": func() theme { return themeFrom(emberHighContrast) },
 		"classic":       func() theme { return themeFrom(classic) },
+		"obsidian":      func() theme { return themeFrom(obsidian) },
 	} {
 		th := p()
 		if got := plain(th.logo.Render("⬡ bodek")); !strings.Contains(got, "bodek") {
@@ -34,6 +35,8 @@ func TestThemeSelection(t *testing.T) {
 		"ember-light":   "ember-light",
 		"high-contrast": "high-contrast",
 		"CONTRAST":      "high-contrast",
+		"obsidian":      "obsidian",
+		"black":         "obsidian",
 	}
 	for env, want := range cases {
 		t.Setenv("BODEK_THEME", env)

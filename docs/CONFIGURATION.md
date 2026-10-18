@@ -25,7 +25,7 @@ silently ignored.
 
 | Key | Type | Default | Flag | What it does |
 |-----|------|---------|------|--------------|
-| `theme` | string | `ember-dark` | `--theme` | Color palette: `ember-dark` · `ember-light` · `high-contrast` · `classic`. `/theme <name>` switches live **and persists it here**. |
+| `theme` | string | `ember-dark` | `--theme` | Color palette: `ember-dark` · `ember-light` · `high-contrast` · `obsidian` (true black) · `classic`. `/theme <name>` switches live **and persists it here**. |
 | `bel` | bool | `true` | `--bel` | Ring the terminal bell when a turn completes or an approval is waiting (`--bel=false` mutes; the title still updates). |
 | `notify` | bool | `false` | `--notify` | Raise desktop notifications (OSC 9) on turn completion and pending approvals. |
 | `plain` | bool | `false` | `--plain` | Linear mode: no alt-screen; agent events print to the terminal's native scrollback (screen readers, pipes, logs). |

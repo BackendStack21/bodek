@@ -387,7 +387,7 @@ modifier routes to the composer), and `Alt+A`/`Alt+D`/`Alt+T`
   restore typed cards, argument previews, icons, summaries, or result schemas.
   Preserve `delegate_tasks`, all `bg_*` views, and supported individual `shell`,
   `patch`, `read_file`, `search_files`, and `http_request` rendering.
-- `TestTerminalWorkflowLayouts` checks real views across four themes at 40, 80,
+- `TestTerminalWorkflowLayouts` checks real views across five themes at 40, 80,
   and 120 columns. Set `BODEK_RENDER_PREVIEW_DIR` to write optional ANSI fixtures
   for visual review without an engine/provider; generated captures are not source.
 

@@ -119,7 +119,7 @@ func TestWarningHueDistinctFromAccent(t *testing.T) {
 		}
 		return math.Mod(h*60+360, 360)
 	}
-	for _, name := range []string{"ember-dark", "ember-light", "high-contrast", "classic"} {
+	for _, name := range []string{"ember-dark", "ember-light", "high-contrast", "obsidian", "classic"} {
 		p := paletteByName(name)
 		d := math.Abs(hue(p.yellow) - hue(p.accent))
 		if d > 180 {

@@ -28,6 +28,8 @@ func TestEmberThemeReadability(t *testing.T) {
 		{"ember-dark", emberDark, string(emberDark.surface)},
 		{"ember-light", emberLight, string(emberLight.surface)},
 		{"high-contrast", emberHighContrast, "#000000"},
+		{"obsidian", obsidian, string(obsidian.surface)},
+		{"obsidian canvas", obsidian, string(obsidian.canvas)},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -61,6 +63,7 @@ func TestThemeSemanticStyles(t *testing.T) {
 		"ember-dark":    emberDark,
 		"ember-light":   emberLight,
 		"high-contrast": emberHighContrast,
+		"obsidian":      obsidian,
 	} {
 		th := themeFrom(p)
 		focused := lipgloss.NewStyle().Foreground(p.accentHi).Bold(true).Render("focused")

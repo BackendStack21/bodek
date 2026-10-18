@@ -19,7 +19,7 @@ func TestTerminalWorkflowLayouts(t *testing.T) {
 	oldProfile := lipgloss.ColorProfile()
 	lipgloss.SetColorProfile(termenv.TrueColor)
 	defer lipgloss.SetColorProfile(oldProfile)
-	for _, themeName := range []string{"ember-dark", "ember-light", "high-contrast", "classic"} {
+	for _, themeName := range []string{"ember-dark", "ember-light", "high-contrast", "obsidian", "classic"} {
 		for _, width := range []int{40, 80, 120} {
 			for _, height := range []int{12, 16, 20, 32} {
 				for _, active := range []bool{false, true} {

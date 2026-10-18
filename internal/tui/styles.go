@@ -109,6 +109,28 @@ var (
 		grad:     [2][3]int{{0xFF, 0xE0, 0x8A}, {0xFF, 0xB2, 0x24}},
 	}
 
+	// obsidian is a true-black theme for OLED panels and dark rooms: it
+	// paints its own #000 canvas (any terminal background becomes pure
+	// black), graphite cards, neutral zinc greys, and one champagne accent.
+	obsidian = palette{
+		canvas:   "#000000",
+		accent:   "#E2C08D",
+		accentHi: "#F3DDB3",
+		accentLo: "#C9A06A",
+		steel:    "#9BA3B4",
+		green:    "#4ADE80",
+		// Lemon, not gold: warnings must not read as the champagne accent.
+		yellow:   "#FDE047",
+		red:      "#F87171",
+		text:     "#F4F4F5",
+		muted:    "#A1A1AA",
+		faint:    "#71717A",
+		bodyText: "#B4B4BD",
+		hairline: "#232328",
+		surface:  "#0E0E11",
+		grad:     [2][3]int{{0xF3, 0xDD, 0xB3}, {0xC9, 0xA0, 0x6A}},
+	}
+
 	// classic is the pre-EMBER Charm-inspired palette, kept for muscle memory
 	// (BODEK_THEME=classic).
 	classic = palette{
@@ -154,6 +176,8 @@ func themeName() string {
 		return "ember-light"
 	case "high-contrast", "contrast":
 		return "high-contrast"
+	case "obsidian", "black":
+		return "obsidian"
 	default:
 		return "ember-dark"
 	}
@@ -172,6 +196,8 @@ func canonicalTheme(name string) (canonical string, ok bool) {
 		return "ember-light", true
 	case "high-contrast", "contrast":
 		return "high-contrast", true
+	case "obsidian", "black":
+		return "obsidian", true
 	default:
 		return "", false
 	}
@@ -185,6 +211,8 @@ func paletteByName(name string) palette {
 		return emberLight
 	case "high-contrast":
 		return emberHighContrast
+	case "obsidian":
+		return obsidian
 	default:
 		return emberDark
 	}

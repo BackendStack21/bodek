@@ -87,6 +87,8 @@ func TestCanonicalTheme(t *testing.T) {
 		{"high-contrast", "high-contrast", true},
 		{"contrast", "high-contrast", true},
 		{"classic", "classic", true},
+		{"obsidian", "obsidian", true},
+		{"Black", "obsidian", true},
 		{"  Classic  ", "classic", true},
 		{"neon-night", "", false},
 		{"", "", false},
