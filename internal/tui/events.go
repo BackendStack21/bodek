@@ -188,6 +188,12 @@ func (m *Model) handleEvent(ev client.Event) (tea.Model, tea.Cmd) {
 			}
 			appendReply(&m.msgs[i], text)
 			m.msgs[i].streaming = true
+			if ev.Type == "token" && text != "" {
+				// Bulk text is already final: a buffered pre-tool note, or
+				// the answer sent after verification. odek supersedes only
+				// streamed drafts, so it paints now instead of at done.
+				m.msgs[i].committed = len(m.msgs[i].items)
+			}
 		}
 		m.setRunStatus("responding")
 		stream = true
@@ -214,6 +220,17 @@ func (m *Model) handleEvent(ev client.Event) (tea.Model, tea.Cmd) {
 				m.verifying = true
 			case "verification_completed":
 				m.verifying = false
+				// Re-asks (completion check, verification retry) all come
+				// before a settled verdict, so a pass or uncertain verdict
+				// ships the held answer now — done trails the session save.
+				// Everything else waits for done: a fail is superseded or
+				// ships unverified, and a skip after a fail (budget, error,
+				// then exhausted) ships unverified too — the chip lands with
+				// the reply. Unknown verdicts hold: failing safe is a delay.
+				verdict, _ := ev.Runtime.Data["verdict"].(string)
+				if i := m.cur(); i >= 0 && (verdict == "pass" || verdict == "uncertain") {
+					m.msgs[i].committed = len(m.msgs[i].items)
+				}
 			}
 		}
 		stream = true
@@ -747,7 +764,7 @@ func (m *Model) ensureWireTurn() {
 // is at the bottom; a forced GotoBottom would yank scrollback.
 func (m *Model) beginWireTurn(wake bool) {
 	m.lastEvent = time.Now() // a fresh turn must not inherit the idle gap as a stale age
-	m.msgs = append(m.msgs, message{role: roleAsst, streaming: true, systemWake: wake})
+	m.msgs = append(m.msgs, message{role: roleAsst, streaming: true, systemWake: wake, paintLive: !m.engineRevises()})
 	m.curIdx = len(m.msgs) - 1
 	m.busy = true
 	m.sessionLive = true    // a wire turn runs inside a real session
@@ -1044,10 +1061,7 @@ func stripVerifyMarker(s string) (string, bool) {
 // and stats carry only the answer. Returns the draft text linear mode had
 // not printed yet, and pulls its cursor back so the replacement prints whole.
 func supersedeDraft(msg *message, reason string) string {
-	start := len(msg.items)
-	for start > 0 && !msg.items[start-1].isStep() {
-		start--
-	}
+	start := candidateStart(msg)
 	found := false
 	for j := start; j < len(msg.items); j++ {
 		if it := &msg.items[j]; it.reply {
@@ -1060,13 +1074,7 @@ func supersedeDraft(msg *message, reason string) string {
 		return ""
 	}
 	old := msg.content
-	var parts []string
-	for _, it := range msg.items {
-		if it.reply {
-			parts = append(parts, it.text)
-		}
-	}
-	msg.content = strings.Join(parts, "\n\n")
+	msg.content = joinReplies(msg.items)
 	msg.rendered = ""
 	unprinted := ""
 	if from := max(msg.plainPrinted, len(msg.content)); from < len(old) {
@@ -1074,6 +1082,29 @@ func supersedeDraft(msg *message, reason string) string {
 	}
 	msg.plainPrinted = min(msg.plainPrinted, len(msg.content))
 	return unprinted
+}
+
+// candidateStart is the timeline index after the last tool step: the reply
+// segments from here on are the candidate answer odek may still supersede.
+// supersedeDraft folds exactly this range and heldFrom holds it.
+func candidateStart(msg *message) int {
+	start := len(msg.items)
+	for start > 0 && !msg.items[start-1].isStep() {
+		start--
+	}
+	return start
+}
+
+// joinReplies is the msg.content blob of a timeline: its reply segments
+// joined by a blank line, as appendReply builds it.
+func joinReplies(items []turnItem) string {
+	var parts []string
+	for _, it := range items {
+		if it.reply {
+			parts = append(parts, it.text)
+		}
+	}
+	return strings.Join(parts, "\n\n")
 }
 
 // draftReasonLabel names why odek re-asked the model, for the folded row.

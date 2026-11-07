@@ -326,3 +326,309 @@ func TestReplayPrincipalPrompt(t *testing.T) {
 		t.Fatalf("replayed prompt leaks the expanded content:\n%s", view)
 	}
 }
+
+func verifyEv(typ, verdict, skipped string) client.Event {
+	rt := &client.RuntimeEvent{Type: typ}
+	if verdict != "" {
+		rt.Data = map[string]any{"verdict": verdict}
+		if skipped != "" {
+			rt.Data["skipped_reason"] = skipped
+		}
+	}
+	return client.Event{Type: "runtime_event", Runtime: rt}
+}
+
+// The candidate answer never paints before it is final, so a re-ask never
+// shows an answer, folds it, and streams another (the blink). Every frame
+// of the wire sequence is checked against the real view.
+func TestSupersededDraftNeverPaints(t *testing.T) {
+	cases := []struct {
+		name, reason, row string
+		evs               []client.Event
+	}{
+		{"verify retry", "verify_retry", "⋯ draft revised · verification", []client.Event{
+			{Type: "thinking_delta", Content: "plan"},
+			{Type: "token_delta", Content: "DRAFT says "},
+			{Type: "token_delta", Content: "14 commits."},
+			verifyEv("verification_started", "", ""),
+			verifyEv("verification_completed", "fail", ""),
+			{Type: "answer_superseded", Reason: "verify_retry", Cycle: 1},
+			{Type: "thinking_delta", Content: "recount"},
+			{Type: "token_delta", Content: "FINAL says "},
+			{Type: "token_delta", Content: "15 commits."},
+			verifyEv("verification_started", "", ""),
+		}},
+		{"completion check", "completion_nudge", "⋯ draft revised · completion check", []client.Event{
+			{Type: "tool_call", Name: "shell", Data: `{"command":"git log"}`},
+			{Type: "tool_result", Name: "shell", Data: "abc123 fix"},
+			{Type: "token_delta", Content: "DRAFT says 14 commits."},
+			{Type: "answer_superseded", Reason: "completion_nudge", Cycle: 1},
+			{Type: "token_delta", Content: "FINAL says 15 commits."},
+		}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			m := newTestModel()
+			m.resize(100, 30)
+			busyTurn(m)
+			for _, ev := range tc.evs {
+				m.handleEvent(ev)
+				m.refreshStreamingReplies()
+				m.refresh()
+				view := plain(m.View())
+				if strings.Contains(view, "DRAFT") || strings.Contains(view, "FINAL") {
+					t.Fatalf("candidate answer painted after %s:\n%s", ev.Type, view)
+				}
+			}
+			if view := plain(m.View()); !strings.Contains(view, tc.row) {
+				t.Fatalf("no folded draft row:\n%s", view)
+			}
+			if tc.reason == "verify_retry" {
+				// The passing verdict commits the replacement before done.
+				m.handleEvent(verifyEv("verification_completed", "pass", ""))
+				m.refresh()
+				if view := plain(m.View()); strings.Count(view, "FINAL says 15 commits.") != 1 {
+					t.Fatalf("verified answer should paint once before done:\n%s", view)
+				}
+			}
+			m.handleEvent(client.Event{Type: "done"})
+			m.refresh()
+			view := plain(m.View())
+			if strings.Contains(view, "DRAFT") || strings.Count(view, "FINAL says 15 commits.") != 1 {
+				t.Fatalf("sealed turn must show only the replacement, once:\n%s", view)
+			}
+		})
+	}
+}
+
+// Every way a turn ends paints the held answer — a path that left it
+// streaming would hide the reply forever. A failed verdict (or exhausted
+// cycles) keeps holding until the turn seals, so the reply lands together
+// with its ✗ unverified chip.
+func TestHeldAnswerPaintsOnEveryTurnEnd(t *testing.T) {
+	ends := []struct {
+		name       string
+		end        func(m *Model)
+		unverified bool
+	}{
+		{"done", func(m *Model) { m.handleEvent(client.Event{Type: "done"}) }, false},
+		{"error", func(m *Model) { m.handleEvent(client.Event{Type: "error", Message: "boom"}) }, false},
+		{"cancel", func(m *Model) {
+			m.handleEvent(client.Event{Type: "cancelled"})
+			m.handleEvent(client.Event{Type: "error", Message: "context canceled"})
+		}, false},
+		{"disconnect", func(m *Model) { m.handleEvent(client.Event{Type: client.EventDisconnected}) }, false},
+		{"send failure", func(m *Model) { m.Update(errMsg{err: errTest{}}) }, false},
+		{"strict fail", func(m *Model) {
+			m.handleEvent(verifyEv("verification_completed", "fail", ""))
+			assertHeld(t, m, "strict fail")
+			m.handleEvent(client.Event{Type: "done", Verified: "fail"})
+		}, true},
+		{"cycles exhausted", func(m *Model) {
+			m.handleEvent(verifyEv("verification_completed", "skipped", "exhausted"))
+			assertHeld(t, m, "cycles exhausted")
+			m.handleEvent(client.Event{Type: "done", Verified: "fail"})
+		}, true},
+	}
+	for _, tc := range ends {
+		t.Run(tc.name, func(t *testing.T) {
+			m := newTestModel()
+			m.resize(100, 30)
+			busyTurn(m)
+			m.handleEvent(client.Event{Type: "token_delta", Content: "ANSWER text."})
+			assertHeld(t, m, "stream")
+			tc.end(m)
+			m.refresh()
+			view := plain(m.View())
+			if !strings.Contains(view, "ANSWER text.") {
+				t.Fatalf("turn end left the answer hidden:\n%s", view)
+			}
+			if got := strings.Contains(view, "✗ unverified"); got != tc.unverified {
+				t.Fatalf("unverified chip = %v, want %v:\n%s", got, tc.unverified, view)
+			}
+		})
+	}
+}
+
+// Only a pass or uncertain verdict ships the answer before done; replies
+// streamed after that commit are held again.
+func TestShippingVerdictsCommitAnswer(t *testing.T) {
+	for _, v := range []string{"pass", "uncertain"} {
+		m := newTestModel()
+		m.resize(100, 30)
+		busyTurn(m)
+		m.handleEvent(client.Event{Type: "token_delta", Content: "ANSWER text."})
+		m.handleEvent(verifyEv("verification_completed", v, ""))
+		m.refresh()
+		if !strings.Contains(plain(m.View()), "ANSWER text.") {
+			t.Fatalf("%s verdict did not commit the answer:\n%s", v, plain(m.View()))
+		}
+		m.handleEvent(client.Event{Type: "thinking_delta", Content: "x"})
+		m.handleEvent(client.Event{Type: "token_delta", Content: "AFTER"})
+		m.refresh()
+		if strings.Contains(plain(m.View()), "AFTER") {
+			t.Fatalf("%s: reply after the commit painted early:\n%s", v, plain(m.View()))
+		}
+	}
+	// No open turn: a stray verdict opens nothing.
+	m := newTestModel()
+	m.handleEvent(verifyEv("verification_completed", "pass", ""))
+	if len(m.msgs) != 0 || m.cur() >= 0 {
+		t.Fatalf("stray verdict touched the transcript: %+v", m.msgs)
+	}
+}
+
+// Every other verdict fails safe: skips (which odek emits again as
+// exhausted after a fail), unknown verdicts, and frames without data hold
+// the answer until the turn seals.
+func TestNonShippingVerdictsHold(t *testing.T) {
+	frames := []client.Event{
+		verifyEv("verification_completed", "skipped", "budget"),
+		verifyEv("verification_completed", "skipped", "error"),
+		verifyEv("verification_completed", "fail_soft", ""),
+		verifyEv("verification_completed", "", ""),
+	}
+	for _, ev := range frames {
+		m := newTestModel()
+		m.resize(100, 30)
+		busyTurn(m)
+		m.handleEvent(client.Event{Type: "token_delta", Content: "ANSWER text."})
+		m.handleEvent(ev)
+		assertHeld(t, m, "non-shipping verdict")
+	}
+}
+
+// odek's corrective cycle that runs out of budget: fail → retry → skipped
+// (budget) → skipped (exhausted) → done{verified: fail}. The replacement
+// stays held until done, so it lands with its ✗ unverified chip.
+func TestRetrySkippedAfterFailLandsWithChip(t *testing.T) {
+	m := newTestModel()
+	m.resize(100, 30)
+	busyTurn(m)
+	for _, ev := range []client.Event{
+		{Type: "token_delta", Content: "DRAFT says 14."},
+		verifyEv("verification_started", "", ""),
+		verifyEv("verification_completed", "fail", ""),
+		{Type: "answer_superseded", Reason: "verify_retry", Cycle: 1},
+		{Type: "token_delta", Content: "ANSWER says 15."},
+		verifyEv("verification_completed", "skipped", "budget"),
+		verifyEv("verification_completed", "skipped", "exhausted"),
+	} {
+		m.handleEvent(ev)
+		assertHeld(t, m, ev.Type)
+		if strings.Contains(plain(m.View()), "DRAFT says") {
+			t.Fatalf("draft painted after %s", ev.Type)
+		}
+	}
+	m.handleEvent(client.Event{Type: "done", Verified: "fail"})
+	m.refresh()
+	view := plain(m.View())
+	if !strings.Contains(view, "ANSWER says 15.") || !strings.Contains(view, "✗ unverified") {
+		t.Fatalf("answer should land with its chip:\n%s", view)
+	}
+}
+
+// An engine that never supersedes (odek < v2.33) streams the answer live:
+// holding it would only delay it. Unknown and current engines hold.
+func TestHoldFollowsEngineVersion(t *testing.T) {
+	for _, tc := range []struct {
+		version string
+		live    bool
+	}{{"v2.32.9", true}, {"v2.33.0", false}, {"", false}, {"dev", false}} {
+		m := newTestModel()
+		m.resize(100, 30)
+		m.odekVersion = tc.version
+		m.handleEvent(client.Event{Type: "turn_started", Initiated: "operator"})
+		m.handleEvent(client.Event{Type: "token_delta", Content: "ANSWER text."})
+		m.refresh()
+		if got := strings.Contains(plain(m.View()), "ANSWER text."); got != tc.live {
+			t.Fatalf("odek %q: painted live = %v, want %v", tc.version, got, tc.live)
+		}
+	}
+}
+
+// Held text is not on screen: copy and find must not reach it, and an
+// empty bulk frame must not release it.
+func TestHeldAnswerStaysOutOfCopyAndFind(t *testing.T) {
+	m := newTestModel()
+	m.resize(100, 30)
+	m.msgs = append(m.msgs, message{role: roleAsst, content: "previous answer"})
+	streamingTurn(m)
+	m.handleEvent(client.Event{Type: "token_delta", Content: "ANSWER needle."})
+	m.handleEvent(client.Event{Type: "token", Content: verifyFailedMarker})
+	assertHeld(t, m, "empty bulk frame")
+	live := m.cur()
+	m.focusIdx = live
+	if got := m.focusedReply(); got != "" {
+		t.Fatalf("focused live turn copied %q, want nothing", got)
+	}
+	if got := m.focusedCopyText(); got != "" {
+		t.Fatalf("focused copy text = %q, want nothing", got)
+	}
+	if findMsgMatch(m.msgs[live], "needle") {
+		t.Fatal("find matched a held answer")
+	}
+	m.handleEvent(client.Event{Type: "done"})
+	if !findMsgMatch(m.msgs[live], "needle") || m.focusedReply() != "ANSWER needle." {
+		t.Fatalf("sealed answer should be findable and copyable: %q", m.focusedReply())
+	}
+}
+
+func assertHeld(t *testing.T, m *Model, when string) {
+	t.Helper()
+	m.refresh()
+	if view := plain(m.View()); strings.Contains(view, "ANSWER") {
+		t.Fatalf("answer painted early (%s):\n%s", when, view)
+	}
+}
+
+// A streamed note is held until its step lands; a blank segment must not
+// break the residual check and repaint the held answer as a stray card.
+func TestStreamedNotePaintsWhenItsStepLands(t *testing.T) {
+	m := newTestModel()
+	m.resize(100, 30)
+	busyTurn(m)
+	m.handleEvent(client.Event{Type: "token_delta", Content: "\n\n"})
+	m.handleEvent(client.Event{Type: "token_delta", Content: "NOTE before the read."})
+	assertNotPainted(t, m, "NOTE", "streamed note before its step")
+	m.handleEvent(client.Event{Type: "tool_call", Name: "read_file", Data: `{"path":"a.go"}`})
+	m.refresh()
+	if view := plain(m.View()); !strings.Contains(view, "NOTE before the read.") {
+		t.Fatalf("note did not paint once its step landed:\n%s", view)
+	}
+	m.handleEvent(client.Event{Type: "tool_result", Name: "read_file", Data: "ok"})
+	m.handleEvent(client.Event{Type: "token_delta", Content: "\n\n"})
+	m.handleEvent(client.Event{Type: "tool_call", Name: "read_file", Data: `{"path":"b.go"}`})
+	m.handleEvent(client.Event{Type: "tool_result", Name: "read_file", Data: "ok"})
+	m.handleEvent(client.Event{Type: "token_delta", Content: "ANSWER text."})
+	assertNotPainted(t, m, "ANSWER", "after a blank segment")
+	m.handleEvent(client.Event{Type: "done"})
+	m.refresh()
+	if view := plain(m.View()); strings.Count(view, "ANSWER text.") != 1 || strings.Count(view, "NOTE before the read.") != 1 {
+		t.Fatalf("sealed turn should paint the note and the answer once each:\n%s", view)
+	}
+}
+
+// Bulk text is final on arrival — odek supersedes only streamed drafts and
+// sends a buffered answer after verification — so it paints before done.
+func TestBulkAnswerPaintsBeforeDone(t *testing.T) {
+	m := newTestModel()
+	m.resize(100, 30)
+	busyTurn(m)
+	m.handleEvent(verifyEv("verification_started", "", ""))
+	m.handleEvent(verifyEv("verification_completed", "pass", ""))
+	m.handleEvent(client.Event{Type: "token", Content: "ANSWER text."})
+	m.refresh()
+	if view := plain(m.View()); !strings.Contains(view, "ANSWER text.") {
+		t.Fatalf("buffered final answer waited for done:\n%s", view)
+	}
+}
+
+func assertNotPainted(t *testing.T, m *Model, text, when string) {
+	t.Helper()
+	m.refreshStreamingReplies()
+	m.refresh()
+	if view := plain(m.View()); strings.Contains(view, text) {
+		t.Fatalf("%s painted early (%s):\n%s", text, when, view)
+	}
+}

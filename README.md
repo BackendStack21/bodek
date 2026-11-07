@@ -177,14 +177,17 @@ own front-end settings are separate; see [Configuration](#configuration).
   "Build passed" never goes green. Plans show compact progress and step rows.
   Missing success metadata stays neutral rather than claiming that a command
   passed.
-- **Streaming answers** rendered as Markdown
-  ([glamour](https://github.com/charmbracelet/glamour)). When odek re-asks
-  the model after an answer already streamed (completion check or
-  verification retry, odek ≥ v2.33), the draft folds into a
-  `⋯ draft revised` row (open it with `^E` or inspect + `⏎`) and only the
-  replacement shows as the answer. While odek verifies the answer, the status
-  line reads `verifying answer`; an answer that fails verification carries
-  `✗ unverified` on its turn heading and outcome row.
+- **Final answers only** rendered as Markdown
+  ([glamour](https://github.com/charmbracelet/glamour)). odek may still
+  re-ask the model after an answer streams (completion check or
+  verification retry, odek ≥ v2.33), so the answer is held while it
+  streams (the status line reads `composing`, then `verifying answer`).
+  It paints once verification passes, or when the turn ends. An answer
+  never appears, vanishes, and comes back. (Engines older than v2.33 never
+  re-ask, so their answers still stream live.) A replaced draft shows only as
+  a folded `⋯ draft revised` row (open it with `^E` or inspect + `⏎`). An
+  answer that fails verification carries `✗ unverified` on its turn
+  heading and outcome row.
 - **Tool activity** — every `tool_call`/`tool_result` shown live with one
   status glyph per step: a static live mark (`▸`) while running, the tool's
   own glyph once it finishes, `✗` when it fails; result bodies wait behind `^E` or a
@@ -229,8 +232,10 @@ own front-end settings are separate; see [Configuration](#configuration).
 - **Assistant progress notes** — pre-tool notes stay visible as answer cards
   before their tools, including OpenAI responses with no reasoning summary.
   Buffered and streamed delivery share the same chronological transcript.
-  Short streamed notes appear without waiting for another server event.
-  OpenAI buffered-response notes require odek v2.29.7 or later.
+  A buffered note paints on arrival. A streamed note paints as soon as its
+  tool call arrives: until then it could still be the final answer, so it
+  is held like one. OpenAI buffered-response
+  notes require odek v2.29.7 or later.
 - **Context-aware progress** — while the agent works, a status line right
   below your last message shows what it's actually doing (`🧪 running
   tests`, `📖 reading client.go`, `🚀 pushing`) with a live elapsed timer.

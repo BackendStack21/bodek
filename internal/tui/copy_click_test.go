@@ -62,15 +62,19 @@ func TestClickReplyCardCopiesAndAcks(t *testing.T) {
 func TestClickStreamingCardCopiesPartial(t *testing.T) {
 	t.Setenv("SSH_TTY", "/dev/ttys001")
 	m := newTestModel()
+	// A live turn: a note already painted above its step, and the held
+	// candidate answer still streaming below it. Copy hands out only what
+	// the transcript shows.
 	m.msgs = append(m.msgs, message{
 		role:      roleAsst,
-		content:   "half the answer",
+		content:   "half the answer\n\nheld draft",
 		streaming: true,
-		items:     []turnItem{{reply: true, text: "half the answer"}},
+		steps:     []step{{name: "read_file"}},
+		items:     []turnItem{{reply: true, text: "half the answer"}, {stepIdx: 0}, {reply: true, text: "held draft"}},
 	})
 	m.refresh()
 	if got := m.replyText(0); got != "half the answer" {
-		t.Fatalf("replyText = %q, want the partial stream", got)
+		t.Fatalf("replyText = %q, want the painted partial stream", got)
 	}
 	if len(m.replyLineIndex) == 0 {
 		t.Fatal("streaming card was not indexed")
