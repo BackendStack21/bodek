@@ -22,6 +22,18 @@ var protocolFloors = []protocolFloor{
 	{name: "windowTokens", min: [3]int{2, 3, 0}},
 }
 
+// supersedeFloor is the first odek that re-asks the model after an answer
+// streamed (answer_superseded: completion check, verification retry).
+var supersedeFloor = [3]int{2, 33, 0}
+
+// engineRevises reports whether the engine may supersede a streamed answer,
+// so a live turn holds its candidate answer (heldFrom). An unknown version
+// holds: the cost of guessing wrong is a delay, not a blink.
+func (m *Model) engineRevises() bool {
+	v, ok := parseOdekVersion(m.odekVersion)
+	return !ok || !versionLess(v, supersedeFloor)
+}
+
 // parseOdekVersion turns "v1.40.0" / "1.40" / "odek 2.3.0" into major.minor.patch.
 func parseOdekVersion(s string) ([3]int, bool) {
 	s = strings.TrimSpace(s)

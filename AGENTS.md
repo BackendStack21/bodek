@@ -101,7 +101,19 @@ feat(tui): compact tool steps with Ctrl+E details toggle
   alongside it. `msg.content` stays the "\n\n"-joined blob of all reply
   segments (appendReply maintains it) for export, stats, and hand-built
   messages; turn markers (`**Cancelled.**` etc.) attach to the last reply.
-  The calm default hides reasoning previews and tool responses: the intent
+  While a turn streams, the candidate answer — reply segments after the
+  last step, the range `answer_superseded` folds — is held off the
+  transcript (`heldFrom` in `view.go`): it paints once a step lands after
+  it (it was a progress note), a `pass`/`uncertain` verdict commits it
+  (`msg.committed`; fail, skips — odek re-emits `exhausted` after a fail —
+  and unknown verdicts wait for the supersede or `done`), or the turn seals
+  on any path. Non-empty bulk `token` text commits on arrival: odek
+  supersedes only streamed drafts, and a buffered answer is sent after
+  verification. Engines below v2.33 never supersede, so their turns paint
+  live (`paintLive` from `engineRevises`; an unknown version holds). An
+  answer is never shown, folded, and re-streamed. `supersedeDraft` and
+  `heldFrom` share `candidateStart`. Copy and find see only painted text
+  (`paintedContent`). The calm default hides reasoning previews and tool responses: the intent
   rail and step result bodies paint only under `^E` (details) or a
   deliberate expand — `↑`/`↓` selects an item and `Enter` opens it;
   click selects and expands one step; the result peek is gone. While a turn
@@ -137,7 +149,8 @@ feat(tui): compact tool steps with Ctrl+E details toggle
   in `batchCarry` instead of returning them, so the flat batch never drops a
   queue pop, bell, or tab refresh. The client also merges consecutive
   thinking deltas (16 at a time) before enqueueing. Assistant text deltas
-  enqueue immediately so short progress notes cannot wait for a later frame;
+  enqueue immediately so a short note is ingested with its own frame (the
+  TUI paints it once its step lands; plain mode prints it there too);
   their redraws still coalesce in the TUI. The header
   connection lamp stays lit while a turn runs (`◉`); idle is `●`,
   reconnect `◌`, down `○`. Progress stays on the status line — an empty
@@ -220,8 +233,8 @@ feat(tui): compact tool steps with Ctrl+E details toggle
   documented opt-out, skipping mouse reporting)
   cell-motion so the wheel scrolls (and clicks hit turn heads / answer
   cards / steps / the queue). A left-click on an answer card (or a
-  collapsed summary) copies that turn's `msg.content` — final or the
-  partial stream — and parks `focusIdx` so a follow-up `alt+y` copies
+  collapsed summary) copies that turn's reply — final, or the painted
+  part of the stream (`paintedContent`) — and parks `focusIdx` so a follow-up `alt+y` copies
   the same card. Success is a footer `✓ Copied` flash only (`noticeTTL`,
   generation-guarded expire — no transcript notice). Turn heads still fold;
   step headers and chips still win on their own lines; raw `/help`
@@ -278,19 +291,21 @@ modifier routes to the composer), and `Alt+A`/`Alt+D`/`Alt+T`
   segments streamed since the last tool call into `draft` items — a folded
   `⋯ draft revised · <reason>` row that opens like reasoning (inspect +
   Enter, `^E`) — and rebuilds `msg.content` from the surviving replies, so
-  a turn never shows two answers. Use `turnItem.isStep()` / `foldable()`;
+  a turn never shows two answers. Live, the draft was held and never
+  painted, so the folded row is its first appearance. Use `turnItem.isStep()` / `foldable()`;
   never treat "not reply, not reasoning" as a step. Replay folds records
   persisted with `superseded`. `done.verified == "fail"` (or a persisted /
   bulk verification-failed marker, stripped from the prose) sets
   `unverified`: `✗ unverified` on the head and outcome row. Verification
-  `runtime_event` frames only drive the `verifying answer` status label;
+  `runtime_event` frames drive the `verifying answer` status label and
+  commit the held answer on a shipping verdict;
   the client decodes `runtime_event` separately because its object `event`
   key collides with the string `SubType`. Plain mode prints the draft
   remainder once plus a `[draft revised · …]` note.
 - Streaming renders are coalesced into one flush per 80ms for
   performance; batching new redraw paths the same way keeps the TUI
   responsive. Live reply segments glamour-render on that flush (not only
-  at turn end). The spinner animates the status line only — transcript
+  at turn end), so a held answer paints already rendered. The spinner animates the status line only — transcript
   rebuilds for live transcript clocks (streaming head counter, step timers)
   coalesce at 250ms (`tailClockFlushMsg`); the lane ticks whenever a message
   streams, not only when steps run.

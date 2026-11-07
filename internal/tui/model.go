@@ -141,6 +141,8 @@ type message struct {
 	systemWake bool       // server-initiated turn (background-job wake): marker on the card
 	failed     bool       // the run ended in error — ✗ marks the turn head (in-session state; replay does not restore it)
 	unverified bool       // the final answer failed odek's verification (done.verified, or a persisted marker on replay)
+	committed  int        // live turns: items before this index are final (bulk text, a shipping verdict) and paint before done (see heldFrom)
+	paintLive  bool       // live turn on an engine that never supersedes answers (odek < v2.33): nothing is held
 
 	plainPrinted int // reply bytes already emitted to linear scrollback
 }

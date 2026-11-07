@@ -575,7 +575,7 @@ func (m *Model) sendPrompt(text string) tea.Cmd {
 		shown = fmt.Sprintf("%s  📎×%d", shown, n)
 	}
 	m.msgs = append(m.msgs, message{role: roleUser, content: shown, sentAt: time.Now()})
-	m.msgs = append(m.msgs, message{role: roleAsst, streaming: true})
+	m.msgs = append(m.msgs, message{role: roleAsst, streaming: true, paintLive: !m.engineRevises()})
 	m.curIdx = len(m.msgs) - 1
 	// No composer reset here: submit already cleared it, and a queue
 	// drain / retry must keep whatever the user is typing meanwhile.

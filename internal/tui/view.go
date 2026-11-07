@@ -656,6 +656,31 @@ func emptyStreamingTurn(msg message) bool {
 	return true
 }
 
+// heldFrom is the timeline index where a live turn's candidate answer
+// starts: the reply segments streamed since the last tool step, exactly the
+// range answer_superseded folds. odek can still re-ask the model for them
+// (completion check, verification retry), so they paint only once they are
+// final — a step lands after them (they were a progress note), they arrived
+// as bulk text or verification passed (committed), or the turn seals. A
+// reply is never shown, folded, and re-streamed. len(items) when nothing
+// is held, including on engines that never supersede (paintLive).
+func heldFrom(msg *message) int {
+	if !msg.streaming || msg.paintLive {
+		return len(msg.items)
+	}
+	return max(candidateStart(msg), msg.committed)
+}
+
+// paintedContent is msg.content without the held candidate answer — what
+// the transcript shows, and so what copy hands out.
+func paintedContent(msg *message) string {
+	hold := heldFrom(msg)
+	if hold >= len(msg.items) {
+		return msg.content
+	}
+	return joinReplies(msg.items[:hold])
+}
+
 func (m *Model) renderMessage(msg message, msgIdx, lineOffset int) (string, []stepRef) {
 	th := m.th
 	// Pre-styled cards (e.g. /stats) render verbatim — no label, no bar, and
@@ -762,6 +787,7 @@ func (m *Model) renderMessage(msg message, msgIdx, lineOffset int) (string, []st
 				items = append(items, turnItem{stepIdx: i})
 			}
 		}
+		hold := heldFrom(&msg)
 		var lines []string // turn-body rows below the label, in render order
 		var refs []stepRef
 		prevCard := false    // previous emitted block was an answer card
@@ -819,8 +845,15 @@ func (m *Model) renderMessage(msg message, msgIdx, lineOffset int) (string, []st
 			}
 			if items[it].reply {
 				t := items[it].text
+				// Every reply counts — blank and held ones too — so the
+				// residual check below matches msg.content exactly and
+				// never repaints the blob (held text included) as a card.
+				replied = append(replied, t)
 				if strings.TrimSpace(t) == "" {
 					continue
+				}
+				if it >= hold {
+					continue // candidate answer: paints once final (heldFrom)
 				}
 				body := items[it].rendered
 				if body == "" {
@@ -829,7 +862,6 @@ func (m *Model) renderMessage(msg message, msgIdx, lineOffset int) (string, []st
 				card, n := m.answerCardBody(body)
 				start := addBlock(card, true)
 				refs = append(refs, replyRefAt(msgIdx, start, n))
-				replied = append(replied, t)
 				continue
 			}
 			if items[it].stepIdx < 0 || items[it].stepIdx >= len(msg.steps) {

@@ -110,7 +110,8 @@ func (m *Model) copyFlashing() bool {
 type copyFlashExpireMsg struct{ seq int }
 
 // replyText is the copy payload for one assistant turn: the raw markdown
-// blob (final or the partial stream so far). Raw styled cards are skipped.
+// blob (final, or the painted part of the stream — see heldFrom). Raw
+// styled cards are skipped.
 func (m *Model) replyText(msgIdx int) string {
 	if msgIdx < 0 || msgIdx >= len(m.msgs) {
 		return ""
@@ -119,7 +120,7 @@ func (m *Model) replyText(msgIdx int) string {
 	if msg.role != roleAsst || msg.raw {
 		return ""
 	}
-	return msg.content
+	return paintedContent(&msg)
 }
 
 // copyReplyAt copies the given turn's reply and parks focus on it so a
@@ -183,10 +184,14 @@ type copyResultMsg struct {
 // focusedReply returns the reply of the turn the cursor last jumped to
 // (alt+↑/alt+↓, find jumps), falling back to the latest reply when there
 // is no focus or it went stale (messages trimmed, index now a user turn).
+// A focused live turn copies what it painted — never, when its answer is
+// still held, the previous turn's reply under a ✓ Copied flash.
 func (m *Model) focusedReply() string {
 	if m.focusIdx >= 0 && m.focusIdx < len(m.msgs) {
-		if msg := m.msgs[m.focusIdx]; msg.role == roleAsst && !msg.raw && msg.content != "" {
-			return msg.content
+		if msg := m.msgs[m.focusIdx]; msg.role == roleAsst && !msg.raw {
+			if c := paintedContent(&msg); c != "" || msg.streaming {
+				return c
+			}
 		}
 	}
 	return m.lastReply()
@@ -304,8 +309,8 @@ func (m *Model) focusedCopyText() string {
 			return sanitize(msg.steps[i].result)
 		}
 	}
-	if msg.content != "" {
-		return msg.content
+	if c := paintedContent(&msg); c != "" {
+		return c
 	}
 	return m.focusedReply()
 }
@@ -356,10 +361,12 @@ func (m *Model) spanCopyText() string {
 			continue
 		}
 		msg := m.msgs[i]
-		if msg.role != roleAsst || msg.raw || msg.content == "" {
+		if msg.role != roleAsst || msg.raw {
 			continue
 		}
-		parts = append(parts, msg.content)
+		if c := paintedContent(&msg); c != "" {
+			parts = append(parts, c)
+		}
 	}
 	if len(parts) == 0 {
 		return m.focusedCopyText()

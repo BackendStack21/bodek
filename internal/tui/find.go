@@ -120,11 +120,12 @@ func findMsgMatch(msg message, q string) bool {
 	if msg.raw {
 		return false
 	}
-	if strings.Contains(strings.ToLower(msg.content), q) {
+	if strings.Contains(strings.ToLower(paintedContent(&msg)), q) {
 		return true
 	}
-	for _, it := range msg.items {
-		if (it.thinking || it.reply || it.draft) && strings.Contains(strings.ToLower(it.text), q) {
+	hold := heldFrom(&msg) // a held candidate answer is not on screen yet
+	for j, it := range msg.items {
+		if (it.thinking || it.reply && j < hold || it.draft) && strings.Contains(strings.ToLower(it.text), q) {
 			return true
 		}
 	}
