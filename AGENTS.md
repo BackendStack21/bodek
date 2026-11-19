@@ -232,7 +232,25 @@ feat(tui): compact tool steps with Ctrl+E details toggle
   own. Alt-screen enables mouse cell-motion by default (`--plain` is the
   documented opt-out, skipping mouse reporting)
   cell-motion so the wheel scrolls (and clicks hit turn heads / answer
-  cards / steps / the queue). A left-click on an answer card (or a
+  cards / steps / the queue). Mouse reporting takes the terminal's own
+  selection away, so `selection.go` provides one: a left drag selects
+  (reverse video, written raw so NO_COLOR keeps it) and copies on release;
+  double-click takes a word, triple-click a line. Every click action
+  therefore fires on **release**, and only when the pointer never left the
+  press cell — never on press, or a drag could not start on a head, step,
+  or card. A press that starts in the transcript selects in content-line
+  coordinates (it survives scrolling, and a drag held past the viewport
+  edge scrolls on a generation-guarded tick); anywhere else it selects
+  screen rows read back from `compose()` and is dropped after its copy
+  (screen rows have no stable anchor). A held transcript range remembers
+  the text it copied and `reconcileSelection` drops it when a rebuild puts
+  anything else under it. Repeat clicks on a control (`clickActs`) stay clicks, never a
+  double-click. Any key clears a selection; ESC then stops there — unless
+  the range has scrolled out of view, which must not swallow ESC. Range
+  edges snap to whole glyphs (`snapCells`) so a highlight never changes a
+  row's width. Copied
+  text is the rendered rows minus the shared margin — never re-derive it
+  from message sources. A left-click on an answer card (or a
   collapsed summary) copies that turn's reply — final, or the painted
   part of the stream (`paintedContent`) — and parks `focusIdx` so a follow-up `alt+y` copies
   the same card. Success is a footer `✓ Copied` flash only (`noticeTTL`,
@@ -314,8 +332,40 @@ modifier routes to the composer), and `Alt+A`/`Alt+D`/`Alt+T`
 - The slash-completion popup holds key capture while open; typed keys
   must keep flowing to the input. Route keys through the popup first,
   then fall through to normal input handling.
+- Links (`links.go`): a click on an `http(s)` link in the transcript raises
+  the open-link window — never the browser. Only `⏎` opens (`c` copies;
+  any other key cancels and, like the confirm gates, a plain rune still
+  types via `typeThrough` — only when the composer owns the keyboard). The window is an overlay composited onto the
+  frame (`linkOverlay`), not a card in the layout: the transcript must not
+  shift under the click, and `inputAreaHeight` stays untouched. It shows the
+  parsed host first, the whole target through `visibleInvocation`, and
+  warnings (userinfo, punycode / non-ASCII host, raw IP, plain http). The
+  launcher gets the link as one argv element (`browserArgv`) from a plain
+  `tea.Cmd` — never a shell, never `tea.ExecProcess`; over SSH or without a
+  launcher `⏎` copies instead. Glamour wraps long links at `.` and `-`, so
+  one row can hold a fragment that is itself a valid URL to the wrong host:
+  `linkAt` resolves the cell against the links in the source text
+  (`linkSources`) across the wrapped rows, and falls back to the row alone
+  only when no source vouches for it — a preview cut with `…` is never
+  offered. Only text painted on the clicked line vouches: a reply card
+  answers to `paintedContent`, work rows to reasoning and tool data —
+  never widen that, or hidden text decides where a click goes. Rows fuse
+  only at a real wrap point (a row ending on a break character or hard
+  against the right edge; glamour's single blank row inside a wrapped link
+  is skipped). Whatever the rows cannot settle is offered with the
+  "target unclear" warning, never silently: a link that runs to a wrap
+  point with link-like text below, a tail clipped at the viewport edge
+  (filled in from the one source link it starts), or rows that read as
+  two source links. The host row keeps the host's tail (the registrable
+  domain), and a terminal too short to show host, every warning, the keys
+  and a row of the target (`linkCramped`) copies on `⏎` instead of
+  opening — window, footer and key handler share `linkCopies`. `launchURL`
+  waits briefly so a launcher that starts and fails is reported. Tests
+  never run a real launcher: the test binary stands in, and `TestMain`
+  exits it on `BODEK_TEST_LAUNCHER` before the suite can re-run. Step rows
+  and chips keep their own click over a link in their preview.
 - ESC closes the topmost window, then (if busy) arms cancel. The chain
-  below is the authoritative order: confirm disarm → palette → drawer edit/detail/tab
+  below is the authoritative order: confirm disarm → open-link window → text selection → palette → drawer edit/detail/tab
   → cockpit → find → `@`/`/` popup → queue strip → approval (collapse
   details, then arm cancellation; `Alt+D` denies) → clarify (arm cancel while busy; the card stays)
   → skill chip / `^E` / open thinking / agent

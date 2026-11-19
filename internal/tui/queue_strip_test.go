@@ -4,7 +4,6 @@ import (
 	"strings"
 	"testing"
 
-	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/BackendStack21/bodek/internal/client"
@@ -52,12 +51,7 @@ func clickQueueControl(t *testing.T, m *Model, row int, glyph rune) {
 	if x < 0 {
 		t.Fatalf("strip row %d has no %q control: %q", row, string(glyph), un)
 	}
-	m.Update(tea.MouseMsg{
-		Action: tea.MouseActionPress,
-		Button: tea.MouseButtonLeft,
-		X:      x,
-		Y:      m.queueStripTop() + row,
-	})
+	clickAt(m, x, m.queueStripTop()+row)
 }
 
 // unfoldQueue opens the full strip (^Q) so tests that click or count strip

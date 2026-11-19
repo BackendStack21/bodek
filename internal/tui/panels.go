@@ -124,13 +124,18 @@ func (m *Model) handleConfirmKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	}
 	m.refresh()
-	// The gate eats exactly one decision key: a disarmed printable rune
-	// falls through to the composer, so the reflex "esc, keep typing" never
-	// loses a character. Panel contexts keep silent disarm — their keys are
-	// navigation, not typing.
-	// Only plain typing qualifies: Alt chords (approval decisions), pastes
-	// and key sentinels ("shift+enter"…) must never splice in as text, and
-	// a live approval card keeps its keys — the gate ate this one.
+	return m.typeThrough(msg)
+}
+
+// typeThrough lets the key that dismissed a gate (a confirm, the open-link
+// window) still type: the gate eats exactly one decision key, and a
+// disarmed printable rune falls through to the composer, so the reflex
+// "esc, keep typing" never loses a character. Panel contexts keep silent
+// disarm — their keys are navigation, not typing.
+// Only plain typing qualifies: Alt chords (approval decisions), pastes
+// and key sentinels ("shift+enter"…) must never splice in as text, and
+// a live approval card keeps its keys — the gate ate this one.
+func (m *Model) typeThrough(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.panel != panelNone || msg.Type != tea.KeyRunes || len(msg.Runes) == 0 ||
 		msg.Alt || msg.Paste || isKeySentinel(msg.String()) || m.curApproval() != nil {
 		return m, nil

@@ -6,8 +6,6 @@ import (
 	"testing"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
-
 	"github.com/BackendStack21/bodek/internal/client"
 )
 
@@ -561,7 +559,7 @@ func TestStepClickHitTesting(t *testing.T) {
 	}
 	click := func(line int) {
 		// Viewport content begins below the header (2 rows); see Update.
-		m.Update(tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, Y: 2 + line})
+		clickAt(m, 0, 2+line)
 	}
 
 	// Prose below the header: no toggle.

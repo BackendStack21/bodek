@@ -22,7 +22,13 @@ func (m *Model) View() string {
 	if m.plain {
 		return m.plainView()
 	}
-	body := m.vp.View()
+	return m.paintCanvas(m.linkOverlay(m.screenSelection(m.compose())))
+}
+
+// compose lays out the screen without the selection and link-window layers
+// (a screen-space selection reads its text back from this).
+func (m *Model) compose() string {
+	body := m.transcriptView()
 	if m.panel != panelNone && m.drawerFullBleed() {
 		body = m.renderPanel(m.width, max(1, m.drawerAvail()))
 	} else if m.panel != panelNone {
@@ -38,7 +44,7 @@ func (m *Model) View() string {
 		parts = append(parts, s)
 	}
 	parts = append(parts, m.inputArea(), m.footer())
-	return m.paintCanvas(strings.Join(parts, "\n"))
+	return strings.Join(parts, "\n")
 }
 
 // plainView composes linear mode's bottom chrome: status line, capped
@@ -505,7 +511,9 @@ func (m *Model) refresh() {
 	}
 	stick := m.vp.AtBottom()
 	shelfRows := m.shelfHeight()
-	m.vp.SetContent(m.conversation())
+	m.vpContent, m.vpLines = m.conversation(), nil
+	m.vp.SetContent(m.vpContent)
+	m.reconcileSelection()
 	if stick {
 		m.vp.GotoBottom()
 	}
@@ -1925,6 +1933,12 @@ func (m *Model) footerContent() string {
 			th.footerKey.Render("y")+th.footerDanger.Render(" quit"),
 			th.footer.Render("any other key cancels"),
 		)
+	}
+	if l := m.link; l != nil {
+		if m.linkCopies(l) {
+			return m.panelFooter("⏎ copy link", "esc cancel")
+		}
+		return m.panelFooter("⏎ open", "c copy", "esc cancel")
 	}
 	if m.pal.open {
 		action := "⏎ run"
