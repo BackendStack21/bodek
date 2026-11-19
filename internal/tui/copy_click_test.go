@@ -7,10 +7,17 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-// clickTranscript sends a left press on a viewport content line, using
-// the same screen math the mouse dispatcher uses (header is 2 rows).
+// clickAt sends a full left click — press and release on one cell. Click
+// actions fire on release, so a drag can start on anything.
+func clickAt(m *Model, x, y int) {
+	m.Update(tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, X: x, Y: y})
+	m.Update(tea.MouseMsg{Action: tea.MouseActionRelease, Button: tea.MouseButtonLeft, X: x, Y: y})
+}
+
+// clickTranscript clicks a viewport content line, using the same screen
+// math the mouse dispatcher uses (header is 2 rows).
 func clickTranscript(m *Model, line int) {
-	m.Update(tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, Y: 2 + line})
+	clickAt(m, 0, 2+line)
 }
 
 func TestReplyCardIndexedForCopy(t *testing.T) {

@@ -209,9 +209,18 @@ own front-end settings are separate; see [Configuration](#configuration).
   autoscroll that never yanks you while you read history, a
   scroll-position indicator, and a mouse wheel that always scrolls the
   transcript (click a reply card to copy it, or turn heads, tool rows,
-  the cockpit, and queue controls). Native click-drag selection is
-  unavailable — use a click on the card, `^Y`, or `alt+y`.
+  the cockpit, and queue controls).
   `--plain` keeps the terminal's own scrollback.
+- **Select anything, open links safely** — drag across any text on screen
+  (transcript, approval card, drawers, composer) to select it; it is copied
+  the moment you release, and dragging past the transcript's edge scrolls to
+  extend the selection. Double-click takes a word (a path, a hash, a URL),
+  triple-click a line. Copied transcript blocks lose the card margin, so code
+  pastes flush left. Clicking an `http(s)` link never opens it directly: a
+  confirmation window shows the real host and the full target, warns about
+  lookalike hosts, embedded sign-in names, raw IPs and plain `http`, and only
+  `⏎` hands it to your browser (`c` copies it instead; over SSH `⏎` copies,
+  since the browser lives on your machine).
 - **Version display & update hint** — bodek's version rides the header next
   to the logo (the spawned odek's next to the model); a quiet note appears at
   startup when a newer release is available (`bodek upgrade` installs it;
@@ -461,6 +470,9 @@ own front-end settings are separate; see [Configuration](#configuration).
 | `^G` / `End` (empty input) | Jump to the latest output |
 | `F1` | Show the help card |
 | `wheel` | Scroll the transcript · click a reply card to copy · click tool rows, turn heads, and the cockpit |
+| `drag` | Select text anywhere on screen — copied on release (`✓ Copied`); drag past the transcript's edge to scroll · any key or `esc` clears the highlight |
+| `double-click` / `triple-click` | Select and copy a word / a line |
+| `click` (on a link) | Open-link confirmation: `⏎` open in browser · `c` copy · `esc` or any other key cancels |
 | `⏎` (disconnected, empty input) | Retry the connection |
 | `⏎` (after a failed turn, empty input) | Re-send the failed prompt |
 | `^C` | Quit (confirm: `y` or a second `^C`) |
@@ -723,8 +735,19 @@ never become the weakest link:
   it falls back to OSC 52, which some terminals ignore — pass it through or
   install a helper. A `✓ Copied` flash on the status bar confirms the write.
 - **Mouse wheel blocks native text selection** — the alt-screen always
-  reports the mouse so the wheel can scroll. Click a reply card to copy
-  it, or use `^Y` / `alt+y`. `--plain` keeps the terminal's own scrollback.
+  reports the mouse so the wheel can scroll, so bodek selects for you: drag
+  to select (copied on release), double-click a word, triple-click a line.
+  A selection follows the rows as rendered, so a wrapped paragraph copies
+  with its line breaks — click the reply card (or `^Y` / `alt+y`) for the
+  original markdown. Your terminal's own selection still works with its
+  bypass modifier (usually `Shift`+drag, `Option`+drag on macOS), and
+  `--plain` keeps the terminal's own scrollback.
+- **A link will not open** — bodek asks the desktop's launcher (`open`,
+  `xdg-open`, or the Windows URL handler). Over SSH, with no launcher
+  installed, or in a terminal too short to show the whole confirmation,
+  the window says so and `⏎` copies the link instead. Only `http://` and `https://` links are clickable, and a link
+  shown truncated (`…`) in a tool row is never offered — expand the step
+  and click the full one.
 - **Garbage like `65;75;25M[<65;75;25M` appears in the composer while
   scrolling** — the terminal split a mouse report across reads. bodek now keeps
   every read on a report boundary, so no split point can splice a report into

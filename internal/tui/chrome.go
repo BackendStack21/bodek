@@ -196,6 +196,8 @@ func (m *Model) modeName() string {
 	switch {
 	case m.confirm != confirmNone:
 		return "confirm"
+	case m.link != nil:
+		return "link"
 	case m.pal.open:
 		return "palette"
 	case m.curApproval() != nil:

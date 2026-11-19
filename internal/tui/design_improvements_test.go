@@ -6,7 +6,6 @@ import (
 	"testing"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/BackendStack21/bodek/internal/client"
@@ -373,7 +372,7 @@ func TestClickOpensFocusedStepAtShortHeight(t *testing.T) {
 	}
 	m.vp.SetYOffset(line)
 	y := headerHeight + line - m.vp.YOffset
-	m.Update(tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, X: 8, Y: y})
+	clickAt(m, 8, y)
 	if !m.inspectChrome() {
 		t.Fatal("click did not open the focused inspector")
 	}

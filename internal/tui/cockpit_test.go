@@ -5,7 +5,6 @@ import (
 	"testing"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
 
@@ -46,11 +45,11 @@ func TestCockpitPopover(t *testing.T) {
 	}
 
 	// A header click toggles it (WebUI health-popover parity).
-	m.Update(tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, Y: 0})
+	clickAt(m, 0, 0)
 	if !m.popover {
 		t.Error("header click did not open the cockpit")
 	}
-	m.Update(tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, Y: 1})
+	clickAt(m, 0, 1)
 	if m.popover {
 		t.Error("second header click did not close the cockpit")
 	}

@@ -450,7 +450,15 @@ type Model struct {
 	msgLineIndex     []stepRef // full transcript per-message first-line index for find jumps
 	copyFlashUntil   time.Time // footer ✓ Copied dwell; zero when idle
 	copyFlashSeq     int       // drops stale expire ticks after a re-copy
-	find             findState // transcript search bar (alt+f)
+	vpContent        string    // the transcript as handed to the viewport
+	vpLines          []string  // vpContent split into rows, built on demand (selection, links)
+	sel              selection // mouse text selection (selection.go)
+	press            mousePress
+	lastClick        clickMark
+	selScrollSeq     int         // drops stale edge-scroll ticks
+	selScrolling     bool        // an edge-scroll tick is pending
+	link             *linkPrompt // open-link confirmation window (links.go)
+	find             findState   // transcript search bar (alt+f)
 
 	renderPending bool // a coalesced streaming render is scheduled
 	renderSeq     int  // bumped per scheduled flush, to drop stale ticks
@@ -915,56 +923,17 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(drop, m.approvalSweep()) // re-arm while a form is open
 
 	case tea.MouseMsg:
-		if msg.Action == tea.MouseActionPress && msg.Button == tea.MouseButtonLeft && m.panel == panelNone && !m.ac.open {
-			// Clicking the cockpit (the header's top rows) toggles the
-			// server/budget/session popover — WebUI health-popover parity.
-			if msg.Y >= 0 && msg.Y < headerHeight {
-				if !m.popover {
-					cmd := m.openCockpit()
-					m.refresh()
-					return m, cmd
-				}
-				m.popover = false
-				m.refresh()
-				return m, nil
-			}
-			// The queue strip owns the rows between the status line and the
-			// input: its controls act on their row.
-			if m.queueStripClick(msg.Y, msg.X) {
-				m.refresh()
-				return m, nil
-			}
-			// Viewport content begins below the header (2 rows).
-			top := 2
-			if msg.Y >= top && msg.Y < top+m.vp.Height {
-				line := msg.Y - top + m.vp.YOffset
-				// Turn heads fold; chips and step heads toggle; answer
-				// cards copy the reply (final or partial).
-				if msgIdx, ok := m.turnAtLine(line); ok {
-					m.toggleCollapseAt(msgIdx)
-					m.refresh()
-					return m, nil
-				}
-				if msgIdx, stepIdx, agentIdx, ok := m.chipAt(line, msg.X); ok {
-					m.selectAgentChip(msgIdx, stepIdx, agentIdx)
-					m.refresh()
-					return m, nil
-				}
-				if msgIdx, stepIdx, ok := m.stepAtLine(line); ok {
-					m.openInspectStep(msgIdx, stepIdx)
-					return m, nil
-				}
-				// Answer cards (and collapsed summaries) copy the turn's
-				// reply — final or the partial stream so far.
-				if msgIdx, ok := m.replyAtLine(line); ok {
-					return m, m.copyReplyAt(msgIdx)
-				}
-			}
+		return m.handleMouse(msg)
+
+	case selScrollMsg:
+		return m, m.handleSelScroll(msg)
+
+	case linkOpenedMsg:
+		if msg.err != nil {
+			m.addNote("could not open the link — " + errText(msg.err) + " · click it again and press c to copy")
+			m.refresh()
 		}
-		var cmd tea.Cmd
-		m.vp, cmd = m.vp.Update(msg)
-		m.relayout()
-		return m, cmd
+		return m, m.noticeSweep()
 	}
 
 	// Forward anything else to the focused input.
@@ -975,6 +944,11 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	// Any key drops a text selection (its copy already happened on release).
+	selected := m.selectionVisible()
+	if m.sel.on || m.press.down {
+		m.clearSelection()
+	}
 	// An armed destructive confirm captures the keyboard first: y fires the
 	// pending delete, ANY other key — palette chords, navigation, esc —
 	// disarms. Deletes never fire on the keypress that armed them.
@@ -984,6 +958,16 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// Stop has one stable path, independent of open drawers or historical details.
 	if msg.String() == "ctrl+x" && m.busy {
 		return m, m.armConfirm(confirmCancel, "the running turn")
+	}
+	// The open-link window is modal: ⏎ opens, c copies, anything else cancels.
+	if m.link != nil {
+		return m.handleLinkKey(msg)
+	}
+	// ESC with a selection on screen only clears it — never on to the
+	// overlays or the cancel gate below. One scrolled out of view is
+	// dropped silently and ESC carries on.
+	if selected && msg.String() == "esc" {
+		return m, nil
 	}
 	// An unmapped enhanced-key chord is a diagnostic, not input: intercept
 	// the sentinel at the very top of the ladder so no capture surface

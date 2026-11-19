@@ -385,6 +385,8 @@ func helpKeyGroups() []helpGroup {
 			{"^G", "jump to the latest output"},
 			{"^F", "fold/unfold the latest turn card"},
 			{"wheel", "scroll · click a reply to copy · tool rows & turn heads"},
+			{"drag", "select text — copied on release · double-click a word · triple a line"},
+			{"click a link", "confirm, then ⏎ opens it in the browser · c copies it"},
 		}},
 		{"inspect & copy", [][2]string{
 			{"alt+y", "copy the focused surface (reply, step, or reasoning)"},
