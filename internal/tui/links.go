@@ -11,6 +11,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"time"
 	"unicode"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -67,10 +68,13 @@ func cleanURL(s string) string {
 	return s
 }
 
-// linkSources lists the links in the source text of the message rendered
-// at a transcript line. Rendering wraps long links across rows (glamour
-// breaks at "." and "-"), so a row alone can hold a fragment that is itself
-// a valid — and wrong — URL; the source says where each link really ends.
+// linkSources lists the links in the source text behind a transcript line.
+// Rendering wraps long links across rows (glamour breaks at "." and "-"),
+// so a row alone can hold a fragment that is itself a valid — and wrong —
+// URL; the source says where each link really ends. Only the text painted
+// on that line vouches: a reply card answers to the reply, the work rows
+// around it to reasoning and tool data. Text the reader cannot see there
+// must never decide where a click goes.
 func (m *Model) linkSources(line int) []string {
 	idx := -1
 	for _, r := range m.msgLineIndex {
@@ -96,9 +100,19 @@ func (m *Model) linkSources(line int) []string {
 		}
 	}
 	msg := &m.msgs[idx]
-	add(msg.content, msg.thinking)
+	if msg.role != roleAsst || msg.raw {
+		add(msg.content)
+		return out
+	}
+	if i, ok := m.replyAtLine(line); ok && i == idx {
+		add(paintedContent(msg))
+		return out
+	}
+	add(msg.thinking)
 	for i := range msg.items {
-		add(msg.items[i].text)
+		if !msg.items[i].reply {
+			add(msg.items[i].text)
+		}
 	}
 	for i := range msg.steps {
 		s := &msg.steps[i]
@@ -112,6 +126,8 @@ func (m *Model) linkSources(line int) []string {
 type linkRow struct {
 	start int  // offset of its text in the run
 	wraps bool // it ends where a renderer breaks a long token
+	cut   bool // it fills the viewport: the renderer may have clipped it
+	gap   bool // a blank row inside a wrapped link, kept out of the run
 }
 
 // wrapBreaks are the characters glamour and ansi.Wrap may end a row on when
@@ -126,8 +142,8 @@ func continuesLink(body string) bool {
 }
 
 // linkAt returns the link under a transcript cell, or "". unsure is set
-// when the rows cannot settle where the target ends: it may continue on
-// the next row.
+// when the rows cannot settle the target — it may continue on the next
+// row, be clipped at the edge, or read two ways — so the prompt can say so.
 func (m *Model) linkAt(line, col int) (link string, unsure bool) {
 	lines := m.contentLines()
 	if line < 0 || line >= len(lines) {
@@ -142,12 +158,21 @@ func (m *Model) linkAt(line, col int) (link string, unsure bool) {
 	for i := max(0, line-linkWrapRows); i <= min(len(lines)-1, line+linkWrapRows); i++ {
 		text := strings.TrimRight(ansi.Strip(lines[i]), " ")
 		body := strings.TrimLeft(text, " ")
+		if n := len(rows); body == "" && i != line && n > 0 && rows[n-1].wraps && !rows[n-1].gap {
+			// Glamour leaves one blank row between a link's head and a
+			// tail too long to wrap: it must not hide the tail from the
+			// source. (A second blank row is a real break.)
+			rows = append(rows, linkRow{start: flat.Len(), wraps: true, gap: true})
+			continue
+		}
 		// A row is a wrap point only where a renderer would have broken a
 		// token: on a break character, or hard against the right edge.
 		// Rows that merely sit under each other never fuse into a link.
 		row := linkRow{start: flat.Len()}
 		if n := len(body); n > 0 {
-			row.wraps = strings.IndexByte(wrapBreaks, body[n-1]) >= 0 || ansi.StringWidth(text) >= m.vp.Width-6
+			w := ansi.StringWidth(text)
+			row.cut = w >= m.vp.Width
+			row.wraps = strings.IndexByte(wrapBreaks, body[n-1]) >= 0 || w >= m.vp.Width-6
 		}
 		rows = append(rows, row)
 		if i == line {
@@ -168,7 +193,7 @@ func (m *Model) linkAt(line, col int) (link string, unsure bool) {
 		flat.WriteString(body)
 	}
 	run := flat.String()
-	rowOf := func(off int) int { // the row a run offset sits on
+	rowOf := func(off int) int { // the last row that starts at or before off
 		r := 0
 		for r+1 < len(rows) && rows[r+1].start <= off {
 			r++
@@ -181,27 +206,38 @@ func (m *Model) linkAt(line, col int) (link string, unsure bool) {
 		}
 		return len(run)
 	}
-	best := ""
+	// Every source link whose text sits under the click: whole, or clipped
+	// by the viewport edge partway through.
+	var whole, clipped []string
 	for _, u := range m.linkSources(line) {
-		if len(u) <= len(best) {
-			continue
-		}
+		head := u[:strings.Index(u, "://")+3]
 	occurrences:
 		for from := 0; from < len(run); {
-			i := strings.Index(run[from:], u)
+			i := strings.Index(run[from:], head)
 			if i < 0 {
 				break
 			}
-			start, end := from+i, from+i+len(u)
+			start := from + i
 			from = start + 1
-			if at < start || at >= end {
+			n := 0 // how much of u the run spells out from here
+			for n < len(u) && start+n < len(run) && run[start+n] == u[n] {
+				n++
+			}
+			if n <= len(head) || at < start || at >= start+n {
 				continue
 			}
+			end := start + n
 			first, last := rowOf(start), rowOf(end-1)
 			for r := first; r < last; r++ {
 				if !rows[r].wraps {
 					continue occurrences // two rows, not one wrapped link
 				}
+			}
+			if n < len(u) {
+				if end == rowEnd(last) && rows[last].cut {
+					clipped = append(clipped, u)
+				}
+				continue
 			}
 			// The rendered link must end where the source one does: more
 			// link characters on the same row mean a longer link than u.
@@ -211,20 +247,36 @@ func (m *Model) linkAt(line, col int) (link string, unsure bool) {
 			}
 			// It runs to a wrap point with link-like text right below: the
 			// visible target may be longer than what the source vouches for.
-			unsure = end+len(tail) == rowEnd(last) && rows[last].wraps &&
-				last+1 < len(rows) && continuesLink(run[rows[last+1].start:rowEnd(last+1)])
-			best = u
-			break
+			next := last + 1
+			if next < len(rows) && rows[next].gap {
+				next++
+			}
+			if end+len(tail) == rowEnd(last) && rows[last].wraps &&
+				next < len(rows) && continuesLink(run[rows[next].start:rowEnd(next)]) {
+				unsure = true
+			}
+			whole = append(whole, u)
 		}
 	}
-	if best != "" {
-		return best, unsure
+	switch {
+	case len(whole) > 0:
+		// Two readings of the same rows ("…/bar." before "git …", with
+		// both …/bar and …/bar.git in the text): offer the longer, flagged.
+		for _, u := range whole {
+			if len(u) > len(link) {
+				link = u
+			}
+		}
+		return link, unsure || len(whole) > 1
+	case len(clipped) == 1:
+		return clipped[0], true // the tail is off screen: the source fills it in
 	}
 	// No source vouches for it (notices, typed tool views): take the link
 	// as the clicked row shows it, unless that row cut it short.
 	text := strings.TrimRight(ansi.Strip(lines[line]), " ")
 	for _, loc := range urlRe.FindAllStringIndex(text, -1) {
-		u := cleanURL(text[loc[0]:loc[1]])
+		raw := text[loc[0]:loc[1]]
+		u := cleanURL(raw)
 		c0 := ansi.StringWidth(text[:loc[0]])
 		if u == "" || col < c0 || col >= c0+ansi.StringWidth(u) {
 			continue
@@ -232,9 +284,16 @@ func (m *Model) linkAt(line, col int) (link string, unsure bool) {
 		if strings.HasPrefix(text[loc[1]:], "…") {
 			return "", false // a truncated preview is not the link
 		}
-		// It runs to the row's end with text right below: maybe a wrap.
-		more := line+1 < len(lines) && strings.TrimSpace(ansi.Strip(lines[line+1])) != ""
-		return u, loc[1] == len(text) && more
+		if loc[1] < len(text) {
+			return u, false // more text on the row: it ended here
+		}
+		// It runs to the row's end. Text right below — or, past a break
+		// character, below one blank row — may be the rest of it.
+		below := func(i int) bool {
+			return i < len(lines) && strings.TrimSpace(ansi.Strip(lines[i])) != ""
+		}
+		broke := strings.IndexByte(wrapBreaks, raw[len(raw)-1]) >= 0
+		return u, below(line+1) || broke && below(line+2)
 	}
 	return "", false
 }
@@ -248,11 +307,11 @@ type linkPrompt struct {
 }
 
 // openLinkPrompt raises the confirmation window for a link. unsure marks a
-// target read off a single row that may have wrapped it (see linkAt).
+// target the rendered rows could not settle (see linkAt).
 func (m *Model) openLinkPrompt(u string, unsure bool) {
 	p := &linkPrompt{url: u}
 	if unsure {
-		p.warn = append(p.warn, "may continue on the next row — check it")
+		p.warn = append(p.warn, "target unclear across wrapped rows — check it")
 	}
 	if pu, err := url.Parse(u); err == nil {
 		p.host = pu.Host
@@ -292,7 +351,12 @@ func ipHost(host string) bool {
 // warning, and the keys together. Nothing opens from a window that cannot
 // show what it is asking: ⏎ copies there instead.
 func (m *Model) linkCramped(l *linkPrompt) bool {
-	return m.height-2 < 2+len(l.warn)
+	return m.height-2 < 3+len(l.warn) // host, warnings, keys — and a row of the target
+}
+
+// linkCopies reports whether ⏎ copies the link instead of opening it.
+func (m *Model) linkCopies(l *linkPrompt) bool {
+	return l.copyOnly != "" || m.linkCramped(l)
 }
 
 // linkOpener names the helper that hands a URL to the desktop browser, or
@@ -335,9 +399,21 @@ var (
 		if err := c.Start(); err != nil {
 			return err
 		}
-		go func() { _ = c.Wait() }() // reap; the launcher may outlive the click
-		return nil
+		// A launcher with no handler or display exits non-zero at once:
+		// give it a moment so that failure is reported, not swallowed. One
+		// that is still running has handed the link on (and is reaped
+		// whenever it ends).
+		done := make(chan error, 1)
+		go func() { done <- c.Wait() }()
+		select {
+		case err := <-done:
+			return err
+		case <-time.After(launchGrace):
+			return nil
+		}
 	}
+	// launchGrace is how long launchURL watches for an early failure.
+	launchGrace = 2 * time.Second
 )
 
 // linkOpenedMsg reports the browser launch.
@@ -350,7 +426,7 @@ func (m *Model) handleLinkKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	m.link = nil
 	switch msg.String() {
 	case "enter":
-		if l.copyOnly != "" || m.linkCramped(l) {
+		if m.linkCopies(l) {
 			return m, m.copyText(l.url)
 		}
 		u := l.url
@@ -363,7 +439,12 @@ func (m *Model) handleLinkKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "esc":
 		return m, nil
 	}
-	// Like the confirm gates: a cancelling printable key still types.
+	// Like the confirm gates, a cancelling printable key still types — but
+	// only into a composer that owns the keyboard, never past the find
+	// bar, the palette, the queue strip, or step inspection.
+	if m.find.open || m.pal.open || m.qfocus || m.inspectChrome() {
+		return m, nil
+	}
 	return m.typeThrough(msg)
 }
 

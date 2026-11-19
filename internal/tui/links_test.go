@@ -6,6 +6,7 @@ import (
 	osexec "os/exec"
 	"strings"
 	"testing"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
@@ -153,32 +154,135 @@ func TestLinkAtRefusesTruncatedPreviews(t *testing.T) {
 	}
 	m.vp.SetContent(m.vpContent)
 	clickAt(m, 12, headerHeight)
-	if m.link == nil || !strings.Contains(strings.Join(m.link.warn, "|"), "may continue on the next row") {
+	if m.link == nil || !strings.Contains(strings.Join(m.link.warn, "|"), "target unclear across wrapped rows") {
 		t.Fatalf("the prompt does not flag a possibly wrapped target: %+v", m.link)
 	}
 }
 
 // Encoders escape "&" and "/" inside JSON strings: a tool result's link
-// still vouches for the decoded text the transcript shows.
+// still vouches for the decoded text its own rows show.
 func TestLinkSourcesReadThroughJSONEscapes(t *testing.T) {
 	const long = "https://example.com/search/with-a-long-path/that-wraps?first=1&second=2"
-	m := linkModel(t, 44, message{role: roleAsst, content: "x",
-		rendered: "  https://example.com/search/with-a-long-\n  path/that-wraps?first=1&second=2",
-		steps:    []step{{name: "http_request", result: `{"url":"https:\/\/example.com\/search\/with-a-long-path\/that-wraps?first=1\u0026second=2"}`}},
+	m := newTestModel()
+	m.resize(44, 30)
+	m.msgs = []message{{role: roleAsst,
+		steps: []step{{name: "http_request", result: `{"url":"https:\/\/example.com\/search\/with-a-long-path\/that-wraps?first=1\u0026second=2"}`}},
+		items: []turnItem{{stepIdx: 0}},
+	}}
+	// A step body as a typed view would paint it: decoded and wrapped.
+	m.msgLineIndex = []stepRef{{msgIdx: 0, stepIdx: -1}}
+	m.vpContent, m.vpLines = "⬡ odek\n\n    https://example.com/search/with-a-long-\n    path/that-wraps?first=1&second=2", nil
+	if u, unsure := m.linkAt(3, 6); u != long || unsure {
+		t.Fatalf("linkAt = %q unsure=%v, want the whole link from the JSON result", u, unsure)
+	}
+}
+
+// A reply card answers to the reply alone: reasoning and tool output the
+// reader cannot see there never decide where a click on the card goes.
+// "…/bar." ends the sentence; "git clone" is prose, not ".git".
+func TestLinkSourcesAreScopedToThePaintedText(t *testing.T) {
+	m := linkModel(t, 100, message{role: roleAsst,
+		content:  "see https://github.com/foo/bar. git clone it and build.",
+		rendered: "  see https://github.com/foo/bar.\n  git clone it and build.",
+		thinking: "clone https://github.com/foo/bar.git",
+		steps:    []step{{name: "shell", done: true, result: "Cloning https://github.com/foo/bar.git"}},
 		items:    []turnItem{{stepIdx: 0}},
 	})
-	line, col := findCell(t, m, "path/that-wraps")
-	if u, unsure := m.linkAt(line, col); u != long || unsure {
-		t.Fatalf("linkAt = %q unsure=%v, want the whole link from the JSON result", u, unsure)
+	line, col := findCell(t, m, "https://github.com")
+	if u, unsure := m.linkAt(line, col+4); u != "https://github.com/foo/bar" || unsure {
+		t.Fatalf("linkAt = %q unsure=%v, want the displayed link, unflagged", u, unsure)
+	}
+	for _, src := range m.linkSources(line) {
+		if strings.HasSuffix(src, ".git") {
+			t.Fatalf("a reply row is vouched by hidden text: %v", m.linkSources(line))
+		}
+	}
+	// The step row above the card answers to the step, not the reply.
+	stepLine := m.stepLineIndex[0].line
+	if got := m.linkSources(stepLine); len(got) != 1 || got[0] != "https://github.com/foo/bar.git" {
+		t.Fatalf("work-row sources = %v, want the reasoning and tool links only", got)
+	}
+	// A held candidate answer is not painted yet: it vouches for nothing.
+	m.msgs[0].streaming = true
+	m.msgs[0].items = []turnItem{{stepIdx: 0}, {reply: true, text: "held https://held.example/x"}}
+	m.msgs[0].content = "held https://held.example/x"
+	if got := m.linkSources(line); len(got) != 0 {
+		t.Fatalf("held reply text vouched for links: %v", got)
+	}
+}
+
+// The same rows can read two ways when the painted text itself holds both
+// links: the longer is offered, flagged.
+func TestLinkAtFlagsTwoReadingsOfTheSameRows(t *testing.T) {
+	m := linkModel(t, 100, message{role: roleAsst,
+		content:  "see https://github.com/foo/bar. git or https://github.com/foo/bar.git",
+		rendered: "  see https://github.com/foo/bar.\n  git or the mirror",
+	})
+	line, col := findCell(t, m, "https://github.com")
+	if u, unsure := m.linkAt(line, col+4); u != "https://github.com/foo/bar.git" || !unsure {
+		t.Fatalf("linkAt = %q unsure=%v, want the longer reading, flagged", u, unsure)
+	}
+}
+
+// Glamour leaves a blank row after a link's head when the tail is too long
+// to wrap. The head alone reads "https://example" — the source must carry
+// the click to the whole link, from either row.
+func TestLinkAtRejoinsAcrossTheBlankRowGlamourLeaves(t *testing.T) {
+	const long = "https://example.com/some/really/long/path/that/keeps/going/and/going/forever/and/ever/index.html"
+	m := linkModel(t, 60, message{role: roleAsst, content: "Please look at " + long + " tail"})
+	line, col := findCell(t, m, "https://example.")
+	rows := m.contentLines()
+	if strings.TrimSpace(ansi.Strip(rows[line+1])) != "" || !strings.Contains(ansi.Strip(rows[line+2]), "com/some/") {
+		t.Fatalf("fixture no longer renders head / blank / tail:\n%s", plain(m.vpContent))
+	}
+	if u, unsure := m.linkAt(line, col+3); u != long || unsure {
+		t.Fatalf("head: linkAt = %q unsure=%v, want the whole link", u, unsure)
+	}
+	_, tailCol := findCell(t, m, "com/some/")
+	if u, unsure := m.linkAt(line+2, tailCol+4); u != long || unsure {
+		t.Fatalf("tail: linkAt = %q unsure=%v, want the whole link", u, unsure)
+	}
+	// Unsourced, the head is all there is — never offered as a clean link.
+	m.msgLineIndex = nil
+	if u, unsure := m.linkAt(line, col+3); u != "https://example" || !unsure {
+		t.Fatalf("unsourced head: linkAt = %q unsure=%v, want it flagged", u, unsure)
+	}
+	// Two blank rows are a real break.
+	m.vpContent, m.vpLines = "see https://example.com/a.\n\n\nb/c here", nil
+	if u, unsure := m.linkAt(0, 6); u != "https://example.com/a" || unsure {
+		t.Fatalf("link before a real break = %q unsure=%v", u, unsure)
+	}
+}
+
+// A row that fills the viewport may have been clipped: when the visible
+// part of a link stops there, the one source link it starts is offered,
+// flagged — and two candidates are not guessed between.
+func TestLinkAtFillsInAClippedTailFromTheSource(t *testing.T) {
+	const long = "https://example.com/an/unbreakable/path/segment/that/runs/off/the/right/edge/of/the/viewport"
+	m := newTestModel()
+	m.resize(40, 30)
+	m.msgs = []message{{role: roleUser, content: "open " + long}}
+	m.msgLineIndex = []stepRef{{msgIdx: 0, stepIdx: -1}}
+	tail := "com/an/unbreakable/path/segment/that/runs/off/the"[:40]
+	m.vpContent, m.vpLines = "❯ you\n\nopen https://example.\n\n"+tail, nil
+	for _, cell := range [][2]int{{2, 8}, {4, 10}} {
+		if u, unsure := m.linkAt(cell[0], cell[1]); u != long || !unsure {
+			t.Fatalf("cell %v: linkAt = %q unsure=%v, want the source link, flagged as clipped", cell, u, unsure)
+		}
+	}
+	m.msgs[0].content += " and " + long + "/other"
+	if u, unsure := m.linkAt(4, 10); u != "" || unsure {
+		t.Fatalf("two candidates for a clipped tail: linkAt = %q unsure=%v, want none", u, unsure)
+	}
+	if u, unsure := m.linkAt(2, 8); u != "https://example" || !unsure {
+		t.Fatalf("two candidates, head row: linkAt = %q unsure=%v, want the flagged stump", u, unsure)
 	}
 }
 
 // A shorter source link must not claim the cells of a longer rendered one.
 func TestLinkAtSourcePrefixDoesNotShadowLongerLink(t *testing.T) {
 	m := linkModel(t, 100, message{role: roleAsst,
-		content: "x", rendered: "  go to https://example.com/deeper/path now",
-		steps: []step{{name: "http_request", result: "https://example.com"}},
-		items: []turnItem{{stepIdx: 0}},
+		content: "the site https://example.com has it", rendered: "  go to https://example.com/deeper/path now",
 	})
 	line, col := findCell(t, m, "https://example.com/deeper")
 	if got := linkOf(m, line, col+3); got != "https://example.com/deeper/path" {
@@ -407,13 +511,26 @@ func TestLaunchURLStartsTheLauncherWithTheLinkAsOneArg(t *testing.T) {
 	if err != nil {
 		t.Skip("no test binary path")
 	}
-	oldLook := lookPath
-	t.Cleanup(func() { lookPath = oldLook })
-	// The test binary stands in for the launcher: with an argument that
-	// matches no test it exits at once — nothing is ever opened.
+	oldLook, oldGrace := lookPath, launchGrace
+	t.Cleanup(func() { lookPath, launchGrace = oldLook, oldGrace })
+	// The test binary stands in for the launcher: TestMain exits at once
+	// when launcherEnv is set, so nothing is opened and no suite re-runs.
 	lookPath = func(string) (string, error) { return self, nil }
+	t.Setenv(launcherEnv, "ok")
 	if err := launchURL("https://example.com/x?a=1&b=2;rm -rf /"); err != nil {
 		t.Fatalf("launchURL: %v", err)
+	}
+	// A launcher that starts and then fails (no handler, no display) is
+	// reported, not swallowed.
+	t.Setenv(launcherEnv, "fail")
+	if err := launchURL("https://example.com/x"); err == nil || !strings.Contains(err.Error(), "exit status 3") {
+		t.Fatalf("a failing launcher reported %v", err)
+	}
+	// One still running after the grace period has taken the link.
+	t.Setenv(launcherEnv, "slow")
+	launchGrace = time.Millisecond
+	if err := launchURL("https://example.com/x"); err != nil {
+		t.Fatalf("a launcher that keeps running is not a failure: %v", err)
 	}
 	lookPath = func(string) (string, error) { return "/nonexistent/launcher", nil }
 	if err := launchURL("https://example.com/x"); err == nil {
@@ -528,13 +645,12 @@ func TestLinkPromptCancelTypesIntoClarifyAnswer(t *testing.T) {
 }
 
 // Two rows that merely sit under each other are not one wrapped link, even
-// when text the reader cannot see (reasoning, tool output) holds their
-// concatenation. Reply: "…at https://accounts.google.com" / ".evil.example/…".
+// when the source text holds their concatenation. Reply: "…at https://accounts.google.com" / ".evil.example/…".
 func TestLinkAtDoesNotFuseRowsThatAreNotAWrap(t *testing.T) {
 	const fused = "https://accounts.google.com.evil.example/login"
-	m := linkModel(t, 100, message{role: roleAsst, content: "x",
+	m := linkModel(t, 100, message{role: roleAsst,
+		content:  "the page is " + fused,
 		rendered: "  it looked like https://accounts.google.com\n  .evil.example/login was the page",
-		thinking: "the page is " + fused,
 	})
 	line, col := findCell(t, m, "https://accounts")
 	u, unsure := m.linkAt(line, col+5)
@@ -549,18 +665,18 @@ func TestLinkAtDoesNotFuseRowsThatAreNotAWrap(t *testing.T) {
 // A source can vouch for a prefix of what is displayed: when the link runs
 // to a wrap point and link-like text follows, the prompt says so.
 func TestLinkAtFlagsSourcePrefixBeforeAWrap(t *testing.T) {
-	m := linkModel(t, 100, message{role: roleAsst, content: "x",
+	m := linkModel(t, 100, message{role: roleAsst,
 		rendered: "  https://evilcdn.net.\n  accounts.google.com/login",
-		thinking: "fetch https://evilcdn.net first",
+		content:  "fetch https://evilcdn.net first",
 	})
 	line, col := findCell(t, m, "https://evilcdn")
 	if u, unsure := m.linkAt(line, col+3); u != "https://evilcdn.net" || !unsure {
 		t.Fatalf("linkAt = %q unsure=%v, want the vouched prefix flagged as possibly longer", u, unsure)
 	}
 	// Prose below a link that ends a sentence is not a continuation.
-	m = linkModel(t, 100, message{role: roleAsst, content: "x",
+	m = linkModel(t, 100, message{role: roleAsst,
 		rendered: "  read https://example.com/docs.\n  Then run the tests",
-		thinking: "https://example.com/docs",
+		content:  "read https://example.com/docs. Then run the tests",
 	})
 	line, col = findCell(t, m, "https://example.com")
 	if u, unsure := m.linkAt(line, col+3); u != "https://example.com/docs" || unsure {
@@ -624,5 +740,62 @@ func TestLinkDialogNeverHidesWarningsOrKeys(t *testing.T) {
 			t.Fatalf("height %d: ⏎ opened a link the window could not show: %v", h, *opened)
 		}
 		*opened = nil
+	}
+}
+
+// The footer, the window and ⏎ agree on a terminal too short to review the
+// link — and "too short" includes the height where no row of it fits.
+func TestCrampedLinkWindowAgreesEverywhere(t *testing.T) {
+	opened := localBrowser(t)
+	for _, tc := range []struct {
+		h   int
+		url string
+	}{{4, "https://example.com/x"}, {5, "http://1.2.3.4/x"}} {
+		m := newTestModel()
+		m.resize(60, tc.h)
+		m.openLinkPrompt(tc.url, false)
+		if !m.linkCramped(m.link) {
+			t.Fatalf("height %d with %d warnings should be cramped", tc.h, len(m.link.warn))
+		}
+		if box := plain(m.linkDialog()); !strings.Contains(box, "⏎ copy") {
+			t.Errorf("height %d: window offers open:\n%s", tc.h, box)
+		}
+		if foot := plain(m.footer()); !strings.Contains(foot, "⏎ copy link") || strings.Contains(foot, "⏎ open") {
+			t.Errorf("height %d: footer contradicts the window: %q", tc.h, foot)
+		}
+		m.Update(key("enter"))
+		if len(*opened) != 0 {
+			t.Fatalf("height %d: ⏎ opened a link nobody could read", tc.h)
+		}
+	}
+	// One row more and the target shows: ⏎ opens again.
+	m := newTestModel()
+	m.resize(60, 5)
+	m.openLinkPrompt("https://example.com/x", false)
+	if m.linkCramped(m.link) || !strings.Contains(plain(m.linkDialog()), "https://example.com/x") {
+		t.Fatalf("height 5 should show the target:\n%s", plain(m.linkDialog()))
+	}
+}
+
+// A key that cancels the window types only into a composer that owns the
+// keyboard — never behind the find bar or step inspection.
+func TestLinkCancelDoesNotTypeBehindOtherSurfaces(t *testing.T) {
+	localBrowser(t)
+	m := newTestModel()
+	m.find.open = true
+	m.openLinkPrompt("https://example.com/x", false)
+	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("n")})
+	if m.link != nil || m.ta.Value() != "" {
+		t.Fatalf("find bar open: link=%v draft=%q", m.link, m.ta.Value())
+	}
+	// An undecodable chord keeps its diagnostic and leaves the window up.
+	m.find.open = false
+	m.openLinkPrompt("https://example.com/x", false)
+	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("unmapped-chord"), Alt: true})
+	if m.link == nil {
+		t.Fatal("an unmapped chord closed the link window")
+	}
+	if note, _ := lastNoteMatching(m, "unmapped key chord"); note == "" {
+		t.Fatalf("the unmapped-chord note was dropped: %v", m.notices)
 	}
 }

@@ -243,8 +243,8 @@ feat(tui): compact tool steps with Ctrl+E details toggle
   edge scrolls on a generation-guarded tick); anywhere else it selects
   screen rows read back from `compose()` and is dropped after its copy
   (screen rows have no stable anchor). A held transcript range remembers
-  its end lines and `reconcileSelection` drops it when a rebuild moves
-  them. Repeat clicks on a control (`clickActs`) stay clicks, never a
+  the text it copied and `reconcileSelection` drops it when a rebuild puts
+  anything else under it. Repeat clicks on a control (`clickActs`) stay clicks, never a
   double-click. Any key clears a selection; ESC then stops there — unless
   the range has scrolled out of view, which must not swallow ESC. Range
   edges snap to whole glyphs (`snapCells`) so a highlight never changes a
@@ -335,7 +335,7 @@ modifier routes to the composer), and `Alt+A`/`Alt+D`/`Alt+T`
 - Links (`links.go`): a click on an `http(s)` link in the transcript raises
   the open-link window — never the browser. Only `⏎` opens (`c` copies;
   any other key cancels and, like the confirm gates, a plain rune still
-  types via `typeThrough`). The window is an overlay composited onto the
+  types via `typeThrough` — only when the composer owns the keyboard). The window is an overlay composited onto the
   frame (`linkOverlay`), not a card in the layout: the transcript must not
   shift under the click, and `inputAreaHeight` stays untouched. It shows the
   parsed host first, the whole target through `visibleInvocation`, and
@@ -344,18 +344,26 @@ modifier routes to the composer), and `Alt+A`/`Alt+D`/`Alt+T`
   `tea.Cmd` — never a shell, never `tea.ExecProcess`; over SSH or without a
   launcher `⏎` copies instead. Glamour wraps long links at `.` and `-`, so
   one row can hold a fragment that is itself a valid URL to the wrong host:
-  `linkAt` resolves the cell against the links in the message's source text
+  `linkAt` resolves the cell against the links in the source text
   (`linkSources`) across the wrapped rows, and falls back to the row alone
   only when no source vouches for it — a preview cut with `…` is never
-  offered. Sources include text that is not painted (reasoning, tool
-  output), so rows fuse only at a real wrap point (a row ending on a
-  break character or hard against the right edge), and a target that runs
-  to a wrap point with link-like text below is offered with a "may
-  continue on the next row" warning — never silently. The host row keeps
-  the host's tail (the registrable domain), and a terminal too short to
-  show host, every warning and the keys (`linkCramped`) copies on `⏎`
-  instead of opening. Step rows and chips keep their own click over a
-  link in their preview.
+  offered. Only text painted on the clicked line vouches: a reply card
+  answers to `paintedContent`, work rows to reasoning and tool data —
+  never widen that, or hidden text decides where a click goes. Rows fuse
+  only at a real wrap point (a row ending on a break character or hard
+  against the right edge; glamour's single blank row inside a wrapped link
+  is skipped). Whatever the rows cannot settle is offered with the
+  "target unclear" warning, never silently: a link that runs to a wrap
+  point with link-like text below, a tail clipped at the viewport edge
+  (filled in from the one source link it starts), or rows that read as
+  two source links. The host row keeps the host's tail (the registrable
+  domain), and a terminal too short to show host, every warning, the keys
+  and a row of the target (`linkCramped`) copies on `⏎` instead of
+  opening — window, footer and key handler share `linkCopies`. `launchURL`
+  waits briefly so a launcher that starts and fails is reported. Tests
+  never run a real launcher: the test binary stands in, and `TestMain`
+  exits it on `BODEK_TEST_LAUNCHER` before the suite can re-run. Step rows
+  and chips keep their own click over a link in their preview.
 - ESC closes the topmost window, then (if busy) arms cancel. The chain
   below is the authoritative order: confirm disarm → open-link window → text selection → palette → drawer edit/detail/tab
   → cockpit → find → `@`/`/` popup → queue strip → approval (collapse

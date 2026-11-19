@@ -40,10 +40,10 @@ type selection struct {
 	screen   bool     // rows are screen rows; false = transcript content lines
 	anchor   selPoint // where the drag started
 	head     selPoint // where it is now
-	// A held transcript range remembers the rendered end lines it was copied
-	// from: a rebuild that moves them (fold, expand, resize) drops the
+	// A held transcript range remembers the text it copied: a rebuild that
+	// puts anything else under it (fold, expand, resize) drops the
 	// highlight instead of leaving it on unrelated text.
-	first, last string
+	text string
 }
 
 // ordered returns the range's ends in reading order.
@@ -124,9 +124,9 @@ func (m *Model) reconcileSelection() {
 	if !m.sel.on || m.sel.screen || m.sel.dragging {
 		return
 	}
-	a, b := m.sel.ordered()
+	_, b := m.sel.ordered()
 	lines := m.contentLines()
-	if a.line < 0 || b.line >= len(lines) || lines[a.line] != m.sel.first || lines[b.line] != m.sel.last {
+	if b.line >= len(lines) || selectedText(lines, m.sel) != m.sel.text {
 		m.sel = selection{}
 	}
 }
@@ -219,7 +219,7 @@ func (m *Model) mousePressed(msg tea.MouseMsg) {
 	m.sel.head = selPoint{line: p.line, col: c1 - 1}
 	// Sealed at once: a rebuild between this press and its release (a
 	// stream flush lands every 80ms) must not take it for a stale range.
-	m.sel.first, m.sel.last = lines[p.line], lines[p.line]
+	m.sel.text = selectedText(lines, m.sel)
 }
 
 // selectionVisible reports whether a range is painted on screen right now.
@@ -268,7 +268,7 @@ func (m *Model) mouseReleased() (tea.Model, tea.Cmd) {
 	m.sel.dragging = false
 	lines := m.selLines()
 	text := selectedText(lines, m.sel)
-	a, b := m.sel.ordered()
+	_, b := m.sel.ordered()
 	switch {
 	case strings.TrimSpace(text) == "":
 		m.sel = selection{}
@@ -277,7 +277,7 @@ func (m *Model) mouseReleased() (tea.Model, tea.Cmd) {
 		// Screen rows have no stable anchor once the frame repaints.
 		m.sel = selection{}
 	default:
-		m.sel.first, m.sel.last = lines[a.line], lines[b.line]
+		m.sel.text = text
 	}
 	return m, m.copyText(text)
 }

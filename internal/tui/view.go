@@ -1935,7 +1935,7 @@ func (m *Model) footerContent() string {
 		)
 	}
 	if l := m.link; l != nil {
-		if l.copyOnly != "" {
+		if m.linkCopies(l) {
 			return m.panelFooter("⏎ copy link", "esc cancel")
 		}
 		return m.panelFooter("⏎ open", "c copy", "esc cancel")

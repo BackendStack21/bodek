@@ -600,3 +600,27 @@ func TestEdgeScrollStopsAtTheTranscriptEnd(t *testing.T) {
 		t.Error("the tick is still marked pending")
 	}
 }
+
+// Blank rows look alike: a held range that starts and ends on them must
+// still drop when the text between moves.
+func TestHeldSelectionChecksItsWholeText(t *testing.T) {
+	m := selModel(t,
+		message{role: roleAsst, content: "first reply"},
+		message{role: roleUser, content: "alpha beta gamma"},
+		message{role: roleAsst, content: "second reply"})
+	line, _ := findCell(t, m, "alpha")
+	dragSelect(m, 0, headerHeight+line-1, m.width-1, headerHeight+line+1) // blank row to blank row
+	if !m.sel.on || !strings.Contains(m.sel.text, "alpha beta gamma") {
+		t.Fatalf("fixture: selection = %+v", m.sel)
+	}
+	a, b := m.sel.ordered()
+	rows := m.contentLines()
+	if strings.TrimSpace(ansi.Strip(rows[a.line])) != "" || strings.TrimSpace(ansi.Strip(rows[b.line])) != "" {
+		t.Fatal("fixture: the range should start and end on blank rows")
+	}
+	m.toggleCollapseAt(0)
+	m.refresh()
+	if m.sel.on {
+		t.Fatal("the highlight stayed over different text")
+	}
+}

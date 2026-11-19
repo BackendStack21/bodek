@@ -959,6 +959,13 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if msg.String() == "ctrl+x" && m.busy {
 		return m, m.armConfirm(confirmCancel, "the running turn")
 	}
+	// An unmapped enhanced-key chord is a diagnostic, not input: intercept
+	// the sentinel at the very top of the ladder so no capture surface
+	// (palette, popups, find bar, approval composer, queue strip) can type
+	// or swallow it — it always becomes the transient note.
+	if msg.String() == "alt+unmapped-chord" {
+		return m, m.transientNoteCmd("unmapped key chord ignored")
+	}
 	// The open-link window is modal: ⏎ opens, c copies, anything else cancels.
 	if m.link != nil {
 		return m.handleLinkKey(msg)
@@ -968,13 +975,6 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// dropped silently and ESC carries on.
 	if selected && msg.String() == "esc" {
 		return m, nil
-	}
-	// An unmapped enhanced-key chord is a diagnostic, not input: intercept
-	// the sentinel at the very top of the ladder so no capture surface
-	// (palette, popups, find bar, approval composer, queue strip) can type
-	// or swallow it — it always becomes the transient note.
-	if msg.String() == "alt+unmapped-chord" {
-		return m, m.transientNoteCmd("unmapped key chord ignored")
 	}
 	// shift+delete is the composer's clear chord. Every other capture
 	// surface (approval composer + friction editor, clarify, popups, panel
